@@ -1,0 +1,851 @@
+class_name RUIReconciler
+extends RefCounted
+## The fiber reconciler. Ports ReactiveUIToolKit's FiberReconciler to a synchronous
+## (non-time-sliced) work loop:
+##
+##   render phase   -> begin_work (reconcile children, run components) descending, then
+##                     complete_work (create/diff host nodes, build the effect list) on
+##                     the way back up. Post-order effect list = children before parents.
+##   commit phase   -> deletions -> effect list (placement/update/layout effects) ->
+##                     enforce child order -> swap current<->wip -> two-pass passive
+##                     effects -> release the old tree -> replay deferred updates.
+##
+## Updates are coalesced (a hook setter schedules one deferred render per frame). Bailout
+## skips re-running a component's render fn when its props/state/context/children are
+## unchanged (reusing the cached output); the fiber tree is still rebuilt each pass —
+## true O(changed) subtree carry-over is a later perf optimization (see PORTING_PLAN 1.9).
+##
+## GDScript divergences vs the C# original:
+##   - No exceptions: error boundaries render a fallback on demand but cannot auto-catch
+##     a render-time crash (GDScript has no try/catch). See `_begin_error_boundary`.
+##   - Fresh fibers each pass (no 2-object double-buffer reuse) — simpler lifecycle, GC'd
+##     via explicit cycle-severing.
+
+const F = preload("res://addons/reactive_ui/core/fiber.gd")
+
+var _container: Node
+var _root_vnode: RUIVNode = null
+var _root_current: RUIFiber = null
+
+var _wip_root: RUIFiber = null
+var _next_unit: RUIFiber = null
+
+var _first_effect: RUIFiber = null
+var _last_effect: RUIFiber = null
+var _deletions: Array = []
+var _reorder_set: Dictionary = {}        ## host/portal fibers whose child order may have changed
+var _pending_passive: Array = []
+
+var _has_deletions := false
+var _is_committing := false
+var _deferred_updates: Array = []
+var _work_active := false      ## a render is in progress (possibly parked between frames)
+var _restart := false          ## update arrived mid-render -> rebuild from root (clears effect list)
+var _tick_pending := false     ## a _tick is scheduled (call_deferred or process_frame)
+var _restart_count := 0
+
+func _init(container: Node) -> void:
+	_container = container
+	var root := F.new()
+	root.tag = F.Tag.ROOT
+	root.type = "__root__"
+	root.node = container
+	_root_current = root
+
+# --------------------------------------------------------------------------
+# Scheduling
+# --------------------------------------------------------------------------
+
+func render(vnode: RUIVNode) -> void:
+	# Initial / top-level mount is always synchronous (no time-slicing) to avoid an empty
+	# first frame. Cancel any parked sliced render first so its process_frame tick can't fire
+	# after us, and mark `_work_active` so a setState during render restarts coherently. [M7/M8]
+	_cancel_pending_tick()
+	_root_vnode = vnode
+	_root_current.has_pending_update = true
+	_work_active = true
+	_begin_render()
+	while _next_unit != null:
+		_next_unit = _perform_unit(_next_unit)
+	_work_active = false
+	_restart = false
+	_commit_root()
+
+## Mark a fiber dirty and (unless we're mid-commit) schedule a coalesced render.
+func schedule_update_on_fiber(fiber: RUIFiber, vnode) -> void:
+	if vnode != null:
+		_root_vnode = vnode
+	var target := fiber if fiber != null else _root_current
+	target.has_pending_update = true
+	var p := target.parent
+	while p != null:
+		p.subtree_has_updates = true
+		p = p.parent
+	if _is_committing:
+		_deferred_updates.append([target, vnode])
+		return
+	if _work_active:
+		_restart = true   # update mid-render -> rebuild from root next tick (resets effect list)
+	_ensure_tick()
+
+func request_update() -> void:
+	schedule_update_on_fiber(_root_current, null)
+
+func _ensure_tick() -> void:
+	if _tick_pending:
+		return
+	_tick_pending = true
+	call_deferred("_tick")
+
+## One work pass. Runs the whole render at once unless time-slicing is on, in which case
+## it processes until the frame budget is hit, then parks until the next frame. An update
+## arriving mid-render sets `_restart`, which rebuilds from the root (clearing the effect
+## list) — the invariant that prevents stale Placement effects re-committing.
+func _tick() -> void:
+	_tick_pending = false
+	if _root_vnode == null or not is_instance_valid(_container):
+		_work_active = false
+		return
+	if not _work_active or _restart:
+		if _restart:
+			_restart_count += 1
+			if _restart_count > 25:
+				push_error("[reactive_ui] Too many re-renders (setState during render?). Aborting pass.")
+				_work_active = false
+				_restart = false
+				_restart_count = 0
+				return
+		else:
+			_restart_count = 0
+		_begin_render()
+		_restart = false
+		_work_active = true
+
+	var start := Time.get_ticks_msec()
+	var sliced: bool = RUIConfig.time_slicing
+	var budget: float = RUIConfig.frame_budget_ms
+	while _next_unit != null:
+		_next_unit = _perform_unit(_next_unit)
+		if _restart:
+			break
+		if sliced and float(Time.get_ticks_msec() - start) >= budget:
+			break
+
+	if _restart:
+		_ensure_tick()
+		return
+	if _next_unit == null:
+		_work_active = false
+		_restart_count = 0
+		_commit_root()
+	else:
+		_park()
+
+## Resume the parked render on the next frame (time-slicing only).
+func _park() -> void:
+	if _tick_pending:
+		return
+	_tick_pending = true
+	var tree := _get_tree_safe()
+	if tree != null:
+		tree.process_frame.connect(_tick, CONNECT_ONE_SHOT)
+	else:
+		call_deferred("_tick")
+
+## Sever a parked process_frame continuation (when render()/unmount() pre-empts a sliced
+## render still in flight), so a stale tick can't fire on a torn-down/replaced tree. [M7]
+func _cancel_pending_tick() -> void:
+	_tick_pending = false
+	var tree := _get_tree_safe()
+	if tree != null and tree.process_frame.is_connected(_tick):
+		tree.process_frame.disconnect(_tick)
+
+## Get the container's SceneTree, or null — without erroring when it's not in the tree.
+func _get_tree_safe() -> SceneTree:
+	if is_instance_valid(_container) and _container.is_inside_tree():
+		return _container.get_tree()
+	return null
+
+# --------------------------------------------------------------------------
+# Render phase (work loop)
+# --------------------------------------------------------------------------
+
+func _begin_render() -> void:
+	_first_effect = null
+	_last_effect = null
+	_has_deletions = false
+	_deletions = []
+	_reorder_set = {}
+	_pending_passive = []
+
+	# Reuse the root's ping-pong buddy (double-buffer) instead of allocating. [perf #1]
+	var wip: RUIFiber = _root_current.alternate
+	if wip == null:
+		wip = F.new()
+		_root_current.alternate = wip
+	wip.alternate = _root_current
+	wip.tag = F.Tag.ROOT
+	wip.type = "__root__"
+	wip.node = _container
+	wip.child = null
+	wip.sibling = null
+	wip.parent = null
+	wip.effect_tag = F.EFFECT_NONE
+	wip.next_effect = null
+	if not wip.deletions.is_empty():
+		wip.deletions.clear()
+	wip.input_children = [_root_vnode]
+	wip.has_pending_update = _root_current.has_pending_update
+	wip.subtree_has_updates = _root_current.subtree_has_updates
+	_wip_root = wip
+	_next_unit = wip
+
+func _perform_unit(fiber: RUIFiber) -> RUIFiber:
+	# begin-work (inlined — one fewer call per fiber per frame) [perf]
+	var next: RUIFiber
+	match fiber.tag:
+		F.Tag.FUNCTION:
+			next = _begin_function(fiber)
+		F.Tag.ERROR_BOUNDARY:
+			next = _begin_error_boundary(fiber)
+		_:
+			# ROOT / HOST / FRAGMENT / PORTAL: reconcile declared children.
+			# Leaf fast-path: nothing declared now AND nothing before -> skip the whole
+			# _reconcile_children + _normalize_children call chain. fiber.child is already
+			# null (reset in _reconcile). Hot: every leaf in a big list hits this. [perf]
+			var alt := fiber.alternate
+			if fiber.input_children.is_empty() and (alt == null or alt.child == null):
+				next = null
+			else:
+				_reconcile_children(fiber, _old_first(alt), fiber.input_children)
+				next = fiber.child
+	if not fiber.deletions.is_empty():
+		_has_deletions = true
+	if next != null:
+		return next
+	# no child -> complete this fiber, then move to sibling / climb to parent.
+	var f := fiber
+	while f != null:
+		_complete_work(f)
+		if f.sibling != null:
+			return f.sibling
+		f = f.parent
+	return null
+
+func _begin_function(fiber: RUIFiber) -> RUIFiber:
+	if fiber.state != null:
+		fiber.state.fiber = fiber
+	var alt := fiber.alternate
+	var props_equal: bool = fiber.props != null and (is_same(fiber.pending_props, fiber.props) or fiber.pending_props == fiber.props)  # identity fast-path [perf P3]
+	var context_ok: bool = not fiber.reads_context or not _has_context_changed(fiber)
+	var children_same: bool = _vnode_list_equal(alt.input_children if alt != null else [], fiber.input_children)
+	var can_bail: bool = (not fiber.has_pending_update) and context_ok and props_equal and children_same
+
+	var out: Array
+	if can_bail and fiber.state != null:
+		out = fiber.state.last_output     # reuse cached output; don't re-run the render fn
+	else:
+		fiber.has_pending_update = false
+		out = _render_component(fiber)
+	fiber.subtree_has_updates = false
+	fiber.props = fiber.pending_props
+	_reconcile_children(fiber, _old_first(alt), out)
+	return fiber.child
+
+func _render_component(fiber: RUIFiber) -> Array:
+	var state: RUIComponentState = fiber.state
+	Hooks._begin(state)
+	var result = fiber.component.call(fiber.pending_props, fiber.input_children)
+	Hooks._end()
+	RUIDiagnostics.on_render()
+	state.last_output = _to_vnode_array(result)
+	if not state.effects.is_empty():
+		fiber.effect_tag |= F.EFFECT_PASSIVE
+	if not state.layout_effects.is_empty():
+		fiber.effect_tag |= F.EFFECT_LAYOUT
+	return state.last_output
+
+func _begin_error_boundary(fiber: RUIFiber) -> RUIFiber:
+	# NOTE: GDScript has no try/catch, so this cannot auto-catch a child render crash.
+	# It renders the fallback when `eb_active` is set (toggled imperatively) and clears it
+	# when `reset_key` changes. Structural parity; auto-catch is a documented limitation.
+	var alt := fiber.alternate
+	var reset_requested: bool = alt == null or alt.eb_reset_key != fiber.eb_reset_key
+	if reset_requested:
+		fiber.eb_active = false
+		fiber.eb_showing_fallback = false
+		fiber.eb_last_error = null
+	var children: Array
+	if fiber.eb_active and not reset_requested:
+		children = [fiber.eb_fallback] if fiber.eb_fallback != null else []
+	else:
+		children = fiber.eb_children
+	_reconcile_children(fiber, _old_first(alt), children)
+	return fiber.child
+
+# --------------------------------------------------------------------------
+# Reconciliation
+# --------------------------------------------------------------------------
+
+## Create-or-reuse a fiber for `vnode` matched against `old_fiber`.
+## Create-or-reuse a WIP fiber for `vnode`, matched against `old_fiber`. DOUBLE-BUFFERED:
+## when the type matches we reuse `old_fiber`'s ping-pong buddy (its alternate) instead of
+## allocating — so a stable tree position costs ZERO fiber allocations after first mount.
+## Only a true placement / type-change allocates. [perf #1]
+func _reconcile(parent_fiber: RUIFiber, old_fiber: RUIFiber, vnode: RUIVNode, idx: int) -> RUIFiber:
+	var reuse: bool = old_fiber != null and old_fiber.matches(vnode)
+	var fiber: RUIFiber
+	if reuse:
+		fiber = old_fiber.alternate
+		if fiber == null:
+			fiber = F.new()
+		fiber.alternate = old_fiber
+		old_fiber.alternate = fiber
+	else:
+		fiber = F.new()
+		fiber.alternate = null
+		if old_fiber != null:
+			_delete_fiber(parent_fiber, old_fiber)
+
+	# --- render-scoped fields (reset every render, since the buddy holds stale data) ---
+	fiber.parent = parent_fiber
+	fiber.child = null
+	fiber.sibling = null
+	fiber.index = idx
+	fiber.effect_tag = F.EFFECT_NONE
+	fiber.next_effect = null
+	if not fiber.deletions.is_empty():
+		fiber.deletions.clear()
+	fiber.key = vnode.key
+	fiber.pending_props = vnode.props
+	fiber.input_children = vnode.children
+	# Read vnode.kind once and inline the HOST case (the hot path) — avoids the tag_for_vnode
+	# call and four repeated kind comparisons per element. [perf]
+	var vk: int = vnode.kind
+	if vk == RUIVNode.Kind.HOST:
+		fiber.tag = F.Tag.HOST
+		fiber.type = vnode.type
+		fiber.component = Callable()
+		fiber.portal_target = null
+	else:
+		fiber.tag = F.tag_for_vnode(vnode)
+		fiber.type = ""
+		fiber.component = vnode.component if vk == RUIVNode.Kind.FUNCTION else Callable()
+		fiber.portal_target = vnode.portal_target if vk == RUIVNode.Kind.PORTAL else null
+	if vk == RUIVNode.Kind.ERROR_BOUNDARY:
+		fiber.eb_fallback = vnode.props.get("fallback")
+		fiber.eb_handler = vnode.props.get("on_error", Callable())
+		fiber.eb_reset_key = vnode.props.get("reset_key")
+		fiber.eb_children = vnode.children
+
+	if reuse:
+		# carry committed baseline + live node/state/context from the current fiber
+		fiber.node = old_fiber.node
+		fiber.state = old_fiber.state
+		fiber.props = old_fiber.props
+		fiber.reads_context = old_fiber.reads_context
+		fiber.has_pending_update = old_fiber.has_pending_update
+		fiber.subtree_has_updates = old_fiber.subtree_has_updates
+		# Carry provided context (duplicated so change-detection vs the alternate works, and
+		# so a bailed-out provider keeps it). [audit C1]
+		fiber.provided_context = old_fiber.provided_context.duplicate() if old_fiber.provided_context != null else null
+		if fiber.tag == F.Tag.ERROR_BOUNDARY:   # inlined is_error_boundary() [perf]
+			fiber.eb_active = old_fiber.eb_active
+			fiber.eb_showing_fallback = old_fiber.eb_showing_fallback
+	else:
+		fiber.node = null
+		fiber.state = null
+		fiber.props = null
+		fiber.reads_context = false
+		fiber.has_pending_update = false
+		fiber.subtree_has_updates = false
+		fiber.provided_context = null
+		fiber.eb_active = false
+		fiber.eb_showing_fallback = false
+
+	if fiber.tag == F.Tag.FUNCTION and fiber.state == null:   # inlined tag check (hot) [perf P4]
+		var st := RUIComponentState.new()
+		st.fiber = fiber
+		st.on_state_updated = _make_on_state_updated(st)
+		fiber.state = st
+	return fiber
+
+func _make_on_state_updated(state: RUIComponentState) -> Callable:
+	return func(): schedule_update_on_fiber(state.fiber, null)
+
+## Reconcile `child_vnodes` against the OLD child linked-list (starting at `old_first`).
+## Walks the sibling chain directly — no per-frame Array materialization. [perf P1]
+func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnodes: Array) -> void:
+	var vnodes := _normalize_children(child_vnodes)
+	parent_fiber.child = null
+	if vnodes.is_empty():
+		var oc0 := old_first
+		while oc0 != null:
+			var nxt0 := oc0.sibling
+			_delete_fiber(parent_fiber, oc0)
+			oc0 = nxt0
+		return
+
+	var prev: RUIFiber = null
+	var structural := false   # a child was newly placed or MOVED -> needs reorder [perf #2]
+	if _any_keyed(vnodes):
+		# FAST PATH: a positionally-stable keyed list (same count, keys, order) — the common
+		# update-only case. Reconcile in place with no key_map/matched dicts. [perf P2]
+		if _keys_stable(old_first, vnodes):
+			var ocs := old_first
+			for i in vnodes.size():
+				var cf := _reconcile(parent_fiber, ocs, vnodes[i], i)
+				if prev == null: parent_fiber.child = cf
+				else: prev.sibling = cf
+				prev = cf
+				ocs = ocs.sibling
+			return   # stable -> no structural change -> skip reorder
+		# Full keyed path. Unkeyed children get a NAMESPACED positional key (control-char
+		# prefixed) so an integer key can't collide with a positional index. [audit M1]
+		var key_map := {}
+		var ock := old_first
+		while ock != null:
+			key_map[_fiber_key(ock)] = ock
+			ock = ock.sibling
+		var matched := {}
+		for i in vnodes.size():
+			var vn: RUIVNode = vnodes[i]
+			var old_match: RUIFiber = key_map.get(_vnode_key(vn, i))
+			if old_match != null and (matched.has(old_match) or not old_match.matches(vn)):
+				old_match = null
+			if old_match != null:
+				matched[old_match] = true
+				if old_match.index != i:
+					structural = true   # moved
+			else:
+				structural = true       # new placement
+			var cf := _reconcile(parent_fiber, old_match, vn, i)
+			if prev == null: parent_fiber.child = cf
+			else: prev.sibling = cf
+			prev = cf
+		var ocd := old_first
+		while ocd != null:
+			var nxtd := ocd.sibling
+			if not matched.has(ocd):
+				_delete_fiber(parent_fiber, ocd)
+			ocd = nxtd
+	else:
+		# index (positional) path
+		var oci := old_first
+		for i in vnodes.size():
+			var old_match: RUIFiber = oci
+			if old_match == null or not old_match.matches(vnodes[i]):
+				structural = true       # new placement / type change
+			var cf := _reconcile(parent_fiber, old_match, vnodes[i], i)
+			if prev == null: parent_fiber.child = cf
+			else: prev.sibling = cf
+			prev = cf
+			if oci != null:
+				oci = oci.sibling
+		while oci != null:
+			var nxti := oci.sibling
+			_delete_fiber(parent_fiber, oci)
+			oci = nxti
+
+	# Only re-assert child order when the SET changed (deletions also mark via _delete_fiber).
+	# A frame of pure prop-updates skips the whole O(n) reorder pass. [perf #2]
+	if structural:
+		_mark_reorder(parent_fiber)
+
+## True if the old child chain matches `vnodes` positionally: same count, same key + type
+## at every position. When true, the keyed reconcile can skip the key_map entirely. [perf P2]
+func _keys_stable(old_first: RUIFiber, vnodes: Array) -> bool:
+	var oc := old_first
+	for i in vnodes.size():
+		if oc == null:
+			return false
+		var vn: RUIVNode = vnodes[i]
+		# Inlined key compare + HOST matches() — this scan runs once per element every frame,
+		# so the elided _fiber_key/_vnode_key/matches calls are thousands/frame saved. [perf]
+		var ok = oc.key
+		var vnk = vn.key
+		if ok != null or vnk != null:
+			if ok != vnk:
+				return false
+		elif oc.index != i:        # both unkeyed -> must be the same position
+			return false
+		if vn.kind == RUIVNode.Kind.HOST:
+			if oc.tag != F.Tag.HOST or oc.type != vn.type:
+				return false
+		elif not oc.matches(vn):
+			return false
+		oc = oc.sibling
+	return oc == null   # old list must be exactly the same length
+
+func _delete_fiber(parent_fiber: RUIFiber, old_fiber: RUIFiber) -> void:
+	old_fiber.effect_tag |= F.EFFECT_DELETION
+	parent_fiber.deletions.append(old_fiber)
+	_deletions.append(old_fiber)
+	_mark_reorder(parent_fiber)
+
+## Mark the nearest host (or portal) ancestor so its child order is re-asserted at commit.
+func _mark_reorder(parent_fiber: RUIFiber) -> void:
+	var f := parent_fiber
+	while f != null:
+		if f.tag == F.Tag.PORTAL or f.node != null:   # inlined tag check (hot) [perf P4]
+			_reorder_set[f] = true
+			return
+		f = f.parent
+
+# --------------------------------------------------------------------------
+# Complete phase — create/diff host nodes, build the effect list (post-order)
+# --------------------------------------------------------------------------
+
+func _complete_work(fiber: RUIFiber) -> void:
+	match fiber.tag:
+		F.Tag.HOST:
+			if fiber.node == null:
+				fiber.node = RUIHost.create_node(fiber.type)
+				RUIHost.apply_props(fiber.node, {}, fiber.pending_props)
+				fiber.props = fiber.pending_props
+				fiber.effect_tag |= F.EFFECT_PLACEMENT
+			elif not is_same(fiber.pending_props, fiber.props) and fiber.pending_props != fiber.props:
+				# is_same() is an O(1) identity check: when the parent passed the SAME props dict
+				# object (memoized), skip the deep value compare entirely. Otherwise fall back to
+				# the deep compare so a freshly-built equal dict still bails to no-UPDATE. [perf P3]
+				fiber.effect_tag |= F.EFFECT_UPDATE
+		F.Tag.PORTAL:
+			if fiber.alternate != null and fiber.alternate.portal_target != fiber.portal_target:
+				fiber.effect_tag |= F.EFFECT_PORTAL_RETARGET
+				_reorder_set[fiber] = true   # re-assert child order at the new target [audit M6]
+	if fiber.effect_tag != F.EFFECT_NONE:
+		# inlined _append_effect (hot: runs for every changed element) [perf]
+		fiber.next_effect = null
+		if _first_effect == null:
+			_first_effect = fiber
+		else:
+			_last_effect.next_effect = fiber
+		_last_effect = fiber
+
+# --------------------------------------------------------------------------
+# Commit phase
+# --------------------------------------------------------------------------
+
+func _commit_root() -> void:
+	_is_committing = true
+	RUIDiagnostics.on_commit()
+
+	for d in _deletions:
+		_commit_deletion(d)
+
+	var f := _first_effect
+	while f != null:
+		var tag := f.effect_tag
+		if tag & F.EFFECT_PLACEMENT: _commit_placement(f)
+		if tag & F.EFFECT_UPDATE: _commit_update(f)
+		if tag & F.EFFECT_PORTAL_RETARGET: _commit_portal_retarget(f)
+		if tag & F.EFFECT_LAYOUT: _commit_layout_effects(f)
+		if tag & F.EFFECT_PASSIVE: _pending_passive.append(f)
+		var nxt := f.next_effect
+		f.effect_tag = F.EFFECT_NONE
+		f.next_effect = null
+		f = nxt
+
+	for hp in _reorder_set.keys():
+		_enforce_child_order(hp)
+
+	_root_current = _wip_root
+	_is_committing = false
+
+	_flush_passive()
+	# No per-frame tree-sever: the old current tree IS next frame's reusable buddy pool
+	# (double-buffering). Only genuinely-deleted subtrees are released (in _commit_deletion). [perf #1]
+
+	if not _deferred_updates.is_empty():
+		var deferred := _deferred_updates
+		_deferred_updates = []
+		for entry in deferred:
+			schedule_update_on_fiber(entry[0], entry[1])
+
+func _commit_placement(fiber: RUIFiber) -> void:
+	if fiber.node == null or not is_instance_valid(fiber.node):
+		return
+	var parent_node := _host_parent_node(fiber)
+	if parent_node != null and is_instance_valid(parent_node) and fiber.node.get_parent() != parent_node:
+		parent_node.add_child(fiber.node)
+		RUIDiagnostics.on_placement()
+
+func _commit_update(fiber: RUIFiber) -> void:
+	if fiber.node != null and is_instance_valid(fiber.node):
+		RUIHost.apply_props(fiber.node, fiber.props, fiber.pending_props)
+		fiber.props = fiber.pending_props
+		if RUIDiagnostics.enabled: RUIDiagnostics.on_update()   # skip the call when off [perf]
+
+func _commit_deletion(old_fiber: RUIFiber) -> void:
+	RUIDiagnostics.on_deletion()
+	_null_refs_recursive(old_fiber)
+	_run_cleanups_recursive(old_fiber)
+	_free_host_nodes(old_fiber)
+	_release(old_fiber)   # break cycles so the removed subtree + its buddies free [perf #1]
+
+## Reset any `ref` prop to null for deleted host fibers, so a use_ref box / callback ref
+## doesn't dangle to a freed node (React nulls refs on unmount). [audit C2]
+func _null_refs_recursive(fiber: RUIFiber) -> void:
+	if fiber.props is Dictionary and fiber.props.has("ref"):
+		var r = fiber.props["ref"]
+		if r is Callable and r.is_valid():
+			r.call(null)
+		elif r is Dictionary and r.has("current"):
+			r["current"] = null
+	var c := fiber.child
+	while c != null:
+		_null_refs_recursive(c)
+		c = c.sibling
+
+func _commit_portal_retarget(fiber: RUIFiber) -> void:
+	if fiber.portal_target == null or not is_instance_valid(fiber.portal_target):
+		return
+	var ordered: Array = []
+	_collect_host_children(fiber, ordered)
+	for nd in ordered:
+		if is_instance_valid(nd) and nd.get_parent() != fiber.portal_target:
+			if nd.get_parent() != null:
+				nd.get_parent().remove_child(nd)
+			fiber.portal_target.add_child(nd)
+
+# --------------------------------------------------------------------------
+# Effects
+# --------------------------------------------------------------------------
+
+func _commit_layout_effects(fiber: RUIFiber) -> void:
+	if fiber.state == null:
+		return
+	for e in fiber.state.layout_effects:
+		if e["last_deps"] == null or Hooks._deps_changed(e["last_deps"], e["deps"]):
+			if e["cleanup"] is Callable and e["cleanup"].is_valid():
+				e["cleanup"].call()
+			var ret = e["factory"].call()
+			e["cleanup"] = ret if (ret is Callable and ret.is_valid()) else null
+			e["last_deps"] = e["deps"].duplicate() if e["deps"] is Array else e["deps"]
+
+## Two passes across all collected fibers: every cleanup first, then every setup.
+func _flush_passive() -> void:
+	for fiber in _pending_passive:
+		if fiber.state == null: continue
+		for e in fiber.state.effects:
+			if (e["last_deps"] == null or Hooks._deps_changed(e["last_deps"], e["deps"])) \
+					and e["cleanup"] is Callable and e["cleanup"].is_valid():
+				e["cleanup"].call()
+				e["cleanup"] = null
+	for fiber in _pending_passive:
+		if fiber.state == null: continue
+		for e in fiber.state.effects:
+			if e["last_deps"] == null or Hooks._deps_changed(e["last_deps"], e["deps"]):
+				var ret = e["factory"].call()
+				e["cleanup"] = ret if (ret is Callable and ret.is_valid()) else null
+				e["last_deps"] = e["deps"].duplicate() if e["deps"] is Array else e["deps"]
+	_pending_passive = []
+
+func _run_cleanups(fiber: RUIFiber) -> void:
+	if fiber.state == null:
+		return
+	for arr in [fiber.state.effects, fiber.state.layout_effects]:
+		for e in arr:
+			if e["cleanup"] is Callable and e["cleanup"].is_valid():
+				e["cleanup"].call()
+				e["cleanup"] = null
+
+func _run_cleanups_recursive(fiber: RUIFiber) -> void:
+	_run_cleanups(fiber)
+	var c := fiber.child
+	while c != null:
+		_run_cleanups_recursive(c)
+		c = c.sibling
+	_dispose_fiber_state(fiber)
+
+## Break a (deleted/unmounted) component's state cycles. The state setter/dispatch/
+## on_state_updated lambdas capture `state`, and `state` stores them back → a RefCounted
+## cycle that won't free. Only called on teardown, so the state is no longer shared.
+func _dispose_fiber_state(fiber: RUIFiber) -> void:
+	if fiber.state == null:
+		return
+	var st: RUIComponentState = fiber.state
+	for slot in st.hooks:   # release external subscriptions (use_signal) before dropping slots
+		if slot is Dictionary and slot.get("unsub") is Callable and slot["unsub"].is_valid():
+			slot["unsub"].call()
+	st.on_state_updated = Callable()
+	st.hooks = []
+	st.effects = []
+	st.layout_effects = []
+	st.context_deps = []
+	st.last_output = []
+	st.fiber = null
+	fiber.state = null
+
+# --------------------------------------------------------------------------
+# Context
+# --------------------------------------------------------------------------
+
+func _has_context_changed(fiber: RUIFiber) -> bool:
+	if fiber.state == null:
+		return false
+	for dep in fiber.state.context_deps:
+		if not Hooks._equal(Hooks._resolve_context(fiber, dep["key"]), dep["value"]):
+			return true
+	return false
+
+# --------------------------------------------------------------------------
+# Host-tree helpers
+# --------------------------------------------------------------------------
+
+## Nearest ancestor host node into which `fiber`'s node should be parented (honoring
+## portals and a container's resolved child host).
+func _host_parent_node(fiber: RUIFiber) -> Node:
+	var p := fiber.parent
+	while p != null:
+		if p.is_portal() and p.portal_target != null:
+			return p.portal_target
+		if p.node != null:
+			return RUIHost.resolve_child_host(p.node)
+		p = p.parent
+	return null
+
+func _enforce_child_order(parent_fiber: RUIFiber) -> void:
+	var pnode: Node = null
+	if parent_fiber.is_portal():
+		pnode = parent_fiber.portal_target
+	elif parent_fiber.node != null:
+		pnode = RUIHost.resolve_child_host(parent_fiber.node)
+	if pnode == null or not is_instance_valid(pnode):
+		return
+	var ordered: Array = []
+	_collect_host_children(parent_fiber, ordered)
+	RUIHost.warn_capacity(pnode, ordered.size())
+	for i in ordered.size():
+		var nd: Node = ordered[i]
+		if is_instance_valid(nd) and nd.get_parent() == pnode and pnode.get_child(i) != nd:
+			pnode.move_child(nd, i)
+
+func _collect_host_children(fiber: RUIFiber, out: Array) -> void:
+	var c := fiber.child
+	while c != null:
+		if c.tag == F.Tag.PORTAL:   # inlined tag check [perf P4]
+			pass  # portal children live under portal_target, not here
+		elif c.node != null:
+			out.append(c.node)
+		else:
+			_collect_host_children(c, out)
+		c = c.sibling
+
+func _free_host_nodes(fiber: RUIFiber) -> void:
+	if fiber.node != null and not fiber.is_root():
+		if is_instance_valid(fiber.node):
+			fiber.node.queue_free()
+		return
+	var c := fiber.child
+	while c != null:
+		_free_host_nodes(c)
+		c = c.sibling
+
+## The first child of `fiber`'s child list (or null) — the head of the old sibling chain
+## that `_reconcile_children` walks. Replaces the old per-frame Array materialization. [perf P1]
+func _old_first(fiber: RUIFiber) -> RUIFiber:
+	return fiber.child if fiber != null else null
+
+func _normalize_children(arr) -> Array:
+	if arr == null:
+		return []
+	# Fast path: already a flat array of vnodes (the common case — component output and
+	# explicit child arrays). Skip the flatten + a fresh array allocation. [perf #5]
+	for c in arr:
+		if not (c is RUIVNode):
+			var out: Array = []
+			_flatten_into(arr, out)
+			return out
+	return arr
+
+func _flatten_into(arr, out: Array) -> void:
+	if arr == null:
+		return
+	for c in arr:
+		if c == null:
+			continue
+		if c is Array:
+			_flatten_into(c, out)   # flatten nested arrays of any depth [audit m7]
+		elif c is RUIVNode:
+			out.append(c)
+
+func _to_vnode_array(result) -> Array:
+	if result == null:
+		return []
+	if result is RUIVNode:
+		return [result]
+	if result is Array:
+		return _normalize_children(result)
+	return []
+
+func _vnode_list_equal(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if a[i] != b[i]:
+			return false
+	return true
+
+func _any_keyed(vnodes: Array) -> bool:
+	for vn in vnodes:
+		if vn.key != null:
+			return true
+	return false
+
+## Reconciliation key: the user key, or a namespaced positional key (control-char prefixed
+## so it can never equal a real user key) for unkeyed children.
+func _fiber_key(f: RUIFiber):
+	return f.key if f.key != null else "idx%d" % f.index
+
+func _vnode_key(vn: RUIVNode, idx: int):
+	return vn.key if vn.key != null else "idx%d" % idx
+
+# --------------------------------------------------------------------------
+# Tree lifecycle / teardown (break RefCounted cycles; shared state survives)
+# --------------------------------------------------------------------------
+
+## Break all RefCounted cycles in a no-longer-referenced subtree AND its double-buffer
+## buddies, so it frees. Used on deletion and unmount. With fiber reuse there is no
+## per-frame sever — only genuinely-removed subtrees pass through here. Does NOT follow the
+## root fiber's `sibling` (that points outside the subtree, into the live tree). [perf #1]
+func _release(fiber: RUIFiber) -> void:
+	if fiber == null:
+		return
+	var c := fiber.child
+	while c != null:
+		var nxt := c.sibling
+		_release(c)
+		c = nxt
+	var alt := fiber.alternate
+	fiber.parent = null
+	fiber.child = null
+	fiber.sibling = null
+	fiber.alternate = null
+	fiber.next_effect = null
+	fiber.deletions = []
+	fiber.node = null
+	fiber.state = null
+	if alt != null:   # release the buddy too (its children are buddies of ours, already freed)
+		alt.parent = null
+		alt.child = null
+		alt.sibling = null
+		alt.alternate = null
+		alt.next_effect = null
+		alt.deletions = []
+		alt.node = null
+		alt.state = null
+
+func unmount() -> void:
+	_cancel_pending_tick()
+	if _root_current == null:
+		return
+	var c := _root_current.child
+	while c != null:
+		_null_refs_recursive(c)
+		_run_cleanups_recursive(c)
+		_free_host_nodes(c)
+		c = c.sibling
+	_release(_root_current)
+	_root_current = null
+	_root_vnode = null

@@ -1,0 +1,46 @@
+name: Tests
+
+# Parity with ReactiveUIToolkit's test.yml: run the test suites on every push/PR.
+# Here "tests" = the headless GDScript suites (Godot has no compile step), driven exactly
+# like the local loop: build the class cache once, then run each tests/*.gd script (each
+# quits with a non-zero code on failure, so the step fails).
+
+on:
+  push:
+    branches: [master, main, dev]
+  pull_request:
+    branches: [master, main, dev]
+
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with the Godot version the project targets (project.godot `features`).
+  # 4.3+ is required (FoldableContainer); the suites are otherwise version-agnostic.
+  GODOT_VERSION: "4.4.1"
+
+jobs:
+  headless-tests:
+    name: Headless GDScript tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Godot ${{ env.GODOT_VERSION }} (headless)
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+          include-templates: false
+
+      - name: Build class cache (editor import scan)
+        run: godot --headless --path . --editor --quit || true
+
+      - name: Core reconciler / hooks tests
+        run: godot --headless --path . --script res://tests/core_test.gd
+
+      - name: Style + elements tests
+        run: godot --headless --path . --script res://tests/style_test.gd
+
+      - name: Demo smoke tests
+        run: godot --headless --path . --script res://tests/demos_test.gd
