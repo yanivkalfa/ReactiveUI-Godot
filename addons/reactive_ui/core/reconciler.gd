@@ -355,6 +355,10 @@ func _reconcile(parent_fiber: RUIFiber, old_fiber: RUIFiber, vnode: RUIVNode, id
 		if fiber.tag == F.Tag.ERROR_BOUNDARY:   # inlined is_error_boundary() [perf]
 			fiber.eb_active = old_fiber.eb_active
 			fiber.eb_showing_fallback = old_fiber.eb_showing_fallback
+		# carry the cached apply plan (the size guard rebuilds it if the prop shape changed) [perf]
+		fiber.apply_size = old_fiber.apply_size
+		fiber.apply_special = old_fiber.apply_special
+		fiber.apply_plain = old_fiber.apply_plain
 	else:
 		fiber.node = null
 		fiber.state = null
@@ -365,6 +369,9 @@ func _reconcile(parent_fiber: RUIFiber, old_fiber: RUIFiber, vnode: RUIVNode, id
 		fiber.provided_context = null
 		fiber.eb_active = false
 		fiber.eb_showing_fallback = false
+		fiber.apply_size = -1
+		fiber.apply_special = false
+		fiber.apply_plain = []
 
 	if fiber.tag == F.Tag.FUNCTION and fiber.state == null:   # inlined tag check (hot) [perf P4]
 		var st := RUIComponentState.new()
@@ -488,7 +495,8 @@ func _try_fast_leaf_list(parent_fiber: RUIFiber, old_first: RUIFiber, vnodes: Ar
 		if oc == null:
 			return false
 		var vn: RUIVNode = vnodes[i]
-		if vn.kind != RUIVNode.Kind.HOST or oc.tag != F.Tag.HOST or oc.type != vn.type or oc.key != vn.key:
+		# (oc.tag == HOST is implied by oc.type == vn.type, since only host fibers carry a type.)
+		if vn.kind != RUIVNode.Kind.HOST or oc.type != vn.type or oc.key != vn.key:
 			return false
 		if oc.child != null or not vn.children.is_empty():
 			return false   # must be leaves on both sides
@@ -636,10 +644,52 @@ func _commit_placement(fiber: RUIFiber) -> void:
 		RUIDiagnostics.on_placement()
 
 func _commit_update(fiber: RUIFiber) -> void:
-	if fiber.node != null and is_instance_valid(fiber.node):
-		RUIHost.apply_props(fiber.node, fiber.props, fiber.pending_props)
-		fiber.props = fiber.pending_props
-		if RUIDiagnostics.enabled: RUIDiagnostics.on_update()   # skip the call when off [perf]
+	if fiber.node == null or not is_instance_valid(fiber.node):
+		return
+	var new_props: Dictionary = fiber.pending_props
+	# (Re)build the cached apply plan whenever the prop SHAPE (key count) changes. [perf]
+	if new_props.size() != fiber.apply_size:
+		_build_apply_plan(fiber, new_props)
+	if fiber.apply_special:
+		# Element has (or ever had) events / ref / style / item-model -> full generic apply.
+		RUIHost.apply_props(fiber.node, fiber.props, new_props)
+	else:
+		# LEAN apply: a plain element — just diff + write the known plain keys. No per-frame
+		# re-classification (event/reserved), no unused-feature checks (has_meta/ref/style/item).
+		var node := fiber.node
+		var old_props: Dictionary = fiber.props
+		var plain: Array = fiber.apply_plain
+		for i in plain.size():
+			var k = plain[i]
+			if not new_props.has(k):
+				# a key was swapped without changing the count -> shape changed; rebuild and
+				# apply generically this one frame (the rebuild picks up the new shape).
+				_build_apply_plan(fiber, new_props)
+				RUIHost.apply_props(node, old_props, new_props)
+				break
+			var val = new_props[k]
+			if not old_props.has(k) or old_props[k] != val:
+				RUIHost._set_prop(node, k, val)
+	fiber.props = new_props
+	if RUIDiagnostics.enabled: RUIDiagnostics.on_update()
+
+## Classify a host element's props ONCE: plain prop keys (diffed+written each frame) vs
+## "special" (events / ref / style / item-model -> needs the generic apply). apply_special is
+## STICKY so an element that ever had events/ref/style keeps using the generic path (which
+## correctly disconnects/resets them). [perf: inline-cache apply]
+func _build_apply_plan(fiber: RUIFiber, props: Dictionary) -> void:
+	fiber.apply_size = props.size()
+	var plain: Array = []
+	for k in props:
+		if k == "ref" or k == "style" or k == "items":
+			fiber.apply_special = true
+		elif k == "key" or k == "children":
+			pass
+		elif RUIHost._is_event(k):
+			fiber.apply_special = true
+		else:
+			plain.append(k)
+	fiber.apply_plain = plain   # skip the call when off [perf]
 
 func _commit_deletion(old_fiber: RUIFiber) -> void:
 	RUIDiagnostics.on_deletion()

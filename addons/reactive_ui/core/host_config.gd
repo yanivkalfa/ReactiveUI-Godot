@@ -32,12 +32,12 @@ static func resolve_child_host(node: Node) -> Node:
 static func apply_props(node: Node, old_props: Dictionary, new_props: Dictionary) -> void:
 	# 1. Disconnect events that disappeared (skip entirely if the node has no events). [perf #4]
 	if node.has_meta("__rui_events"):
-		for k in old_props.keys():
+		for k in old_props:   # iterate keys directly — no .keys() array allocation [perf]
 			if _is_event(k) and not new_props.has(k):
 				_disconnect_event(node, k)
 
 	# 2. Apply new / changed props.
-	for k in new_props.keys():
+	for k in new_props:   # iterate keys directly — no .keys() array allocation [perf]
 		if RESERVED.has(k):
 			continue
 		if _is_event(k):

@@ -34,6 +34,13 @@ var props = null                  ## committed props (Dictionary) or null = NEVE
 var pending_props: Dictionary = {}
 var input_children: Array = []    ## child vnodes to reconcile
 
+# --- cached apply plan (inline-cache for the commit/apply hot path) [perf] ---
+# Classifying each prop (event / ref / style / item-model / plain) and checking unused features
+# is recomputed-once and cached here, so a plain element's per-frame apply is just diff+write.
+var apply_size: int = -1          ## props.size() the plan was built for; -1 = rebuild
+var apply_special: bool = false   ## STICKY: ever had events/ref/style/item-model -> use generic apply
+var apply_plain: Array = []       ## the plain (non-reserved, non-event) prop keys to diff+write
+
 # --- host ---
 var node: Node = null
 
