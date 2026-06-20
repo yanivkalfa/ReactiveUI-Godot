@@ -216,8 +216,9 @@ func _perform_unit(fiber: RUIFiber) -> RUIFiber:
 			var alt := fiber.alternate
 			if fiber.input_children.is_empty() and (alt == null or alt.child == null):
 				next = null
+			elif _reconcile_children(fiber, _old_first(alt), fiber.input_children):
+				next = null   # fast-list handled the children in place; don't descend
 			else:
-				_reconcile_children(fiber, _old_first(alt), fiber.input_children)
 				next = fiber.child
 	if not fiber.deletions.is_empty():
 		_has_deletions = true
@@ -249,7 +250,8 @@ func _begin_function(fiber: RUIFiber) -> RUIFiber:
 		out = _render_component(fiber)
 	fiber.subtree_has_updates = false
 	fiber.props = fiber.pending_props
-	_reconcile_children(fiber, _old_first(alt), out)
+	if _reconcile_children(fiber, _old_first(alt), out):
+		return null   # fast-list path handled the children
 	return fiber.child
 
 func _render_component(fiber: RUIFiber) -> Array:
@@ -280,7 +282,8 @@ func _begin_error_boundary(fiber: RUIFiber) -> RUIFiber:
 		children = [fiber.eb_fallback] if fiber.eb_fallback != null else []
 	else:
 		children = fiber.eb_children
-	_reconcile_children(fiber, _old_first(alt), children)
+	if _reconcile_children(fiber, _old_first(alt), children):
+		return null
 	return fiber.child
 
 # --------------------------------------------------------------------------
@@ -375,8 +378,18 @@ func _make_on_state_updated(state: RUIComponentState) -> Callable:
 
 ## Reconcile `child_vnodes` against the OLD child linked-list (starting at `old_first`).
 ## Walks the sibling chain directly — no per-frame Array materialization. [perf P1]
-func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnodes: Array) -> void:
+## Returns TRUE if it took the fast-list path and fully handled the children in place — the
+## caller must then NOT descend (the children are not on the work queue). Returns FALSE for the
+## normal path (caller descends into parent_fiber.child as usual).
+func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnodes: Array) -> bool:
 	var vnodes := _normalize_children(child_vnodes)
+	# FAST-LIST PATH: a stable list of host LEAVES (same count/keys/order, every child a
+	# childless host element) — diff each child's props and effect-list only the CHANGED ones,
+	# reusing the fibers in place. Skips the entire per-child fiber traversal (_reconcile +
+	# _perform_unit + _complete_work). This is the single biggest reconcile win for big dynamic
+	# lists, and the per-row bail-out makes mostly-static lists nearly free. [perf: fast-list]
+	if old_first != null and not vnodes.is_empty() and _try_fast_leaf_list(parent_fiber, old_first, vnodes):
+		return true
 	parent_fiber.child = null
 	if vnodes.is_empty():
 		var oc0 := old_first
@@ -384,7 +397,7 @@ func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnod
 			var nxt0 := oc0.sibling
 			_delete_fiber(parent_fiber, oc0)
 			oc0 = nxt0
-		return
+		return false
 
 	var prev: RUIFiber = null
 	var structural := false   # a child was newly placed or MOVED -> needs reorder [perf #2]
@@ -399,7 +412,7 @@ func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnod
 				else: prev.sibling = cf
 				prev = cf
 				ocs = ocs.sibling
-			return   # stable -> no structural change -> skip reorder
+			return false   # stable -> no structural change -> skip reorder
 		# Full keyed path. Unkeyed children get a NAMESPACED positional key (control-char
 		# prefixed) so an integer key can't collide with a positional index. [audit M1]
 		var key_map := {}
@@ -451,6 +464,58 @@ func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnod
 	# A frame of pure prop-updates skips the whole O(n) reorder pass. [perf #2]
 	if structural:
 		_mark_reorder(parent_fiber)
+	return false
+
+## Did a host fiber's props change since last commit? is_same() is an O(1) identity check
+## (memoized props => no change), else a deep value compare. [perf P3]
+func _props_changed(pending, props) -> bool:
+	if is_same(pending, props):
+		return false
+	return pending != props
+
+## Fast-path for a STABLE list of HOST LEAVES (same count/keys/order, every child a childless
+## host element on BOTH sides). Reuses the child fibers IN PLACE — no buddy swap, no per-child
+## _reconcile/_perform_unit/_complete_work — updating render-scoped fields, diffing props, and
+## adding only the CHANGED rows to the effect list (per-row bail-out). The host nodes persist;
+## changed props are applied in the normal commit pass (two-phase preserved). Returns true iff
+## it handled the whole list; falls back (false) for any non-host/non-leaf/reordered list.
+func _try_fast_leaf_list(parent_fiber: RUIFiber, old_first: RUIFiber, vnodes: Array) -> bool:
+	var n := vnodes.size()
+	# 1. Eligibility scan (read-only): every position must be a childless HOST with matching
+	#    type + key, and the same count.
+	var oc := old_first
+	for i in n:
+		if oc == null:
+			return false
+		var vn: RUIVNode = vnodes[i]
+		if vn.kind != RUIVNode.Kind.HOST or oc.tag != F.Tag.HOST or oc.type != vn.type or oc.key != vn.key:
+			return false
+		if oc.child != null or not vn.children.is_empty():
+			return false   # must be leaves on both sides
+		oc = oc.sibling
+	if oc != null:
+		return false   # old list is longer -> count changed
+	# 2. Reconcile in place. The sibling chain + parent.child are unchanged (stable order).
+	parent_fiber.child = old_first
+	oc = old_first
+	for i in n:
+		var vn: RUIVNode = vnodes[i]
+		oc.parent = parent_fiber
+		oc.index = i
+		oc.effect_tag = F.EFFECT_NONE
+		oc.next_effect = null
+		oc.input_children = vn.children
+		var np = vn.props
+		oc.pending_props = np
+		if _props_changed(np, oc.props):
+			oc.effect_tag = F.EFFECT_UPDATE
+			if _first_effect == null:
+				_first_effect = oc
+			else:
+				_last_effect.next_effect = oc
+			_last_effect = oc
+		oc = oc.sibling
+	return true
 
 ## True if the old child chain matches `vnodes` positionally: same count, same key + type
 ## at every position. When true, the keyed reconcile can skip the key_map entirely. [perf P2]

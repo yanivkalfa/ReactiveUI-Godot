@@ -44,6 +44,15 @@ stress-test-specific; correctness-neutral, all suites green):
 - **Round 3 — call-inlining (GDScript is function-call-overhead bound).** Inlined the vnode
   factory and the hot reconcile/commit call chain (leaf fast-path, effect append, key-compare,
   begin-work). 1500-box reconcile **~23 → ~18 ms** (overhead vs native −22%).
+- **Round 4 — fast-list path (the big structural win).** A stable list of host *leaves* (same
+  count/keys/order, every child a childless host element) now bypasses the entire per-child
+  fiber traversal: child fibers are reused in place and only the *changed* rows are diffed +
+  committed (per-row bail-out, à la `React.memo` + Solid/Svelte fine-grained updates). Cuts
+  reconcile-traversal **8.5 → 3.3 ms** and 1500-box reconcile **~18 → ~12.7 ms** (−31%);
+  throughput roughly doubled (1500 boxes ~38 → ~69 fps headless). Mostly-static lists become
+  nearly free. Backed by deep research into the GDScript interpreter — the remaining gap to
+  native is GDScript interpretation itself; true native parity would need a small batched
+  GDExtension (a documented, optional future step), not a rendering-path change.
 
 ### Notes
 - A typed/pooled props layer was prototyped and measured against the native `Dictionary`;
