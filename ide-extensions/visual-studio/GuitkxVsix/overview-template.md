@@ -1,6 +1,6 @@
 # GUITKX — ReactiveUI for Godot
 
-Editor support for **`.guitkx`**, the JSX-like markup of [ReactiveUI for Godot](https://github.com/reactiveui-godot/reactiveui-godot) — a React-style reactive UI library for Godot 4.x.
+Editor support for **`.guitkx`**, the JSX-like markup of [ReactiveUI for Godot](https://github.com/yanivkalfa/ReactiveUI-Godot) — a React-style reactive UI library for Godot 4.x.
 
 ## Features
 

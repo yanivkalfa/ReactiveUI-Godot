@@ -6,8 +6,8 @@
   },
   "overview": "overview.md",
   "priceCategory": "free",
-  "publisher": "ReactiveUIForGodot",
+  "publisher": "ReactiveUITK",
   "private": false,
   "qna": true,
-  "repo": "https://github.com/reactiveui-godot/reactiveui-godot"
+  "repo": "https://github.com/yanivkalfa/ReactiveUI-Godot"
 }
