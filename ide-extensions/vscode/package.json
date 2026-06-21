@@ -1,0 +1,71 @@
+{
+  "name": "guitkx",
+  "displayName": "GUITKX (ReactiveUI for Godot)",
+  "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence forwarded to Godot's language server.",
+  "version": "0.1.0",
+  "publisher": "reactiveui-godot",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/reactiveui-godot/reactiveui-godot" },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "keywords": ["godot", "gdscript", "reactiveui", "guitkx", "jsx"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "guitkx",
+        "aliases": ["GUITKX", "guitkx"],
+        "extensions": [".guitkx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "guitkx",
+        "scopeName": "source.guitkx",
+        "path": "./syntaxes/guitkx.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.gdscript": "gdscript"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "GUITKX",
+      "properties": {
+        "guitkx.godotLanguageServerPort": {
+          "type": "number",
+          "default": 6005,
+          "description": "TCP port of Godot's built-in GDScript language server (Editor Settings > Network > Language Server). The engine default is 6005."
+        },
+        "guitkx.enableGodotProxy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Forward embedded-GDScript completion/hover to Godot's language server (requires the Godot editor to be running with the project open)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "bundle-server": "node scripts/bundle-server.js",
+    "package": "npm run build && npm run bundle-server && vsce package --no-dependencies -o guitkx.vsix",
+    "publish": "vsce publish --no-dependencies --packagePath guitkx.vsix",
+    "publish:ovsx": "ovsx publish guitkx.vsix",
+    "deploy": "npm run package && npm run publish && npm run publish:ovsx"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.24.0",
+    "ovsx": "^0.9.0",
+    "typescript": "^5.4.0"
+  }
+}

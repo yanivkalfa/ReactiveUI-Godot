@@ -14,11 +14,44 @@
 
 ---
 
+## 0b. RESEARCH VALIDATION (2026-06-21) — corrections from a 3-investigation deep dive
+
+Before any code, three deep investigations were run (Unity compiler blueprint, Unity extensions
+blueprint, Godot/web validation reading Godot's actual C++ LSP source). They **confirm most of this
+plan** and force three corrections, recorded inline below:
+
+- **🔴 D1 was WRONG.** An `EditorImportPlugin` CANNOT make `preload("Foo.guitkx")` return a runnable,
+  hot-reloading GDScript class — Godot's import pipeline is resource-conversion (emits a serialized
+  binary Resource into `.godot/imported/`), not script compilation. **CORRECTED:** the compiler runs
+  from a **`@tool` `EditorPlugin` that watches `EditorFileSystem` and codegens a SIBLING `Foo.gd`
+  source file** (then nudges `EditorFileSystem.update_file()`/`scan()`). The generated `.gd` is a real
+  source file Godot's compiler owns → genuine `.new()`/`render()`/hot-reload. Precedent:
+  `github.com/jacobcoughenour/gdscript_source_generation`. (A `ScriptLanguageExtension` could make the
+  ext load as a script, but only via C++/GDExtension — out of scope for a GDScript-only addon.)
+- **🟡 Control-flow lowering (B.3) corrected:** GDScript lambdas can't hold multi-statement
+  `return`-based control flow, so `@if`/`@for`/`@switch` lower to a **hidden per-directive helper
+  method** (`_render_if_N`/`_render_loop_N`) called inline — NOT an inline IIFE lambda. The `__r`
+  list-build + `append`/`continue` rewrite (`RewriteReturnsForInline`) transfers directly.
+- **🟣 LSP LANGUAGE — REVISED to TypeScript during implementation (supersedes the lean-C# call below).**
+  The research leaned C# *because it assumed reusing the Unity C# `language-lib`*. But the Godot port's
+  compiler/parser is GDScript and the embedded language is GDScript — there is **no C# to reuse**, so a
+  C# LSP would mean porting the parser to C# anyway. Given that, Godot-specific factors flip it to
+  **TypeScript**: VS Code is the primary Godot audience (godot-tools users; VSCodium/Cursor via Open
+  VSX), a Node server ships **zero runtime**, and VS2022 can still drive a Node LSP over stdio
+  (server-language-agnostic, per the research). So: TS LSP server (`ide-extensions/lsp-server/`) + thin
+  VS Code client, adopting Volar's *technique* (whitespace-blanked virtual `.gd` + bidirectional source
+  map) and a TCP proxy to Godot's LSP — in TS, not C#.
+- **🟢 LSP transport confirmed (D2/D3):** proxy to **Godot's GDScript LSP (TCP, port 6005 — NOT 6008,
+  which is godot-tools' own default)**. The LSP accepts in-memory `file://` virtual docs via `didOpen`
+  (full-text sync only); it emits **NO semantic tokens and NO formatting**, so coloring is TextMate-only
+  and markup formatting is ours. Editor must be running; proxy needs robust reconnect. Adopt Volar's
+  *technique* (whitespace-blanked virtual doc + bidirectional source map), not the framework.
+
 ## 0. Strategic decisions (the load-bearing choices, made up front)
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | **The compiler (`.guitkx`→`.gd`) is written in GDScript** and ships as a Godot `EditorImportPlugin` inside the addon. | Self-contained: no .NET/Roslyn/Node needed to *use* guitkx. Rides Godot's free GDScript hot-reload (no HMR subsystem). This is the MVP — guitkx is usable with zero IDE extension installed. |
+| D1 | **The compiler (`.guitkx`→`.gd`) is written in GDScript**, run by a **`@tool` `EditorPlugin` file-watcher** that codegens a SIBLING `.gd` (see 0b — NOT an import plugin). | Self-contained: no .NET/Roslyn/Node needed to *use* guitkx. The sibling `.gd` is a real script → free GDScript hot-reload + inspectable output. This is the MVP — guitkx is usable with zero IDE extension installed. |
 | D2 | **The IDE LSP reuses the C# `language-lib` markup half** (parser/AST/formatter/structural diagnostics — it's language-agnostic, extracts embedded code as raw strings) and **replaces the Roslyn half** with a **GDScript proxy**. | ~60-70% of `language-lib` and ~40-50% of the LSP scaffolding port directly (per research). Rebuilding the parser from scratch is wasted effort. |
 | D3 | **Embedded-GDScript intelligence is delegated to Godot's built-in GDScript Language Server** (Godot ships an LSP over TCP, default `127.0.0.1:6005`). | We do NOT reimplement a GDScript analyzer. We splice a synthetic `.gd` virtual document + a position map and proxy completion/hover/diagnostics to Godot's own LSP — the analog of uitkx's Roslyn `VirtualDocumentGenerator`. |
 | D4 | **Editor scope = VS Code + VS 2022 only.** Rider is out of scope (it's commented-out in uitkx CI too). | Matches what uitkx ships today, per the requirement. |

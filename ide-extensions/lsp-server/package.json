@@ -1,0 +1,26 @@
+{
+  "name": "guitkx-language-server",
+  "version": "0.1.0",
+  "description": "Language server for .guitkx (ReactiveUI for Godot markup): markup intelligence + a proxy that forwards embedded-GDScript requests to Godot's built-in GDScript LSP.",
+  "license": "MIT",
+  "main": "out/server.js",
+  "bin": {
+    "guitkx-language-server": "out/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "test": "tsc -p ./ && node --test out/test/"
+  },
+  "dependencies": {
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}

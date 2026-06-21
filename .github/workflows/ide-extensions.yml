@@ -1,0 +1,58 @@
+name: IDE Extensions
+
+# Builds + tests the .guitkx tooling: the TypeScript language server (unit tests + an end-to-end
+# stdio LSP smoke test) and the VS Code extension (type-check + server bundle). The VS2022 extension
+# needs the VS SDK and is built on Windows with the VS toolchain, so it is not part of this matrix.
+
+on:
+  push:
+    branches: [master, main, dev]
+    paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
+  pull_request:
+    paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  language-server:
+    name: Language server (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide-extensions/lsp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run build
+      - name: Unit tests (scanner / source map / virtual doc / context routing)
+        run: node --test out/test/*.test.js
+      - name: End-to-end LSP smoke test (stdio handshake + markup completion)
+        run: node scripts/smoke.js
+
+  vscode-extension:
+    name: VS Code extension (build + package)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build language server
+        working-directory: ide-extensions/lsp-server
+        run: npm ci && npm run build
+      - name: Build extension
+        working-directory: ide-extensions/vscode
+        run: npm ci && npm run build
+      - name: Bundle server + package .vsix
+        working-directory: ide-extensions/vscode
+        run: |
+          node scripts/bundle-server.js
+          npx --yes @vscode/vsce package --no-dependencies --out guitkx.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guitkx-vsix
+          path: ide-extensions/vscode/guitkx.vsix

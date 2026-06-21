@@ -1,0 +1,79 @@
+# GUITKX IDE tooling
+
+Editor support for `.guitkx` — the JSX-like markup of **ReactiveUI for Godot**. Three layers, one
+shared language server:
+
+```
+grammar/        TextMate grammar (guitkx.tmLanguage.json) + schema (guitkx-schema.json)
+lsp-server/     TypeScript language server (stdio). Markup intelligence + a TCP proxy to Godot's LSP
+vscode/         VS Code extension (grammar + language config + LSP client)
+visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient -> same LSP server)
+```
+
+## How it works
+
+`.guitkx` is two languages in one file: JSX-like **markup** and embedded **GDScript** (setup,
+`{expr}`, `@if`/`@for` conditions). The tooling splits them:
+
+- **Highlighting** — a TextMate grammar (`grammar/guitkx.tmLanguage.json`), self-contained
+  (hand-rolled GDScript leaf rules, no dependency on the godot-tools grammar). Used by both VS Code
+  and VS2022 (VS never drives coloring over LSP, so the grammar is required there too).
+- **Markup intelligence** (tag / attribute / directive completion + hover) — answered locally by the
+  language server from the schema (`grammar/guitkx-schema.json`, embedded in `lsp-server/src/schema.ts`).
+- **Embedded-GDScript intelligence** (completion/hover inside `{expr}`/setup/conditions) — the server
+  builds a synthetic `.gd` **virtual document** with a length-preserving **source map** (Volar's
+  technique, hand-rolled), then **forwards** the request to **Godot's built-in GDScript language
+  server** over TCP (engine default **port 6005**), and maps the result back. Requires the Godot
+  editor to be running with the project open; degrades gracefully (markup features still work) when
+  it is not.
+
+The language server is **TypeScript** (not C#): the Godot port's compiler/parser is GDScript and the
+embedded language is GDScript, so there is no C# language-lib to reuse — and VS Code (the primary
+Godot audience) gets a zero-runtime Node server. VS2022 drives the same server over stdio.
+
+## Build & run
+
+```bash
+# language server
+cd lsp-server && npm install && npm run build && node --test out/test/*.test.js && node scripts/smoke.js
+
+# VS Code extension (dev: F5 in VS Code, or package a .vsix)
+cd ../vscode && npm install && npm run build
+node scripts/bundle-server.js          # copy the built server into ./server
+npx @vscode/vsce package               # -> guitkx-0.1.0.vsix ; also publishable to Open VSX via ovsx
+```
+
+Configure Godot's port in VS Code settings (`guitkx.godotLanguageServerPort`, default 6005) and make
+sure Godot's language server is enabled (Editor Settings → Network → Language Server).
+
+## Publishing
+
+Releases are automated. The changelog source of truth is **`changelog.json`**; per-extension
+`CHANGELOG.md` + the VS2022 `overview.md` are generated from it by `scripts/changelog.mjs`. See
+[VERSIONING.md](VERSIONING.md) for the release process and [PUBLISHING.md](PUBLISHING.md) for manual steps.
+
+- **CI:** `.github/workflows/publish-extensions.yml` (`workflow_dispatch`) — version-gated per extension
+  (skips if the `vscode-v*` / `vs2022-v*` tag exists), publishes the VS Code extension to the **VS Marketplace**
+  + **Open VSX**, and the VS2022 extension via **VsixPublisher**, then tags + uploads artifacts.
+- **Local:** `scripts/publish-extension.ps1` (VS Code) and `scripts/publish-vsix.ps1` (VS2022).
+
+**Secret matrix** (GitHub repo secrets / local `publisher-secrets.json` keys):
+
+| Secret | `publisher-secrets.json` key | Target | How to get it |
+|---|---|---|---|
+| `VSCE_PAT` | `vscePatToken` | VS Code Marketplace | Azure DevOps PAT, *Marketplace → Manage* scope ([docs](https://aka.ms/vscode-create-publisher)) |
+| `OVSX_TOKEN` | `ovsxToken` | Open VSX | open-vsx.org access token |
+| `VS_MARKETPLACE_TOKEN` | `vsMarketplaceToken` | Visual Studio Marketplace | Azure DevOps PAT for the VS Marketplace |
+
+`publisher-secrets.json` is git-ignored — never commit it.
+
+## Status
+
+| Layer | State |
+|-------|-------|
+| Grammar + schema | Done (valid JSON, adapted from the shipping Unity grammar) |
+| Language server — markup completion/hover, structural diagnostics | Done + tested (`npm test`, `smoke.js`) |
+| Language server — Godot GDScript proxy | **Verified live** — round-trips against a running Godot editor (`scripts/live-godot.js`, `live-full.js`) |
+| VS Code extension | Builds; server bundles + serves over stdio (proven); packages to a self-contained `.vsix` |
+| VS2022 extension | ILanguageClient + `.pkgdef` pattern; needs VS2022 + VSSDK to build/verify |
+| Publishing + changelogs | Done — `changelog.json` + `changelog.mjs`, `publish-extensions.yml` (VS Marketplace + Open VSX + VsixPublisher), local publish scripts, version-gating + tagging |

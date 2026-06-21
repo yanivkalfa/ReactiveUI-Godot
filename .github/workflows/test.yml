@@ -44,3 +44,6 @@ jobs:
 
       - name: Demo smoke tests
         run: godot --headless --path . --script res://tests/demos_test.gd
+
+      - name: GUITKX compiler tests (.guitkx -> .gd + codegen mechanism)
+        run: godot --headless --path . --script res://tests/guitkx_test.gd

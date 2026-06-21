@@ -1,0 +1,74 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.Composition;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.VisualStudio.LanguageServer.Client;
+using Microsoft.VisualStudio.Threading;
+using Microsoft.VisualStudio.Utilities;
+using Task = System.Threading.Tasks.Task;
+
+namespace GuitkxVsix
+{
+    // Launches the shared TypeScript language server (the same one VS Code uses) as a Node child
+    // process over stdio. VS2022's LSP client is server-language-agnostic, so the Node server serves
+    // both editors. The server bundle is copied next to this assembly under .\server (see the .csproj
+    // content items). `node` must be on PATH.
+    [ContentType("guitkx")]
+    [Export(typeof(ILanguageClient))]
+    public sealed class GuitkxLanguageClient : ILanguageClient
+    {
+        public string Name => "GUITKX Language Server";
+        public IEnumerable<string> ConfigurationSections => new[] { "guitkx" };
+        public object InitializationOptions => new { godotPort = 6005, enableGodotProxy = true };
+        public IEnumerable<string> FilesToWatch => null;
+        public bool ShowNotificationOnInitializeFailed => true;
+
+        public event AsyncEventHandler<EventArgs> StartAsync;
+        public event AsyncEventHandler<EventArgs> StopAsync;
+
+        public async Task<Connection> ActivateAsync(CancellationToken token)
+        {
+            await Task.Yield();
+            var dir = Path.GetDirectoryName(typeof(GuitkxLanguageClient).Assembly.Location);
+            var serverPath = Path.Combine(dir, "server", "server.js");
+            if (!File.Exists(serverPath))
+                return null;
+
+            var info = new ProcessStartInfo
+            {
+                FileName = "node",
+                Arguments = $"\"{serverPath}\" --stdio",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = dir,
+            };
+
+            var process = new Process { StartInfo = info };
+            if (process.Start())
+                return new Connection(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
+            return null;
+        }
+
+        public async Task OnLoadedAsync()
+        {
+            if (StartAsync != null)
+                await StartAsync.InvokeAsync(this, EventArgs.Empty);
+        }
+
+        public Task OnServerInitializedAsync() => Task.CompletedTask;
+
+        public Task<InitializationFailureContext> OnServerInitializeFailedAsync(ILanguageClientInitializationInfo initializationState)
+        {
+            return Task.FromResult(new InitializationFailureContext
+            {
+                FailureMessage = "GUITKX language server failed to start. Ensure Node.js is installed and on PATH. " +
+                                 initializationState.StatusMessage,
+            });
+        }
+    }
+}

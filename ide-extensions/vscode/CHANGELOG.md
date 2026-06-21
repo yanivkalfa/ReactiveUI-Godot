@@ -1,0 +1,5 @@
+# Changelog
+
+## [0.1.0] - 2026-06-21
+- Initial release. Syntax highlighting and language intelligence for .guitkx markup (ReactiveUI for Godot): a self-contained TextMate grammar that colors both the JSX-like markup and the embedded GDScript; markup completion and hover for host-element tags, structural/common attributes, control-flow directives (@if/@elif/@else/@for/@while/@match/@case/@default) and per-element event handlers, served from the bundled schema; and embedded-GDScript completion/hover forwarded to Godot's built-in GDScript language server (TCP, engine port 6005) through a synthetic virtual .gd document with a length-preserving source map. Structural diagnostics (unbalanced braces) ship today; the Godot proxy degrades gracefully when the editor is not running so the markup features always work.
+- VS Code extension drives the TypeScript language server over stdio; configurable via guitkx.godotLanguageServerPort and guitkx.enableGodotProxy. Packages to a self-contained .vsix (the Node server is bundled, no runtime to install).

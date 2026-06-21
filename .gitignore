@@ -8,3 +8,6 @@
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Publishing secrets (extension marketplace tokens) — never commit
+publisher-secrets.json
