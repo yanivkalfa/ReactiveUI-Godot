@@ -3,9 +3,10 @@
     {
       "date": "2026-06-22",
       "versions": {
-        "vscode": "0.2.3"
+        "vscode": "0.2.3",
+        "vs2022": "0.2.3"
       },
-      "vscode": [
+      "shared": [
         "Formatting now always uses tab indentation for `.guitkx` (the embedded GDScript requires tabs, and the compiler emits tabs), so the markup and the embedded setup no longer mix indentation units — previously, with an editor configured for spaces, a deeper setup line kept its authored tab and produced a \"2 spaces + tab\" indent. Diagnostics: unknown attributes on a host element are now flagged (e.g. a typo'd `te` / `xt` on `<Label>`) with a did-you-mean suggestion, validated against the bundled Godot ClassDB property + signal data; component tags (which take arbitrary props) are not flagged, and the check is skipped when the ClassDB dump is unavailable so it never false-flags.",
         "Formatter configuration: a project `guitkx.config.json` (Prettier-style walk-up, the analogue of ReactiveUIToolKit's `uitkx.config.json`) now overrides the formatter — `printWidth`, `indentStyle` (\"tab\" | \"space\"), `indentSize`, `singleAttributePerLine`, `insertSpaceBeforeSelfClose`. Tab indentation is the default when no config is present."
       ]
