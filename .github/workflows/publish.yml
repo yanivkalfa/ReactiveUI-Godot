@@ -207,7 +207,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Build + bundle language server into the VSIX
+      - name: Build + bundle language server (+ Node runtime) into the VSIX
         if: steps.check.outputs.skip == 'false'
         shell: pwsh
         run: |
@@ -218,6 +218,8 @@ jobs:
           npm ci; node scripts/bundle-server.js
           Pop-Location
           Copy-Item -Recurse -Force ide-extensions/vscode/server ide-extensions/visual-studio/GuitkxVsix/server
+          # Bundle a Node runtime so the VSIX is self-contained (no Node on the user's PATH).
+          & ide-extensions/visual-studio/GuitkxVsix/fetch-node.ps1
 
       - name: Generate overview.md from centralized changelog
         if: steps.check.outputs.skip == 'false'
@@ -257,7 +259,12 @@ jobs:
               Get-ChildItem $tmp -Recurse | ForEach-Object { Write-Host $_.FullName }
               exit 1
             }
-            Write-Host "Verified: VSIX contains $($server.FullName)"
+            $node = Get-ChildItem $tmp -Recurse -Filter "node.exe" | Where-Object { $_.Directory.Name -eq 'server' }
+            if (-not $node) {
+              Write-Host "::error::VSIX is missing the bundled server/node.exe (fetch-node.ps1 did not run or the download failed)."
+              exit 1
+            }
+            Write-Host "Verified: VSIX contains $($server.FullName) + bundled node.exe ($([math]::Round($node.Length/1MB,1)) MB)"
           } finally {
             Remove-Item $zip -Force -ErrorAction SilentlyContinue
             Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue

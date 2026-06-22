@@ -15,7 +15,9 @@ namespace GuitkxVsix
     // Launches the shared TypeScript language server (the same one VS Code uses) as a Node child
     // process over stdio. VS2022's LSP client is server-language-agnostic, so the Node server serves
     // both editors. The server bundle is copied next to this assembly under .\server (see the .csproj
-    // content items). `node` must be on PATH.
+    // content items), and a Windows Node runtime is bundled alongside it as .\server\node.exe so the
+    // extension is self-contained -- no Node on the user's PATH required. We prefer that bundled
+    // runtime and only fall back to a PATH `node` if it is somehow absent.
     [ContentType("guitkx")]
     [Export(typeof(ILanguageClient))]
     public sealed class GuitkxLanguageClient : ILanguageClient
@@ -33,13 +35,18 @@ namespace GuitkxVsix
         {
             await Task.Yield();
             var dir = Path.GetDirectoryName(typeof(GuitkxLanguageClient).Assembly.Location);
-            var serverPath = Path.Combine(dir, "server", "server.js");
+            var serverDir = Path.Combine(dir, "server");
+            var serverPath = Path.Combine(serverDir, "server.js");
             if (!File.Exists(serverPath))
                 return null;
 
+            // Prefer the Node runtime bundled in the VSIX; fall back to `node` on PATH if absent.
+            var bundledNode = Path.Combine(serverDir, "node.exe");
+            var nodeExe = File.Exists(bundledNode) ? bundledNode : "node";
+
             var info = new ProcessStartInfo
             {
-                FileName = "node",
+                FileName = nodeExe,
                 Arguments = $"\"{serverPath}\" --stdio",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
@@ -66,7 +73,8 @@ namespace GuitkxVsix
         {
             return Task.FromResult(new InitializationFailureContext
             {
-                FailureMessage = "GUITKX language server failed to start. Ensure Node.js is installed and on PATH. " +
+                FailureMessage = "GUITKX language server failed to start. The extension bundles its own Node " +
+                                 "runtime (server\\node.exe); if it is missing, install Node.js and put it on PATH. " +
                                  initializationState.StatusMessage,
             });
         }
