@@ -13,7 +13,12 @@
     <RootNamespace>GuitkxVsix</RootNamespace>
     <AssemblyName>GuitkxVsix</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
-    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <!-- This is a pure MEF extension (ILanguageClient + ContentTypeDefinition) with NO VSPackage /
+         registration attributes, and it ships its registration via the static guitkx.pkgdef. So do
+         NOT auto-generate a pkgdef from the assembly -- CreatePkgDef would throw "No Visual Studio
+         registration attribute found" and CreateVsixContainer would then fail (VSSDK1025). Matches
+         ReactiveUIToolKit's UitkxVsix.csproj. [audit] -->
+    <GeneratePkgDefFile>false</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
     <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
