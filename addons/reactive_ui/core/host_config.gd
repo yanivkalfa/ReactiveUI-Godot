@@ -323,7 +323,7 @@ static func warn_capacity(node: Node, count: int) -> void:
 	if node is SplitContainer:
 		limit = 2
 	elif node is ScrollContainer or node is AspectRatioContainer or node is CenterContainer \
-			or node is PanelContainer or node is MarginContainer or node is FoldableContainer:
+			or node is PanelContainer or node is MarginContainer or node.is_class("FoldableContainer"):
 		limit = 1
 	if limit > 0 and count > limit:
 		push_warning("[reactive_ui] %s lays out at most %d child(ren) but got %d — wrap them in a VBox/HBox/Grid. (warned once)" % [node.get_class(), limit, count])
