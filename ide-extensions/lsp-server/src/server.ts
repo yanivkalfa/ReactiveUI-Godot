@@ -29,7 +29,8 @@ import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, loadFormatterConfig } from "./formatGuitkx";
+import { dirname } from "path";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations } from "./workspaceIndex";
@@ -87,11 +88,18 @@ connection.onInitialize((params: InitializeParams) => {
 
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
 
-function formatOpts(_o: { tabSize?: number; insertSpaces?: boolean } | undefined): Partial<FmtOptions> {
-  // .guitkx embeds GDScript, which MUST be tab-indented (and the compiler emits tabs). Force tabs
-  // regardless of the editor's insertSpaces/tabSize: otherwise the markup indents with spaces while a
-  // deeper setup line keeps its authored tab, producing mixed `··\t` indentation (the classic bug).
-  return { indentStyle: "tab" };
+function formatOptsFor(uri: string): Partial<FmtOptions> {
+  // .guitkx embeds GDScript -> default to TAB indentation (the editor's insertSpaces/tabSize is
+  // ignored: a spaces base + the embedded code's authored tabs is the classic mixed-indent bug). A
+  // project guitkx.config.json (walk-up, like Prettier / uitkx.config.json) overrides printWidth /
+  // indentStyle / indentSize / attribute wrapping.
+  let dir = "";
+  try {
+    dir = dirname(uriToProjectPath(uri));
+  } catch {
+    dir = "";
+  }
+  return { indentStyle: "tab", indentSize: 4, ...(dir ? loadFormatterConfig(dir) : {}) };
 }
 
 // In-process markup format (formatGuitkx) + optional gdformat embedded reflow (no-op when absent).
@@ -105,7 +113,7 @@ connection.onDocumentFormatting((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
-  const r = formatFull(src, formatOpts(params.options));
+  const r = formatFull(src, formatOptsFor(params.textDocument.uri));
   if (!r.changed) return [];
   return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: r.text }];
 });
@@ -114,7 +122,7 @@ connection.onDocumentRangeFormatting((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
-  const r = formatFull(src, formatOpts(params.options));
+  const r = formatFull(src, formatOptsFor(params.textDocument.uri));
   if (!r.changed) return [];
   // Whole-doc format, then return the single minimal line-hunk (common prefix/suffix diff). The whole
   // minimal hunk is emitted when it intersects the requested range (it may extend slightly past the

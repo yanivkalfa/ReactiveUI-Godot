@@ -25,8 +25,10 @@ A `.guitkx` toolchain fix, plus the demo gallery rewritten in markup.
   `vscode-languageclient` dependency (so the extension never activated — no formatting / completion
   / hover); adds the `onLanguage:guitkx` activation event, format-on-save defaults, and a "Restart
   Language Server" command; **forces tab indentation** when formatting (markup + embedded GDScript
-  no longer mix tabs/spaces); and **flags unknown host-element attributes** (e.g. a typo'd `te`/`xt`
-  on `<Label>`) with a did-you-mean, validated against the bundled Godot ClassDB data.
+  no longer mix tabs/spaces); **flags unknown host-element attributes** (e.g. a typo'd `te`/`xt`
+  on `<Label>`) with a did-you-mean, validated against the bundled Godot ClassDB data; and reads a
+  project **`guitkx.config.json`** (the analogue of `uitkx.config.json`) for formatter options
+  (`printWidth` / `indentStyle` / `indentSize` / `singleAttributePerLine` / `insertSpaceBeforeSelfClose`).
 
 ## [0.2.0] — 2026-06-22
 

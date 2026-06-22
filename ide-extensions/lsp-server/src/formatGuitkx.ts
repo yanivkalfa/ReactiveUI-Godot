@@ -6,6 +6,8 @@
 
 import { parseMarkup, MarkupNode, Attr } from "./markup";
 import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { existsSync, readFileSync } from "fs";
+import { dirname, join } from "path";
 
 export interface FmtOptions {
   printWidth: number;
@@ -515,4 +517,37 @@ function skipWsNl(src: string, i: number): number {
     if (k === i) return i;
     i = k;
   }
+}
+
+// --- project config: guitkx.config.json (Prettier-style walk-up) — the analogue of uitkx.config.json ---
+// Walk up from `fileDir` to the filesystem root; the first guitkx.config.json's `"formatter"` section
+// overrides the formatter options. Unknown keys are ignored; a malformed file falls back to {}.
+export function loadFormatterConfig(fileDir: string): Partial<FmtOptions> {
+  let dir = fileDir;
+  while (dir) {
+    const candidate = join(dir, "guitkx.config.json");
+    if (existsSync(candidate)) {
+      try {
+        return mapFormatterSection(JSON.parse(readFileSync(candidate, "utf8")).formatter);
+      } catch {
+        return {};
+      }
+    }
+    const parent = dirname(dir);
+    if (!parent || parent === dir) break;
+    dir = parent;
+  }
+  return {};
+}
+
+function mapFormatterSection(f: unknown): Partial<FmtOptions> {
+  if (!f || typeof f !== "object") return {};
+  const r = f as Record<string, unknown>;
+  const o: Partial<FmtOptions> = {};
+  if (typeof r.printWidth === "number") o.printWidth = r.printWidth;
+  if (typeof r.indentSize === "number") o.indentSize = r.indentSize;
+  if (r.indentStyle === "tab" || r.indentStyle === "space") o.indentStyle = r.indentStyle;
+  if (typeof r.singleAttributePerLine === "boolean") o.singleAttributePerLine = r.singleAttributePerLine;
+  if (typeof r.insertSpaceBeforeSelfClose === "boolean") o.insertSpaceBeforeSelfClose = r.insertSpaceBeforeSelfClose;
+  return o;
 }

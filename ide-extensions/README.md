@@ -31,6 +31,35 @@ The language server is **TypeScript** (not C#): the Godot port's compiler/parser
 embedded language is GDScript, so there is no C# language-lib to reuse — and VS Code (the primary
 Godot audience) gets a zero-runtime Node server. VS2022 drives the same server over stdio.
 
+## Formatter configuration (`guitkx.config.json`)
+
+`.guitkx` is **tab-indented by default** (the embedded GDScript requires tabs, and the compiler emits
+tabs). To override the formatter, drop a `guitkx.config.json` at or above the file being formatted
+(Prettier-style walk-up — the first one found, walking up to the filesystem root, wins):
+
+```json
+{
+  "formatter": {
+    "printWidth": 100,
+    "indentStyle": "tab",
+    "indentSize": 4,
+    "singleAttributePerLine": false,
+    "insertSpaceBeforeSelfClose": true
+  }
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `printWidth` | `100` | Soft column limit; a tag's attribute list wraps when the single line would exceed it. |
+| `indentStyle` | `"tab"` | `"tab"` or `"space"`. **Keep `"tab"`** unless you have a reason not to: GDScript + the compiler use tabs, and a `"space"` markup indent can mix with the embedded code's tabs. |
+| `indentSize` | `4` | Spaces per level when `indentStyle` is `"space"` (ignored for tabs). |
+| `singleAttributePerLine` | `false` | Force every attribute onto its own line. |
+| `insertSpaceBeforeSelfClose` | `true` | Emit `<Foo />` (space before `/>`) vs `<Foo/>`. |
+
+The analogue of ReactiveUIToolKit's `uitkx.config.json`. Unknown keys are ignored; a malformed file
+falls back to the defaults. (No config file is needed — the defaults above apply when none is found.)
+
 ## Build & run
 
 ```bash
