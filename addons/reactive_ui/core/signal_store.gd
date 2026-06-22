@@ -16,14 +16,23 @@ func _init(initial = null) -> void:
 func get_value():
 	return _value
 
-## Set a new value; notifies subscribers only if it actually changed (value equality).
+## Set a new value; notifies subscribers when it changes. Change-detection is reference-aware
+## (Object.is / EqualityComparer.Default, matching ReactiveUIToolKit's Signal): value types compare
+## by value, reference types (Array/Dictionary/Object) by IDENTITY — so replacing a collection with a
+## freshly-built equal one DOES notify (different reference), while an in-place mutation that re-sets
+## the SAME reference does not. Build a new collection to signal a change. [audit]
 func set_value(v) -> void:
-	if v == _value:
+	if _value_equal(v, _value):
 		return
 	_value = v
 	for s in _subs.duplicate():   # duplicate: a subscriber may unsubscribe during notify
 		if s is Callable and s.is_valid():
 			s.call(v)
+
+static func _value_equal(a, b) -> bool:
+	if a is Array or a is Dictionary or a is Object or b is Array or b is Dictionary or b is Object:
+		return is_same(a, b)
+	return a == b
 
 ## Functional update: `sig.update(func(old): return old + 1)`.
 func update(fn: Callable) -> void:

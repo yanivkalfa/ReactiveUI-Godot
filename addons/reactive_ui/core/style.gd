@@ -28,6 +28,11 @@ const THEME_CHANNELS := {
 	"colors": "color", "constants": "constant", "fonts": "font",
 	"font_sizes": "font_size", "icons": "icon", "styleboxes": "stylebox",
 }
+## Per-state StyleBox slots (Phase 7.3). Godot retains these natively — no hover/press event wiring.
+## A nested style dict `style={ hover: { bg_color: ... }, pressed: { ... } }` builds a StyleBoxFlat for
+## the matching slot. Available slots vary by control (Button: hover/pressed/disabled/focus; LineEdit:
+## focus/read_only) — requesting one a control lacks warns once.
+const STATE_SLOTS := ["hover", "pressed", "focus", "disabled", "read_only"]
 
 ## Diff `old_style` against `new_style` and apply the delta to `node`.
 static func apply(node: Node, old_style: Dictionary, new_style: Dictionary) -> void:
@@ -40,6 +45,11 @@ static func apply(node: Node, old_style: Dictionary, new_style: Dictionary) -> v
 	if _box_differs(old_style, new_style):
 		_apply_box(node, new_style)
 
+	# 1b. Per-state StyleBox slots (hover/pressed/focus/disabled/read_only).
+	for st in STATE_SLOTS:
+		if old_style.get(st) != new_style.get(st):
+			_apply_state_box(node, st, new_style.get(st))
+
 	# 2. Generic theme channels (inner-diffed per item name).
 	for ch in THEME_CHANNELS:
 		var oldm: Dictionary = old_style.get(ch, {})
@@ -49,11 +59,11 @@ static func apply(node: Node, old_style: Dictionary, new_style: Dictionary) -> v
 
 	# 3. Simple shorthands: reset removed, apply changed.
 	for k in old_style.keys():
-		if new_style.has(k) or k in BOX_KEYS or THEME_CHANNELS.has(k):
+		if new_style.has(k) or k in BOX_KEYS or k in STATE_SLOTS or THEME_CHANNELS.has(k):
 			continue
 		_reset(node, k)
 	for k in new_style.keys():
-		if k in BOX_KEYS or THEME_CHANNELS.has(k):
+		if k in BOX_KEYS or k in STATE_SLOTS or THEME_CHANNELS.has(k):
 			continue
 		if not old_style.has(k) or old_style[k] != new_style[k]:
 			_apply_key(node, k, new_style[k])
@@ -100,6 +110,10 @@ static func _apply_box(node: Control, style: Dictionary) -> void:
 	if not has_box:
 		node.remove_theme_stylebox_override(slot)
 		return
+	node.add_theme_stylebox_override(slot, _build_stylebox(style))
+
+## Build a StyleBoxFlat from the box keys (bg_color/border_*/corner_radius/pad) of a style dict.
+static func _build_stylebox(style: Dictionary) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = style.get("bg_color", Color(0, 0, 0, 0))
 	if style.has("border_width"):
@@ -122,7 +136,22 @@ static func _apply_box(node: Control, style: Dictionary) -> void:
 		sb.content_margin_right = p
 		sb.content_margin_top = p
 		sb.content_margin_bottom = p
-	node.add_theme_stylebox_override(slot, sb)
+	return sb
+
+## Apply (or remove) the per-state StyleBox override for `slot` from a nested style dict.
+static func _apply_state_box(node: Control, slot: String, dict) -> void:
+	if dict == null:
+		node.remove_theme_stylebox_override(slot)
+		return
+	if not (dict is Dictionary):
+		return
+	if not node.has_theme_stylebox(slot):
+		var meta := "__rui_state_w_" + slot
+		if not node.has_meta(meta):
+			push_warning("[reactive_ui] style state '%s' isn't available on %s (Button: hover/pressed/disabled/focus; LineEdit: focus/read_only). (warned once)" % [slot, node.get_class()])
+			node.set_meta(meta, true)
+		return
+	node.add_theme_stylebox_override(slot, _build_stylebox(dict))
 
 static func _primary_stylebox_name(node: Control) -> String:
 	if node is Panel or node is PanelContainer:

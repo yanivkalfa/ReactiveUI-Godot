@@ -23,14 +23,21 @@ static func skip_noncode(src: String, i: int) -> int:
 		while j < n and src[j] != "\n":
 			j += 1
 		return j
-	# string (with optional single-char prefix r/& /^)
+	# string, with optional one-char prefix: r"" (raw), &"" (StringName), ^"" (NodePath),
+	# $"" / %"" (node-path string forms). The prefix only counts at a TOKEN START — not when the
+	# char is itself an operator following a value (e.g. "fmt" % args, a & b, arr[i]^2) — so we
+	# never mis-skip code as a string. Must stay byte-identical with scanner.ts skipNoncode.
 	var q_at := i
-	if c == "r" or c == "&" or c == "^":
-		if i + 1 < n and (src[i + 1] == "\"" or src[i + 1] == "'"):
+	if c == "r" or c == "&" or c == "^" or c == "$" or c == "%":
+		if i + 1 < n and (src[i + 1] == "\"" or src[i + 1] == "'") and (i == 0 or not _is_value_end(src[i - 1])):
 			q_at = i + 1
 	if q_at < n and (src[q_at] == "\"" or src[q_at] == "'"):
 		return _skip_string(src, q_at)
 	return i
+
+# True if `c` can end a value/operand, so a following r/&/^/$/% is an operator, not a string prefix.
+static func _is_value_end(c: String) -> bool:
+	return _is_ident(c) or c == ")" or c == "]" or c == "\"" or c == "'"
 
 ## `i` points at a quote char. Skip the string (handles triple-quoted + escapes). Returns the
 ## index just past the closing quote (or `len` if unterminated).

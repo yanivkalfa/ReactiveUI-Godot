@@ -40,11 +40,28 @@ cd lsp-server && npm install && npm run build && node --test out/test/*.test.js 
 # VS Code extension (dev: F5 in VS Code, or package a .vsix)
 cd ../vscode && npm install && npm run build
 node scripts/bundle-server.js          # copy the built server into ./server
-npx @vscode/vsce package               # -> guitkx-0.1.0.vsix ; also publishable to Open VSX via ovsx
+npx --yes @vscode/vsce package         # -> guitkx.vsix ; also publishable to Open VSX via ovsx
 ```
 
-Configure Godot's port in VS Code settings (`guitkx.godotLanguageServerPort`, default 6005) and make
-sure Godot's language server is enabled (Editor Settings → Network → Language Server).
+`@vscode/vsce` / `ovsx` are NOT project dependencies (they're publishing tools that pull in a large
+Azure/MSAL tree) — the scripts invoke them via `npx`, so a contributor's `npm install` stays small.
+
+**VS2022 extension** (needs VS2022 + the "Visual Studio extension development" workload):
+
+```powershell
+cd lsp-server; npm install; npm run build; cd ..\vscode; npm install; node scripts/bundle-server.js
+Copy-Item -Recurse -Force vscode\server visual-studio\GuitkxVsix\server
+powershell -ExecutionPolicy Bypass -File visual-studio\GuitkxVsix\fetch-node.ps1   # bundles node.exe (~80 MB)
+# then build the VSIX in VS2022 (or msbuild GuitkxVsix.csproj -t:CreateVsixContainer -p:Configuration=Release)
+```
+
+The VS2022 extension is **self-contained**: `fetch-node.ps1` drops a pinned Windows Node runtime into
+`server\node.exe`, and `GuitkxLanguageClient` launches `server\node.exe server.js` — so **end users do
+NOT need Node on PATH** (it falls back to a PATH `node` only if the bundle is somehow missing). This is
+why the VS2022 `.vsix` is ~80 MB. (VS Code needs no bundled Node — it runs the server in its own host.)
+
+Configure Godot's port in VS Code / VS2022 settings (`guitkx.godotLanguageServerPort`, default 6005) and
+make sure Godot's language server is enabled (Editor Settings → Network → Language Server).
 
 ## Publishing
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="GuitkxVsix.reactiveui-godot.7f2a" Version="0.1.0" Language="en-US" Publisher="ReactiveUI for Godot" />
+    <Identity Id="GuitkxVsix.ReactiveUITK" Version="0.2.0" Language="en-US" Publisher="Yaniv Kalfa" />
     <DisplayName>GUITKX (ReactiveUI for Godot)</DisplayName>
     <Description xml:space="preserve">Syntax highlighting and language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover; embedded GDScript is forwarded to Godot's language server.</Description>
     <Tags>godot;gdscript;guitkx;reactiveui;jsx</Tags>

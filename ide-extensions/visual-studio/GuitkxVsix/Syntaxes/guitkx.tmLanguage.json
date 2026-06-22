@@ -209,13 +209,13 @@
     },
     "double-quoted-string": {
       "name": "string.quoted.double.guitkx",
-      "begin": "[rR&^]?\"(?!\"\")",
+      "begin": "[r&^$%]?\"(?!\"\")",
       "end": "\"",
       "patterns": [ { "name": "constant.character.escape.guitkx", "match": "\\\\." } ]
     },
     "single-quoted-string": {
       "name": "string.quoted.single.guitkx",
-      "begin": "[rR&^]?'",
+      "begin": "[r&^$%]?'",
       "end": "'",
       "patterns": [ { "name": "constant.character.escape.guitkx", "match": "\\\\." } ]
     },

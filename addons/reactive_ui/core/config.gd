@@ -12,3 +12,11 @@ extends RefCounted
 
 static var time_slicing := false
 static var frame_budget_ms := 8.0
+
+## Dev diagnostics (Phase 7.0). Default ON in debug builds, OFF in exported games — they
+## push_warning/push_error to surface misuse loudly while developing, and degrade silently
+## in release (the port never throws catchable exceptions; GDScript can't).
+##   enable_hook_validation     — hook-order mismatch detection (hooks in if/loops desync slots)
+##   enable_strict_diagnostics  — state-update-during-render warning
+static var enable_hook_validation := OS.is_debug_build()
+static var enable_strict_diagnostics := OS.is_debug_build()

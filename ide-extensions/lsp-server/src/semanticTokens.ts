@@ -1,0 +1,171 @@
+// textDocument/semanticTokens/full — a THIN additive overlay emitting only what the static TextMate
+// grammar provably cannot decide: tag IDENTITY (host element vs user component vs unknown), @-directive
+// keywords, attribute names, and on_<signal> events. Nothing inside {expr}/setup GDScript (Godot owns
+// that). One linear scan over scanner.ts primitives, delta-encoded per the LSP spec.
+
+import { skipNoncode, skipString, findMatching, isIdent } from "./scanner";
+import { findTag } from "./schema";
+import { markupWindows } from "./formatGuitkx";
+
+export const TOKEN_TYPES = ["class", "type", "keyword", "property", "event"];
+export const TOKEN_MODIFIERS = ["defaultLibrary"];
+const T = { class: 0, type: 1, keyword: 2, property: 3, event: 4 };
+const MOD_DEFAULT_LIBRARY = 1; // bit 0
+
+const DIRECTIVES = new Set(["if", "elif", "else", "for", "while", "match", "case", "default"]);
+
+interface Tok {
+  line: number;
+  char: number;
+  len: number;
+  type: number;
+  mods: number;
+}
+
+/** Build the delta-encoded token data. `isComponent(name)` is the workspace-index membership test. */
+export function buildSemanticTokens(src: string, isComponent: (name: string) => boolean): number[] {
+  const toks: Tok[] = [];
+  const lineStart = [0];
+  for (let i = 0; i < src.length; i++) if (src[i] === "\n") lineStart.push(i + 1);
+  const posOf = (off: number) => {
+    let lo = 0;
+    let hi = lineStart.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStart[mid] <= off) lo = mid;
+      else hi = mid - 1;
+    }
+    return { line: lo, char: off - lineStart[lo] };
+  };
+  const emit = (off: number, len: number, type: number, mods = 0) => {
+    if (len <= 0) return;
+    const p = posOf(off);
+    toks.push({ line: p.line, char: p.char, len, type, mods });
+  };
+
+  // Only scan the markup windows (the return(...) of each component). Everything else — params, setup,
+  // @directive conditions, {expr} bodies — is GDScript where `<` is a comparison, not a tag.
+  for (const w of markupWindows(src)) scanWindow(src, w.start, w.end, emit, isComponent);
+  return encode(toks);
+}
+
+function scanWindow(src: string, start: number, end: number, emit: (off: number, len: number, type: number, mods?: number) => void, isComponent: (name: string) => boolean): void {
+  let i = start;
+  while (i < end) {
+    const k = skipNoncode(src, i);
+    if (k !== i) {
+      i = Math.min(k, end);
+      continue;
+    }
+    const c = src[i];
+    if (c === "(") {
+      // an @directive condition — GDScript, skip it whole
+      const cl = findMatching(src, i);
+      i = cl === -1 || cl >= end ? end : cl + 1;
+      continue;
+    }
+    if (c === "{") {
+      if (isBodyBrace(src, i)) {
+        i++; // control-flow body is markup — enter it
+        continue;
+      }
+      const cl = findMatching(src, i); // child {expr} — GDScript, skip it whole
+      i = cl === -1 || cl >= end ? end : cl + 1;
+      continue;
+    }
+    if (c === "}") {
+      i++; // closing a control-flow body
+      continue;
+    }
+    if (c === "@" && /[A-Za-z]/.test(src[i + 1] || "")) {
+      let p = i + 1;
+      while (p < end && isIdent(src[p])) p++;
+      if (DIRECTIVES.has(src.slice(i + 1, p))) {
+        emit(i, p - i, T.keyword); // colours the leading @ too
+        i = p;
+        continue;
+      }
+    }
+    if (c === "<" && /[A-Za-z_/]/.test(src[i + 1] || "")) {
+      const closing = src[i + 1] === "/";
+      let p = i + (closing ? 2 : 1);
+      const s = p;
+      while (p < end && /[A-Za-z0-9_]/.test(src[p])) p++;
+      const tag = src.slice(s, p);
+      if (tag.length) {
+        if (findTag(tag)) emit(s, p - s, T.type, MOD_DEFAULT_LIBRARY); // host element
+        else if (/^[A-Z]/.test(tag) && isComponent(tag)) emit(s, p - s, T.class); // user component
+        if (!closing) p = scanAttrs(src, p, end, emit);
+        i = p;
+        continue;
+      }
+    }
+    i++;
+  }
+}
+
+// A `{` opens a BODY (markup) — vs a child/attr {expr} (GDScript) — when it follows a `)` (component
+// params or `@if/@for/@while/@match` condition), `@else`/`@default`, or a `component`/`hook`/`module`
+// NAME (paren-less declaration). Shared by enclosingTag + markupDiagnostics + semanticTokens.
+export function isBodyBrace(src: string, bi: number): boolean {
+  let b = bi - 1;
+  while (b >= 0 && /\s/.test(src[b])) b--;
+  if (b < 0) return false;
+  if (src[b] === ")") return true;
+  let s = b;
+  while (s >= 0 && isIdent(src[s])) s--;
+  const w = src.slice(s + 1, b + 1);
+  if (w === "else" || w === "default") return true;
+  if (w.length > 0) {
+    // a decl name with no params: `component X {` / `hook use_x {` / `module M {`
+    let k = s;
+    while (k >= 0 && /\s/.test(src[k])) k--;
+    let ks = k;
+    while (ks >= 0 && isIdent(src[ks])) ks--;
+    const kw = src.slice(ks + 1, k + 1);
+    if (kw === "component" || kw === "hook" || kw === "module") return true;
+  }
+  return false;
+}
+
+function scanAttrs(src: string, i: number, n: number, emit: (off: number, len: number, type: number, mods?: number) => void): number {
+  while (i < n) {
+    while (i < n && /\s/.test(src[i])) i++;
+    if (i >= n) return n;
+    if (src[i] === "/" && src[i + 1] === ">") return i + 2;
+    if (src[i] === ">") return i + 1;
+    const as = i;
+    while (i < n && /[A-Za-z0-9_.\-]/.test(src[i])) i++;
+    const name = src.slice(as, i);
+    if (name) emit(as, i - as, name.startsWith("on_") ? T.event : T.property);
+    else {
+      i++; // not an attr-name char and not a terminator — advance to avoid stalling
+      continue;
+    }
+    while (i < n && /\s/.test(src[i])) i++;
+    if (src[i] === "=") {
+      i++;
+      while (i < n && /\s/.test(src[i])) i++;
+      if (src[i] === '"' || src[i] === "'") i = skipString(src, i);
+      else if (src[i] === "{") {
+        const cl = findMatching(src, i);
+        i = cl === -1 ? n : cl + 1;
+      }
+    }
+  }
+  return n;
+}
+
+function encode(toks: Tok[]): number[] {
+  const data: number[] = [];
+  let prevLine = 0;
+  let prevChar = 0;
+  for (const t of toks) {
+    const dLine = t.line - prevLine;
+    const dChar = dLine === 0 ? t.char - prevChar : t.char;
+    data.push(dLine, dChar, t.len, t.type, t.mods);
+    prevLine = t.line;
+    prevChar = t.char;
+  }
+  return data;
+}

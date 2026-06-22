@@ -1,6 +1,22 @@
 {
   "entries": [
     {
+      "date": "2026-06-22",
+      "versions": {
+        "vscode": "0.2.0",
+        "vs2022": "0.2.0"
+      },
+      "shared": [
+        "Formatter: components whose render is guarded by an early `return null` (e.g. `if not ready: return null` before the real markup return) are now formatted instead of being left verbatim, and the multi-attribute wrap path honors the `insertSpaceBeforeSelfClose` option (it previously always inserted the space).",
+        "Language server: hover and completion inside a `hook` body now map to the correct embedded-GDScript offset (the body is no longer mis-mapped after re-indentation); a `<>...</>` fragment no longer raises a false GUITKX0104 duplicate-key warning across its siblings; and parameter completion is now noncode-aware, so a string default containing a comma or colon (e.g. `label: String = \"a, b\"`) no longer drops the parameters declared after it.",
+        "find-references and rename now use the exact jsx-as-value keyword boundaries the compiler uses (return / else / and only), so they never edit a `<Name` that the compiler reads as a less-than comparison (e.g. after `if`, `in`, `not`, `await`, `yield`, or `or`).",
+        "Control-flow inside an embedded expression that cannot be lowered to an expression (`@while` / `@match`) now reports GUITKX0113 through the compiler-diagnostics sidecar; `@if`/`@elif`/`@else` and `@for` inside a `{expression}` or a lambda now compile correctly (inline ternary / .map)."
+      ],
+      "vscode": [
+        "Fixed file-path resolution on Linux/macOS: go-to-definition and the compiler-diagnostics sidecar no longer drop the leading slash when converting a `file://` URI to a filesystem path (the POSIX path was previously relative, so cross-file reads failed)."
+      ]
+    },
+    {
       "date": "2026-06-21",
       "versions": {
         "vscode": "0.1.0",

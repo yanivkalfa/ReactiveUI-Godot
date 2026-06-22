@@ -2,10 +2,10 @@
   "name": "guitkx",
   "displayName": "GUITKX (ReactiveUI for Godot)",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence forwarded to Godot's language server.",
-  "version": "0.1.0",
-  "publisher": "reactiveui-godot",
+  "version": "0.2.0",
+  "publisher": "ReactiveUITK",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/reactiveui-godot/reactiveui-godot" },
+  "repository": { "type": "git", "url": "https://github.com/yanivkalfa/ReactiveUI-Godot" },
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -44,6 +44,11 @@
           "type": "boolean",
           "default": true,
           "description": "Forward embedded-GDScript completion/hover to Godot's language server (requires the Godot editor to be running with the project open)."
+        },
+        "guitkx.useGdformat": {
+          "type": "boolean",
+          "default": true,
+          "description": "When gdformat (gdscript-toolkit) is installed, also reflow embedded GDScript when formatting a .guitkx. Safe: any change beyond whitespace/quote style is rejected, so it never alters code semantics. Markup formatting works regardless; disable to keep base-indent normalization only."
         }
       }
     }
@@ -53,9 +58,9 @@
     "build": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "bundle-server": "node scripts/bundle-server.js",
-    "package": "npm run build && npm run bundle-server && vsce package --no-dependencies -o guitkx.vsix",
-    "publish": "vsce publish --no-dependencies --packagePath guitkx.vsix",
-    "publish:ovsx": "ovsx publish guitkx.vsix",
+    "package": "npm run build && npm run bundle-server && npx --yes @vscode/vsce package --no-dependencies -o guitkx.vsix",
+    "publish": "npx --yes @vscode/vsce publish --no-dependencies --packagePath guitkx.vsix",
+    "publish:ovsx": "npx --yes ovsx publish guitkx.vsix",
     "deploy": "npm run package && npm run publish && npm run publish:ovsx"
   },
   "dependencies": {
@@ -64,8 +69,6 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.75.0",
-    "@vscode/vsce": "^2.24.0",
-    "ovsx": "^0.9.0",
     "typescript": "^5.4.0"
   }
 }

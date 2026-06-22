@@ -13,6 +13,7 @@ func _run() -> void:
 	await _test_style_apply_and_reset()
 	await _test_theme_channels()
 	await _test_stylebox_builder()
+	await _test_state_styles()
 	await _test_elements_instantiate()
 	print("\n[style_test] %d passed, %d failed" % [_passes, _fails])
 	quit(1 if _fails > 0 else 0)
@@ -28,6 +29,22 @@ func _mount(fn: Callable, props := {}) -> Array:
 	var c := Control.new()
 	root.add_child(c)
 	return [c, ReactiveRoot.create(c, V.fc(fn, props))]
+
+func _test_state_styles() -> void:
+	# Phase 7.3: per-state StyleBox slots (Godot retains hover/pressed/etc. natively).
+	var btn := Button.new()
+	RUIStyle.apply(btn, {}, { "hover": { "bg_color": Color.RED }, "pressed": { "bg_color": Color.BLUE } })
+	_ok(btn.has_theme_stylebox_override("hover"), "hover state stylebox applied to Button")
+	_ok(btn.has_theme_stylebox_override("pressed"), "pressed state stylebox applied to Button")
+	RUIStyle.apply(btn, { "hover": { "bg_color": Color.RED }, "pressed": { "bg_color": Color.BLUE } }, { "pressed": { "bg_color": Color.BLUE } })
+	_ok(not btn.has_theme_stylebox_override("hover"), "removed hover state stylebox")
+	_ok(btn.has_theme_stylebox_override("pressed"), "kept unchanged pressed state stylebox")
+	# a Label has no hover slot -> warn-once + no override (never crashes)
+	var lbl := Label.new()
+	RUIStyle.apply(lbl, {}, { "hover": { "bg_color": Color.RED } })
+	_ok(not lbl.has_theme_stylebox_override("hover"), "Label has no hover slot -> no override")
+	btn.free()
+	lbl.free()
 
 func _test_style_apply_and_reset() -> void:
 	var ctrl := { "set": null }

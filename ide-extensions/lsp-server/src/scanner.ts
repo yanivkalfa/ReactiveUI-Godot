@@ -17,12 +17,19 @@ export function skipNoncode(src: string, i: number): number {
     while (j < n && src[j] !== "\n") j++;
     return j;
   }
+  // string, with optional one-char prefix r"" / &"" / ^"" / $"" / %"", only at a TOKEN START
+  // (not when the char is an operator after a value). Must stay byte-identical with guitkx_lexer.gd.
   let qAt = i;
-  if (c === "r" || c === "R" || c === "&" || c === "^") {
-    if (i + 1 < n && (src[i + 1] === '"' || src[i + 1] === "'")) qAt = i + 1;
+  if (c === "r" || c === "&" || c === "^" || c === "$" || c === "%") {
+    if (i + 1 < n && (src[i + 1] === '"' || src[i + 1] === "'") && (i === 0 || !isValueEnd(src[i - 1]))) qAt = i + 1;
   }
   if (qAt < n && (src[qAt] === '"' || src[qAt] === "'")) return skipString(src, qAt);
   return i;
+}
+
+/** True if `c` can end a value/operand, so a following r/&/^/$/% is an operator, not a string prefix. */
+function isValueEnd(c: string): boolean {
+  return isIdent(c) || c === ")" || c === "]" || c === '"' || c === "'";
 }
 
 /** `i` points at a quote. Skip the string (triple-quoted + escapes). Returns index past close. */

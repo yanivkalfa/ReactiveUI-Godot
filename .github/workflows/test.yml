@@ -7,17 +7,18 @@ name: Tests
 
 on:
   push:
-    branches: [master, main, dev]
+    branches: [master, dev]
   pull_request:
-    branches: [master, main, dev]
+    branches: [master, dev]
 
 permissions:
   contents: read
 
 env:
-  # Keep in sync with the Godot version the project targets (project.godot `features`).
-  # 4.3+ is required (FoldableContainer); the suites are otherwise version-agnostic.
-  GODOT_VERSION: "4.4.1"
+  # CI targets the version the project is verified on (matches local dev). The library still parses on
+  # 4.1+ (FoldableContainer is is_class()/string-guarded, so it degrades gracefully below 4.5), but we
+  # test on the current stable.
+  GODOT_VERSION: "4.7.0"
 
 jobs:
   headless-tests:
@@ -41,6 +42,15 @@ jobs:
 
       - name: Style + elements tests
         run: godot --headless --path . --script res://tests/style_test.gd
+
+      - name: Router foundation tests (path / match / ranker)
+        run: godot --headless --path . --script res://tests/router_match_test.gd
+
+      - name: Router spine tests (routes / outlet / nav / blockers)
+        run: godot --headless --path . --script res://tests/router_spine_test.gd
+
+      - name: Reconciler update / diff tests
+        run: godot --headless --path . --script res://tests/update_test.gd
 
       - name: Demo smoke tests
         run: godot --headless --path . --script res://tests/demos_test.gd
