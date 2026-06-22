@@ -58,9 +58,9 @@
     "build": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "bundle-server": "node scripts/bundle-server.js",
-    "package": "npm run build && npm run bundle-server && vsce package --no-dependencies -o guitkx.vsix",
-    "publish": "vsce publish --no-dependencies --packagePath guitkx.vsix",
-    "publish:ovsx": "ovsx publish guitkx.vsix",
+    "package": "npm run build && npm run bundle-server && npx --yes @vscode/vsce package --no-dependencies -o guitkx.vsix",
+    "publish": "npx --yes @vscode/vsce publish --no-dependencies --packagePath guitkx.vsix",
+    "publish:ovsx": "npx --yes ovsx publish guitkx.vsix",
     "deploy": "npm run package && npm run publish && npm run publish:ovsx"
   },
   "dependencies": {
@@ -69,8 +69,6 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.75.0",
-    "@vscode/vsce": "^2.24.0",
-    "ovsx": "^0.9.0",
     "typescript": "^5.4.0"
   }
 }
