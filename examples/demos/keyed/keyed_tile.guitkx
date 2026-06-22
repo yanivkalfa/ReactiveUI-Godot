@@ -1,0 +1,14 @@
+@class_name DemoKeyedTile
+
+component DemoKeyedTile(id) {
+	var col = use_ref(null)
+	if col["current"] == null:
+		col["current"] = Color(randf() * 0.5 + 0.3, randf() * 0.5 + 0.3, randf() * 0.5 + 0.3)
+	return (
+		<Panel style={ {"bg_color": col["current"], "corner_radius": 6, "min_size": Vector2(54, 54)} }>
+			<Center>
+				<Label text={ str(id) } style={ {"font_size": 22, "font_color": Color.WHITE} } />
+			</Center>
+		</Panel>
+	)
+}

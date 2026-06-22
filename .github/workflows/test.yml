@@ -34,6 +34,9 @@ jobs:
           use-dotnet: false
           include-templates: false
 
+      - name: Compile .guitkx -> sibling .gd (generated output is git-ignored)
+        run: godot --headless --path . --script res://tests/guitkx_build.gd
+
       - name: Build class cache (editor import scan)
         run: godot --headless --path . --editor --quit || true
 

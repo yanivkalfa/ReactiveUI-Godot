@@ -1,0 +1,81 @@
+module DemoStressNativeHooks {
+	## Native counterpart to DemoStressHooks. SAME bouncing-box stress test + physics, but the
+	## boxes are raw ColorRect nodes created and animated DIRECTLY (no V.color_rect, no vnodes,
+	## no reconciler) — the engine's native ceiling, for an in-game A/B against the library
+	## stress test. Only the small FPS/status chrome re-renders each frame; the boxes do not.
+
+	## Returns { fps, elapsed, frames, finished }. The boxes live as raw nodes under `area_ref`.
+	hook use_stress_loop(area_ref: Dictionary, box_count: int, duration: float, running: bool, version: int, set_running: Callable) -> Dictionary {
+		var fps := Hooks.use_state(0.0)
+		var elapsed := Hooks.use_state(0.0)
+		var frames := Hooks.use_state(0)
+		var finished := Hooks.use_state(false)
+		var sim := Hooks.use_ref({})
+		var running_ref := Hooks.use_ref(false)
+		var duration_ref := Hooks.use_ref(10.0)
+		running_ref["current"] = running
+		duration_ref["current"] = duration
+
+		var setup := func():
+			if not running:
+				return Callable()
+			var area = area_ref["current"]
+			if area == null or not area.is_inside_tree():
+				return Callable()
+			var sz: Vector2 = area.size
+			var w: float = sz.x if sz.x > 1 else 600.0
+			var h: float = sz.y if sz.y > 1 else 380.0
+			var boxes := DemoStressHooks.make_boxes(box_count, w, h)
+			# Create the boxes as raw ColorRect nodes directly under the area — NO library.
+			var rects: Array = []
+			for b in boxes:
+				var r := ColorRect.new()
+				r.position = Vector2(b["x"], b["y"])
+				r.size = Vector2(b["size"], b["size"])
+				r.color = b["color"]
+				r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				area.add_child(r)
+				rects.append(r)
+			sim["current"] = { "boxes": boxes, "rects": rects, "last_ms": -1, "total_ms": 0.0, "frames": 0, "elapsed": 0.0, "w": w, "h": h }
+			fps[1].call(0.0); elapsed[1].call(0.0); frames[1].call(0); finished[1].call(false)
+			var cb := func():
+				if not running_ref["current"]:
+					return
+				var s: Dictionary = sim["current"]
+				var now := Time.get_ticks_msec()
+				if s["last_ms"] < 0:
+					s["last_ms"] = now
+					return
+				var dt: float = (now - s["last_ms"]) / 1000.0
+				s["last_ms"] = now
+				s["frames"] += 1
+				s["total_ms"] += dt
+				s["elapsed"] += dt
+				var cur_fps: float = (s["frames"] / s["total_ms"]) if s["total_ms"] > 0 else 0.0
+				if s["elapsed"] >= duration_ref["current"]:
+					fps[1].call(cur_fps); elapsed[1].call(s["elapsed"]); frames[1].call(s["frames"]); finished[1].call(true)
+					set_running.call(false)
+					return
+				# Step physics + write positions DIRECTLY onto the native nodes (no setState/re-render).
+				var stepped := DemoStressHooks.step_boxes(s["boxes"], dt, s["w"], s["h"])
+				s["boxes"] = stepped
+				var rr: Array = s["rects"]
+				for i in rr.size():
+					var nd: ColorRect = rr[i]
+					if is_instance_valid(nd):
+						nd.position = Vector2(stepped[i]["x"], stepped[i]["y"])
+				fps[1].call(cur_fps); elapsed[1].call(s["elapsed"]); frames[1].call(s["frames"])
+			area.get_tree().process_frame.connect(cb)
+			return func():
+				if is_instance_valid(area) and area.is_inside_tree():
+					area.get_tree().process_frame.disconnect(cb)
+				var s = sim["current"]
+				if s is Dictionary and s.has("rects"):
+					for nd in s["rects"]:
+						if is_instance_valid(nd):
+							nd.queue_free()
+		Hooks.use_effect(setup, [version, running])
+
+		return { "fps": fps[0], "elapsed": elapsed[0], "frames": frames[0], "finished": finished[0] }
+	}
+}
