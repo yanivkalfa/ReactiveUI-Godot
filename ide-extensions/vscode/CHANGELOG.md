@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2] - 2026-06-22
+- Fixed the published VSIX shipping without its `vscode-languageclient` runtime dependency (a `vsce package --no-dependencies` bug — there is no bundler in the pipeline, so the flag dropped the dependency), which made the extension fail to activate: no formatting, completion, or hover. The dependency is now bundled. Also added the missing `onLanguage:guitkx` activation event, editor defaults for `.guitkx` (format-on-save + the GUITKX document formatter + tab indentation), and a "Restart Language Server" command.
+
 ## [0.2.1] - 2026-06-22
 - Renamed the extension to just "GUITKX" (it was "GUITKX (ReactiveUI for Godot)", which truncated to "GUITKX (React..." in the editor UI) and added the Godot logo as the extension / marketplace icon.
 

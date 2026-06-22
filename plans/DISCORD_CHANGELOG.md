@@ -1,3 +1,17 @@
+## [0.2.1] - 2026-06-22
+
+### The demo gallery, now in .guitkx — and a VS Code extension that actually turns on
+
+**Every demo is now markup.** The whole `examples/` gallery -- counter, todo, router, the stress tests, all 24 -- is rewritten in `.guitkx` instead of hand-written `V.*` calls, so the demos double as a reference for the markup language. They follow the ReactiveUIToolKit layout: one `component` per file, sub-components as sibling files, and `module` reserved for hook / registry files. The generated `.gd` are git-ignored (the editor regenerates them on save), so the tree shows the source you actually edit.
+
+**The VS Code extension works now.** The published build was shipping without its `vscode-languageclient` dependency (a packaging-flag bug), so it silently failed to start -- no formatting, no completion, no hover. That's fixed, along with the missing "activate on `.guitkx`" trigger and format-on-save defaults. Reinstall **GUITKX 0.2.2** to get language support back.
+
+**Compiler fix.** A `hook` that declares a return type (`-> Array`, `-> Dictionary`) now keeps it in the generated GDScript, so `var xs := use_thing()` infers its type instead of failing to compile.
+
+Verified on Godot 4.7 -- full suite green: **core 91 / style 25 / router 18+37 / demos 28 / update / guitkx**.
+
+---
+
 ## [0.2.0] - 2026-06-22
 
 ### A real router, more runtime breadth, and a project-wide bug sweep
