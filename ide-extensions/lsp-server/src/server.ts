@@ -87,9 +87,11 @@ connection.onInitialize((params: InitializeParams) => {
 
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
 
-function formatOpts(o: { tabSize?: number; insertSpaces?: boolean } | undefined): Partial<FmtOptions> {
-  if (!o) return {};
-  return { indentStyle: o.insertSpaces ? "space" : "tab", indentSize: o.tabSize || 4 };
+function formatOpts(_o: { tabSize?: number; insertSpaces?: boolean } | undefined): Partial<FmtOptions> {
+  // .guitkx embeds GDScript, which MUST be tab-indented (and the compiler emits tabs). Force tabs
+  // regardless of the editor's insertSpaces/tabSize: otherwise the markup indents with spaces while a
+  // deeper setup line keeps its authored tab, producing mixed `··\t` indentation (the classic bug).
+  return { indentStyle: "tab" };
 }
 
 // In-process markup format (formatGuitkx) + optional gdformat embedded reflow (no-op when absent).
@@ -658,6 +660,22 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
           });
         }
       }
+      // unknown ATTRIBUTE on a host element — only when the ClassDB dump is loaded (else we have no
+      // authoritative property list and would false-flag). Component tags take arbitrary props, so skip.
+      const hostTd = findTag(tag.tagName);
+      if (hostTd && hasDump()) {
+        const valid = validHostAttrs(hostTd.godotClass);
+        for (const a of tag.attrs) {
+          if (valid.has(a.name)) continue;
+          const sugg = closestAttr(a.name, hostTd.godotClass);
+          diags.push({
+            severity: DiagnosticSeverity.Warning,
+            range: { start: doc.positionAt(a.start), end: doc.positionAt(a.end) },
+            message: `GUITKX0107: unknown attribute '${a.name}' on <${tag.tagName}>` + (sugg ? `. Did you mean '${sugg}'?` : "."),
+            source: "guitkx",
+          });
+        }
+      }
       if (!tag.selfClosing) scopes.push(new Set()); // enter child scope
       i = tag.next;
       continue;
@@ -666,6 +684,11 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
   }
 }
 
+interface TagAttr2 {
+  name: string;
+  start: number;
+  end: number;
+}
 interface TagInfo2 {
   next: number;
   selfClosing: boolean;
@@ -675,6 +698,7 @@ interface TagInfo2 {
   tagName: string;
   nameStart: number;
   nameEnd: number;
+  attrs: TagAttr2[];
 }
 
 function readTag(src: string, lt: number, end: number): TagInfo2 {
@@ -686,14 +710,17 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
   let keyLiteral: string | null = null;
   let keyStart = lt;
   let keyEnd = lt;
+  const attrs: TagAttr2[] = [];
   while (i < end) {
     while (i < end && /\s/.test(src[i])) i++;
-    if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd };
-    if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd };
+    if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+    if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (i >= end) break;
     const an = i;
     while (i < end && /[A-Za-z0-9_.\-]/.test(src[i])) i++;
     const name = src.slice(an, i);
+    const aNameEnd = i;
+    if (name !== "") attrs.push({ name, start: an, end: aNameEnd });
     while (i < end && /\s/.test(src[i])) i++;
     if (src[i] === "=") {
       i++;
@@ -715,7 +742,33 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
       i++;
     }
   }
-  return { next: end, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd };
+  return { next: end, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+}
+
+// Valid attribute names for a HOST element: the structural attrs (key/ref/style) + every settable
+// Control property of its godotClass + its `on_<signal>` events, from the bundled ClassDB dump.
+function validHostAttrs(godotClass: string): Set<string> {
+  const s = new Set<string>();
+  for (const a of STRUCTURAL_ATTRS) s.add(a.name);
+  for (const p of classProperties(godotClass)) s.add(p.name);
+  for (const sig of classSignals(godotClass)) s.add("on_" + sig.name);
+  return s;
+}
+
+// Closest valid attribute (edit-distance <= 2) of a host element, for an unknown-attribute did-you-mean.
+function closestAttr(name: string, godotClass: string): string | null {
+  let best: string | null = null;
+  let bestD = 3;
+  for (const cand of validHostAttrs(godotClass)) {
+    if (cand === name) return null;
+    if (Math.abs(cand.length - name.length) > 2) continue;
+    const d = levenshtein(name, cand);
+    if (d < bestD) {
+      bestD = d;
+      best = cand;
+    }
+  }
+  return bestD <= 2 ? best : null;
 }
 
 // Closest known tag (host element or indexed component) within edit-distance 2, for did-you-mean.
