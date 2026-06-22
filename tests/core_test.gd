@@ -19,9 +19,14 @@ func _run() -> void:
 	await _test_reducer_and_memo()
 	await _test_layout_effect()
 	await _test_signal()
+	await _test_signal_key()
+	await _test_text_children()
+	await _test_memo_eq()
+	await _test_suspense()
 	await _test_router()
 	await _test_tween()
 	await _test_diagnostics()
+	await _test_hook_diagnostics()
 	await _test_item_list()
 	await _test_root_node()
 	await _test_tree()
@@ -29,7 +34,77 @@ func _run() -> void:
 	await _test_context_survives_bailout()
 	await _test_ref_null_on_unmount()
 	await _test_router_context_split()
+	await _test_deferred_value()
+	await _test_media_and_animate()
+	await _test_item_model_adapters()
+	await _test_classes_stylesheet()
+	await _test_classes_lean_path()
+	await _test_reference_equality()
+	await _test_signal_rebind()
 	print("\n[core_test] %d passed, %d failed" % [_passes, _fails])
+
+func _test_classes_lean_path() -> void:
+	# [audit #1] A `classes`-only element (no inline style / events / ref) must take the GENERIC
+	# apply path so the resolved class style is (re)applied and node.set("classes",...) never fires.
+	RUIStyleSheet.register("c_a", { "font_color": Color(1, 0, 0) })
+	RUIStyleSheet.register("c_b", { "font_color": Color(0, 0, 1) })
+	var ctl := { "set": null }
+	var comp := func(_p, _c):
+		var s = Hooks.use_state(["c_a"])
+		ctl["set"] = s[1]
+		return V.button({ "classes": s[0], "text": "x" })
+	var m := _mount(comp)
+	await process_frame
+	var btn: Button = m[0].get_child(0)
+	_ok(btn.get_theme_color("font_color") == Color(1, 0, 0), "classes-only: c_a applied red, got %s" % str(btn.get_theme_color("font_color")))
+	ctl["set"].call(["c_b"])
+	await process_frame
+	await process_frame
+	_ok(btn.get_theme_color("font_color") == Color(0, 0, 1), "classes-only re-render: c_b applied blue (lean path didn't crash/skip), got %s" % str(btn.get_theme_color("font_color")))
+	RUIStyleSheet.clear()
+	m[1].unmount()
+	m[0].queue_free()
+
+func _test_reference_equality() -> void:
+	# [audit #10] setState with a fresh, structurally-equal Array must still re-render (Object.is).
+	var renders := { "n": 0 }
+	var ctl := { "set": null }
+	var comp := func(_p, _c):
+		renders["n"] += 1
+		var s = Hooks.use_state([1, 2, 3])
+		ctl["set"] = s[1]
+		return V.label({ "text": str(s[0].size()) })
+	var m := _mount(comp)
+	await process_frame
+	var first: int = renders["n"]
+	ctl["set"].call([1, 2, 3])   # NEW array, equal content -> should re-render (identity differs)
+	await process_frame
+	await process_frame
+	_ok(renders["n"] == first + 1, "new equal array re-renders (ref-equality), renders %d -> %d" % [first, renders["n"]])
+	m[1].unmount()
+	m[0].queue_free()
+
+func _test_signal_rebind() -> void:
+	# [audit #2] use_signal must re-bind to a NEW selector across renders (not freeze the mount one).
+	var sig := RUISignal.new({ "a": 10, "b": 20 })
+	var ctl := { "set_key": null }
+	var seen := { "v": null }
+	var comp := func(_p, _c):
+		var ks = Hooks.use_state("a")
+		ctl["set_key"] = ks[1]
+		var key: String = ks[0]
+		var v = Hooks.use_signal(sig, func(d): return d.get(key))
+		seen["v"] = v
+		return V.label({ "text": str(v) })
+	var m := _mount(comp)
+	await process_frame
+	_ok(seen["v"] == 10, "use_signal selects 'a' = 10, got %s" % str(seen["v"]))
+	ctl["set_key"].call("b")   # change the selector key prop -> hook must re-bind and select 'b'
+	await process_frame
+	await process_frame
+	_ok(seen["v"] == 20, "use_signal re-bound to new selector 'b' = 20, got %s" % str(seen["v"]))
+	m[1].unmount()
+	m[0].queue_free()
 	quit(1 if _fails > 0 else 0)
 
 func _ok(cond: bool, msg: String) -> void:
@@ -47,6 +122,112 @@ func _mount(render_fn: Callable, props := {}) -> Array:
 	return [c, app]
 
 # --------------------------------------------------------------------------
+
+func _test_suspense() -> void:
+	# Phase 7.4: a Suspense boundary shows fallback until an awaited signal fires, then its children.
+	var emitter := RefCounted.new()
+	emitter.add_user_signal("ready")
+	var sig := Signal(emitter, "ready")
+	var comp := func(_p, _ch):
+		return V.suspense({ "fallback": V.label({ "text": "loading" }), "ready_signal": sig }, [V.label({ "text": "loaded" })])
+	var m := _mount(comp)
+	await process_frame   # passive effect runs -> the signal driver is set up
+	_ok(m[0].get_child(0).text == "loading", "suspense shows fallback initially, got '%s'" % m[0].get_child(0).text)
+	emitter.emit_signal("ready")
+	await process_frame
+	await process_frame
+	_ok(m[0].get_child(0).text == "loaded", "suspense shows children after the signal fired, got '%s'" % m[0].get_child(0).text)
+
+func _test_memo_eq() -> void:
+	# Phase 7.3: V.memo with a custom __memo_eq that always reports "equal" -> the child never
+	# re-renders even though its `v` prop changes.
+	var renders := { "n": 0 }
+	var ctrl := { "set": null }
+	var inner := func(_p, _ch):
+		renders["n"] += 1
+		return V.label({ "text": "x" })
+	var parent := func(_p, _ch):
+		var s = Hooks.use_state(0)
+		ctrl["set"] = s[1]
+		return V.memo(inner, { "v": s[0], "__memo_eq": func(_o, _new): return true })
+	_mount(parent)
+	_ok(renders["n"] == 1, "memo child rendered once on mount")
+	ctrl["set"].call(1)
+	await process_frame
+	await process_frame
+	_ok(renders["n"] == 1, "memo child did NOT re-render (custom __memo_eq said equal), got %d" % renders["n"])
+
+func _test_text_children() -> void:
+	# Phase 7.2: raw String children auto-wrap to a text Label instead of being silently dropped.
+	var comp := func(_p, _ch):
+		return V.vbox({}, ["hello", V.button({ "text": "b" }), "world"])
+	var m := _mount(comp)
+	var vbox: Node = m[0].get_child(0)
+	_ok(vbox.get_child_count() == 3, "vbox has 3 children (2 text + 1 button), got %d" % vbox.get_child_count())
+	_ok(vbox.get_child(0) is Label and vbox.get_child(0).text == "hello", "first String child rendered as Label 'hello'")
+	_ok(vbox.get_child(2) is Label and vbox.get_child(2).text == "world", "third String child rendered as Label 'world'")
+	# V.text factory + a component returning a bare String
+	var m2 := _mount(func(_p, _ch): return "bare")
+	_ok(m2[0].get_child(0) is Label and m2[0].get_child(0).text == "bare", "component returning a bare String renders a Label")
+
+func _test_signal_key() -> void:
+	# Phase 7.1: a process-wide keyed signal shared by two independent components.
+	RUISignals.clear()
+	var renders := { "a": 0, "b": 0 }
+	var comp_a := func(_p, _ch):
+		renders["a"] += 1
+		return V.label({ "text": str(Hooks.use_signal_key("counter", 10)) })
+	var comp_b := func(_p, _ch):
+		renders["b"] += 1
+		return V.label({ "text": str(Hooks.use_signal_key("counter", 10)) })
+	_mount(comp_a)
+	_mount(comp_b)
+	_ok(renders["a"] == 1 and renders["b"] == 1, "both keyed components mounted once")
+	var sig := RUISignals.get_or_create("counter")
+	_ok(sig.get_value() == 10, "shared keyed signal carries the initial value, got %s" % str(sig.get_value()))
+	sig.set_value(20)   # updating the shared store re-renders every reader
+	await process_frame
+	await process_frame
+	_ok(renders["a"] == 2 and renders["b"] == 2, "both readers re-rendered on keyed update, got a=%d b=%d" % [renders["a"], renders["b"]])
+	RUISignals.clear()
+
+func _test_hook_diagnostics() -> void:
+	# Phase 7.0 dev diagnostics: hook-order validation + state-update-in-render guard, captured via
+	# RUIDiagnostics.messages (push_error/warning aren't interceptable headlessly).
+	var _hv := RUIConfig.enable_hook_validation
+	var _sd := RUIConfig.enable_strict_diagnostics
+	RUIConfig.enable_hook_validation = true
+	RUIConfig.enable_strict_diagnostics = true
+	RUIDiagnostics.capture = true
+	RUIDiagnostics.clear_messages()
+	# render 1 primes the hook order: state, state, effect
+	var st := RUIComponentState.new()
+	Hooks._begin(st); Hooks.use_state(0); Hooks.use_state(1); Hooks.use_effect(func(): return null, []); Hooks._end()
+	_ok(RUIDiagnostics.messages.is_empty(), "first render primes hook order with no diagnostic")
+	# render 2 drops the conditional 2nd use_state -> order mismatch
+	Hooks._begin(st); Hooks.use_state(0); Hooks.use_effect(func(): return null, []); Hooks._end()
+	_ok(RUIDiagnostics.messages.any(func(m): return "[Hooks][order]" in m), "hook-order mismatch detected, got %s" % str(RUIDiagnostics.messages))
+
+	# state-update-during-render guard
+	RUIDiagnostics.clear_messages()
+	var st2 := RUIComponentState.new()
+	Hooks._begin(st2)
+	var sv: Array = Hooks.use_state(0)
+	sv[1].call(1)   # setter invoked while is_rendering -> strict warning
+	Hooks._end()
+	_ok(RUIDiagnostics.messages.any(func(m): return "[Hooks][Strict]" in m), "state-set-in-render warned, got %s" % str(RUIDiagnostics.messages))
+
+	# silence when the flags are off (a different hook order must NOT warn)
+	RUIConfig.enable_hook_validation = false
+	RUIConfig.enable_strict_diagnostics = false
+	RUIDiagnostics.clear_messages()
+	var st3 := RUIComponentState.new()
+	Hooks._begin(st3); Hooks.use_state(0); Hooks._end()
+	Hooks._begin(st3); Hooks.use_effect(func(): return null); Hooks._end()
+	_ok(RUIDiagnostics.messages.is_empty(), "no diagnostics emitted when flags are off, got %s" % str(RUIDiagnostics.messages))
+	RUIDiagnostics.capture = false
+	RUIConfig.enable_hook_validation = _hv
+	RUIConfig.enable_strict_diagnostics = _sd
 
 func _test_effects() -> void:
 	var log: Array = []
@@ -480,5 +661,106 @@ func _test_router_context_split() -> void:
 	await process_frame
 	await process_frame
 	_ok(nav_renders["n"] == 1, "nav-only did NOT re-render on location change (split contexts), got %d" % nav_renders["n"])
+	m[1].unmount()
+	m[0].queue_free()
+
+func _test_deferred_value() -> void:
+	# Phase 7.10: use_deferred_value returns the previous value on the render where it changes,
+	# then commits the new value on a low-priority next-frame tick.
+	var ctl := { "set": null }
+	var seen := { "now": -1, "deferred": -1 }
+	var comp := func(_p, _c):
+		var st := Hooks.use_state(0)
+		ctl["set"] = st[1]
+		var d = Hooks.use_deferred_value(st[0])
+		seen["now"] = st[0]
+		seen["deferred"] = d
+		return V.label({ "text": "%d/%d" % [st[0], d] })
+	var m := _mount(comp)
+	await process_frame
+	_ok(seen["now"] == 0 and seen["deferred"] == 0, "deferred initial == value (0/0), got %d/%d" % [seen["now"], seen["deferred"]])
+	ctl["set"].call(5)
+	await process_frame
+	_ok(seen["now"] == 5 and seen["deferred"] == 0, "urgent value updates, deferred lags (5/0), got %d/%d" % [seen["now"], seen["deferred"]])
+	await process_frame
+	await process_frame
+	_ok(seen["deferred"] == 5, "deferred catches up to 5, got %d" % seen["deferred"])
+	m[1].unmount()
+	m[0].queue_free()
+
+func _test_item_model_adapters() -> void:
+	# Phase 7.11: TabBar + OptionButton via the generalized item-model registry, with selection
+	# preserved by item identity across a re-render that changes the items array.
+	var ctrl := { "tabs": null, "opts": null }
+	var comp := func(_p, _c):
+		var ts := Hooks.use_state(["One", "Two", "Three"])
+		var os2 := Hooks.use_state([{ "id": "a", "text": "Alpha" }, { "id": "b", "text": "Beta" }])
+		ctrl["tabs"] = ts[1]
+		ctrl["opts"] = os2[1]
+		return V.vbox({}, [
+			V.tab_bar({ "items": ts[0] }),
+			V.option_button({ "items": os2[0] }),
+		])
+	var m := _mount(comp)
+	await process_frame
+	var tb: TabBar = m[0].get_child(0).get_child(0)
+	var ob: OptionButton = m[0].get_child(0).get_child(1)
+	_ok(tb.tab_count == 3, "tab_bar built 3 tabs, got %d" % tb.tab_count)
+	_ok(ob.item_count == 2, "option_button built 2 items, got %d" % ob.item_count)
+	# Select tab "Two" + option "Beta", then prepend an item: selection should follow identity.
+	tb.current_tab = 1
+	ob.select(1)
+	ctrl["tabs"].call(["Zero", "One", "Two", "Three"])
+	ctrl["opts"].call([{ "id": "z", "text": "Zed" }, { "id": "a", "text": "Alpha" }, { "id": "b", "text": "Beta" }])
+	await process_frame
+	await process_frame
+	_ok(tb.tab_count == 4 and tb.get_tab_title(tb.current_tab) == "Two", "tab selection followed identity after prepend, got '%s'" % tb.get_tab_title(tb.current_tab))
+	_ok(ob.item_count == 3 and ob.get_item_text(ob.selected) == "Beta", "option selection followed identity, got '%s'" % ob.get_item_text(ob.selected))
+	m[1].unmount()
+	m[0].queue_free()
+
+func _test_classes_stylesheet() -> void:
+	# Phase 7.11: `classes` resolve against RUIStyleSheet and merge (inline wins).
+	RUIStyleSheet.register("card", { "bg_color": Color(0.1, 0.2, 0.3), "corner_radius": 8 })
+	RUIStyleSheet.register("danger", { "font_color": Color(1, 0, 0) })
+	var comp := func(_p, _c):
+		return V.button({ "classes": ["card", "danger"], "style": { "font_color": Color(0, 1, 0) }, "text": "x" })
+	var m := _mount(comp)
+	await process_frame
+	var btn: Button = m[0].get_child(0)
+	# danger sets red, inline overrides to green -> inline wins.
+	_ok(btn.get_theme_color("font_color") == Color(0, 1, 0), "inline style overrides class style, got %s" % str(btn.get_theme_color("font_color")))
+	_ok(btn.has_theme_stylebox_override("normal"), "card class applied a stylebox (bg_color/corner_radius)")
+	RUIStyleSheet.clear()
+	m[1].unmount()
+	m[0].queue_free()
+
+func _test_media_and_animate() -> void:
+	# Phase 7.10: V.audio mounts an AudioStreamPlayer (non-Control node), and use_sfx / use_animate
+	# wire up without crashing (smoke). A null SFX stream is a safe no-op.
+	var ref := { "current": null }
+	var played := { "n": 0 }
+	var comp := func(_p, _c):
+		var sfx := Hooks.use_sfx()
+		Hooks.use_animate(ref, [{ "property": "modulate:a", "to": 1.0, "from": 0.0, "duration": 0.05 }], true, [])
+		Hooks.use_effect(func():
+			sfx.call(null)   # null stream -> safe no-op
+			played["n"] += 1
+			return null
+		, [])
+		return V.vbox({}, [
+			V.color_rect({ "ref": ref, "custom_minimum_size": Vector2(8, 8) }),
+			V.audio({ "volume_db": -6.0 }),
+		])
+	var m := _mount(comp)
+	await process_frame
+	await process_frame
+	var has_audio := false
+	for ch in m[0].get_child(0).get_children():
+		if ch is AudioStreamPlayer:
+			has_audio = true
+	_ok(has_audio, "V.audio mounted an AudioStreamPlayer node under the VBox")
+	_ok(played["n"] == 1, "use_sfx callable invoked safely (no crash on null stream)")
+	_ok(ref["current"] != null and ref["current"] is ColorRect, "use_animate target ref populated")
 	m[1].unmount()
 	m[0].queue_free()

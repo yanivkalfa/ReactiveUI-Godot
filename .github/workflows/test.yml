@@ -7,7 +7,9 @@ name: Tests
 
 on:
   push:
+    branches: [master, dev]
   pull_request:
+    branches: [master, dev]
 
 permissions:
   contents: read
@@ -39,6 +41,15 @@ jobs:
 
       - name: Style + elements tests
         run: godot --headless --path . --script res://tests/style_test.gd
+
+      - name: Router foundation tests (path / match / ranker)
+        run: godot --headless --path . --script res://tests/router_match_test.gd
+
+      - name: Router spine tests (routes / outlet / nav / blockers)
+        run: godot --headless --path . --script res://tests/router_spine_test.gd
+
+      - name: Reconciler update / diff tests
+        run: godot --headless --path . --script res://tests/update_test.gd
 
       - name: Demo smoke tests
         run: godot --headless --path . --script res://tests/demos_test.gd

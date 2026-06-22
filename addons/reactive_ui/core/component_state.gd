@@ -17,3 +17,9 @@ var context_deps: Array = []            ## [{key, value}] recorded this render (
 var on_state_updated: Callable          ## () -> reconciler.schedule_update_on_fiber(fiber, null)
 var is_rendering := false
 var last_output: Array = []             ## cached render output (vnodes) — reused on bailout
+
+# --- dev diagnostics (Phase 7.0; populated only when RUIConfig.enable_hook_validation) ---
+var hook_log: Array = []                ## ordered hook kinds recorded THIS render (transient)
+var hook_signatures: Array = []         ## primed hook-kind order from the first render
+var hook_order_primed := false
+var diag_warned: Dictionary = {}        ## dedup set so each strict warning fires once per component

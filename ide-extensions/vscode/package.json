@@ -2,7 +2,7 @@
   "name": "guitkx",
   "displayName": "GUITKX (ReactiveUI for Godot)",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence forwarded to Godot's language server.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "ReactiveUITK",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/yanivkalfa/ReactiveUI-Godot" },
@@ -44,6 +44,11 @@
           "type": "boolean",
           "default": true,
           "description": "Forward embedded-GDScript completion/hover to Godot's language server (requires the Godot editor to be running with the project open)."
+        },
+        "guitkx.useGdformat": {
+          "type": "boolean",
+          "default": true,
+          "description": "When gdformat (gdscript-toolkit) is installed, also reflow embedded GDScript when formatting a .guitkx. Safe: any change beyond whitespace/quote style is rejected, so it never alters code semantics. Markup formatting works regardless; disable to keep base-indent normalization only."
         }
       }
     }

@@ -1,0 +1,4276 @@
+{
+  "classes": {
+    "AspectRatioContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "ratio",
+          "type": "float"
+        },
+        {
+          "enum": "Width Controls Height,Height Controls Width,Fit,Cover",
+          "name": "stretch_mode",
+          "type": "int"
+        },
+        {
+          "enum": "Begin,Center,End",
+          "name": "alignment_horizontal",
+          "type": "int"
+        },
+        {
+          "enum": "Begin,Center,End",
+          "name": "alignment_vertical",
+          "type": "int"
+        }
+      ],
+      "signals": []
+    },
+    "BaseButton": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "disabled",
+          "type": "bool"
+        },
+        {
+          "name": "toggle_mode",
+          "type": "bool"
+        },
+        {
+          "name": "button_pressed",
+          "type": "bool"
+        },
+        {
+          "enum": "Button Press,Button Release",
+          "name": "action_mode",
+          "type": "int"
+        },
+        {
+          "name": "button_mask",
+          "type": "int"
+        },
+        {
+          "name": "keep_pressed_outside",
+          "type": "bool"
+        },
+        {
+          "name": "button_group",
+          "type": "Object"
+        },
+        {
+          "name": "shortcut",
+          "type": "Object"
+        },
+        {
+          "name": "shortcut_feedback",
+          "type": "bool"
+        },
+        {
+          "name": "shortcut_in_tooltip",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "pressed"
+        },
+        {
+          "args": [],
+          "name": "button_up"
+        },
+        {
+          "args": [],
+          "name": "button_down"
+        },
+        {
+          "args": [
+            {
+              "name": "toggled_on",
+              "type": "bool"
+            }
+          ],
+          "name": "toggled"
+        }
+      ]
+    },
+    "BoxContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "enum": "Begin,Center,End",
+          "name": "alignment",
+          "type": "int"
+        },
+        {
+          "name": "vertical",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "Button": {
+      "base": "BaseButton",
+      "properties": [
+        {
+          "name": "text",
+          "type": "String"
+        },
+        {
+          "name": "icon",
+          "type": "Object"
+        },
+        {
+          "name": "flat",
+          "type": "bool"
+        },
+        {
+          "enum": "Left,Center,Right",
+          "name": "alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Trim Nothing,Trim Characters,Trim Words,Ellipsis (6+ Characters),Word Ellipsis (6+ Characters),Ellipsis (Always),Word Ellipsis (Always)",
+          "name": "text_overrun_behavior",
+          "type": "int"
+        },
+        {
+          "enum": "Off,Arbitrary,Word,Word (Smart)",
+          "name": "autowrap_mode",
+          "type": "int"
+        },
+        {
+          "name": "autowrap_trim_flags",
+          "type": "int"
+        },
+        {
+          "name": "clip_text",
+          "type": "bool"
+        },
+        {
+          "enum": "Left,Center,Right",
+          "name": "icon_alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Center,Bottom",
+          "name": "vertical_icon_alignment",
+          "type": "int"
+        },
+        {
+          "name": "expand_icon",
+          "type": "bool"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        }
+      ],
+      "signals": []
+    },
+    "CenterContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "use_top_left",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "CheckBox": {
+      "base": "Button",
+      "properties": [],
+      "signals": []
+    },
+    "CheckButton": {
+      "base": "Button",
+      "properties": [],
+      "signals": []
+    },
+    "CodeEdit": {
+      "base": "TextEdit",
+      "properties": [
+        {
+          "name": "symbol_lookup_on_click",
+          "type": "bool"
+        },
+        {
+          "name": "symbol_tooltip_on_hover",
+          "type": "bool"
+        },
+        {
+          "name": "line_folding",
+          "type": "bool"
+        },
+        {
+          "name": "line_length_guidelines",
+          "type": "PackedInt32Array"
+        },
+        {
+          "name": "gutters_draw_breakpoints_gutter",
+          "type": "bool"
+        },
+        {
+          "name": "gutters_draw_bookmarks",
+          "type": "bool"
+        },
+        {
+          "name": "gutters_draw_executing_lines",
+          "type": "bool"
+        },
+        {
+          "name": "gutters_draw_line_numbers",
+          "type": "bool"
+        },
+        {
+          "name": "gutters_zero_pad_line_numbers",
+          "type": "bool"
+        },
+        {
+          "name": "gutters_line_numbers_min_digits",
+          "type": "int"
+        },
+        {
+          "name": "gutters_draw_fold_gutter",
+          "type": "bool"
+        },
+        {
+          "name": "delimiter_strings",
+          "type": "PackedStringArray"
+        },
+        {
+          "name": "delimiter_comments",
+          "type": "PackedStringArray"
+        },
+        {
+          "name": "code_completion_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "code_completion_prefixes",
+          "type": "PackedStringArray"
+        },
+        {
+          "name": "indent_size",
+          "type": "int"
+        },
+        {
+          "name": "indent_use_spaces",
+          "type": "bool"
+        },
+        {
+          "name": "indent_automatic",
+          "type": "bool"
+        },
+        {
+          "name": "indent_automatic_prefixes",
+          "type": "PackedStringArray"
+        },
+        {
+          "name": "auto_brace_completion_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "auto_brace_completion_highlight_matching",
+          "type": "bool"
+        },
+        {
+          "name": "auto_brace_completion_pairs",
+          "type": "Dictionary"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "line",
+              "type": "int"
+            }
+          ],
+          "name": "breakpoint_toggled"
+        },
+        {
+          "args": [],
+          "name": "code_completion_requested"
+        },
+        {
+          "args": [
+            {
+              "name": "symbol",
+              "type": "String"
+            },
+            {
+              "name": "line",
+              "type": "int"
+            },
+            {
+              "name": "column",
+              "type": "int"
+            }
+          ],
+          "name": "symbol_lookup"
+        },
+        {
+          "args": [
+            {
+              "name": "symbol",
+              "type": "String"
+            }
+          ],
+          "name": "symbol_validate"
+        },
+        {
+          "args": [
+            {
+              "name": "symbol",
+              "type": "String"
+            },
+            {
+              "name": "line",
+              "type": "int"
+            },
+            {
+              "name": "column",
+              "type": "int"
+            }
+          ],
+          "name": "symbol_hovered"
+        }
+      ]
+    },
+    "ColorPicker": {
+      "base": "VBoxContainer",
+      "properties": [
+        {
+          "name": "color",
+          "type": "Color"
+        },
+        {
+          "name": "edit_alpha",
+          "type": "bool"
+        },
+        {
+          "name": "edit_intensity",
+          "type": "bool"
+        },
+        {
+          "enum": "RGB,HSV,LINEAR,OKHSL",
+          "name": "color_mode",
+          "type": "int"
+        },
+        {
+          "name": "deferred_mode",
+          "type": "bool"
+        },
+        {
+          "enum": "HSV Rectangle,HSV Rectangle Wheel,VHS Circle,OKHSL Circle,OK HS Rectangle:5,OK HL Rectangle,None:4",
+          "name": "picker_shape",
+          "type": "int"
+        },
+        {
+          "name": "can_add_swatches",
+          "type": "bool"
+        },
+        {
+          "name": "sampler_visible",
+          "type": "bool"
+        },
+        {
+          "name": "color_modes_visible",
+          "type": "bool"
+        },
+        {
+          "name": "sliders_visible",
+          "type": "bool"
+        },
+        {
+          "name": "hex_visible",
+          "type": "bool"
+        },
+        {
+          "name": "presets_visible",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "color",
+              "type": "Color"
+            }
+          ],
+          "name": "color_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "color",
+              "type": "Color"
+            }
+          ],
+          "name": "preset_added"
+        },
+        {
+          "args": [
+            {
+              "name": "color",
+              "type": "Color"
+            }
+          ],
+          "name": "preset_removed"
+        }
+      ]
+    },
+    "ColorPickerButton": {
+      "base": "Button",
+      "properties": [
+        {
+          "name": "color",
+          "type": "Color"
+        },
+        {
+          "name": "edit_alpha",
+          "type": "bool"
+        },
+        {
+          "name": "edit_intensity",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "color",
+              "type": "Color"
+            }
+          ],
+          "name": "color_changed"
+        },
+        {
+          "args": [],
+          "name": "popup_closed"
+        },
+        {
+          "args": [],
+          "name": "picker_created"
+        }
+      ]
+    },
+    "ColorRect": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "color",
+          "type": "Color"
+        }
+      ],
+      "signals": []
+    },
+    "Container": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "accessibility_region",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "pre_sort_children"
+        },
+        {
+          "args": [],
+          "name": "sort_children"
+        }
+      ]
+    },
+    "Control": {
+      "base": "CanvasItem",
+      "properties": [
+        {
+          "name": "custom_minimum_size",
+          "type": "Vector2"
+        },
+        {
+          "name": "custom_maximum_size",
+          "type": "Vector2"
+        },
+        {
+          "name": "propagate_maximum_size",
+          "type": "bool"
+        },
+        {
+          "name": "clip_contents",
+          "type": "bool"
+        },
+        {
+          "enum": "Position,Anchors,Container,Uncontrolled",
+          "name": "layout_mode",
+          "type": "int"
+        },
+        {
+          "enum": "Custom:-1,Full Rect:15,Top Left:0,Top Right:1,Bottom Right:3,Bottom Left:2,Center Left:4,Center Top:5,Center Right:6,Center Bottom:7,Center:8,Left Wide:9,Top Wide:10,Right Wide:11,Bottom Wide:12,VCenter Wide:13,HCenter Wide:14",
+          "name": "anchors_preset",
+          "type": "int"
+        },
+        {
+          "name": "anchor_left",
+          "type": "float"
+        },
+        {
+          "name": "anchor_top",
+          "type": "float"
+        },
+        {
+          "name": "anchor_right",
+          "type": "float"
+        },
+        {
+          "name": "anchor_bottom",
+          "type": "float"
+        },
+        {
+          "name": "offset_left",
+          "type": "float"
+        },
+        {
+          "name": "offset_top",
+          "type": "float"
+        },
+        {
+          "name": "offset_right",
+          "type": "float"
+        },
+        {
+          "name": "offset_bottom",
+          "type": "float"
+        },
+        {
+          "enum": "Left,Right,Both",
+          "name": "grow_horizontal",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Bottom,Both",
+          "name": "grow_vertical",
+          "type": "int"
+        },
+        {
+          "name": "size",
+          "type": "Vector2"
+        },
+        {
+          "name": "position",
+          "type": "Vector2"
+        },
+        {
+          "name": "rotation",
+          "type": "float"
+        },
+        {
+          "name": "scale",
+          "type": "Vector2"
+        },
+        {
+          "name": "pivot_offset",
+          "type": "Vector2"
+        },
+        {
+          "name": "pivot_offset_ratio",
+          "type": "Vector2"
+        },
+        {
+          "name": "size_flags_horizontal",
+          "type": "int"
+        },
+        {
+          "name": "size_flags_vertical",
+          "type": "int"
+        },
+        {
+          "name": "size_flags_stretch_ratio",
+          "type": "float"
+        },
+        {
+          "name": "offset_transform_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "offset_transform_position",
+          "type": "Vector2"
+        },
+        {
+          "name": "offset_transform_position_ratio",
+          "type": "Vector2"
+        },
+        {
+          "name": "offset_transform_scale",
+          "type": "Vector2"
+        },
+        {
+          "name": "offset_transform_rotation",
+          "type": "float"
+        },
+        {
+          "name": "offset_transform_pivot",
+          "type": "Vector2"
+        },
+        {
+          "name": "offset_transform_pivot_ratio",
+          "type": "Vector2"
+        },
+        {
+          "name": "offset_transform_visual_only",
+          "type": "bool"
+        },
+        {
+          "name": "localize_numeral_system",
+          "type": "bool"
+        },
+        {
+          "enum": "Inherited,Based on Application Locale,Left-to-Right,Right-to-Left,Based on System Locale",
+          "name": "layout_direction",
+          "type": "int"
+        },
+        {
+          "name": "translation_context",
+          "type": "StringName"
+        },
+        {
+          "name": "tooltip_text",
+          "type": "String"
+        },
+        {
+          "enum": "Inherit,Always,Disabled",
+          "name": "tooltip_auto_translate_mode",
+          "type": "int"
+        },
+        {
+          "name": "focus_neighbor_left",
+          "type": "NodePath"
+        },
+        {
+          "name": "focus_neighbor_top",
+          "type": "NodePath"
+        },
+        {
+          "name": "focus_neighbor_right",
+          "type": "NodePath"
+        },
+        {
+          "name": "focus_neighbor_bottom",
+          "type": "NodePath"
+        },
+        {
+          "name": "focus_next",
+          "type": "NodePath"
+        },
+        {
+          "name": "focus_previous",
+          "type": "NodePath"
+        },
+        {
+          "enum": "None,Click,All,Accessibility",
+          "name": "focus_mode",
+          "type": "int"
+        },
+        {
+          "enum": "Inherited,Disabled,Enabled",
+          "name": "focus_behavior_recursive",
+          "type": "int"
+        },
+        {
+          "enum": "Stop,Pass (Propagate Up),Ignore",
+          "name": "mouse_filter",
+          "type": "int"
+        },
+        {
+          "enum": "Inherited,Disabled,Enabled",
+          "name": "mouse_behavior_recursive",
+          "type": "int"
+        },
+        {
+          "name": "mouse_force_pass_scroll_events",
+          "type": "bool"
+        },
+        {
+          "enum": "Arrow,I-Beam,Pointing Hand,Cross,Wait,Busy,Drag,Can Drop,Forbidden,Vertical Resize,Horizontal Resize,Secondary Diagonal Resize,Main Diagonal Resize,Move,Vertical Split,Horizontal Split,Help",
+          "name": "mouse_default_cursor_shape",
+          "type": "int"
+        },
+        {
+          "name": "shortcut_context",
+          "type": "Object"
+        },
+        {
+          "name": "accessibility_name",
+          "type": "String"
+        },
+        {
+          "name": "accessibility_description",
+          "type": "String"
+        },
+        {
+          "enum": "Off,Polite,Assertive",
+          "name": "accessibility_live",
+          "type": "int"
+        },
+        {
+          "name": "accessibility_controls_nodes",
+          "type": "Array"
+        },
+        {
+          "name": "accessibility_described_by_nodes",
+          "type": "Array"
+        },
+        {
+          "name": "accessibility_labeled_by_nodes",
+          "type": "Array"
+        },
+        {
+          "name": "accessibility_flow_to_nodes",
+          "type": "Array"
+        },
+        {
+          "name": "theme",
+          "type": "Object"
+        },
+        {
+          "name": "theme_type_variation",
+          "type": "String"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "resized"
+        },
+        {
+          "args": [],
+          "name": "_layout_pending_finished"
+        },
+        {
+          "args": [
+            {
+              "name": "event",
+              "type": "Object"
+            }
+          ],
+          "name": "gui_input"
+        },
+        {
+          "args": [],
+          "name": "mouse_entered"
+        },
+        {
+          "args": [],
+          "name": "mouse_exited"
+        },
+        {
+          "args": [],
+          "name": "focus_entered"
+        },
+        {
+          "args": [],
+          "name": "focus_exited"
+        },
+        {
+          "args": [],
+          "name": "size_flags_changed"
+        },
+        {
+          "args": [],
+          "name": "maximum_size_changed"
+        },
+        {
+          "args": [],
+          "name": "minimum_size_changed"
+        },
+        {
+          "args": [],
+          "name": "_desired_size_changed"
+        },
+        {
+          "args": [],
+          "name": "theme_changed"
+        }
+      ]
+    },
+    "EditorDock": {
+      "base": "MarginContainer",
+      "properties": [
+        {
+          "name": "title",
+          "type": "String"
+        },
+        {
+          "name": "layout_key",
+          "type": "String"
+        },
+        {
+          "name": "global",
+          "type": "bool"
+        },
+        {
+          "name": "transient",
+          "type": "bool"
+        },
+        {
+          "name": "closable",
+          "type": "bool"
+        },
+        {
+          "name": "icon_name",
+          "type": "StringName"
+        },
+        {
+          "name": "dock_icon",
+          "type": "Object"
+        },
+        {
+          "name": "force_show_icon",
+          "type": "bool"
+        },
+        {
+          "name": "title_color",
+          "type": "Color"
+        },
+        {
+          "name": "dock_shortcut",
+          "type": "Object"
+        },
+        {
+          "enum": "None:-1,Left Side Upper-Left,Left Side Bottom-Left,Left Side Upper-Right,Left Side Bottom-Right,Right Side Upper-Left,Right Side Bottom-Left,Right Side Upper-Right,Right Side Bottom-Right,Bottom",
+          "name": "default_slot",
+          "type": "int"
+        },
+        {
+          "name": "available_layouts",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "opened"
+        },
+        {
+          "args": [],
+          "name": "closed"
+        },
+        {
+          "args": [],
+          "name": "_tab_style_changed"
+        }
+      ]
+    },
+    "EditorInspector": {
+      "base": "ScrollContainer",
+      "properties": [],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "String"
+            }
+          ],
+          "name": "property_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "String"
+            },
+            {
+              "name": "value",
+              "type": "Nil"
+            },
+            {
+              "name": "advance",
+              "type": "bool"
+            }
+          ],
+          "name": "property_keyed"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "String"
+            }
+          ],
+          "name": "property_deleted"
+        },
+        {
+          "args": [
+            {
+              "name": "resource",
+              "type": "Object"
+            },
+            {
+              "name": "path",
+              "type": "String"
+            }
+          ],
+          "name": "resource_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "id",
+              "type": "int"
+            }
+          ],
+          "name": "object_id_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "String"
+            }
+          ],
+          "name": "property_edited"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "String"
+            },
+            {
+              "name": "checked",
+              "type": "bool"
+            }
+          ],
+          "name": "property_toggled"
+        },
+        {
+          "args": [],
+          "name": "edited_object_changed"
+        },
+        {
+          "args": [],
+          "name": "restart_requested"
+        }
+      ]
+    },
+    "EditorProperty": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "label",
+          "type": "String"
+        },
+        {
+          "name": "read_only",
+          "type": "bool"
+        },
+        {
+          "name": "draw_label",
+          "type": "bool"
+        },
+        {
+          "name": "draw_background",
+          "type": "bool"
+        },
+        {
+          "name": "checkable",
+          "type": "bool"
+        },
+        {
+          "name": "checked",
+          "type": "bool"
+        },
+        {
+          "name": "draw_warning",
+          "type": "bool"
+        },
+        {
+          "name": "keying",
+          "type": "bool"
+        },
+        {
+          "name": "deletable",
+          "type": "bool"
+        },
+        {
+          "name": "selectable",
+          "type": "bool"
+        },
+        {
+          "name": "use_folding",
+          "type": "bool"
+        },
+        {
+          "name": "name_split_ratio",
+          "type": "float"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "value",
+              "type": "Nil"
+            },
+            {
+              "name": "field",
+              "type": "StringName"
+            },
+            {
+              "name": "changing",
+              "type": "bool"
+            }
+          ],
+          "name": "property_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "properties",
+              "type": "PackedStringArray"
+            },
+            {
+              "name": "value",
+              "type": "Array"
+            }
+          ],
+          "name": "multiple_properties_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            }
+          ],
+          "name": "property_keyed"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            }
+          ],
+          "name": "property_deleted"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "value",
+              "type": "Nil"
+            }
+          ],
+          "name": "property_keyed_with_value"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "checked",
+              "type": "bool"
+            }
+          ],
+          "name": "property_checked"
+        },
+        {
+          "args": [],
+          "name": "property_overridden"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "favorited",
+              "type": "bool"
+            }
+          ],
+          "name": "property_favorited"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "pinned",
+              "type": "bool"
+            }
+          ],
+          "name": "property_pinned"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "can_revert",
+              "type": "bool"
+            }
+          ],
+          "name": "property_can_revert_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "path",
+              "type": "String"
+            },
+            {
+              "name": "resource",
+              "type": "Object"
+            }
+          ],
+          "name": "resource_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "property",
+              "type": "StringName"
+            },
+            {
+              "name": "id",
+              "type": "int"
+            }
+          ],
+          "name": "object_id_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "path",
+              "type": "String"
+            },
+            {
+              "name": "focusable_idx",
+              "type": "int"
+            }
+          ],
+          "name": "selected"
+        }
+      ]
+    },
+    "EditorResourcePicker": {
+      "base": "HBoxContainer",
+      "properties": [
+        {
+          "name": "base_type",
+          "type": "String"
+        },
+        {
+          "name": "editable",
+          "type": "bool"
+        },
+        {
+          "name": "toggle_mode",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "resource",
+              "type": "Object"
+            },
+            {
+              "name": "inspect",
+              "type": "bool"
+            }
+          ],
+          "name": "resource_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "resource",
+              "type": "Object"
+            }
+          ],
+          "name": "resource_changed"
+        }
+      ]
+    },
+    "EditorScriptPicker": {
+      "base": "EditorResourcePicker",
+      "properties": [],
+      "signals": []
+    },
+    "EditorSpinSlider": {
+      "base": "Range",
+      "properties": [
+        {
+          "name": "label",
+          "type": "String"
+        },
+        {
+          "name": "suffix",
+          "type": "String"
+        },
+        {
+          "name": "read_only",
+          "type": "bool"
+        },
+        {
+          "name": "flat",
+          "type": "bool"
+        },
+        {
+          "name": "control_state",
+          "type": "bool"
+        },
+        {
+          "name": "hide_slider",
+          "type": "bool"
+        },
+        {
+          "name": "editing_integer",
+          "type": "bool"
+        },
+        {
+          "name": "deferred_drag_mode",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "grabbed"
+        },
+        {
+          "args": [],
+          "name": "ungrabbed"
+        },
+        {
+          "args": [],
+          "name": "updown_pressed"
+        },
+        {
+          "args": [],
+          "name": "value_focus_entered"
+        },
+        {
+          "args": [],
+          "name": "value_focus_exited"
+        }
+      ]
+    },
+    "EditorToaster": {
+      "base": "HBoxContainer",
+      "properties": [],
+      "signals": []
+    },
+    "FileSystemDock": {
+      "base": "EditorDock",
+      "properties": [],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "file",
+              "type": "String"
+            }
+          ],
+          "name": "inherit"
+        },
+        {
+          "args": [
+            {
+              "name": "files",
+              "type": "PackedStringArray"
+            }
+          ],
+          "name": "instantiate"
+        },
+        {
+          "args": [
+            {
+              "name": "resource",
+              "type": "Object"
+            }
+          ],
+          "name": "resource_removed"
+        },
+        {
+          "args": [
+            {
+              "name": "file",
+              "type": "String"
+            }
+          ],
+          "name": "file_removed"
+        },
+        {
+          "args": [
+            {
+              "name": "folder",
+              "type": "String"
+            }
+          ],
+          "name": "folder_removed"
+        },
+        {
+          "args": [
+            {
+              "name": "old_file",
+              "type": "String"
+            },
+            {
+              "name": "new_file",
+              "type": "String"
+            }
+          ],
+          "name": "files_moved"
+        },
+        {
+          "args": [
+            {
+              "name": "old_folder",
+              "type": "String"
+            },
+            {
+              "name": "new_folder",
+              "type": "String"
+            }
+          ],
+          "name": "folder_moved"
+        },
+        {
+          "args": [],
+          "name": "folder_color_changed"
+        },
+        {
+          "args": [],
+          "name": "selection_changed"
+        },
+        {
+          "args": [],
+          "name": "display_mode_changed"
+        }
+      ]
+    },
+    "FlowContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "enum": "Begin,Center,End",
+          "name": "alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Inherit,Begin,Center,End",
+          "name": "last_wrap_alignment",
+          "type": "int"
+        },
+        {
+          "name": "vertical",
+          "type": "bool"
+        },
+        {
+          "name": "reverse_fill",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "FoldableContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "folded",
+          "type": "bool"
+        },
+        {
+          "name": "title",
+          "type": "String"
+        },
+        {
+          "enum": "Left,Center,Right",
+          "name": "title_alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Bottom",
+          "name": "title_position",
+          "type": "int"
+        },
+        {
+          "enum": "Trim Nothing,Trim Characters,Trim Words,Ellipsis,Word Ellipsis",
+          "name": "title_text_overrun_behavior",
+          "type": "int"
+        },
+        {
+          "name": "foldable_group",
+          "type": "Object"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "title_text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "is_folded",
+              "type": "bool"
+            }
+          ],
+          "name": "folding_changed"
+        }
+      ]
+    },
+    "GraphEdit": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "scroll_offset",
+          "type": "Vector2"
+        },
+        {
+          "name": "show_grid",
+          "type": "bool"
+        },
+        {
+          "enum": "Lines,Dots",
+          "name": "grid_pattern",
+          "type": "int"
+        },
+        {
+          "name": "snapping_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "snapping_distance",
+          "type": "int"
+        },
+        {
+          "enum": "Scroll Zooms,Scroll Pans",
+          "name": "panning_scheme",
+          "type": "int"
+        },
+        {
+          "name": "right_disconnects",
+          "type": "bool"
+        },
+        {
+          "name": "type_names",
+          "type": "Dictionary"
+        },
+        {
+          "name": "connection_lines_curvature",
+          "type": "float"
+        },
+        {
+          "name": "connection_lines_thickness",
+          "type": "float"
+        },
+        {
+          "name": "connection_lines_antialiased",
+          "type": "bool"
+        },
+        {
+          "name": "connections",
+          "type": "Array"
+        },
+        {
+          "name": "zoom",
+          "type": "float"
+        },
+        {
+          "name": "zoom_min",
+          "type": "float"
+        },
+        {
+          "name": "zoom_max",
+          "type": "float"
+        },
+        {
+          "name": "zoom_step",
+          "type": "float"
+        },
+        {
+          "name": "minimap_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "minimap_size",
+          "type": "Vector2"
+        },
+        {
+          "name": "minimap_opacity",
+          "type": "float"
+        },
+        {
+          "name": "show_menu",
+          "type": "bool"
+        },
+        {
+          "name": "show_zoom_label",
+          "type": "bool"
+        },
+        {
+          "name": "show_zoom_buttons",
+          "type": "bool"
+        },
+        {
+          "name": "show_grid_buttons",
+          "type": "bool"
+        },
+        {
+          "name": "show_minimap_button",
+          "type": "bool"
+        },
+        {
+          "name": "show_arrange_button",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "from_node",
+              "type": "StringName"
+            },
+            {
+              "name": "from_port",
+              "type": "int"
+            },
+            {
+              "name": "to_node",
+              "type": "StringName"
+            },
+            {
+              "name": "to_port",
+              "type": "int"
+            }
+          ],
+          "name": "connection_request"
+        },
+        {
+          "args": [
+            {
+              "name": "from_node",
+              "type": "StringName"
+            },
+            {
+              "name": "from_port",
+              "type": "int"
+            },
+            {
+              "name": "to_node",
+              "type": "StringName"
+            },
+            {
+              "name": "to_port",
+              "type": "int"
+            }
+          ],
+          "name": "disconnection_request"
+        },
+        {
+          "args": [
+            {
+              "name": "from_node",
+              "type": "StringName"
+            },
+            {
+              "name": "from_port",
+              "type": "int"
+            },
+            {
+              "name": "release_position",
+              "type": "Vector2"
+            }
+          ],
+          "name": "connection_to_empty"
+        },
+        {
+          "args": [
+            {
+              "name": "to_node",
+              "type": "StringName"
+            },
+            {
+              "name": "to_port",
+              "type": "int"
+            },
+            {
+              "name": "release_position",
+              "type": "Vector2"
+            }
+          ],
+          "name": "connection_from_empty"
+        },
+        {
+          "args": [
+            {
+              "name": "from_node",
+              "type": "StringName"
+            },
+            {
+              "name": "from_port",
+              "type": "int"
+            },
+            {
+              "name": "is_output",
+              "type": "bool"
+            }
+          ],
+          "name": "connection_drag_started"
+        },
+        {
+          "args": [],
+          "name": "connection_drag_ended"
+        },
+        {
+          "args": [],
+          "name": "copy_nodes_request"
+        },
+        {
+          "args": [],
+          "name": "cut_nodes_request"
+        },
+        {
+          "args": [],
+          "name": "paste_nodes_request"
+        },
+        {
+          "args": [],
+          "name": "duplicate_nodes_request"
+        },
+        {
+          "args": [
+            {
+              "name": "nodes",
+              "type": "Array"
+            }
+          ],
+          "name": "delete_nodes_request"
+        },
+        {
+          "args": [
+            {
+              "name": "node",
+              "type": "Object"
+            }
+          ],
+          "name": "node_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "node",
+              "type": "Object"
+            }
+          ],
+          "name": "node_deselected"
+        },
+        {
+          "args": [
+            {
+              "name": "frame",
+              "type": "Object"
+            },
+            {
+              "name": "new_rect",
+              "type": "Rect2"
+            }
+          ],
+          "name": "frame_rect_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "at_position",
+              "type": "Vector2"
+            }
+          ],
+          "name": "popup_request"
+        },
+        {
+          "args": [],
+          "name": "begin_node_move"
+        },
+        {
+          "args": [],
+          "name": "end_node_move"
+        },
+        {
+          "args": [
+            {
+              "name": "elements",
+              "type": "Array"
+            },
+            {
+              "name": "frame",
+              "type": "StringName"
+            }
+          ],
+          "name": "graph_elements_linked_to_frame_request"
+        },
+        {
+          "args": [
+            {
+              "name": "offset",
+              "type": "Vector2"
+            }
+          ],
+          "name": "scroll_offset_changed"
+        }
+      ]
+    },
+    "GraphElement": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "position_offset",
+          "type": "Vector2"
+        },
+        {
+          "name": "resizable",
+          "type": "bool"
+        },
+        {
+          "name": "draggable",
+          "type": "bool"
+        },
+        {
+          "name": "selectable",
+          "type": "bool"
+        },
+        {
+          "name": "selected",
+          "type": "bool"
+        },
+        {
+          "name": "scaling_menus",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "node_selected"
+        },
+        {
+          "args": [],
+          "name": "node_deselected"
+        },
+        {
+          "args": [],
+          "name": "raise_request"
+        },
+        {
+          "args": [],
+          "name": "delete_request"
+        },
+        {
+          "args": [
+            {
+              "name": "new_size",
+              "type": "Vector2"
+            }
+          ],
+          "name": "resize_request"
+        },
+        {
+          "args": [
+            {
+              "name": "new_size",
+              "type": "Vector2"
+            }
+          ],
+          "name": "resize_end"
+        },
+        {
+          "args": [
+            {
+              "name": "from",
+              "type": "Vector2"
+            },
+            {
+              "name": "to",
+              "type": "Vector2"
+            }
+          ],
+          "name": "dragged"
+        },
+        {
+          "args": [],
+          "name": "position_offset_changed"
+        }
+      ]
+    },
+    "GraphFrame": {
+      "base": "GraphElement",
+      "properties": [
+        {
+          "name": "title",
+          "type": "String"
+        },
+        {
+          "name": "autoshrink_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "autoshrink_margin",
+          "type": "int"
+        },
+        {
+          "name": "drag_margin",
+          "type": "int"
+        },
+        {
+          "name": "tint_color_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "tint_color",
+          "type": "Color"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "autoshrink_changed"
+        }
+      ]
+    },
+    "GraphNode": {
+      "base": "GraphElement",
+      "properties": [
+        {
+          "name": "title",
+          "type": "String"
+        },
+        {
+          "name": "ignore_invalid_connection_type",
+          "type": "bool"
+        },
+        {
+          "enum": "Click:1,All:2,Accessibility:3",
+          "name": "slots_focus_mode",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "slot_index",
+              "type": "int"
+            }
+          ],
+          "name": "slot_updated"
+        },
+        {
+          "args": [],
+          "name": "slot_sizes_changed"
+        }
+      ]
+    },
+    "GridContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "columns",
+          "type": "int"
+        }
+      ],
+      "signals": []
+    },
+    "HBoxContainer": {
+      "base": "BoxContainer",
+      "properties": [],
+      "signals": []
+    },
+    "HFlowContainer": {
+      "base": "FlowContainer",
+      "properties": [],
+      "signals": []
+    },
+    "HScrollBar": {
+      "base": "ScrollBar",
+      "properties": [],
+      "signals": []
+    },
+    "HSeparator": {
+      "base": "Separator",
+      "properties": [],
+      "signals": []
+    },
+    "HSlider": {
+      "base": "Slider",
+      "properties": [],
+      "signals": []
+    },
+    "HSplitContainer": {
+      "base": "SplitContainer",
+      "properties": [],
+      "signals": []
+    },
+    "ItemList": {
+      "base": "Control",
+      "properties": [
+        {
+          "enum": "Single,Multi,Toggle",
+          "name": "select_mode",
+          "type": "int"
+        },
+        {
+          "name": "allow_reselect",
+          "type": "bool"
+        },
+        {
+          "name": "allow_rmb_select",
+          "type": "bool"
+        },
+        {
+          "name": "allow_search",
+          "type": "bool"
+        },
+        {
+          "name": "max_text_lines",
+          "type": "int"
+        },
+        {
+          "name": "auto_width",
+          "type": "bool"
+        },
+        {
+          "name": "auto_height",
+          "type": "bool"
+        },
+        {
+          "enum": "Trim Nothing,Trim Characters,Trim Words,Ellipsis (6+ Characters),Word Ellipsis (6+ Characters),Ellipsis (Always),Word Ellipsis (Always)",
+          "name": "text_overrun_behavior",
+          "type": "int"
+        },
+        {
+          "name": "wraparound_items",
+          "type": "bool"
+        },
+        {
+          "enum": "Disabled,Both,Top,Bottom",
+          "name": "scroll_hint_mode",
+          "type": "int"
+        },
+        {
+          "name": "tile_scroll_hint",
+          "type": "bool"
+        },
+        {
+          "name": "item_count",
+          "type": "int"
+        },
+        {
+          "name": "max_columns",
+          "type": "int"
+        },
+        {
+          "name": "same_column_width",
+          "type": "bool"
+        },
+        {
+          "name": "fixed_column_width",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Left",
+          "name": "icon_mode",
+          "type": "int"
+        },
+        {
+          "name": "icon_scale",
+          "type": "float"
+        },
+        {
+          "name": "fixed_icon_size",
+          "type": "Vector2i"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "name": "item_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "at_position",
+              "type": "Vector2"
+            },
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "empty_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "at_position",
+              "type": "Vector2"
+            },
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "item_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "selected",
+              "type": "bool"
+            }
+          ],
+          "name": "multi_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "name": "item_activated"
+        }
+      ]
+    },
+    "Label": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "text",
+          "type": "String"
+        },
+        {
+          "name": "label_settings",
+          "type": "Object"
+        },
+        {
+          "enum": "Left,Center,Right,Fill",
+          "name": "horizontal_alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Center,Bottom,Fill",
+          "name": "vertical_alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Off,Arbitrary,Word,Word (Smart)",
+          "name": "autowrap_mode",
+          "type": "int"
+        },
+        {
+          "name": "autowrap_trim_flags",
+          "type": "int"
+        },
+        {
+          "name": "justification_flags",
+          "type": "int"
+        },
+        {
+          "name": "paragraph_separator",
+          "type": "String"
+        },
+        {
+          "name": "clip_text",
+          "type": "bool"
+        },
+        {
+          "enum": "Trim Nothing,Trim Characters,Trim Words,Ellipsis (6+ Characters),Word Ellipsis (6+ Characters),Ellipsis (Always),Word Ellipsis (Always)",
+          "name": "text_overrun_behavior",
+          "type": "int"
+        },
+        {
+          "name": "ellipsis_char",
+          "type": "String"
+        },
+        {
+          "name": "uppercase",
+          "type": "bool"
+        },
+        {
+          "name": "tab_stops",
+          "type": "PackedFloat32Array"
+        },
+        {
+          "name": "lines_skipped",
+          "type": "int"
+        },
+        {
+          "name": "max_lines_visible",
+          "type": "int"
+        },
+        {
+          "name": "visible_characters",
+          "type": "int"
+        },
+        {
+          "enum": "Characters Before Shaping,Characters After Shaping,Glyphs (Layout Direction),Glyphs (Left-to-Right),Glyphs (Right-to-Left)",
+          "name": "visible_characters_behavior",
+          "type": "int"
+        },
+        {
+          "name": "visible_ratio",
+          "type": "float"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        },
+        {
+          "enum": "Default,URI,File,Email,List,None,Custom",
+          "name": "structured_text_bidi_override",
+          "type": "int"
+        },
+        {
+          "name": "structured_text_bidi_override_options",
+          "type": "Array"
+        }
+      ],
+      "signals": []
+    },
+    "LineEdit": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "text",
+          "type": "String"
+        },
+        {
+          "name": "placeholder_text",
+          "type": "String"
+        },
+        {
+          "enum": "Left,Center,Right,Fill",
+          "name": "alignment",
+          "type": "int"
+        },
+        {
+          "name": "max_length",
+          "type": "int"
+        },
+        {
+          "name": "editable",
+          "type": "bool"
+        },
+        {
+          "name": "keep_editing_on_text_submit",
+          "type": "bool"
+        },
+        {
+          "name": "expand_to_text_length",
+          "type": "bool"
+        },
+        {
+          "name": "context_menu_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "emoji_menu_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "backspace_deletes_composite_character_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "clear_button_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "shortcut_keys_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "middle_mouse_paste_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "selecting_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "deselect_on_focus_loss_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "drag_and_drop_selection_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "flat",
+          "type": "bool"
+        },
+        {
+          "name": "draw_control_chars",
+          "type": "bool"
+        },
+        {
+          "name": "select_all_on_focus",
+          "type": "bool"
+        },
+        {
+          "name": "virtual_keyboard_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "virtual_keyboard_show_on_focus",
+          "type": "bool"
+        },
+        {
+          "enum": "Default,Multiline,Number,Decimal,Phone,Email,Password,URL",
+          "name": "virtual_keyboard_type",
+          "type": "int"
+        },
+        {
+          "name": "caret_blink",
+          "type": "bool"
+        },
+        {
+          "name": "caret_blink_interval",
+          "type": "float"
+        },
+        {
+          "name": "caret_column",
+          "type": "int"
+        },
+        {
+          "name": "caret_force_displayed",
+          "type": "bool"
+        },
+        {
+          "name": "caret_mid_grapheme",
+          "type": "bool"
+        },
+        {
+          "name": "secret",
+          "type": "bool"
+        },
+        {
+          "name": "secret_character",
+          "type": "String"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        },
+        {
+          "enum": "Default,URI,File,Email,List,None,Custom",
+          "name": "structured_text_bidi_override",
+          "type": "int"
+        },
+        {
+          "name": "structured_text_bidi_override_options",
+          "type": "Array"
+        },
+        {
+          "name": "right_icon",
+          "type": "Object"
+        },
+        {
+          "enum": "Original,Fit to Text,Fit to LineEdit",
+          "name": "icon_expand_mode",
+          "type": "int"
+        },
+        {
+          "name": "right_icon_scale",
+          "type": "float"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "new_text",
+              "type": "String"
+            }
+          ],
+          "name": "text_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "rejected_substring",
+              "type": "String"
+            }
+          ],
+          "name": "text_change_rejected"
+        },
+        {
+          "args": [
+            {
+              "name": "new_text",
+              "type": "String"
+            }
+          ],
+          "name": "text_submitted"
+        },
+        {
+          "args": [
+            {
+              "name": "toggled_on",
+              "type": "bool"
+            }
+          ],
+          "name": "editing_toggled"
+        }
+      ]
+    },
+    "LinkButton": {
+      "base": "BaseButton",
+      "properties": [
+        {
+          "name": "text",
+          "type": "String"
+        },
+        {
+          "enum": "Always,On Hover,Never",
+          "name": "underline",
+          "type": "int"
+        },
+        {
+          "name": "uri",
+          "type": "String"
+        },
+        {
+          "enum": "Trim Nothing,Trim Characters,Trim Words,Ellipsis (6+ Characters),Word Ellipsis (6+ Characters),Ellipsis (Always),Word Ellipsis (Always)",
+          "name": "text_overrun_behavior",
+          "type": "int"
+        },
+        {
+          "name": "ellipsis_char",
+          "type": "String"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        },
+        {
+          "enum": "Default,URI,File,Email,List,None,Custom",
+          "name": "structured_text_bidi_override",
+          "type": "int"
+        },
+        {
+          "name": "structured_text_bidi_override_options",
+          "type": "Array"
+        }
+      ],
+      "signals": []
+    },
+    "MarginContainer": {
+      "base": "Container",
+      "properties": [],
+      "signals": []
+    },
+    "MenuBar": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "flat",
+          "type": "bool"
+        },
+        {
+          "name": "start_index",
+          "type": "int"
+        },
+        {
+          "name": "switch_on_hover",
+          "type": "bool"
+        },
+        {
+          "name": "prefer_global_menu",
+          "type": "bool"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        }
+      ],
+      "signals": []
+    },
+    "MenuButton": {
+      "base": "Button",
+      "properties": [
+        {
+          "name": "switch_on_hover",
+          "type": "bool"
+        },
+        {
+          "name": "item_count",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "about_to_popup"
+        }
+      ]
+    },
+    "NinePatchRect": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "texture",
+          "type": "Object"
+        },
+        {
+          "name": "draw_center",
+          "type": "bool"
+        },
+        {
+          "name": "region_rect",
+          "type": "Rect2"
+        },
+        {
+          "name": "patch_margin_left",
+          "type": "int"
+        },
+        {
+          "name": "patch_margin_top",
+          "type": "int"
+        },
+        {
+          "name": "patch_margin_right",
+          "type": "int"
+        },
+        {
+          "name": "patch_margin_bottom",
+          "type": "int"
+        },
+        {
+          "enum": "Stretch,Tile,Tile Fit",
+          "name": "axis_stretch_horizontal",
+          "type": "int"
+        },
+        {
+          "enum": "Stretch,Tile,Tile Fit",
+          "name": "axis_stretch_vertical",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "texture_changed"
+        }
+      ]
+    },
+    "OpenXRBindingModifierEditor": {
+      "base": "PanelContainer",
+      "properties": [],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "binding_modifier_editor",
+              "type": "Object"
+            }
+          ],
+          "name": "binding_modifier_removed"
+        }
+      ]
+    },
+    "OpenXRInteractionProfileEditor": {
+      "base": "OpenXRInteractionProfileEditorBase",
+      "properties": [],
+      "signals": []
+    },
+    "OpenXRInteractionProfileEditorBase": {
+      "base": "HBoxContainer",
+      "properties": [],
+      "signals": []
+    },
+    "OptionButton": {
+      "base": "Button",
+      "properties": [
+        {
+          "name": "selected",
+          "type": "int"
+        },
+        {
+          "name": "fit_to_longest_item",
+          "type": "bool"
+        },
+        {
+          "name": "allow_reselect",
+          "type": "bool"
+        },
+        {
+          "name": "search_bar_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "search_bar_min_item_count",
+          "type": "int"
+        },
+        {
+          "name": "search_bar_fuzzy_search_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "search_bar_fuzzy_search_max_misses",
+          "type": "int"
+        },
+        {
+          "name": "item_count",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "name": "item_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "name": "item_focused"
+        }
+      ]
+    },
+    "Panel": {
+      "base": "Control",
+      "properties": [],
+      "signals": []
+    },
+    "PanelContainer": {
+      "base": "Container",
+      "properties": [],
+      "signals": []
+    },
+    "ProgressBar": {
+      "base": "Range",
+      "properties": [
+        {
+          "enum": "Begin to End,End to Begin,Top to Bottom,Bottom to Top",
+          "name": "fill_mode",
+          "type": "int"
+        },
+        {
+          "name": "show_percentage",
+          "type": "bool"
+        },
+        {
+          "name": "indeterminate",
+          "type": "bool"
+        },
+        {
+          "name": "editor_preview_indeterminate",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "Range": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "min_value",
+          "type": "float"
+        },
+        {
+          "name": "max_value",
+          "type": "float"
+        },
+        {
+          "name": "step",
+          "type": "float"
+        },
+        {
+          "name": "page",
+          "type": "float"
+        },
+        {
+          "name": "value",
+          "type": "float"
+        },
+        {
+          "name": "exp_edit",
+          "type": "bool"
+        },
+        {
+          "name": "rounded",
+          "type": "bool"
+        },
+        {
+          "name": "allow_greater",
+          "type": "bool"
+        },
+        {
+          "name": "allow_lesser",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "name": "value_changed"
+        },
+        {
+          "args": [],
+          "name": "changed"
+        }
+      ]
+    },
+    "ReferenceRect": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "border_color",
+          "type": "Color"
+        },
+        {
+          "name": "border_width",
+          "type": "float"
+        },
+        {
+          "name": "editor_only",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "RichTextLabel": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "bbcode_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "text",
+          "type": "String"
+        },
+        {
+          "name": "fit_content",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_active",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_following",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_following_visible_characters",
+          "type": "bool"
+        },
+        {
+          "enum": "Off,Arbitrary,Word,Word (Smart)",
+          "name": "autowrap_mode",
+          "type": "int"
+        },
+        {
+          "name": "autowrap_trim_flags",
+          "type": "int"
+        },
+        {
+          "name": "tab_size",
+          "type": "int"
+        },
+        {
+          "name": "context_menu_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "shortcut_keys_enabled",
+          "type": "bool"
+        },
+        {
+          "enum": "Left,Center,Right,Fill",
+          "name": "horizontal_alignment",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Center,Bottom,Fill",
+          "name": "vertical_alignment",
+          "type": "int"
+        },
+        {
+          "name": "justification_flags",
+          "type": "int"
+        },
+        {
+          "name": "tab_stops",
+          "type": "PackedFloat32Array"
+        },
+        {
+          "name": "custom_effects",
+          "type": "Array"
+        },
+        {
+          "name": "meta_underlined",
+          "type": "bool"
+        },
+        {
+          "name": "hint_underlined",
+          "type": "bool"
+        },
+        {
+          "name": "threaded",
+          "type": "bool"
+        },
+        {
+          "name": "progress_bar_delay",
+          "type": "int"
+        },
+        {
+          "name": "selection_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "deselect_on_focus_loss_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "drag_and_drop_selection_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "visible_characters",
+          "type": "int"
+        },
+        {
+          "enum": "Characters Before Shaping,Characters After Shaping,Glyphs (Layout Direction),Glyphs (Left-to-Right),Glyphs (Right-to-Left)",
+          "name": "visible_characters_behavior",
+          "type": "int"
+        },
+        {
+          "name": "visible_ratio",
+          "type": "float"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        },
+        {
+          "enum": "Default,URI,File,Email,List,None,Custom",
+          "name": "structured_text_bidi_override",
+          "type": "int"
+        },
+        {
+          "name": "structured_text_bidi_override_options",
+          "type": "Array"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "meta",
+              "type": "Nil"
+            }
+          ],
+          "name": "meta_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "meta",
+              "type": "Nil"
+            }
+          ],
+          "name": "meta_hover_started"
+        },
+        {
+          "args": [
+            {
+              "name": "meta",
+              "type": "Nil"
+            }
+          ],
+          "name": "meta_hover_ended"
+        },
+        {
+          "args": [],
+          "name": "finished"
+        }
+      ]
+    },
+    "ScriptEditor": {
+      "base": "PanelContainer",
+      "properties": [],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "script",
+              "type": "Object"
+            }
+          ],
+          "name": "editor_script_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "script",
+              "type": "Object"
+            }
+          ],
+          "name": "script_close"
+        }
+      ]
+    },
+    "ScriptEditorBase": {
+      "base": "VBoxContainer",
+      "properties": [],
+      "signals": [
+        {
+          "args": [],
+          "name": "name_changed"
+        },
+        {
+          "args": [],
+          "name": "edited_script_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "text",
+              "type": "String"
+            }
+          ],
+          "name": "search_in_files_requested"
+        },
+        {
+          "args": [],
+          "name": "request_save_history"
+        },
+        {
+          "args": [
+            {
+              "name": "topic",
+              "type": "String"
+            }
+          ],
+          "name": "request_help"
+        },
+        {
+          "args": [
+            {
+              "name": "script",
+              "type": "Object"
+            },
+            {
+              "name": "line",
+              "type": "int"
+            }
+          ],
+          "name": "request_open_script_at_line"
+        },
+        {
+          "args": [
+            {
+              "name": "what",
+              "type": "String"
+            }
+          ],
+          "name": "go_to_help"
+        },
+        {
+          "args": [
+            {
+              "name": "state",
+              "type": "Dictionary"
+            }
+          ],
+          "name": "request_save_previous_state"
+        },
+        {
+          "args": [
+            {
+              "name": "text",
+              "type": "String"
+            }
+          ],
+          "name": "replace_in_files_requested"
+        },
+        {
+          "args": [
+            {
+              "name": "script",
+              "type": "Object"
+            },
+            {
+              "name": "method",
+              "type": "String"
+            }
+          ],
+          "name": "go_to_method"
+        }
+      ]
+    },
+    "ScrollBar": {
+      "base": "Range",
+      "properties": [
+        {
+          "name": "custom_step",
+          "type": "float"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "scrolling"
+        }
+      ]
+    },
+    "ScrollContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "follow_focus",
+          "type": "bool"
+        },
+        {
+          "name": "draw_focus_border",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_horizontal",
+          "type": "int"
+        },
+        {
+          "name": "scroll_vertical",
+          "type": "int"
+        },
+        {
+          "name": "scroll_horizontal_custom_step",
+          "type": "float"
+        },
+        {
+          "name": "scroll_vertical_custom_step",
+          "type": "float"
+        },
+        {
+          "enum": "Disabled,Auto,Always Show,Never Show,Reserve,Maximize First",
+          "name": "horizontal_scroll_mode",
+          "type": "int"
+        },
+        {
+          "enum": "Disabled,Auto,Always Show,Never Show,Reserve,Maximize First",
+          "name": "vertical_scroll_mode",
+          "type": "int"
+        },
+        {
+          "name": "scroll_horizontal_by_default",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_deadzone",
+          "type": "int"
+        },
+        {
+          "enum": "Disabled,All,Top and Left,Bottom and Right",
+          "name": "scroll_hint_mode",
+          "type": "int"
+        },
+        {
+          "name": "tile_scroll_hint",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "scroll_started"
+        },
+        {
+          "args": [],
+          "name": "scroll_ended"
+        }
+      ]
+    },
+    "Separator": {
+      "base": "Control",
+      "properties": [],
+      "signals": []
+    },
+    "Slider": {
+      "base": "Range",
+      "properties": [
+        {
+          "name": "editable",
+          "type": "bool"
+        },
+        {
+          "name": "scrollable",
+          "type": "bool"
+        },
+        {
+          "name": "tick_count",
+          "type": "int"
+        },
+        {
+          "name": "ticks_on_borders",
+          "type": "bool"
+        },
+        {
+          "name": "ticks_position",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "drag_started"
+        },
+        {
+          "args": [
+            {
+              "name": "value_changed",
+              "type": "bool"
+            }
+          ],
+          "name": "drag_ended"
+        }
+      ]
+    },
+    "SpinBox": {
+      "base": "Range",
+      "properties": [
+        {
+          "enum": "Left,Center,Right,Fill",
+          "name": "alignment",
+          "type": "int"
+        },
+        {
+          "name": "editable",
+          "type": "bool"
+        },
+        {
+          "name": "update_on_text_changed",
+          "type": "bool"
+        },
+        {
+          "name": "prefix",
+          "type": "String"
+        },
+        {
+          "name": "suffix",
+          "type": "String"
+        },
+        {
+          "name": "custom_arrow_step",
+          "type": "float"
+        },
+        {
+          "name": "custom_arrow_round",
+          "type": "bool"
+        },
+        {
+          "name": "select_all_on_focus",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "SplitContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "split_offsets",
+          "type": "PackedInt32Array"
+        },
+        {
+          "name": "collapsed",
+          "type": "bool"
+        },
+        {
+          "name": "dragging_enabled",
+          "type": "bool"
+        },
+        {
+          "enum": "Visible,Hidden,Hidden and Collapsed",
+          "name": "dragger_visibility",
+          "type": "int"
+        },
+        {
+          "name": "vertical",
+          "type": "bool"
+        },
+        {
+          "name": "touch_dragger_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "drag_nested_intersections",
+          "type": "bool"
+        },
+        {
+          "name": "drag_area_margin_begin",
+          "type": "int"
+        },
+        {
+          "name": "drag_area_margin_end",
+          "type": "int"
+        },
+        {
+          "name": "drag_area_offset",
+          "type": "int"
+        },
+        {
+          "name": "drag_area_highlight_in_editor",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "offset",
+              "type": "int"
+            }
+          ],
+          "name": "dragged"
+        },
+        {
+          "args": [],
+          "name": "drag_started"
+        },
+        {
+          "args": [],
+          "name": "drag_ended"
+        }
+      ]
+    },
+    "SubViewportContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "name": "stretch",
+          "type": "bool"
+        },
+        {
+          "name": "stretch_shrink",
+          "type": "int"
+        },
+        {
+          "name": "mouse_target",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "TabBar": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "current_tab",
+          "type": "int"
+        },
+        {
+          "enum": "Left,Center,Right",
+          "name": "tab_alignment",
+          "type": "int"
+        },
+        {
+          "name": "clip_tabs",
+          "type": "bool"
+        },
+        {
+          "name": "close_with_middle_mouse",
+          "type": "bool"
+        },
+        {
+          "enum": "Show Never,Show Active Only,Show Always",
+          "name": "tab_close_display_policy",
+          "type": "int"
+        },
+        {
+          "name": "max_tab_width",
+          "type": "int"
+        },
+        {
+          "name": "scrolling_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "drag_to_rearrange_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "switch_on_drag_hover",
+          "type": "bool"
+        },
+        {
+          "name": "tabs_rearrange_group",
+          "type": "int"
+        },
+        {
+          "name": "scroll_to_selected",
+          "type": "bool"
+        },
+        {
+          "name": "select_with_rmb",
+          "type": "bool"
+        },
+        {
+          "name": "deselect_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "tab_count",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_rmb_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_close_pressed"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_button_pressed"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_hovered"
+        },
+        {
+          "args": [
+            {
+              "name": "idx_to",
+              "type": "int"
+            }
+          ],
+          "name": "active_tab_rearranged"
+        }
+      ]
+    },
+    "TabContainer": {
+      "base": "Container",
+      "properties": [
+        {
+          "enum": "Left,Center,Right",
+          "name": "tab_alignment",
+          "type": "int"
+        },
+        {
+          "name": "current_tab",
+          "type": "int"
+        },
+        {
+          "enum": "Top,Bottom",
+          "name": "tabs_position",
+          "type": "int"
+        },
+        {
+          "name": "clip_tabs",
+          "type": "bool"
+        },
+        {
+          "name": "tabs_visible",
+          "type": "bool"
+        },
+        {
+          "name": "switch_on_drag_hover",
+          "type": "bool"
+        },
+        {
+          "name": "drag_to_rearrange_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "tabs_rearrange_group",
+          "type": "int"
+        },
+        {
+          "name": "use_hidden_tabs_for_min_size",
+          "type": "bool"
+        },
+        {
+          "enum": "None,Click,All",
+          "name": "tab_focus_mode",
+          "type": "int"
+        },
+        {
+          "name": "deselect_enabled",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [
+            {
+              "name": "idx_to",
+              "type": "int"
+            }
+          ],
+          "name": "active_tab_rearranged"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_hovered"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "tab",
+              "type": "int"
+            }
+          ],
+          "name": "tab_button_pressed"
+        },
+        {
+          "args": [],
+          "name": "pre_popup_pressed"
+        }
+      ]
+    },
+    "TextEdit": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "text",
+          "type": "String"
+        },
+        {
+          "name": "placeholder_text",
+          "type": "String"
+        },
+        {
+          "name": "editable",
+          "type": "bool"
+        },
+        {
+          "name": "context_menu_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "emoji_menu_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "backspace_deletes_composite_character_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "shortcut_keys_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "selecting_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "deselect_on_focus_loss_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "drag_and_drop_selection_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "middle_mouse_paste_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "empty_selection_clipboard_enabled",
+          "type": "bool"
+        },
+        {
+          "enum": "None,Boundary",
+          "name": "wrap_mode",
+          "type": "int"
+        },
+        {
+          "enum": "Arbitrary:1,Word:2,Word (Smart):3",
+          "name": "autowrap_mode",
+          "type": "int"
+        },
+        {
+          "name": "indent_wrapped_lines",
+          "type": "bool"
+        },
+        {
+          "name": "tab_input_mode",
+          "type": "bool"
+        },
+        {
+          "name": "virtual_keyboard_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "virtual_keyboard_show_on_focus",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_smooth",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_v_scroll_speed",
+          "type": "float"
+        },
+        {
+          "name": "scroll_past_end_of_file",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_vertical",
+          "type": "float"
+        },
+        {
+          "name": "scroll_horizontal",
+          "type": "int"
+        },
+        {
+          "name": "scroll_fit_content_height",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_fit_content_width",
+          "type": "bool"
+        },
+        {
+          "name": "minimap_draw",
+          "type": "bool"
+        },
+        {
+          "name": "minimap_width",
+          "type": "int"
+        },
+        {
+          "enum": "Line,Block",
+          "name": "caret_type",
+          "type": "int"
+        },
+        {
+          "name": "caret_blink",
+          "type": "bool"
+        },
+        {
+          "name": "caret_blink_interval",
+          "type": "float"
+        },
+        {
+          "name": "caret_draw_when_editable_disabled",
+          "type": "bool"
+        },
+        {
+          "name": "caret_move_on_right_click",
+          "type": "bool"
+        },
+        {
+          "name": "caret_mid_grapheme",
+          "type": "bool"
+        },
+        {
+          "name": "caret_multiple",
+          "type": "bool"
+        },
+        {
+          "name": "use_default_word_separators",
+          "type": "bool"
+        },
+        {
+          "name": "use_custom_word_separators",
+          "type": "bool"
+        },
+        {
+          "name": "custom_word_separators",
+          "type": "String"
+        },
+        {
+          "name": "syntax_highlighter",
+          "type": "Object"
+        },
+        {
+          "name": "highlight_all_occurrences",
+          "type": "bool"
+        },
+        {
+          "name": "highlight_current_line",
+          "type": "bool"
+        },
+        {
+          "name": "draw_control_chars",
+          "type": "bool"
+        },
+        {
+          "name": "draw_tabs",
+          "type": "bool"
+        },
+        {
+          "name": "draw_spaces",
+          "type": "bool"
+        },
+        {
+          "enum": "Auto,Left-to-Right,Right-to-Left,Inherited",
+          "name": "text_direction",
+          "type": "int"
+        },
+        {
+          "name": "language",
+          "type": "String"
+        },
+        {
+          "enum": "Default,URI,File,Email,List,None,Custom",
+          "name": "structured_text_bidi_override",
+          "type": "int"
+        },
+        {
+          "name": "structured_text_bidi_override_options",
+          "type": "Array"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "text_set"
+        },
+        {
+          "args": [],
+          "name": "text_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "from_line",
+              "type": "int"
+            },
+            {
+              "name": "to_line",
+              "type": "int"
+            }
+          ],
+          "name": "lines_edited_from"
+        },
+        {
+          "args": [],
+          "name": "caret_changed"
+        },
+        {
+          "args": [
+            {
+              "name": "line",
+              "type": "int"
+            },
+            {
+              "name": "gutter",
+              "type": "int"
+            }
+          ],
+          "name": "gutter_clicked"
+        },
+        {
+          "args": [],
+          "name": "gutter_added"
+        },
+        {
+          "args": [],
+          "name": "gutter_removed"
+        }
+      ]
+    },
+    "TextureButton": {
+      "base": "BaseButton",
+      "properties": [
+        {
+          "name": "texture_normal",
+          "type": "Object"
+        },
+        {
+          "name": "texture_pressed",
+          "type": "Object"
+        },
+        {
+          "name": "texture_hover",
+          "type": "Object"
+        },
+        {
+          "name": "texture_disabled",
+          "type": "Object"
+        },
+        {
+          "name": "texture_focused",
+          "type": "Object"
+        },
+        {
+          "name": "texture_click_mask",
+          "type": "Object"
+        },
+        {
+          "name": "ignore_texture_size",
+          "type": "bool"
+        },
+        {
+          "enum": "Scale,Tile,Keep,Keep Centered,Keep Aspect,Keep Aspect Centered,Keep Aspect Covered",
+          "name": "stretch_mode",
+          "type": "int"
+        },
+        {
+          "name": "flip_h",
+          "type": "bool"
+        },
+        {
+          "name": "flip_v",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "TextureProgressBar": {
+      "base": "Range",
+      "properties": [
+        {
+          "enum": "Left to Right,Right to Left,Top to Bottom,Bottom to Top,Clockwise,Counter Clockwise,Bilinear (Left and Right),Bilinear (Top and Bottom),Clockwise and Counter Clockwise",
+          "name": "fill_mode",
+          "type": "int"
+        },
+        {
+          "name": "radial_initial_angle",
+          "type": "float"
+        },
+        {
+          "name": "radial_fill_degrees",
+          "type": "float"
+        },
+        {
+          "name": "radial_center_offset",
+          "type": "Vector2"
+        },
+        {
+          "name": "nine_patch_stretch",
+          "type": "bool"
+        },
+        {
+          "name": "stretch_margin_left",
+          "type": "int"
+        },
+        {
+          "name": "stretch_margin_top",
+          "type": "int"
+        },
+        {
+          "name": "stretch_margin_right",
+          "type": "int"
+        },
+        {
+          "name": "stretch_margin_bottom",
+          "type": "int"
+        },
+        {
+          "name": "texture_under",
+          "type": "Object"
+        },
+        {
+          "name": "texture_over",
+          "type": "Object"
+        },
+        {
+          "name": "texture_progress",
+          "type": "Object"
+        },
+        {
+          "name": "texture_progress_offset",
+          "type": "Vector2"
+        },
+        {
+          "name": "tint_under",
+          "type": "Color"
+        },
+        {
+          "name": "tint_over",
+          "type": "Color"
+        },
+        {
+          "name": "tint_progress",
+          "type": "Color"
+        }
+      ],
+      "signals": []
+    },
+    "TextureRect": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "texture",
+          "type": "Object"
+        },
+        {
+          "enum": "Keep Size,Ignore Size,Fit Width,Fit Width Proportional,Fit Height,Fit Height Proportional",
+          "name": "expand_mode",
+          "type": "int"
+        },
+        {
+          "enum": "Scale,Tile,Keep,Keep Centered,Keep Aspect,Keep Aspect Centered,Keep Aspect Covered",
+          "name": "stretch_mode",
+          "type": "int"
+        },
+        {
+          "name": "flip_h",
+          "type": "bool"
+        },
+        {
+          "name": "flip_v",
+          "type": "bool"
+        }
+      ],
+      "signals": []
+    },
+    "Tree": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "columns",
+          "type": "int"
+        },
+        {
+          "name": "column_titles_visible",
+          "type": "bool"
+        },
+        {
+          "name": "allow_reselect",
+          "type": "bool"
+        },
+        {
+          "name": "allow_rmb_select",
+          "type": "bool"
+        },
+        {
+          "name": "allow_search",
+          "type": "bool"
+        },
+        {
+          "name": "hide_folding",
+          "type": "bool"
+        },
+        {
+          "name": "enable_recursive_folding",
+          "type": "bool"
+        },
+        {
+          "name": "enable_drag_unfolding",
+          "type": "bool"
+        },
+        {
+          "name": "hide_root",
+          "type": "bool"
+        },
+        {
+          "name": "drop_mode_flags",
+          "type": "int"
+        },
+        {
+          "enum": "Single,Row,Multi",
+          "name": "select_mode",
+          "type": "int"
+        },
+        {
+          "name": "auto_tooltip",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_horizontal_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "scroll_vertical_enabled",
+          "type": "bool"
+        },
+        {
+          "enum": "Disabled,Both,Top,Bottom",
+          "name": "scroll_hint_mode",
+          "type": "int"
+        },
+        {
+          "name": "tile_scroll_hint",
+          "type": "bool"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "item_selected"
+        },
+        {
+          "args": [],
+          "name": "cell_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "item",
+              "type": "Object"
+            },
+            {
+              "name": "column",
+              "type": "int"
+            },
+            {
+              "name": "selected",
+              "type": "bool"
+            }
+          ],
+          "name": "multi_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "mouse_position",
+              "type": "Vector2"
+            },
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "item_mouse_selected"
+        },
+        {
+          "args": [
+            {
+              "name": "click_position",
+              "type": "Vector2"
+            },
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "empty_clicked"
+        },
+        {
+          "args": [],
+          "name": "item_edited"
+        },
+        {
+          "args": [
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "custom_item_clicked"
+        },
+        {
+          "args": [],
+          "name": "item_icon_double_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "item",
+              "type": "Object"
+            }
+          ],
+          "name": "item_collapsed"
+        },
+        {
+          "args": [
+            {
+              "name": "item",
+              "type": "Object"
+            },
+            {
+              "name": "column",
+              "type": "int"
+            }
+          ],
+          "name": "check_propagated_to_item"
+        },
+        {
+          "args": [
+            {
+              "name": "item",
+              "type": "Object"
+            },
+            {
+              "name": "column",
+              "type": "int"
+            },
+            {
+              "name": "id",
+              "type": "int"
+            },
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "button_clicked"
+        },
+        {
+          "args": [
+            {
+              "name": "arrow_clicked",
+              "type": "bool"
+            }
+          ],
+          "name": "custom_popup_edited"
+        },
+        {
+          "args": [],
+          "name": "item_activated"
+        },
+        {
+          "args": [
+            {
+              "name": "column",
+              "type": "int"
+            },
+            {
+              "name": "mouse_button_index",
+              "type": "int"
+            }
+          ],
+          "name": "column_title_clicked"
+        },
+        {
+          "args": [],
+          "name": "nothing_selected"
+        }
+      ]
+    },
+    "VBoxContainer": {
+      "base": "BoxContainer",
+      "properties": [],
+      "signals": []
+    },
+    "VFlowContainer": {
+      "base": "FlowContainer",
+      "properties": [],
+      "signals": []
+    },
+    "VScrollBar": {
+      "base": "ScrollBar",
+      "properties": [],
+      "signals": []
+    },
+    "VSeparator": {
+      "base": "Separator",
+      "properties": [],
+      "signals": []
+    },
+    "VSlider": {
+      "base": "Slider",
+      "properties": [],
+      "signals": []
+    },
+    "VSplitContainer": {
+      "base": "SplitContainer",
+      "properties": [],
+      "signals": []
+    },
+    "VideoStreamPlayer": {
+      "base": "Control",
+      "properties": [
+        {
+          "name": "audio_track",
+          "type": "int"
+        },
+        {
+          "name": "stream",
+          "type": "Object"
+        },
+        {
+          "name": "volume_db",
+          "type": "float"
+        },
+        {
+          "name": "speed_scale",
+          "type": "float"
+        },
+        {
+          "name": "autoplay",
+          "type": "bool"
+        },
+        {
+          "name": "paused",
+          "type": "bool"
+        },
+        {
+          "name": "expand",
+          "type": "bool"
+        },
+        {
+          "name": "loop",
+          "type": "bool"
+        },
+        {
+          "name": "buffering_msec",
+          "type": "int"
+        },
+        {
+          "name": "bus",
+          "type": "StringName"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "finished"
+        }
+      ]
+    },
+    "VirtualJoystick": {
+      "base": "Control",
+      "properties": [
+        {
+          "enum": "Fixed,Dynamic,Following",
+          "name": "joystick_mode",
+          "type": "int"
+        },
+        {
+          "name": "joystick_size",
+          "type": "float"
+        },
+        {
+          "name": "tip_size",
+          "type": "float"
+        },
+        {
+          "name": "deadzone_ratio",
+          "type": "float"
+        },
+        {
+          "name": "clampzone_ratio",
+          "type": "float"
+        },
+        {
+          "name": "initial_offset_ratio",
+          "type": "Vector2"
+        },
+        {
+          "name": "action_left",
+          "type": "StringName"
+        },
+        {
+          "name": "action_right",
+          "type": "StringName"
+        },
+        {
+          "name": "action_up",
+          "type": "StringName"
+        },
+        {
+          "name": "action_down",
+          "type": "StringName"
+        },
+        {
+          "enum": "Always,When Touched",
+          "name": "visibility_mode",
+          "type": "int"
+        }
+      ],
+      "signals": [
+        {
+          "args": [],
+          "name": "pressed"
+        },
+        {
+          "args": [],
+          "name": "tapped"
+        },
+        {
+          "args": [
+            {
+              "name": "input_vector",
+              "type": "Vector2"
+            }
+          ],
+          "name": "released"
+        },
+        {
+          "args": [
+            {
+              "name": "input_vector",
+              "type": "Vector2"
+            }
+          ],
+          "name": "flicked"
+        },
+        {
+          "args": [],
+          "name": "flick_canceled"
+        }
+      ]
+    }
+  },
+  "godot": "4.7-stable (official)"
+}

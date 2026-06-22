@@ -31,4 +31,7 @@ for (const dep of deps) {
   const depPath = path.join(serverSrc, "node_modules", dep);
   if (fs.existsSync(depPath)) copyDir(depPath, path.join(dest, "node_modules", dep));
 }
+// the ClassDB dump (loaded by classdb.js via ../classdb/) — bundle it next to ./server
+const classdbSrc = path.join(serverSrc, "classdb");
+if (fs.existsSync(classdbSrc)) copyDir(classdbSrc, path.join(root, "classdb"));
 console.log("[bundle-server] copied language server into ./server");

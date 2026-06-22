@@ -4,6 +4,63 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-06-22
+
+A breadth + correctness release: the router is rewritten into a full React-Router-style
+component-tree spine, several runtime features land (Suspense, a signal registry, item-model
+adapters, a styling `classes` layer, media + animation hooks), the `.guitkx` compiler gains inline
+control-flow lowering, and a project-wide review fixed 20 confirmed bugs.
+
+### Added
+- **Component-tree router** (faithful port of ReactiveUIToolKit's router): `V.route`, `V.routes`
+  (a ranked first-match switch that ALSO accepts the legacy `routes` table), `V.outlet` (nested /
+  layout routes), `V.navigate` (declarative redirect), and `V.nav_link` (active-aware styling).
+  Nested routes with merged `:params`, leaf-exactness (a leaf route consumes the whole path; a
+  layout matches a prefix), splat `*`, `basename`, query strings, and navigation blockers. New
+  hooks: `use_navigate`/`use_location`/`use_query`/`use_params`/`use_matches`/`use_resolved_path`/
+  `use_search_params`/`use_go`/`use_can_go`/`use_blocker`/`use_prompt`, plus a nested-`<Router>`
+  guard. The legacy `routes`-table API and the navigate-only context-split optimization are preserved.
+- **Location model** — `RUIRouterLocation {path, query, state}`; history stores full locations and
+  supports `go`/`can_go` + blockers; `use_location()` is basename-relative.
+- **Suspense** — `V.suspense` (signal-await / frame-poll readiness; GDScript has no throw-to-suspend).
+- **Signal registry** — `RUISignals` (process-wide string-keyed shared signals) + `use_signal_key`.
+- **Text** — `V.text` + raw-String children auto-wrap to Labels; text-bearing hosts fold all-text
+  children into the `text` prop.
+- **`V.memo`** + an optional `props.__memo_eq` comparer.
+- **Item-model adapter registry** — declarative `items` generalized to `ItemList`/`Tree`/`TabBar`/
+  `OptionButton`/`PopupMenu`, selection/expansion preserved by item identity; `register_item_adapter`
+  for custom controls.
+- **Styling** — per-state StyleBox slots (`hover`/`pressed`/`focus`/`disabled`/`read_only`); a
+  userland `classes: [...]` layer (`RUIStyleSheet`, ordered dict merge, inline `style` wins).
+- **Hooks** — a real `use_deferred_value` (next-frame deferral); `use_animate` (Tween multi-track);
+  `use_sfx` + `RUIMedia` one-shot audio; `V.audio` / `V.video` host elements.
+- **Dev diagnostics** — hook-order validation + a state-update-during-render guard (debug-gated).
+
+### Compiler (.guitkx)
+- **Inline control-flow in expressions** — `@if`/`@elif`/`@else` and `@for` inside an embedded
+  `{expression}` / lambda return now lower to a ternary / `.map` instead of hoisting render-level
+  statements that couldn't see lambda locals (which produced invalid GDScript). `@while`/`@match`
+  in an expression report `GUITKX0113`.
+- Fixed: a member call on a non-Hooks receiver (`obj.use_state(...)`) is no longer auto-prefixed
+  with `Hooks.`; a `module` declaring a component and a hook of the SAME name is now rejected; a
+  conditional `return null` guard before the real markup return no longer fails the compile.
+
+### Fixed (project-wide review)
+- `classes`-only elements (no inline `style`) no longer error on re-render and now re-apply the
+  resolved class style.
+- `use_signal` re-binds its signal/selector/comparer every render (no longer frozen at mount).
+- `<Outlet/>` falls back to its own children when a nested route stops matching (no stale slot).
+- `ReactiveRoot.render()` / scheduling after `unmount()` no longer null-dereferences.
+- `use_state`/`use_reducer` and `RUISignal` change-detection use reference equality for collections
+  (Object.is), so a freshly-built equal Array/Dictionary still re-renders / notifies.
+- Item adapters re-select at most the original number of duplicate-text items (and the right one).
+- `use_can_go` re-renders on navigation; Suspense re-subscribes when its readiness source changes;
+  `RUIMedia` one-shots no longer leak for looping streams; `use_query`/`use_params` return copies.
+
+### Notes
+Verified on Godot 4.7. Full suite green: core 91 / style 25 / guitkx / router (18 + 37) / demos 28 /
+update / LSP 31. IDE extensions bump to VS Code 0.2.0 / VS 2022 0.2.0 (LSP + formatter fixes).
+
 ## [0.1.0] — 2026-06-20
 
 First public version of the GDScript port of ReactiveUIToolKit — a React-style reactive

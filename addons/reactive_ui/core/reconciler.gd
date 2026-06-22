@@ -60,6 +60,8 @@ func render(vnode: RUIVNode) -> void:
 	# Initial / top-level mount is always synchronous (no time-slicing) to avoid an empty
 	# first frame. Cancel any parked sliced render first so its process_frame tick can't fire
 	# after us, and mark `_work_active` so a setState during render restarts coherently. [M7/M8]
+	if _root_current == null:
+		return   # torn down by unmount() — a render after teardown is a no-op, not a crash [audit]
 	_cancel_pending_tick()
 	_root_vnode = vnode
 	_root_current.has_pending_update = true
@@ -73,6 +75,8 @@ func render(vnode: RUIVNode) -> void:
 
 ## Mark a fiber dirty and (unless we're mid-commit) schedule a coalesced render.
 func schedule_update_on_fiber(fiber: RUIFiber, vnode) -> void:
+	if _root_current == null:
+		return   # torn down by unmount() — ignore late setState/effect callbacks [audit]
 	if vnode != null:
 		_root_vnode = vnode
 	var target := fiber if fiber != null else _root_current
@@ -237,7 +241,16 @@ func _begin_function(fiber: RUIFiber) -> RUIFiber:
 	if fiber.state != null:
 		fiber.state.fiber = fiber
 	var alt := fiber.alternate
-	var props_equal: bool = fiber.props != null and (is_same(fiber.pending_props, fiber.props) or fiber.pending_props == fiber.props)  # identity fast-path [perf P3]
+	# identity fast-path [perf P3]; an optional props.__memo_eq(old,new) custom comparer (V.memo) is
+	# consulted only when not identity-equal, so the common path is untouched.
+	var props_equal: bool = false
+	if fiber.props != null:
+		if is_same(fiber.pending_props, fiber.props):
+			props_equal = true
+		elif fiber.pending_props.has("__memo_eq") and fiber.pending_props["__memo_eq"] is Callable:
+			props_equal = fiber.pending_props["__memo_eq"].call(fiber.props, fiber.pending_props)
+		else:
+			props_equal = fiber.pending_props == fiber.props
 	var context_ok: bool = not fiber.reads_context or not _has_context_changed(fiber)
 	var children_same: bool = _vnode_list_equal(alt.input_children if alt != null else [], fiber.input_children)
 	var can_bail: bool = (not fiber.has_pending_update) and context_ok and props_equal and children_same
@@ -681,7 +694,7 @@ func _build_apply_plan(fiber: RUIFiber, props: Dictionary) -> void:
 	fiber.apply_size = props.size()
 	var plain: Array = []
 	for k in props:
-		if k == "ref" or k == "style" or k == "items":
+		if k == "ref" or k == "style" or k == "items" or k == "classes":
 			fiber.apply_special = true
 		elif k == "key" or k == "children":
 			pass
@@ -884,12 +897,16 @@ func _flatten_into(arr, out: Array) -> void:
 			_flatten_into(c, out)   # flatten nested arrays of any depth [audit m7]
 		elif c is RUIVNode:
 			out.append(c)
+		elif c is String:
+			out.append(V.text(c))   # auto-wrap a raw String child as a text Label (Phase 7.2)
 
 func _to_vnode_array(result) -> Array:
 	if result == null:
 		return []
 	if result is RUIVNode:
 		return [result]
+	if result is String:
+		return [V.text(result)]   # a component may return a bare String (Phase 7.2)
 	if result is Array:
 		return _normalize_children(result)
 	return []

@@ -24,11 +24,60 @@ static func _begin(state: RUIComponentState) -> void:
 	state.layout_index = 0
 	state.context_deps = []
 	state.is_rendering = true
+	if RUIConfig.enable_hook_validation:
+		state.hook_log = []
 
 static func _end() -> void:
 	if _cur != null:
 		_cur.is_rendering = false
+		if RUIConfig.enable_hook_validation:
+			if not _cur.hook_order_primed:
+				_cur.hook_signatures = _cur.hook_log.duplicate()
+				_cur.hook_order_primed = true
+			else:
+				_check_hook_order(_cur)
 	_cur = null
+
+# --------------------------------------------------------------------------
+# Dev diagnostics (Phase 7.0) — hook-order validation + state-update-in-render guard.
+# All gated behind RUIConfig flags (default debug-only); push_error/warning + degrade.
+# --------------------------------------------------------------------------
+
+## Record a hook call's kind in render order (no-op unless validation is on).
+static func _record(state: RUIComponentState, kind: String) -> void:
+	if RUIConfig.enable_hook_validation:
+		state.hook_log.append(kind)
+
+## Compare this render's hook order to the primed signature; push_error on first divergence.
+static func _check_hook_order(state: RUIComponentState) -> void:
+	var prev: Array = state.hook_signatures
+	var now: Array = state.hook_log
+	var n: int = min(prev.size(), now.size())
+	for i in n:
+		if prev[i] != now[i]:
+			var m := "[Hooks][order] %s: hook #%d changed '%s' -> '%s' across renders — hooks must run in the same order every render (no hooks inside if/for/lambdas)." % [_comp_label(state), i, prev[i], now[i]]
+			RUIDiagnostics.emit(m)
+			push_error(m)
+			return
+	if prev.size() != now.size():
+		var m2 := "[Hooks][order] %s: hook count changed %d -> %d across renders — a hook is being called conditionally." % [_comp_label(state), prev.size(), now.size()]
+		RUIDiagnostics.emit(m2)
+		push_error(m2)
+
+## A readable component name for diagnostics (the render Callable's method, or <anonymous>).
+static func _comp_label(state: RUIComponentState) -> String:
+	if state != null and state.fiber != null and state.fiber.component is Callable:
+		var m := (state.fiber.component as Callable).get_method()
+		return m if m != "" else "<anonymous>"
+	return "<component>"
+
+## Push a strict warning once per (component, key).
+static func _warn_once(state: RUIComponentState, key: String, msg: String) -> void:
+	if state.diag_warned.has(key):
+		return
+	state.diag_warned[key] = true
+	RUIDiagnostics.emit(msg)
+	push_warning(msg)
 
 # --------------------------------------------------------------------------
 # State
@@ -39,6 +88,7 @@ static func _end() -> void:
 ## value bails out (no re-render).
 static func use_state(initial = null) -> Array:
 	var s := _cur
+	_record(s, "state")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -50,10 +100,12 @@ static func _make_setter(state: RUIComponentState, i: int) -> Callable:
 	return func(update):
 		if i >= state.hooks.size():   # state torn down (unmounted) — ignore late calls [audit C3]
 			return
+		if state.is_rendering and RUIConfig.enable_strict_diagnostics:
+			_warn_once(state, "set_in_render", "[Hooks][Strict] state set during render of %s — move it to an effect or event handler (setting state in the render body loops)." % _comp_label(state))
 		var slot: Dictionary = state.hooks[i]
 		var prev = slot["value"]
 		var next = update.call(prev) if (update is Callable) else update
-		if _equal(prev, next):
+		if _ref_equal(prev, next):   # Object.is semantics: a new equal collection still re-renders [audit]
 			return
 		slot["value"] = next
 		if state.on_state_updated.is_valid():
@@ -63,6 +115,7 @@ static func _make_setter(state: RUIComponentState, i: int) -> Callable:
 ## `dispatch` identity is stable; the reducer closure is refreshed every render.
 static func use_reducer(reducer: Callable, initial = null) -> Array:
 	var s := _cur
+	_record(s, "reducer")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -78,10 +131,12 @@ static func _make_dispatch(state: RUIComponentState, i: int) -> Callable:
 	return func(action):
 		if i >= state.hooks.size():
 			return
+		if state.is_rendering and RUIConfig.enable_strict_diagnostics:
+			_warn_once(state, "set_in_render", "[Hooks][Strict] dispatch during render of %s — move it to an effect or event handler." % _comp_label(state))
 		var slot: Dictionary = state.hooks[i]
 		var prev = slot["value"]
 		var next = slot["reducer"].call(prev, action)
-		if _equal(prev, next):
+		if _ref_equal(prev, next):   # Object.is semantics — match React/ReactiveUIToolKit [audit]
 			return
 		slot["value"] = next
 		if state.on_state_updated.is_valid():
@@ -95,6 +150,7 @@ static func _make_dispatch(state: RUIComponentState, i: int) -> Callable:
 ## `.current` does NOT trigger a re-render).
 static func use_ref(initial = null) -> Dictionary:
 	var s := _cur
+	_record(s, "ref")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -104,6 +160,7 @@ static func use_ref(initial = null) -> Dictionary:
 ## use_memo(factory, deps) -> cached value, recomputed only when deps change (shallow).
 static func use_memo(factory: Callable, deps: Array = []) -> Variant:
 	var s := _cur
+	_record(s, "memo")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -133,6 +190,7 @@ static func use_imperative_handle(factory: Callable, deps: Array = []) -> Varian
 ## when a dep changes. `effect()` may return a Callable cleanup.
 static func use_effect(effect: Callable, deps = null) -> void:
 	var s := _cur
+	_record(s, "effect")
 	var i := s.effect_index
 	s.effect_index += 1
 	if i >= s.effects.size():
@@ -145,6 +203,7 @@ static func use_effect(effect: Callable, deps = null) -> void:
 ## cleanup-then-setup per fiber. Same dep semantics as use_effect.
 static func use_layout_effect(effect: Callable, deps = null) -> void:
 	var s := _cur
+	_record(s, "layout_effect")
 	var i := s.layout_index
 	s.layout_index += 1
 	if i >= s.layout_effects.size():
@@ -217,21 +276,63 @@ static func _propagate_context_change(key: String, first: RUIFiber) -> bool:
 	return any
 
 # --------------------------------------------------------------------------
-# Concurrency shims (synchronous renderer — no-ops that still occupy stable slots)
+# Concurrency
 # --------------------------------------------------------------------------
 
-## use_deferred_value(value) -> value (returned immediately; no concurrent deferral).
-static func use_deferred_value(value, _deps = null):
+## use_deferred_value(value, deps?) -> a deferred copy of `value`. On the render where `value`
+## changes it returns the PREVIOUS value, then commits the new value on a low-priority next-frame
+## tick (re-rendering once) — so an urgent update paints first with the stale value and the
+## expensive consumer catches up a frame later. Mirrors ReactiveUIToolKit's scheduler-backed
+## UseDeferredValue (which defers via EnqueueBatchedEffect). Pass `deps` to gate on a key instead
+## of the value itself. The deferral routes through the normal schedule (process_frame ->
+## on_state_updated -> schedule_update_on_fiber), so it never re-enters the render's restart guard.
+static func use_deferred_value(value, deps = null):
 	var s := _cur
+	_record(s, "deferred")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
-		s.hooks.append({ "kind": "deferred" })
-	return value
+		s.hooks.append({ "kind": "deferred", "value": value, "target": value, "deps": deps, "pending": false })
+		return value
+	var slot: Dictionary = s.hooks[i]
+	var changed: bool
+	if deps != null:
+		changed = _deps_changed(slot["deps"], deps)
+		slot["deps"] = deps
+	else:
+		changed = not _equal(slot["value"], value)
+	if changed and not _equal(slot["value"], value):
+		slot["target"] = value
+		if not slot["pending"]:
+			slot["pending"] = true
+			_schedule_deferred_commit(s, i)
+	return slot["value"]
 
-## use_transition() -> [is_pending(false), start_transition]. start runs the action now.
+static func _schedule_deferred_commit(state: RUIComponentState, i: int) -> void:
+	var loop := Engine.get_main_loop()
+	if not (loop is SceneTree):
+		# No frame loop (e.g. a pure unit context) — commit synchronously so the value isn't stuck.
+		if i < state.hooks.size():
+			state.hooks[i]["value"] = state.hooks[i]["target"]
+			state.hooks[i]["pending"] = false
+		return
+	var cb := func():
+		if i >= state.hooks.size():
+			return
+		var slot: Dictionary = state.hooks[i]
+		slot["pending"] = false
+		if not _equal(slot["value"], slot["target"]):
+			slot["value"] = slot["target"]
+			if state.on_state_updated.is_valid():
+				state.on_state_updated.call()
+	(loop as SceneTree).process_frame.connect(cb, CONNECT_ONE_SHOT)
+
+## use_transition() -> [is_pending(false), start_transition]. Faithful to ReactiveUIToolKit's
+## UseTransition, which is a no-op in the synchronous renderer: is_pending is always false and
+## start_transition runs the action immediately.
 static func use_transition() -> Array:
 	var s := _cur
+	_record(s, "transition")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -248,6 +349,7 @@ static func use_transition() -> Array:
 ## use_stable_callback(cb) / use_stable_func(cb): 0-arg, stable identity.
 static func use_stable_callback(cb: Callable) -> Callable:
 	var s := _cur
+	_record(s, "stable")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -266,6 +368,7 @@ static func use_stable_func(cb: Callable) -> Callable:
 ## use_stable_action(cb): 1-arg, stable identity.
 static func use_stable_action(cb: Callable) -> Callable:
 	var s := _cur
+	_record(s, "stable")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -285,6 +388,7 @@ static func use_stable_action(cb: Callable) -> Callable:
 ## use_safe_area() -> { left, top, right, bottom } device safe-area insets (pixels).
 static func use_safe_area() -> Dictionary:
 	var s := _cur
+	_record(s, "safe_area")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
@@ -302,23 +406,49 @@ static func use_safe_area() -> Dictionary:
 ## and re-renders when the (optionally selected) value changes. Unsubscribes on unmount.
 static func use_signal(sig: RUISignal, selector = null, comparer = null):
 	var s := _cur
+	_record(s, "signal")
 	var i := s.hook_index
 	s.hook_index += 1
 	if i >= s.hooks.size():
-		var slot := { "kind": "signal", "sig": sig }
-		slot["value"] = selector.call(sig.get_value()) if (selector is Callable) else sig.get_value()
-		slot["unsub"] = sig.subscribe(_make_signal_sub(s, i, sig, selector, comparer))
+		var slot := { "kind": "signal", "sig": sig, "selector": selector, "comparer": comparer }
+		slot["value"] = _select_signal(sig, selector)
+		slot["unsub"] = sig.subscribe(_make_signal_sub(s, i)) if sig != null else Callable()
 		s.hooks.append(slot)
 		return slot["value"]
-	return s.hooks[i]["value"]
+	# Re-bind every render (mirrors the C# Signal.Bind): refresh selector/comparer, resubscribe if the
+	# signal instance changed, and recompute the selected value so a changed selector/sig is reflected. [audit]
+	var slot2: Dictionary = s.hooks[i]
+	slot2["selector"] = selector
+	slot2["comparer"] = comparer
+	if not is_same(slot2["sig"], sig):
+		if slot2["unsub"] is Callable and slot2["unsub"].is_valid():
+			slot2["unsub"].call()
+		slot2["sig"] = sig
+		slot2["unsub"] = sig.subscribe(_make_signal_sub(s, i)) if sig != null else Callable()
+	slot2["value"] = _select_signal(sig, selector)
+	return slot2["value"]
 
-static func _make_signal_sub(state: RUIComponentState, i: int, sig: RUISignal, selector, comparer) -> Callable:
+static func _select_signal(sig: RUISignal, selector):
+	if sig == null:
+		return null
+	return selector.call(sig.get_value()) if (selector is Callable) else sig.get_value()
+
+## use_signal_key(key, initial, selector?, comparer?) -> selected value of the PROCESS-WIDE signal
+## registered under `key` (created lazily via RUISignals). Subscribes + re-renders like use_signal;
+## the registry entry outlives the component, so any component reading the same key shares one store.
+static func use_signal_key(key: String, initial = null, selector = null, comparer = null):
+	return use_signal(RUISignals.get_or_create(key, initial), selector, comparer)
+
+static func _make_signal_sub(state: RUIComponentState, i: int) -> Callable:
+	# Reads sig/selector/comparer from the SLOT (not captured args) so the latest ones are used after
+	# a re-bind. Default change-detection is reference-aware (a new equal collection counts as changed). [audit]
 	return func(_v):
 		if i >= state.hooks.size():   # unsubscribed/torn down between emit and dispatch [audit C3]
 			return
 		var slot: Dictionary = state.hooks[i]
-		var nv = selector.call(sig.get_value()) if (selector is Callable) else sig.get_value()
-		var same: bool = comparer.call(slot["value"], nv) if (comparer is Callable) else slot["value"] == nv
+		var nv = _select_signal(slot["sig"], slot["selector"])
+		var comparer = slot["comparer"]
+		var same: bool = comparer.call(slot["value"], nv) if (comparer is Callable) else _ref_equal(slot["value"], nv)
 		if not same:
 			slot["value"] = nv
 			if state.on_state_updated.is_valid():
@@ -354,7 +484,62 @@ static func use_tween_value(from, to, duration: float, on_update: Callable, deps
 				tw.kill()
 	use_effect(eff, deps)
 
-# use_sfx / use_animate -> later (Godot AudioStreamPlayer / AnimationPlayer)
+## use_animate(ref, tracks, autoplay, deps): play a list of property tracks on a mounted node via a
+## Godot Tween (the engine-native analog of ReactiveUIToolKit's UseAnimate). `ref` is a use_ref box
+## whose `.current` is the target node. Each track is a Dictionary:
+##   { "property": "modulate:a", "to": <value>, "from"?: <value>, "duration"?: 0.3, "delay"?: 0.0,
+##     "trans"?: Tween.TransitionType, "ease"?: Tween.EaseType, "parallel"?: false }
+## A fresh tween is built on mount / when `deps` change; the previous one is killed (cleanup).
+static func use_animate(ref: Dictionary, tracks: Array, autoplay := true, deps: Array = []) -> void:
+	var eff := func():
+		var node = ref.get("current")
+		if node == null or not is_instance_valid(node) or not node.is_inside_tree():
+			return func(): pass
+		if not autoplay or tracks == null or tracks.is_empty():
+			return func(): pass
+		var tw: Tween = node.create_tween()
+		for track in tracks:
+			if not (track is Dictionary):
+				continue
+			var prop := str(track.get("property", ""))
+			if prop == "":
+				continue
+			if bool(track.get("parallel", false)):
+				tw.parallel()
+			var dur := float(track.get("duration", 0.3))
+			var tweener := tw.tween_property(node, prop, track.get("to"), dur)
+			if track.has("from"):
+				tweener.from(track["from"])
+			if track.has("delay"):
+				tweener.set_delay(float(track["delay"]))
+			if track.has("trans"):
+				tweener.set_trans(int(track["trans"]))
+			if track.has("ease"):
+				tweener.set_ease(int(track["ease"]))
+		return func():
+			if is_instance_valid(tw):
+				tw.kill()
+	use_effect(eff, deps)
+
+## use_sfx(bus) -> a stable func(stream: AudioStream, volume_db := 0.0, pitch_scale := 1.0) that plays
+## a one-shot sound on a transient, self-freeing AudioStreamPlayer (RUIMedia). Call it from event
+## handlers; identity is stable across renders unless `bus` changes. Mirrors ReactiveUIToolKit's UseSfx.
+static func use_sfx(bus := "Master") -> Callable:
+	var s := _cur
+	_record(s, "sfx")
+	var i := s.hook_index
+	s.hook_index += 1
+	if i >= s.hooks.size() or s.hooks[i].get("bus") != bus:
+		var captured_bus := bus
+		var action := func(stream: AudioStream, volume_db := 0.0, pitch_scale := 1.0):
+			RUIMedia.play_one_shot(stream, captured_bus, volume_db, pitch_scale)
+		var slot := { "kind": "sfx", "bus": bus, "action": action }
+		if i >= s.hooks.size():
+			s.hooks.append(slot)
+		else:
+			s.hooks[i] = slot
+	return s.hooks[i]["action"]
+
 # use_ui_document_root -> Godot has no UIDocument; resolve the mount viewport if needed.
 
 # --------------------------------------------------------------------------
@@ -373,4 +558,14 @@ static func _deps_changed(prev, next) -> bool:
 	return false
 
 static func _equal(a, b) -> bool:
+	return a == b
+
+## Object.is / EqualityComparer<T>.Default semantics: IDENTITY for reference types (Array /
+## Dictionary / Object), VALUE equality for value types (int/float/String/Vector2/…). Used for
+## state + signal change-detection so a freshly-built but structurally-equal collection still counts
+## as changed (re-renders), matching React and ReactiveUIToolKit. (`_equal`/`_deps_changed` keep
+## value-equality, which is the intended shallow-deps semantics.)
+static func _ref_equal(a, b) -> bool:
+	if a is Array or a is Dictionary or a is Object or b is Array or b is Dictionary or b is Object:
+		return is_same(a, b)
 	return a == b

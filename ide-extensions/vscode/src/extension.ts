@@ -39,6 +39,7 @@ export function activate(context: ExtensionContext): void {
     initializationOptions: {
       godotPort: config.get<number>("godotLanguageServerPort", 6005),
       enableGodotProxy: config.get<boolean>("enableGodotProxy", true),
+      useGdformat: config.get<boolean>("useGdformat", true),
     },
     synchronize: { configurationSection: "guitkx" },
   };

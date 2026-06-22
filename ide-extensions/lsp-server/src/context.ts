@@ -2,7 +2,8 @@
 // attribute name, a `<`/`@` start) are answered from the schema; everything else (setup, {expr},
 // control-flow conditions) is treated as embedded GDScript and forwarded to Godot's LSP.
 
-import { skipString } from "./scanner";
+import { skipString, findMatching } from "./scanner";
+import { isBodyBrace } from "./semanticTokens";
 
 export type ContextKind = "tagName" | "attrName" | "directive" | "embedded" | "markup";
 
@@ -19,7 +20,8 @@ export function classifyContext(src: string, offset: number): CursorContext {
 
   const tag = enclosingTag(src, offset);
   if (tag) {
-    if (insideAttrValueExpr(src, tag.ltPos, offset)) return { kind: "embedded", word };
+    // enclosingTag already returns null when the cursor is inside any {expr} (incl. an ={...} attr
+    // value), so reaching here means the cursor is in the tag's name or attribute-name area.
     const afterLt = src.slice(tag.ltPos + 1, offset);
     if (/^[A-Za-z0-9_]*$/.test(afterLt)) return { kind: "tagName", word };
     return { kind: "attrName", tag: tag.name, word };
@@ -70,6 +72,17 @@ function enclosingTag(src: string, offset: number): TagAt | null {
       i = skipString(src, i);
       continue;
     }
+    if (c === "{") {
+      if (isBodyBrace(src, i)) {
+        i++; // a component/control-flow BODY brace contains markup — enter it
+        continue;
+      }
+      // a child/attr {expr} hole: a `<` inside is GDScript, not a tag. Cursor inside -> embedded.
+      const close = findMatching(src, i);
+      if (close === -1 || close >= offset) return null;
+      i = close + 1;
+      continue;
+    }
     if (c === "<" && i + 1 < src.length && /[A-Za-z]/.test(src[i + 1])) {
       openLt = i;
     } else if (c === ">") {
@@ -81,35 +94,6 @@ function enclosingTag(src: string, offset: number): TagAt | null {
   let j = openLt + 1;
   while (j < src.length && /[A-Za-z0-9_]/.test(src[j])) j++;
   return { ltPos: openLt, name: src.slice(openLt + 1, j) };
-}
-
-/** Inside this tag, is the cursor within an `={ ... }` attribute-value expression? */
-function insideAttrValueExpr(src: string, ltPos: number, offset: number): boolean {
-  // find the last `={` before offset within the tag, and check no closing `}` follows before offset
-  let depth = 0;
-  let inExpr = false;
-  let i = ltPos;
-  while (i < offset) {
-    if (src[i] === '"' || src[i] === "'") {
-      i = skipString(src, i);
-      continue;
-    }
-    if (src[i] === "=" && src[i + 1] === "{") {
-      inExpr = true;
-      depth = 1;
-      i += 2;
-      continue;
-    }
-    if (inExpr) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}") {
-        depth--;
-        if (depth === 0) inExpr = false;
-      }
-    }
-    i++;
-  }
-  return inExpr;
 }
 
 function insideUnmatchedBrace(src: string, offset: number): boolean {

@@ -23,10 +23,14 @@ var _err: String = ""
 func parse(src: String, start: int, end: int) -> Dictionary:
 	_src = src
 	_err = ""
-	var out := _parse_nodes(start, end)
-	return { "nodes": out, "error": _err }
+	var r := _parse_nodes(start, end)
+	return { "nodes": r["nodes"], "error": _err }
 
-func _parse_nodes(start: int, end: int) -> Array:
+## Parse sibling nodes in [start, end). Returns { nodes, next } where `next` is the index at which
+## parsing stopped — sitting on an unconsumed `</` (the close tag belongs to the caller) or at `end`.
+## The caller uses `next` to locate the close tag WITHOUT a second weaker walk (which could be fooled
+## by a `<`/`>` inside an embedded {expr}).
+func _parse_nodes(start: int, end: int) -> Dictionary:
 	var nodes: Array = []
 	var i := start
 	while i < end and _err == "":
@@ -61,7 +65,7 @@ func _parse_nodes(start: int, end: int) -> Array:
 			if r["node"] != null:
 				nodes.append(r["node"])
 			i = r["next"]
-	return nodes
+	return { "nodes": nodes, "next": i }
 
 func _parse_element(open_i: int, end: int) -> Dictionary:
 	# open_i points at "<"
@@ -92,19 +96,17 @@ func _parse_element(open_i: int, end: int) -> Dictionary:
 			return { "node": null, "next": end }
 		attrs.append(ar["attr"])
 		i = ar["next"]
-	# paired: parse children until the matching close tag
-	var children := _parse_nodes(i, end)
+	# paired: parse children; _parse_nodes consumes every {expr}/nested element through find_matching
+	# and stops exactly on the matching "</" (or end), telling us where — no second walk to be fooled.
+	var cr := _parse_nodes(i, end)
 	if _err != "":
 		return { "node": null, "next": end }
-	# advance i past where children stopped (a "<" of the close tag, or end)
-	var j := i
-	# re-find children end by walking the same logic is wasteful; instead, _parse_nodes stopped
-	# at a "</" — find it from i.
-	j = _find_close_tag_start(i, end)
-	if j == -1:
+	var children: Array = cr["nodes"]
+	var j: int = cr["next"]
+	if j >= end or _src[j] != "<" or (j + 1 < end and _src[j + 1] != "/"):
 		_err = "GUITKX0301: unclosed tag <%s>" % tag
 		return { "node": null, "next": end }
-	# verify </tag>
+	# j points at "</": read the close name to ">" (a close tag holds no {expr}/strings, so find is safe)
 	var ce := _src.find(">", j)
 	if ce == -1 or ce >= end:
 		_err = "GUITKX0303: malformed closing tag for <%s>" % tag
@@ -281,35 +283,6 @@ func _is_tag_char(c: String) -> bool:
 
 func _is_attr_name_char(c: String) -> bool:
 	return _is_tag_char(c) or c == "-" or c == "."
-
-func _find_close_tag_start(start: int, end: int) -> int:
-	# find the next "</" at markup level (skipping noncode + nested children already consumed)
-	var i := start
-	var depth := 0
-	while i < end:
-		var j := L.skip_noncode(_src, i)
-		if j != i:
-			i = j
-			continue
-		if _src[i] == "<":
-			if i + 1 < end and _src[i + 1] == "/":
-				if depth == 0:
-					return i
-				depth -= 1
-				i = _src.find(">", i) + 1
-				continue
-			# opening tag — but could be self-closing; skip to its > and check
-			var gt := _src.find(">", i)
-			if gt == -1:
-				return -1
-			if gt > 0 and _src[gt - 1] == "/":
-				i = gt + 1   # self-closing, no depth change
-			else:
-				depth += 1
-				i = gt + 1
-			continue
-		i += 1
-	return -1
 
 func _line_of(idx: int) -> int:
 	return _src.substr(0, idx).count("\n") + 1

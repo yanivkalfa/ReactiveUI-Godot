@@ -11,6 +11,7 @@ extends RefCounted
 
 const L = preload("res://addons/reactive_ui/guitkx/guitkx_lexer.gd")
 const Markup = preload("res://addons/reactive_ui/guitkx/guitkx_markup.gd")
+const JsxScan = preload("res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd")
 
 ## PascalCase/markup tag -> V.* host factory. Hand-authored Godot control catalog (the analog of
 ## uitkx's reflected V map / s_fallbackMap). A tag here = host element; anything else PascalCase = component.
@@ -51,8 +52,7 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		"hook":
 			return _compile_hook(source, decl["at"], class_name_override, basename, diags)
 		"module":
-			diags.append("GUITKX0103: `module` files are not supported yet (use one component or hook per file)")
-			return { "ok": false, "gd": "", "diagnostics": diags }
+			return _compile_module(source, decl["at"], class_name_override, basename, diags)
 		_:
 			diags.append("GUITKX0102: no `component`, `hook`, or `module` declaration found")
 			return { "ok": false, "gd": "", "diagnostics": diags }
@@ -76,65 +76,61 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 	return { "kind": "", "at": -1 }
 
 static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
+	var pc := _parse_component_at(source, ci, diags)
+	if not pc["ok"]:
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	if class_name_override == "" and pc["name"] != basename:
+		diags.append("GUITKX0103 (warning): component `%s` differs from file name `%s`" % [pc["name"], basename])
+	_validate(pc["setup"], pc["root"], diags)
+	var cls: String = class_name_override if class_name_override != "" else pc["name"]
+	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags)
+	return { "ok": true, "gd": gd, "diagnostics": diags }
+
+## Parse ONE component declaration at `ci`. Returns { ok, name, params, setup, root, next }
+## (next = index just past the closing brace) or { ok:false } with diagnostics appended.
+static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictionary:
 	var n := source.length()
 	var j := ci + 9
 	j = _skip_ws_only(source, j)
-	# component name
 	var ns := j
 	while j < n and L._is_ident(source[j]):
 		j += 1
 	var comp_name := source.substr(ns, j - ns)
 	if comp_name == "":
 		diags.append("GUITKX0300: missing component name")
-		return { "ok": false, "gd": "", "diagnostics": diags }
-	# optional (params)
+		return { "ok": false }
 	var params := ""
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":
 		var pc := L.find_matching(source, j)
 		if pc == -1:
 			diags.append("GUITKX0304: unclosed `(` in component params")
-			return { "ok": false, "gd": "", "diagnostics": diags }
+			return { "ok": false }
 		params = source.substr(j + 1, pc - j - 1)
 		j = pc + 1
-	# body `{ ... }`
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
 		diags.append("GUITKX0303: component body `{ ... }` expected")
-		return { "ok": false, "gd": "", "diagnostics": diags }
+		return { "ok": false }
 	var bclose := L.find_matching(source, j)
 	if bclose == -1:
 		diags.append("GUITKX0304: unclosed component body")
-		return { "ok": false, "gd": "", "diagnostics": diags }
+		return { "ok": false }
 	var body := source.substr(j + 1, bclose - j - 1)
-	# split body into setup + `return ( markup )`
 	var split := _split_return(body)
 	if split.has("error"):
 		diags.append(split["error"])
-		return { "ok": false, "gd": "", "diagnostics": diags }
-	var setup: String = split["setup"]
-	var markup_src: String = split["markup_src"]
-	var m_start: int = split["m_start"]
-	var m_end: int = split["m_end"]
-	# parse the markup window
+		return { "ok": false }
 	var parser := Markup.new()
-	var pr := parser.parse(markup_src, m_start, m_end)
+	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
 		diags.append(pr["error"])
-		return { "ok": false, "gd": "", "diagnostics": diags }
-	var roots: Array = pr["nodes"]
-	var render_roots := roots.filter(func(nd): return nd != null)
+		return { "ok": false }
+	var render_roots := (pr["nodes"] as Array).filter(func(nd): return nd != null)
 	if render_roots.size() != 1:
 		diags.append("GUITKX0108: a component must return exactly one root element (got %d)" % render_roots.size())
-		return { "ok": false, "gd": "", "diagnostics": diags }
-	# name-vs-filename advisory
-	if class_name_override == "" and comp_name != basename:
-		diags.append("GUITKX0103 (warning): component `%s` differs from file name `%s`" % [comp_name, basename])
-	# semantic validation (rules of hooks, duplicate keys, keyless loop children)
-	_validate(setup, render_roots[0], diags)
-	var cls := class_name_override if class_name_override != "" else comp_name
-	var gd := _emit(cls, comp_name, params, setup, render_roots[0], basename)
-	return { "ok": true, "gd": gd, "diagnostics": diags }
+		return { "ok": false }
+	return { "ok": true, "name": comp_name, "params": params, "setup": split["setup"], "root": render_roots[0], "next": bclose + 1 }
 
 # --- semantic validation (warnings; they don't fail the compile) ---
 static func _validate(setup: String, root: Dictionary, diags: Array) -> void:
@@ -271,6 +267,114 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 	out += (body_block + "\n") if body_block != "" else "\tpass\n"
 	return { "ok": true, "gd": out, "diagnostics": diags }
 
+## Parse ONE hook declaration at `hi`. Returns { ok, name, params, body, next } or { ok:false }.
+static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
+	var n := source.length()
+	var j := hi + 4
+	j = _skip_ws_only(source, j)
+	var ns := j
+	while j < n and L._is_ident(source[j]):
+		j += 1
+	var hook_name := source.substr(ns, j - ns)
+	if hook_name == "":
+		diags.append("GUITKX0300: missing hook name")
+		return { "ok": false }
+	var params := ""
+	j = _skip_ws_only(source, j)
+	if j < n and source[j] == "(":
+		var pc := L.find_matching(source, j)
+		if pc == -1:
+			diags.append("GUITKX0304: unclosed `(` in hook params")
+			return { "ok": false }
+		params = source.substr(j + 1, pc - j - 1)
+		j = pc + 1
+	j = _skip_ws_only(source, j)
+	if j + 1 < n and source[j] == "-" and source[j + 1] == ">":
+		j += 2
+		while j < n and source[j] != "{":
+			j += 1
+	j = _skip_ws_only(source, j)
+	if j >= n or source[j] != "{":
+		diags.append("GUITKX0303: hook body `{ ... }` expected")
+		return { "ok": false }
+	var bclose := L.find_matching(source, j)
+	if bclose == -1:
+		diags.append("GUITKX0304: unclosed hook body")
+		return { "ok": false }
+	return { "ok": true, "name": hook_name, "params": params, "body": source.substr(j + 1, bclose - j - 1), "next": bclose + 1 }
+
+## module Name { component A {…} component B {…} hook use_x {…} } -> one class with one static func
+## per declaration. Intra-module <A/> resolves to the bare sibling static func (V.fc(A, …)). [§4]
+static func _compile_module(source: String, mi: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
+	var n := source.length()
+	var j := mi + 6   # "module"
+	j = _skip_ws_only(source, j)
+	var ns := j
+	while j < n and L._is_ident(source[j]):
+		j += 1
+	var mod_name := source.substr(ns, j - ns)
+	if mod_name == "":
+		diags.append("GUITKX0300: `module` requires a name (module Name { ... })")
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	j = _skip_ws_only(source, j)
+	if j >= n or source[j] != "{":
+		diags.append("GUITKX0303: module body `{ ... }` expected")
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	var bclose := L.find_matching(source, j)
+	if bclose == -1:
+		diags.append("GUITKX0304: unclosed module body")
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	var body_end := bclose
+	var comps: Array = []
+	var hooks: Array = []
+	var module_comps := {}
+	var module_hooks: Array = []
+	var i := j + 1
+	while i < body_end:
+		var d := _find_decl(source, i)
+		if d["kind"] == "" or d["at"] >= body_end:
+			break
+		if d["kind"] == "component":
+			var c := _parse_component_at(source, d["at"], diags)
+			if not c["ok"]:
+				return { "ok": false, "gd": "", "diagnostics": diags }
+			if module_comps.has(c["name"]) or c["name"] in module_hooks:
+				diags.append("GUITKX0112: duplicate declaration `%s` in module `%s`" % [c["name"], mod_name])
+				return { "ok": false, "gd": "", "diagnostics": diags }
+			module_comps[c["name"]] = true
+			comps.append(c)
+			i = c["next"]
+		elif d["kind"] == "hook":
+			var h := _parse_hook_at(source, d["at"], diags)
+			if not h["ok"]:
+				return { "ok": false, "gd": "", "diagnostics": diags }
+			if module_comps.has(h["name"]) or h["name"] in module_hooks:
+				diags.append("GUITKX0112: duplicate declaration `%s` in module `%s`" % [h["name"], mod_name])
+				return { "ok": false, "gd": "", "diagnostics": diags }
+			module_hooks.append(h["name"])
+			hooks.append(h)
+			i = h["next"]
+		else:
+			diags.append("GUITKX0110: nested `module` is not allowed")
+			return { "ok": false, "gd": "", "diagnostics": diags }
+	if comps.is_empty() and hooks.is_empty():
+		diags.append("GUITKX0110: module `%s` has no component or hook declarations" % mod_name)
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	var cls := class_name_override if class_name_override != "" else mod_name
+	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
+	for c in comps:
+		_validate(c["setup"], c["root"], diags)
+		out += "# component %s\n" % c["name"]
+		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags)
+		out += "\n"
+	for h in hooks:
+		out += "# hook %s\n" % h["name"]
+		out += "static func %s(%s):\n" % [h["name"], h["params"]]
+		var hb := _reindent_setup(_apply_hook_aliases(h["body"], module_hooks))
+		out += (hb + "\n") if hb != "" else "\tpass\n"
+		out += "\n"
+	return { "ok": true, "gd": out, "diagnostics": diags }
+
 # --- body splitter: find the top-level `return ( ... )` ---
 static func _split_return(body: String) -> Dictionary:
 	var n := body.length()
@@ -294,9 +398,12 @@ static func _split_return(body: String) -> Dictionary:
 				var setup2 := body.substr(0, i)
 				return { "setup": setup2, "markup_src": body, "m_start": p, "m_end": n }
 			elif L.keyword_at(body, p, "null"):
-				return { "error": "GUITKX0102: component returns null (nothing to render)" }
+				# `return null` may be a CONDITIONAL guard (e.g. `if not ready: return null`); keep
+				# scanning for a later markup return rather than failing the whole compile. [audit]
+				i = p + 4
+				continue
 		i += 1
-	return { "error": "GUITKX0102: component has no `return ( ... )`" }
+	return { "error": "GUITKX0102: component has no `return ( ... )` (only `return null`?)" }
 
 # --- emit ---
 # Control flow is hoisted into pre-statements (an if/for/while block before the return) that
@@ -304,24 +411,30 @@ static func _split_return(body: String) -> Dictionary:
 # "lambdas can't hold multi-statement return control-flow" limit AND the helper-method
 # locals-capture problem -- the block is inline in render() and sees all setup locals. The
 # runtime `V._norm` flattens the `@for` arrays and drops the null `@if` misses for free.
-static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String) -> String:
-	var out := ""
-	out += "class_name %s\n" % cls
+static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = []) -> String:
+	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
-	out += "static func render(props: Dictionary, children: Array) -> RUIVNode:\n"
-	# prop unpacking from params
+	out += _emit_func("render", params, setup, root, {}, [], diags)
+	return out
+
+# Emit one `static func <name>(props, children) -> RUIVNode:` from params + setup + a markup root.
+# `module_comps` maps intra-module component names -> true so <Foo/> emits V.fc(Foo, ...) (bare
+# sibling static func) rather than the single-file V.fc(Foo.render, ...).
+static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = []) -> String:
+	var out := "static func %s(props: Dictionary, children: Array) -> RUIVNode:\n" % func_name
 	for p in _parse_params(params):
 		if p["default"] != "":
 			out += "\tvar %s = props.get(\"%s\", %s)\n" % [p["name"], p["name"], p["default"]]
 		else:
 			out += "\tvar %s = props.get(\"%s\")\n" % [p["name"], p["name"]]
-	# setup (verbatim, hook auto-prefix) -- dedented to its source common indent, re-indented 1 tab
-	var setup_block := _reindent_setup(_apply_hook_aliases(setup))
+	var setup_block := _reindent_setup(_apply_hook_aliases(setup, skip_hooks))
 	if setup_block != "":
 		out += setup_block + "\n"
-	# emit the markup, collecting any control-flow pre-statements into ctx.lines
-	var ctx := { "lines": [], "indent": 1, "counter": 0 }
+	# expr_mode: true while emitting a JSX-VALUE substring (markup inside an embedded {expr}/lambda),
+	# where control-flow MUST be lowered to an inline expression (ternary / .map) instead of hoisted
+	# render-level statements that can't see lambda-local vars. [audit #17]
+	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false }
 	var root_expr := _emit_expr(root, ctx)
 	if root["t"] == "for" or root["t"] == "while":
 		root_expr = "V.fragment(%s)" % root_expr   # a root-level loop yields an Array -> wrap
@@ -337,7 +450,7 @@ static func _emit_expr(nd: Dictionary, ctx: Dictionary) -> String:
 		"frag":
 			return "V.fragment(%s)" % _emit_children_array(nd["children"], ctx)
 		"expr":
-			return "(%s)" % nd["code"]
+			return "(%s)" % _splice_expr_markup(nd["code"], ctx)
 		"text":
 			return "V.label({ \"text\": %s })" % _gd_str(nd["value"])
 		"if":
@@ -351,6 +464,40 @@ static func _emit_expr(nd: Dictionary, ctx: Dictionary) -> String:
 		_:
 			return "null  # TODO emit %s" % nd["t"]
 	return "null"
+
+# Text-bearing host factories: a `<Label>text</Label>` / `<Button>Click {x}</Button>` whose children
+# are all text/expr folds them into the `.text` prop instead of nesting child Labels (Phase 7.2).
+const TEXT_FACTORIES := {
+	"label": true, "button": true, "check_box": true, "check_button": true,
+	"link_button": true, "menu_button": true, "option_button": true, "rich_text": true,
+}
+
+static func _has_attr(nd: Dictionary, name: String) -> bool:
+	for a in nd["attrs"]:
+		if a["name"] == name:
+			return true
+	return false
+
+static func _all_text_children(children: Array) -> bool:
+	if children.is_empty():
+		return false
+	for c in children:
+		if c == null:
+			continue
+		if not (c["t"] == "text" or c["t"] == "expr"):
+			return false
+	return true
+
+static func _merge_text_children(children: Array, ctx: Dictionary) -> String:
+	var parts: Array = []
+	for c in children:
+		if c == null:
+			continue
+		if c["t"] == "text":
+			parts.append(_gd_str(c["value"]))
+		else:
+			parts.append("str(%s)" % _splice_expr_markup(c["code"], ctx))
+	return " + ".join(parts)
 
 static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	var tag: String = nd["tag"]
@@ -367,13 +514,18 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	var key_expr := ""
 	for a in nd["attrs"]:
 		var name: String = a["name"]
-		var valcode := _attr_value_code(a)
+		var valcode := _attr_value_code(a, ctx)
 		if name == "key":
 			key_expr = valcode
 			continue
 		props_parts.append("\"%s\": %s" % [name, valcode])
+	# Fold all-text/expr children of a text-bearing host into the `text` prop (no nested Labels).
+	var children: Array = nd["children"]
+	if is_host and TEXT_FACTORIES.has(factory) and not _has_attr(nd, "text") and _all_text_children(children):
+		props_parts.append("\"text\": %s" % _merge_text_children(children, ctx))
+		children = []
 	var props_dict := "{ %s }" % ", ".join(props_parts) if not props_parts.is_empty() else "{}"
-	var children_src := _emit_children_array(nd["children"], ctx)
+	var children_src := _emit_children_array(children, ctx)
 	if is_host:
 		var args := props_dict
 		if children_src != "[]":
@@ -382,8 +534,10 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			args += (", []" if children_src == "[]" else "") + ", " + key_expr
 		return "V.%s(%s)" % [factory, args]
 	else:
-		# child component -> V.fc(Tag.render, props[, children[, key]])
-		var args2 := "%s.render, %s" % [tag, props_dict]
+		# child component -> V.fc(Tag.render, ...); a module-local component is a bare sibling
+		# static func -> V.fc(Tag, ...) (see _compile_module).
+		var fn := tag if (ctx.get("module_comps", {}) as Dictionary).has(tag) else (tag + ".render")
+		var args2 := "%s, %s" % [fn, props_dict]
 		if children_src != "[]":
 			args2 += ", " + children_src
 		if key_expr != "":
@@ -419,6 +573,8 @@ static func _emit_body(body_src: String, ctx: Dictionary) -> String:
 	return "V.fragment([%s])" % ", ".join(parts)
 
 static func _emit_if(nd: Dictionary, ctx: Dictionary) -> String:
+	if ctx.get("expr_mode", false):
+		return _emit_if_inline(nd, ctx)
 	var id := _fresh(ctx)
 	_line(ctx, "var %s = null" % id)
 	var branches: Array = nd["branches"]
@@ -439,6 +595,10 @@ static func _emit_if(nd: Dictionary, ctx: Dictionary) -> String:
 	return id
 
 static func _emit_loop(nd: Dictionary, ctx: Dictionary, kind: String) -> String:
+	if ctx.get("expr_mode", false):
+		if kind == "for":
+			return _emit_for_inline(nd, ctx)
+		return _expr_ctrl_unsupported(ctx, "@while")   # a while-loop can't be an expression
 	var id := _fresh(ctx)
 	_line(ctx, "var %s: Array = []" % id)
 	if kind == "for":
@@ -452,6 +612,8 @@ static func _emit_loop(nd: Dictionary, ctx: Dictionary, kind: String) -> String:
 	return id
 
 static func _emit_match(nd: Dictionary, ctx: Dictionary) -> String:
+	if ctx.get("expr_mode", false):
+		return _expr_ctrl_unsupported(ctx, "@match")   # a match-statement can't be an expression
 	var id := _fresh(ctx)
 	_line(ctx, "var %s = null" % id)
 	var cases: Array = nd["cases"]
@@ -473,6 +635,49 @@ static func _emit_match(nd: Dictionary, ctx: Dictionary) -> String:
 		ctx["indent"] -= 1
 	ctx["indent"] -= 1
 	return id
+
+# --- inline (expression-context) control-flow lowering [audit #17] ---
+# Used when control-flow appears inside a JSX-VALUE ({expr} / lambda return), where hoisted
+# render-level statements would reference out-of-scope lambda locals. `@if`/`@elif`/`@else` become a
+# (possibly nested) ternary; `@for` becomes `.map`. Bodies recurse through _emit_body with expr_mode
+# still on, so nested control-flow inlines too.
+
+static func _emit_if_inline(nd: Dictionary, ctx: Dictionary) -> String:
+	var branches: Array = nd["branches"]
+	var acc := "null"
+	if nd["else_body"] != null:
+		acc = _emit_body(nd["else_body"], ctx)
+	for i in range(branches.size() - 1, -1, -1):
+		var br: Dictionary = branches[i]
+		var be := _emit_body(br["body_markup"], ctx)
+		acc = "(%s if (%s) else %s)" % [be, br["cond"], acc]
+	return acc
+
+static func _emit_for_inline(nd: Dictionary, ctx: Dictionary) -> String:
+	# header is "x in xs" -> `(xs).map(func(x): return body)`. The iterable must be array-like (Array
+	# or range()); for non-array iterables lift the @for to the top-level markup instead.
+	var split := _split_for_header(str(nd["header"]))
+	if split.is_empty():
+		return _expr_ctrl_unsupported(ctx, "@for (could not parse the loop header)")
+	var be := _emit_body(nd["body_markup"], ctx)
+	return "(%s).map(func(%s): return %s)" % [split["iter"], split["var"], be]
+
+static func _split_for_header(header: String) -> Dictionary:
+	var at := header.find(" in ")
+	if at < 0:
+		return {}
+	var v := header.substr(0, at).strip_edges()
+	var it := header.substr(at + 4).strip_edges()
+	if v == "" or it == "":
+		return {}
+	return { "var": v, "iter": it }
+
+static func _expr_ctrl_unsupported(ctx: Dictionary, what: String) -> String:
+	var msg := "GUITKX0113: %s cannot be used inside an embedded {expression} / JSX-value (it can't be lowered to an expression). Lift it to the top-level markup return, or use .map() for lists." % what
+	if ctx.has("diags") and ctx["diags"] is Array:
+		(ctx["diags"] as Array).append(msg)
+	push_warning("[guitkx] " + msg)
+	return "null"
 
 # Dedent a setup block to its common leading-whitespace prefix, then re-indent every line one tab
 # (so source indentation inside render's body becomes a single render-body indent level).
@@ -524,15 +729,102 @@ static func _fresh(ctx: Dictionary) -> String:
 	ctx["counter"] += 1
 	return id
 
-static func _attr_value_code(a: Dictionary) -> String:
+static func _attr_value_code(a: Dictionary, ctx: Dictionary) -> String:
 	match a["kind"]:
 		"str":
 			return _gd_str(a["value"])
 		"expr":
-			return a["value"]
+			return _splice_expr_markup(a["value"], ctx)
 		"bool":
 			return "true"
 	return "null"
+
+# --- JSX-as-value: lower markup nested inside an embedded GDScript expression (Phase 4 §1) ---
+# `cond if c else <A/>`, `is_open and <Panel/>`, `{ items.map(func(it): return <Row/>) }`.
+static func _splice_expr_markup(expr: String, ctx: Dictionary) -> String:
+	var ranges := JsxScan.find_markup_ranges(expr, 0, expr.length())
+	if ranges.is_empty():
+		return expr   # fast path: no nested markup, emit the expression verbatim
+	var out := ""
+	var prev := 0
+	for r in ranges:
+		var rs: int = r["start"]
+		if rs < prev:
+			continue   # nested inside an already-emitted range
+		var markup := _emit_markup_substring(expr, rs, r["end"], ctx)
+		var op: String = r["op"]
+		if op == "and" or op == "&&":
+			# desugar `LHS and <A/>` -> `(V.a() if (LHS) else null)`
+			var op_pos: int = r["op_pos"]
+			var lhs_start := _find_lhs_start(expr, prev, op_pos)
+			out += expr.substr(prev, lhs_start - prev)
+			var lhs := expr.substr(lhs_start, op_pos - lhs_start).strip_edges()
+			out += "(%s if (%s) else null)" % [markup, lhs]
+		else:
+			out += expr.substr(prev, rs - prev)
+			out += markup
+		prev = r["end"]
+	out += expr.substr(prev)
+	return out
+
+# Re-parse a markup substring [start,end) of `src` and emit it via the normal node emitter (so
+# nested attrs/children/control-flow + further nested markup all lower). Single root expected.
+# KNOWN LIMITATION [audit #17]: control-flow (@if/@for/@while/@match) nested inside a JSX-VALUE that
+# sits in a LAMBDA body (e.g. `items.map(func(it): return <>@if (it.ok) { … }</>)`) hoists its
+# `if/for` pre-statements to render() top-level, where the lambda's locals (`it`) are out of scope.
+# Lift `@while`/`@match` to the top-level markup return (they can't be expressions); `@if`/`@elif`/
+# `@else` and `@for` ARE lowered inline here (ternary / .map), so they work inside lambdas. [audit #17]
+static func _emit_markup_substring(src: String, start: int, end: int, ctx: Dictionary) -> String:
+	var parser := Markup.new()
+	var pr := parser.parse(src, start, end)
+	if pr["error"] != "":
+		return "null"
+	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
+	if nodes.is_empty():
+		return "null"
+	# Mark this whole subtree as an expression context: control-flow inside it must lower to an
+	# inline expression (no hoisted render-level statements that lambda locals can't reach).
+	var prev_expr: bool = ctx.get("expr_mode", false)
+	ctx["expr_mode"] = true
+	var result: String
+	if nodes.size() == 1:
+		result = _emit_expr(nodes[0], ctx)
+	else:
+		var parts: Array = []
+		for nx in nodes:
+			parts.append(_emit_expr(nx, ctx))
+		result = "V.fragment([%s])" % ", ".join(parts)
+	ctx["expr_mode"] = prev_expr
+	return result
+
+# The start of the `and`/`&&` left operand: the last depth-0 lower-precedence boundary
+# (or / , / ; / if / else) at or after `from`, else `from`.
+static func _find_lhs_start(src: String, from: int, op_pos: int) -> int:
+	var lhs := from
+	var i := from
+	var depth := 0
+	while i < op_pos:
+		var j := L.skip_noncode(src, i)
+		if j != i:
+			i = j
+			continue
+		var c := src[i]
+		if c == "(" or c == "[":
+			depth += 1
+		elif c == ")" or c == "]":
+			depth -= 1
+		elif depth == 0:
+			if c == "," or c == ";":
+				lhs = i + 1
+			elif i == from or not L._is_ident(src[i - 1]):
+				if L.keyword_at(src, i, "or"):
+					lhs = i + 2
+				elif L.keyword_at(src, i, "if"):
+					lhs = i + 2
+				elif L.keyword_at(src, i, "else"):
+					lhs = i + 4
+		i += 1
+	return lhs
 
 # --- helpers ---
 static func _parse_params(params: String) -> Array:
@@ -596,16 +888,49 @@ static func _find_top(s: String, ch: String) -> int:
 		i += 1
 	return -1
 
-static func _apply_hook_aliases(setup: String) -> String:
-	# Auto-prefix bare hook calls to Hooks.* (use_state( -> Hooks.use_state(). Naive substring
-	# pass like uitkx's ApplyHookAliases; the Hooks.Hooks. fixup undoes double-prefixing.
-	var hooks := ["use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
-		"use_layout_effect", "use_context", "use_signal", "use_tween", "use_tween_value"]
-	var s := setup
-	for h in hooks:
-		s = s.replace(h + "(", "Hooks." + h + "(")
-	s = s.replace("Hooks.Hooks.", "Hooks.")
-	return s
+const HOOK_NAMES := ["use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
+	"use_layout_effect", "use_context", "use_signal", "use_tween_value", "use_tween"]
+
+## Auto-prefix bare hook CALLS to Hooks.* (use_state(...) -> Hooks.use_state(...)). Single
+## token-boundary pass that skips strings/comments (via skip_noncode), only matches a hook name at
+## a real token start that is immediately CALLED (followed by `(`), and leaves already-qualified
+## `Hooks.use_*` and look-alike identifiers/strings (my_use_state, "use_state()") untouched.
+## `skip` lists names to NOT prefix (module-local hooks, see _compile_module).
+static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
+	var out := ""
+	var i := 0
+	var n := setup.length()
+	while i < n:
+		var j := L.skip_noncode(setup, i)
+		if j != i:
+			out += setup.substr(i, j - i)   # copy string/comment verbatim
+			i = j
+			continue
+		# Only auto-prefix a FREE hook identifier — never a member call like `counter.use_state(...)`
+		# (a preceding `.` is a non-identifier boundary, so guard against it explicitly). [audit]
+		if i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != "."):
+			var matched := ""
+			for h in HOOK_NAMES:
+				if h in skip:
+					continue
+				if L.keyword_at(setup, i, h) and _is_call_at(setup, i + h.length()):
+					matched = h
+					break
+			if matched != "":
+				var already := i >= 6 and setup.substr(i - 6, 6) == "Hooks."
+				out += matched if already else ("Hooks." + matched)
+				i += matched.length()
+				continue
+		out += setup[i]
+		i += 1
+	return out
+
+# True if, skipping spaces/tabs from `at`, the next char is `(` (i.e. the name is being called).
+static func _is_call_at(s: String, at: int) -> bool:
+	var n := s.length()
+	while at < n and (s[at] == " " or s[at] == "\t"):
+		at += 1
+	return at < n and s[at] == "("
 
 
 static func _gd_str(v: String) -> String:

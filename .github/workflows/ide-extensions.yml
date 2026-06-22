@@ -6,9 +6,10 @@ name: IDE Extensions
 
 on:
   push:
-    branches: [master, main, dev]
+    branches: [master, dev]
     paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
   pull_request:
+    branches: [master, dev]
     paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
 
 permissions:

@@ -1,0 +1,80 @@
+[
+  {
+    "error": "",
+    "input": "<Label text=\"hi\" />",
+    "name": "simple_el",
+    "tree": "[{\"attrs\":[{\"kind\":\"str\",\"name\":\"text\",\"value\":\"hi\"}],\"children\":[],\"line\":1,\"t\":\"el\",\"tag\":\"Label\"}]"
+  },
+  {
+    "error": "",
+    "input": "<Label>hello</Label>",
+    "name": "text_child",
+    "tree": "[{\"attrs\":[],\"children\":[{\"t\":\"text\",\"value\":\"hello\"}],\"line\":1,\"t\":\"el\",\"tag\":\"Label\"}]"
+  },
+  {
+    "error": "",
+    "input": "<Button text=\"x\" on_pressed={go} disabled />",
+    "name": "bool_and_expr_attrs",
+    "tree": "[{\"attrs\":[{\"kind\":\"str\",\"name\":\"text\",\"value\":\"x\"},{\"kind\":\"expr\",\"name\":\"on_pressed\",\"value\":\"go\"},{\"kind\":\"bool\",\"name\":\"disabled\",\"value\":\"true\"}],\"children\":[],\"line\":1,\"t\":\"el\",\"tag\":\"Button\"}]"
+  },
+  {
+    "error": "",
+    "input": "<Label>{ a < b }</Label>",
+    "name": "expr_child_lt_compare",
+    "tree": "[{\"attrs\":[],\"children\":[{\"code\":\"a < b\",\"t\":\"expr\"}],\"line\":1,\"t\":\"el\",\"tag\":\"Label\"}]"
+  },
+  {
+    "error": "",
+    "input": "<Label v={a > b}/>",
+    "name": "attr_expr_gt_compare",
+    "tree": "[{\"attrs\":[{\"kind\":\"expr\",\"name\":\"v\",\"value\":\"a > b\"}],\"children\":[],\"line\":1,\"t\":\"el\",\"tag\":\"Label\"}]"
+  },
+  {
+    "error": "",
+    "input": "<VBox>{ a < b }{ c < d }</VBox>",
+    "name": "adjacent_compare_exprs",
+    "tree": "[{\"attrs\":[],\"children\":[{\"code\":\"a < b\",\"t\":\"expr\"},{\"code\":\"c < d\",\"t\":\"expr\"}],\"line\":1,\"t\":\"el\",\"tag\":\"VBox\"}]"
+  },
+  {
+    "error": "",
+    "input": "<VBox><HBox><Label>{ x < y }</Label></HBox></VBox>",
+    "name": "nested_with_compare",
+    "tree": "[{\"attrs\":[],\"children\":[{\"attrs\":[],\"children\":[{\"attrs\":[],\"children\":[{\"code\":\"x < y\",\"t\":\"expr\"}],\"line\":1,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":1,\"t\":\"el\",\"tag\":\"HBox\"}],\"line\":1,\"t\":\"el\",\"tag\":\"VBox\"}]"
+  },
+  {
+    "error": "",
+    "input": "<>{ a < b }</>",
+    "name": "fragment_with_compare",
+    "tree": "[{\"children\":[{\"code\":\"a < b\",\"t\":\"expr\"}],\"t\":\"frag\"}]"
+  },
+  {
+    "error": "",
+    "input": "<VBox>@for (i in xs) { <Label>{ i < 3 }</Label> }</VBox>",
+    "name": "for_body_with_compare",
+    "tree": "[{\"attrs\":[],\"children\":[{\"body_markup\":\" <Label>{ i < 3 }</Label> \",\"header\":\"i in xs\",\"t\":\"for\"}],\"line\":1,\"t\":\"el\",\"tag\":\"VBox\"}]"
+  },
+  {
+    "error": "",
+    "input": "<VBox>@if (ok) { <Label text=\"y\" /> } @else { <Label text=\"n\" /> }</VBox>",
+    "name": "if_else_markup",
+    "tree": "[{\"attrs\":[],\"children\":[{\"branches\":[{\"body_markup\":\" <Label text=\\\"y\\\" /> \",\"cond\":\"ok\"}],\"else_body\":\" <Label text=\\\"n\\\" /> \",\"t\":\"if\"}],\"line\":1,\"t\":\"el\",\"tag\":\"VBox\"}]"
+  },
+  {
+    "error": "",
+    "input": "<Box child={ cond if c else <Inner a={p > q}/> } />",
+    "name": "jsx_as_value_attr",
+    "tree": "[{\"attrs\":[{\"kind\":\"expr\",\"name\":\"child\",\"value\":\"cond if c else <Inner a={p > q}/>\"}],\"children\":[],\"line\":1,\"t\":\"el\",\"tag\":\"Box\"}]"
+  },
+  {
+    "error": "GUITKX0302: mismatched tag </VBox> (expected </HBox>)",
+    "input": "<VBox><HBox></VBox>",
+    "name": "mismatched_tag_error",
+    "tree": "[]"
+  },
+  {
+    "error": "GUITKX0304: unclosed `{` expression",
+    "input": "<Label>{ a < b </Label>",
+    "name": "unclosed_expr_error",
+    "tree": "[]"
+  }
+]

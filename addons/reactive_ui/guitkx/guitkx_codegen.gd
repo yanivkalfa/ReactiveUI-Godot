@@ -13,6 +13,38 @@ const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
 static func gd_path_for(guitkx_path: String) -> String:
 	return guitkx_path.get_basename() + ".gd"
 
+## The sibling diagnostics-sidecar path (Foo.guitkx -> Foo.guitkx.diags.json). The LSP reads this to
+## surface the compiler's FULL diagnostic catalog in VS Code without a running editor.
+static func diags_path_for(guitkx_path: String) -> String:
+	return guitkx_path + ".diags.json"
+
+## FNV-1a over code points — MUST stay identical to the LSP's srcHash (diagsSidecar.ts) so the LSP can
+## tell whether the sidecar still matches the open buffer (else the diagnostics are stale + suppressed).
+static func src_hash(s: String) -> int:
+	var h := 2166136261
+	for idx in s.length():
+		h = (h ^ s.unicode_at(idx)) & 0xFFFFFFFF
+		h = (h * 16777619) & 0xFFFFFFFF
+	return h
+
+## Split a diagnostic string ("GUITKX0104 (warning): ...") into { code, severity, message }.
+static func _parse_diag(s: String) -> Dictionary:
+	var end := 0
+	while end < s.length() and s[end] != " " and s[end] != ":" and s[end] != "(":
+		end += 1
+	return { "code": s.substr(0, end), "severity": "warning" if "(warning)" in s else "error", "message": s }
+
+## Write the diagnostics sidecar (ALWAYS — even on compile failure), gated by the source hash so the LSP
+## ignores it once the buffer diverges from the last compile.
+static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: Array) -> void:
+	var parsed: Array = []
+	for d in diagnostics:
+		parsed.append(_parse_diag(str(d)))
+	var f := FileAccess.open(diags_path_for(guitkx_path), FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({ "src_hash": src_hash(src), "diagnostics": parsed }))
+		f.close()
+
 ## True if the sibling .gd is missing or older than the .guitkx source.
 static func is_stale(guitkx_path: String) -> bool:
 	var gd_path := gd_path_for(guitkx_path)
@@ -27,6 +59,7 @@ static func compile_file(guitkx_path: String) -> Dictionary:
 	var src := FileAccess.get_file_as_string(guitkx_path)
 	var basename := guitkx_path.get_file().get_basename()
 	var r: Dictionary = Compiler.compile(src, basename)
+	write_diags_sidecar(guitkx_path, src, r["diagnostics"])
 	if not r["ok"]:
 		return { "ok": false, "path": guitkx_path, "diagnostics": r["diagnostics"] }
 	var gd_path := gd_path_for(guitkx_path)

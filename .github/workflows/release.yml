@@ -59,7 +59,11 @@ jobs:
           godot --headless --path . --editor --quit || true
           godot --headless --path . --script res://tests/core_test.gd
           godot --headless --path . --script res://tests/style_test.gd
+          godot --headless --path . --script res://tests/router_match_test.gd
+          godot --headless --path . --script res://tests/router_spine_test.gd
+          godot --headless --path . --script res://tests/update_test.gd
           godot --headless --path . --script res://tests/demos_test.gd
+          godot --headless --path . --script res://tests/guitkx_test.gd
 
       - name: Package the addon (only addons/reactive_ui ships)
         if: steps.check.outputs.exists == 'false'

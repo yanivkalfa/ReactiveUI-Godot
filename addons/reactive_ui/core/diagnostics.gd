@@ -5,6 +5,19 @@ extends RefCounted
 ## diagnostics / WhyDidYouRender (lightweight counter form).
 
 static var enabled := false
+
+## Diagnostic message capture (Phase 7.0). When `capture` is on, the hook validators record their
+## messages here (in addition to push_error/push_warning) so headless tests can assert them.
+static var capture := false
+static var messages: Array[String] = []
+
+static func emit(msg: String) -> void:
+	if capture:
+		messages.append(msg)
+
+static func clear_messages() -> void:
+	messages.clear()
+
 static var renders := 0       ## component render-fn invocations (excludes bailouts)
 static var commits := 0       ## commit passes
 static var placements := 0    ## host nodes inserted
