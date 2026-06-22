@@ -49,5 +49,12 @@
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.7.37357" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.7.2189" PrivateAssets="all" />
   </ItemGroup>
+  <!-- REQUIRED: Microsoft.CSharp.targets pulls in Microsoft.Common.targets (which defines the `Build`
+       target) AND imports obj\*.nuget.g.targets (which loads the Microsoft.VSSDK.BuildTools package
+       targets). Without this line BOTH `Build` and `CreateVsixContainer` are undefined -> MSB4057. -->
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- Defines CreateVsixContainer / VSCTCompile / GeneratePkgDef. Microsoft.VSSDK.BuildTools' auto-
+       imported props point $(VSToolsPath) at the package's OWN tools folder, so this resolves to the
+       NuGet copy of VsSDK.targets even on a CI runner with no VS-installed VSSDK workload. -->
   <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="Exists('$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets')" />
 </Project>
