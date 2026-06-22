@@ -74,7 +74,11 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 
 static func _fmt_component(comp_name: String, params: String, setup: String, root: Dictionary, o: Dictionary) -> String:
 	var out := "component %s%s {\n" % [comp_name, _fmt_params(params)]
-	out += _fmt_setup(setup, 1, o)
+	var fs := _fmt_setup(setup, 1, o)
+	if fs != "":
+		if _has_leading_blank(setup): out += "\n"   # keep an authored blank line after `{`
+		out += fs
+		if _has_trailing_blank(setup): out += "\n"   # keep an authored blank line before `return (`
 	out += _pad(1, o) + "return (\n"
 	out += _fmt_node(root, 2, o)
 	out += _pad(1, o) + ")\n"
@@ -83,7 +87,11 @@ static func _fmt_component(comp_name: String, params: String, setup: String, roo
 
 static func _fmt_hook(hook_name: String, params: String, body: String, o: Dictionary) -> String:
 	var out := "hook %s%s {\n" % [hook_name, _fmt_params(params)]
-	out += _fmt_setup(body, 1, o)
+	var fb := _fmt_setup(body, 1, o)
+	if fb != "":
+		if _has_leading_blank(body): out += "\n"
+		out += fb
+		if _has_trailing_blank(body): out += "\n"
 	out += "}\n"
 	return out
 
@@ -298,7 +306,9 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 		if (l as String).strip_edges() == "":
 			out += "\n"
 		else:
-			out += pad + (l as String).substr(prefix.length()) + "\n"
+			var rest := (l as String).substr(prefix.length())
+			var lead := _leading_ws(rest)
+			out += pad + lead + _collapse_spaces(rest.substr(lead.length())) + "\n"
 	return out
 
 # --- helpers ---
@@ -331,6 +341,51 @@ static func _common_prefix(a: String, b: String) -> String:
 	while i < m and a[i] == b[i]:
 		i += 1
 	return a.substr(0, i)
+
+# An authored blank line at the start / end of an embedded block (mirrors formatGuitkx.ts). [audit #1]
+static func _has_leading_blank(s: String) -> bool:
+	var i := 0
+	var n := s.length()
+	while i < n and (s[i] == " " or s[i] == "\t"):
+		i += 1
+	if i >= n or s[i] != "\n":
+		return false
+	i += 1
+	while i < n and (s[i] == " " or s[i] == "\t"):
+		i += 1
+	return i < n and s[i] == "\n"
+
+static func _has_trailing_blank(s: String) -> bool:
+	var i := s.length() - 1
+	while i >= 0 and (s[i] == " " or s[i] == "\t"):
+		i -= 1
+	if i < 0 or s[i] != "\n":
+		return false
+	i -= 1
+	while i >= 0 and (s[i] == " " or s[i] == "\t"):
+		i -= 1
+	return i >= 0 and s[i] == "\n"
+
+# Collapse runs of 2+ spaces to one outside strings/comments (mirrors formatGuitkx.ts collapseSpaces;
+# skip_noncode is the SAME primitive cross-tested via scanner-cases.json). [audit #6]
+static func _collapse_spaces(s: String) -> String:
+	var out := ""
+	var i := 0
+	var n := s.length()
+	while i < n:
+		var j := L.skip_noncode(s, i)
+		if j != i:
+			out += s.substr(i, j - i)
+			i = j
+			continue
+		if s[i] == " " and i + 1 < n and s[i + 1] == " ":
+			out += " "
+			while i < n and s[i] == " ":
+				i += 1
+			continue
+		out += s[i]
+		i += 1
+	return out
 
 static func _skip_ws_only(s: String, i: int) -> int:
 	var n := s.length()

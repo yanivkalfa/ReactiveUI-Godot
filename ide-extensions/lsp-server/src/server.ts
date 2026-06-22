@@ -30,7 +30,8 @@ import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { uriToProjectPath } from "./guitkxFormat";
 import { formatGuitkx, FmtOptions, markupWindows, loadFormatterConfig } from "./formatGuitkx";
-import { dirname } from "path";
+import { dirname, join } from "path";
+import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations } from "./workspaceIndex";
@@ -46,6 +47,8 @@ import {
   PREAMBLE_DIRECTIVES,
   CONTROL_FLOW,
   findTag,
+  STYLE_KEYS,
+  BUILTIN_MEMBERS,
 } from "./schema";
 
 const connection = createConnection(ProposedFeatures.all);
@@ -207,10 +210,76 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
           detail: d.detail,
         })),
       ];
-    case "embedded":
-      return forwardCompletion(params.textDocument.uri, src, offset);
+    case "embedded": {
+      // style={ {…} } dict -> RUIStyle keys (Godot's LSP has no vocabulary for these).
+      if (inStyleDict(src, offset))
+        return STYLE_KEYS.map((a) => ({ label: a.name, kind: CompletionItemKind.Property, detail: a.type, documentation: a.detail }));
+      // `<Type>.<frag>` built-in constants (Color.WHITE, …) as a static fallback, merged with Godot's.
+      const builtin = builtinMemberCompletions(src, offset);
+      const proxied = await forwardCompletion(params.textDocument.uri, src, offset);
+      if (builtin.length === 0) return proxied;
+      const seen = new Set(proxied.map((p) => p.label));
+      return [...builtin.filter((b) => !seen.has(b.label)), ...proxied];
+    }
   }
 });
+
+// '{' positions enclosing `offset` (string/comment-aware), innermost last.
+function openBraceStack(src: string, offset: number): number[] {
+  const stack: number[] = [];
+  let i = 0;
+  while (i < offset) {
+    const c = src[i];
+    if (c === '"' || c === "'") {
+      i = skipString(src, i);
+      continue;
+    }
+    if (c === "#") {
+      while (i < offset && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "{") stack.push(i);
+    else if (c === "}") stack.pop();
+    i++;
+  }
+  return stack;
+}
+
+// True when the cursor sits inside a `style={ {…} }` (or `*_style`) DICT — where the keys are
+// RUIStyle's, not Godot's. Requires an inner dict (not the bare `style={ref}` value, preceded by `=`).
+function inStyleDict(src: string, offset: number): boolean {
+  const stack = openBraceStack(src, offset);
+  if (stack.length === 0) return false;
+  let j = stack[stack.length - 1] - 1;
+  while (j >= 0 && /\s/.test(src[j])) j--;
+  if (src[j] === "=") return false; // innermost brace IS the attr value (a ref/expr), not a dict
+  for (let s = stack.length - 1; s >= 0; s--) {
+    let k = stack[s] - 1;
+    while (k >= 0 && /\s/.test(src[k])) k--;
+    if (src[k] !== "=") continue;
+    k--;
+    while (k >= 0 && /\s/.test(src[k])) k--;
+    const e = k + 1;
+    while (k >= 0 && /[A-Za-z0-9_]/.test(src[k])) k--;
+    const name = src.slice(k + 1, e);
+    return name === "style" || name.endsWith("_style");
+  }
+  return false;
+}
+
+// `<Type>.<frag>` built-in constant completion (Color.WHITE, Vector2.ZERO, …).
+function builtinMemberCompletions(src: string, offset: number): CompletionItem[] {
+  let i = offset;
+  while (i > 0 && /[A-Za-z0-9_]/.test(src[i - 1])) i--;
+  if (i === 0 || src[i - 1] !== ".") return [];
+  let j = i - 1;
+  const e = j;
+  while (j > 0 && /[A-Za-z0-9_]/.test(src[j - 1])) j--;
+  const members = BUILTIN_MEMBERS[src.slice(j, e)];
+  if (!members) return [];
+  const type = src.slice(j, e);
+  return members.map((m) => ({ label: m, kind: CompletionItemKind.Constant, detail: `${type}.${m}` }));
+}
 
 async function forwardCompletion(uri: string, src: string, offset: number): Promise<CompletionItem[]> {
   if (!proxyEnabled) return []; // embedded-GDScript forwarding disabled by the client
@@ -314,25 +383,52 @@ documents.onDidClose((e) => {
 
 // --- go-to-definition: <Foo/> -> the component/module-member declaration ---
 
-connection.onDefinition((params) => {
+connection.onDefinition(async (params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return null;
   const src = doc.getText();
-  const name = componentTagAt(src, doc.offsetAt(params.position));
-  if (!name) return null;
-  const entries = index.lookup(name);
-  if (!entries.length) return null;
-  return entries.map((e) => {
-    const targetText = documents.get(e.uri)?.getText() ?? readTextForUri(e.uri);
-    return {
-      uri: e.uri,
-      range: {
-        start: offsetToPos(targetText, e.nameStart),
-        end: offsetToPos(targetText, e.nameEnd),
-      },
-    };
-  });
+  const offset = doc.offsetAt(params.position);
+  // A <Component/> tag -> its declaration, from the workspace index.
+  const name = componentTagAt(src, offset);
+  if (name) {
+    const entries = index.lookup(name);
+    if (entries.length)
+      return entries.map((e) => {
+        const targetText = documents.get(e.uri)?.getText() ?? readTextForUri(e.uri);
+        return { uri: e.uri, range: { start: offsetToPos(targetText, e.nameStart), end: offsetToPos(targetText, e.nameEnd) } };
+      });
+  }
+  // Otherwise an embedded-GDScript symbol -> forward to Godot's LSP; return cross-file (library)
+  // locations (e.g. `use_ref` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
+  return forwardDefinition(params.textDocument.uri, src, offset);
 });
+
+async function forwardDefinition(uri: string, src: string, offset: number): Promise<Location[] | null> {
+  if (!proxyEnabled) return null;
+  const { text, map } = buildVirtualDoc(src);
+  const genOffset = map.toGenerated(offset);
+  if (genOffset === null) return null;
+  const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  await proxy.sync(vUri, text);
+  const pos = offsetToPosition(text, genOffset);
+  const res = await proxy.definition(vUri, pos.line, pos.character);
+  if (!res) return null;
+  const raw = Array.isArray(res) ? res : [res];
+  const out: Location[] = [];
+  for (const loc of raw) {
+    const u: string = loc.uri ?? loc.targetUri;
+    const range = loc.range ?? loc.targetRange ?? loc.targetSelectionRange;
+    if (!u || !range || u === vUri) continue; // skip same-file virtual-doc hits (no reverse map yet)
+    out.push({ uri: resToFileUri(u), range });
+  }
+  return out.length ? out : null;
+}
+
+// Godot's LSP returns `res://` URIs; VS Code needs a real file:// URI.
+function resToFileUri(uri: string): string {
+  if (uri.startsWith("res://") && projectPath) return pathToFileURL(join(projectPath, uri.slice("res://".length))).toString();
+  return uri;
+}
 
 function readTextForUri(uri: string): string {
   try {
@@ -661,7 +757,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
         const sugg = closestTag(tag.tagName);
         if (sugg) {
           diags.push({
-            severity: DiagnosticSeverity.Hint,
+            severity: DiagnosticSeverity.Error,
             range: { start: doc.positionAt(tag.nameStart), end: doc.positionAt(tag.nameEnd) },
             message: `GUITKX0105: unknown element '${tag.tagName}'. Did you mean '${sugg}'?`,
             source: "guitkx",
@@ -677,7 +773,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
           if (valid.has(a.name)) continue;
           const sugg = closestAttr(a.name, hostTd.godotClass);
           diags.push({
-            severity: DiagnosticSeverity.Warning,
+            severity: DiagnosticSeverity.Error,
             range: { start: doc.positionAt(a.start), end: doc.positionAt(a.end) },
             message: `GUITKX0107: unknown attribute '${a.name}' on <${tag.tagName}>` + (sugg ? `. Did you mean '${sugg}'?` : "."),
             source: "guitkx",

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.4] - 2026-06-22
+- Formatting: an authored blank line at the start or end of a component/hook setup block is now preserved (it was being stripped), and runs of 2+ spaces in embedded GDScript are collapsed to one outside strings/comments (e.g. `if x ==     null` becomes `if x == null`).
+- Diagnostics: an unknown element (GUITKX0105) and an unknown host attribute (GUITKX0107) are now reported as Errors (a red squiggle) instead of a faint hint / a warning.
+- Completion: style-dict keys (`bg_color`, `corner_radius`, `pad`, `separation`, `expand_h`, `font_size`, the theme channels, the per-state slots, …) are offered inside a `style={ {…} }` (or `*_style`) dictionary; common built-in constants (`Color.WHITE`, `Vector2.ZERO`, …) complete after `Type.`; and go-to-definition on an embedded GDScript symbol now forwards to Godot's language server (jumping to the library `.gd`, e.g. `use_ref` → core/hooks.gd) when the editor is running.
+- Pressing Enter after a self-closing tag (`<Label … />`) no longer indents one level too deep (the indentation rule was matching any line ending in `>`, including `/>`).
+
 ## [0.2.3] - 2026-06-22
 - Formatting now always uses tab indentation for `.guitkx` (the embedded GDScript requires tabs, and the compiler emits tabs), so the markup and the embedded setup no longer mix indentation units — previously, with an editor configured for spaces, a deeper setup line kept its authored tab and produced a "2 spaces + tab" indent. Diagnostics: unknown attributes on a host element are now flagged (e.g. a typo'd `te` / `xt` on `<Label>`) with a did-you-mean suggestion, validated against the bundled Godot ClassDB property + signal data; component tags (which take arbitrary props) are not flagged, and the check is skipped when the ClassDB dump is unavailable so it never false-flags.
 - Formatter configuration: a project `guitkx.config.json` (Prettier-style walk-up, the analogue of ReactiveUIToolKit's `uitkx.config.json`) now overrides the formatter — `printWidth`, `indentStyle` ("tab" | "space"), `indentSize`, `singleAttributePerLine`, `insertSpaceBeforeSelfClose`. Tab indentation is the default when no config is present.

@@ -3,6 +3,21 @@
     {
       "date": "2026-06-22",
       "versions": {
+        "vscode": "0.2.4",
+        "vs2022": "0.2.4"
+      },
+      "shared": [
+        "Formatting: an authored blank line at the start or end of a component/hook setup block is now preserved (it was being stripped), and runs of 2+ spaces in embedded GDScript are collapsed to one outside strings/comments (e.g. `if x ==     null` becomes `if x == null`).",
+        "Diagnostics: an unknown element (GUITKX0105) and an unknown host attribute (GUITKX0107) are now reported as Errors (a red squiggle) instead of a faint hint / a warning.",
+        "Completion: style-dict keys (`bg_color`, `corner_radius`, `pad`, `separation`, `expand_h`, `font_size`, the theme channels, the per-state slots, …) are offered inside a `style={ {…} }` (or `*_style`) dictionary; common built-in constants (`Color.WHITE`, `Vector2.ZERO`, …) complete after `Type.`; and go-to-definition on an embedded GDScript symbol now forwards to Godot's language server (jumping to the library `.gd`, e.g. `use_ref` → core/hooks.gd) when the editor is running."
+      ],
+      "vscode": [
+        "Pressing Enter after a self-closing tag (`<Label … />`) no longer indents one level too deep (the indentation rule was matching any line ending in `>`, including `/>`)."
+      ]
+    },
+    {
+      "date": "2026-06-22",
+      "versions": {
         "vscode": "0.2.3",
         "vs2022": "0.2.3"
       },
