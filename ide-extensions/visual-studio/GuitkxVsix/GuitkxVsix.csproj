@@ -20,6 +20,26 @@
     <CreateVsixContainer>true</CreateVsixContainer>
     <DeployExtension>true</DeployExtension>
   </PropertyGroup>
+  <!-- Per-configuration output paths. Without an OutputPath, Microsoft.Common.targets aborts with
+       "BaseOutputPath/OutputPath property is not set" and never produces GuitkxVsix.dll (so
+       CreateVsixContainer then fails with VSSDK1025). [audit] -->
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Include="GuitkxContentDefinition.cs" />
     <Compile Include="GuitkxLanguageClient.cs" />
