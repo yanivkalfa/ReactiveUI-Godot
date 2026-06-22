@@ -15,10 +15,10 @@ permissions:
   contents: read
 
 env:
-  # The library targets Godot 4.1+ (uses `static var`); the suites are otherwise version-agnostic.
-  # FoldableContainer (V.foldable) is a 4.5+ control but is OPTIONAL — referenced via is_class()/a
-  # string tag, so it degrades gracefully below 4.5 rather than failing to parse. 4.4.x is a safe CI floor.
-  GODOT_VERSION: "4.4.1"
+  # CI targets the version the project is verified on (matches local dev). The library still parses on
+  # 4.1+ (FoldableContainer is is_class()/string-guarded, so it degrades gracefully below 4.5), but we
+  # test on the current stable.
+  GODOT_VERSION: "4.7.0"
 
 jobs:
   headless-tests:
