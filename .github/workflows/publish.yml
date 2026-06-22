@@ -1,11 +1,14 @@
-name: Publish Extensions
+name: Publish
 
-# Publishes the GUITKX IDE extensions. Modeled on ReactiveUIToolKit's publish.yml, retargeted to the
-# TypeScript language server (bundled as a Node server, not a dotnet DLL) and extended with Open VSX
-# (the Godot/VSCodium/Cursor audience). Each job is idempotent: it reads the extension's own version,
-# skips if the matching tag already exists, and tags + uploads on a successful publish.
+# Single manual "Publish" workflow, mirroring ReactiveUIToolKit's publish.yml: one Run-workflow
+# button publishes EVERYTHING whose version changed. Each job reads its OWN version, SKIPS if the
+# matching tag already exists, and tags + uploads on success -- so re-running is idempotent and a job
+# only ships when its artifact was bumped:
+#   - release-addon   -> Godot addon: zip addons/reactive_ui + GitHub release, gated on `v<plugin.cfg>`
+#   - publish-vscode  -> VS Code extension: VS Marketplace + Open VSX, gated on `vscode-v<package.json>`
+#   - publish-vs2022  -> VS 2022 extension: VsixPublisher, gated on `vs2022-v<vsixmanifest>`
 #
-# Secrets required:
+# Secrets required (Settings > Secrets and variables > Actions):
 #   VSCE_PAT             Azure DevOps PAT (Marketplace > Manage) for the VS Code Marketplace
 #   OVSX_TOKEN           open-vsx.org access token
 #   VS_MARKETPLACE_TOKEN Azure DevOps PAT for the Visual Studio Marketplace (VS2022)
@@ -17,10 +20,82 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-extensions
+  group: publish
   cancel-in-progress: false
 
 jobs:
+  # ════════════════════════════════════════════════════════════════════════════
+  # Godot addon — zip addons/reactive_ui + GitHub release, publishes only if version changed
+  # ════════════════════════════════════════════════════════════════════════════
+  release-addon:
+    name: Package addon + GitHub release (idempotent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read addon version from plugin.cfg
+        id: ver
+        run: |
+          VER=$(grep -oP '^version="\K[^"]+' addons/reactive_ui/plugin.cfg | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+          echo "Addon version: $VER"
+
+      - name: Skip if tag already exists
+        id: check
+        run: |
+          if git rev-parse "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.ver.outputs.tag }} already exists — nothing to publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run headless tests before releasing
+        if: steps.check.outputs.exists == 'false'
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: "4.4.1"
+          use-dotnet: false
+          include-templates: false
+
+      - name: Verify tests pass
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          godot --headless --path . --editor --quit || true
+          godot --headless --path . --script res://tests/core_test.gd
+          godot --headless --path . --script res://tests/style_test.gd
+          godot --headless --path . --script res://tests/router_match_test.gd
+          godot --headless --path . --script res://tests/router_spine_test.gd
+          godot --headless --path . --script res://tests/update_test.gd
+          godot --headless --path . --script res://tests/demos_test.gd
+          godot --headless --path . --script res://tests/guitkx_test.gd
+
+      - name: Package the addon (only addons/reactive_ui ships)
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p dist
+          zip -r "dist/reactive_ui-${{ steps.ver.outputs.version }}.zip" addons/reactive_ui -x '*/.git*'
+
+      - name: Create + push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Reactive UI ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          files: dist/reactive_ui-${{ steps.ver.outputs.version }}.zip
+
   # ════════════════════════════════════════════════════════════════════════════
   # VS Code extension — VS Marketplace + Open VSX, publishes only if version changed
   # ════════════════════════════════════════════════════════════════════════════
