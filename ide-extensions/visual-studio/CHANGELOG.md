@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.1] - 2026-06-22
+- Renamed the extension to just "GUITKX" (it was "GUITKX (ReactiveUI for Godot)", which truncated to "GUITKX (React..." in the editor UI) and added the Godot logo as the extension / marketplace icon.
+
 ## [0.2.0] - 2026-06-22
 - Formatter: components whose render is guarded by an early `return null` (e.g. `if not ready: return null` before the real markup return) are now formatted instead of being left verbatim, and the multi-attribute wrap path honors the `insertSpaceBeforeSelfClose` option (it previously always inserted the space).
 - Language server: hover and completion inside a `hook` body now map to the correct embedded-GDScript offset (the body is no longer mis-mapped after re-indentation); a `<>...</>` fragment no longer raises a false GUITKX0104 duplicate-key warning across its siblings; and parameter completion is now noncode-aware, so a string default containing a comma or colon (e.g. `label: String = "a, b"`) no longer drops the parameters declared after it.

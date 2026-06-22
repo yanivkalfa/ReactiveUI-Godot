@@ -1,8 +1,9 @@
 {
   "name": "guitkx",
-  "displayName": "GUITKX (ReactiveUI for Godot)",
+  "displayName": "GUITKX",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence forwarded to Godot's language server.",
-  "version": "0.2.0",
+  "version": "0.2.1",
+  "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/yanivkalfa/ReactiveUI-Godot" },

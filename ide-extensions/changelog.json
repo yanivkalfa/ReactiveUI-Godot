@@ -3,6 +3,16 @@
     {
       "date": "2026-06-22",
       "versions": {
+        "vscode": "0.2.1",
+        "vs2022": "0.2.1"
+      },
+      "shared": [
+        "Renamed the extension to just \"GUITKX\" (it was \"GUITKX (ReactiveUI for Godot)\", which truncated to \"GUITKX (React...\" in the editor UI) and added the Godot logo as the extension / marketplace icon."
+      ]
+    },
+    {
+      "date": "2026-06-22",
+      "versions": {
         "vscode": "0.2.0",
         "vs2022": "0.2.0"
       },

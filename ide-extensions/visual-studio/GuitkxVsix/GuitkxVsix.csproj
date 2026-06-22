@@ -62,6 +62,13 @@
       <IncludeInVSIX>true</IncludeInVSIX>
       <VSIXSubPath>Syntaxes</VSIXSubPath>
     </Content>
+    <!-- Extension icon (manifest <Icon>, ~90px) + marketplace preview (manifest <PreviewImage>). -->
+    <Content Include="icon.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="preview.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <!-- The bundled Node language server (populate .\server before packaging). -->
     <Content Include="server\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
