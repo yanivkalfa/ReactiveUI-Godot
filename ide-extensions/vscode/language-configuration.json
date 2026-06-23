@@ -25,7 +25,7 @@
   ],
   "autoCloseBefore": ";:.,=}])>` \n\t",
   "indentationRules": {
-    "increaseIndentPattern": "(\\{[^}\"']*$)|(\\([^)\"']*$)|(:\\s*$)|(>\\s*$)",
+    "increaseIndentPattern": "(\\{[^}\"']*$)|(\\([^)\"']*$)|(:\\s*$)|([^/]>\\s*$)",
     "decreaseIndentPattern": "^\\s*(\\}|\\)|</)"
   },
   "onEnterRules": [

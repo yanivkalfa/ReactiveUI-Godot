@@ -1,0 +1,10 @@
+@class_name DemoSignalsDisplay
+
+component DemoSignalsDisplay() {
+	var v = use_signal(DemoSignalsStore.shared)
+	return (
+		<Panel style={ {"bg_color": Color(0.18, 0.18, 0.22), "corner_radius": 6, "pad": 10} }>
+			<Label text={ "consumer sees: %d" % v } />
+		</Panel>
+	)
+}

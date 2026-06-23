@@ -244,12 +244,15 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 			return { "ok": false, "gd": "", "diagnostics": diags }
 		params = source.substr(j + 1, pc - j - 1)
 		j = pc + 1
-	# optional `-> ReturnHint` (dropped)
+	# optional `-> ReturnHint` — PRESERVED so callers' `:=` type-inference works; tuple-style
+	# `-> (a, b)` is dropped (GDScript has no tuple type — a multi-value hook returns an Array). [audit]
+	var ret_hint := ""
 	j = _skip_ws_only(source, j)
 	if j + 1 < n and source[j] == "-" and source[j + 1] == ">":
-		j += 2
+		var rh := j + 2
 		while j < n and source[j] != "{":
 			j += 1
+		ret_hint = source.substr(rh, j - rh).strip_edges()
 	# body
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
@@ -262,7 +265,7 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 	var body := source.substr(j + 1, bclose - j - 1)
 	var cls := class_name_override if class_name_override != "" else basename
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
-	out += "static func %s(%s):\n" % [hook_name, params]
+	out += "static func %s(%s)%s:\n" % [hook_name, params, _ret_suffix(ret_hint)]
 	var body_block := _reindent_setup(_apply_hook_aliases(body))
 	out += (body_block + "\n") if body_block != "" else "\tpass\n"
 	return { "ok": true, "gd": out, "diagnostics": diags }
@@ -288,11 +291,13 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 			return { "ok": false }
 		params = source.substr(j + 1, pc - j - 1)
 		j = pc + 1
+	var ret_hint := ""
 	j = _skip_ws_only(source, j)
 	if j + 1 < n and source[j] == "-" and source[j + 1] == ">":
-		j += 2
+		var rh := j + 2
 		while j < n and source[j] != "{":
 			j += 1
+		ret_hint = source.substr(rh, j - rh).strip_edges()
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
 		diags.append("GUITKX0303: hook body `{ ... }` expected")
@@ -301,7 +306,7 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 	if bclose == -1:
 		diags.append("GUITKX0304: unclosed hook body")
 		return { "ok": false }
-	return { "ok": true, "name": hook_name, "params": params, "body": source.substr(j + 1, bclose - j - 1), "next": bclose + 1 }
+	return { "ok": true, "name": hook_name, "params": params, "ret": ret_hint, "body": source.substr(j + 1, bclose - j - 1), "next": bclose + 1 }
 
 ## module Name { component A {…} component B {…} hook use_x {…} } -> one class with one static func
 ## per declaration. Intra-module <A/> resolves to the bare sibling static func (V.fc(A, …)). [§4]
@@ -369,7 +374,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		out += "\n"
 	for h in hooks:
 		out += "# hook %s\n" % h["name"]
-		out += "static func %s(%s):\n" % [h["name"], h["params"]]
+		out += "static func %s(%s)%s:\n" % [h["name"], h["params"], _ret_suffix(h.get("ret", ""))]
 		var hb := _reindent_setup(_apply_hook_aliases(h["body"], module_hooks))
 		out += (hb + "\n") if hb != "" else "\tpass\n"
 		out += "\n"
@@ -932,6 +937,14 @@ static func _is_call_at(s: String, at: int) -> bool:
 		at += 1
 	return at < n and s[at] == "("
 
+
+## Render a `-> ReturnType` suffix for a generated function signature. Empty when there is no hint;
+## tuple-style `-> (a, b)` is dropped (GDScript has no tuple type — see _compile_hook).
+static func _ret_suffix(ret: String) -> String:
+	ret = ret.strip_edges()
+	if ret == "" or ret.begins_with("("):
+		return ""
+	return " -> " + ret
 
 static func _gd_str(v: String) -> String:
 	return "\"%s\"" % v.replace("\\", "\\\\").replace("\"", "\\\"")

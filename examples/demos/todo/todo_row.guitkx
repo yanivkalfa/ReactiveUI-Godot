@@ -1,0 +1,10 @@
+@class_name DemoTodoRow
+
+component DemoTodoRow(item, on_remove) {
+	return (
+		<HBox style={ {"separation": 8} }>
+			<Label text={ "•  " + str(item["text"]) } style={ {"expand_h": true} } />
+			<Button text=" ✕ " on_pressed={ func(): on_remove.call(item["id"]) } />
+		</HBox>
+	)
+}

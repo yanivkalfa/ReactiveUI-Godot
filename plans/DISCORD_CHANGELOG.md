@@ -1,3 +1,19 @@
+## [0.2.1] - 2026-06-22
+
+### The demo gallery, now in .guitkx — and a VS Code extension that actually turns on
+
+**Every demo is now markup.** The whole `examples/` gallery -- counter, todo, router, the stress tests, all 24 -- is rewritten in `.guitkx` instead of hand-written `V.*` calls, so the demos double as a reference for the markup language. They follow the ReactiveUIToolKit layout: one `component` per file, sub-components as sibling files, and `module` reserved for hook / registry files. The generated `.gd` are git-ignored (the editor regenerates them on save), so the tree shows the source you actually edit.
+
+**The VS Code extension works now.** The published build was shipping without its `vscode-languageclient` dependency (a packaging-flag bug), so it silently failed to start -- no formatting, no completion, no hover. That's fixed, along with the missing "activate on `.guitkx`" trigger and format-on-save defaults. It also now formats `.guitkx` with consistent **tab** indentation (the embedded GDScript requires tabs, so markup + setup no longer mix tabs and spaces) and **flags unknown attributes** on host elements (a typo'd `te`/`xt` on `<Label>` gets a squiggle + did-you-mean). And you can now drop a **`guitkx.config.json`** next to your project (the analogue of `uitkx.config.json`) to tune the formatter -- line width, indent style/size, attribute wrapping. The **VS 2022** extension bundles the very same language server, so the formatter, diagnostics, and `guitkx.config.json` fixes land there as well (the packaging / activation fixes were VS Code-specific).
+
+**IDE polish (0.2.4, both editors).** A follow-up round of editor fixes: the formatter now keeps your blank lines and tidies `if x ==     null` into `== null`; unknown elements/attributes are red errors instead of faint hints; you get autocomplete for `style={ {…} }` keys (`bg_color`, `corner_radius`, …) and `Color.WHITE`-style constants; go-to-definition on a hook/symbol jumps into the library source (with the Godot editor open); and pressing Enter after a `<Tag />` no longer over-indents. Reinstall **GUITKX 0.2.4** to get everything.
+
+**Compiler fix.** A `hook` that declares a return type (`-> Array`, `-> Dictionary`) now keeps it in the generated GDScript, so `var xs := use_thing()` infers its type instead of failing to compile.
+
+Verified on Godot 4.7 -- full suite green: **core 91 / style 25 / router 18+37 / demos 28 / update / guitkx**.
+
+---
+
 ## [0.2.0] - 2026-06-22
 
 ### A real router, more runtime breadth, and a project-wide bug sweep

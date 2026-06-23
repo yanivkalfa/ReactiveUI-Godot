@@ -1,8 +1,9 @@
 {
   "name": "guitkx",
-  "displayName": "GUITKX (ReactiveUI for Godot)",
+  "displayName": "GUITKX",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence forwarded to Godot's language server.",
-  "version": "0.2.0",
+  "version": "0.2.4",
+  "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/yanivkalfa/ReactiveUI-Godot" },
@@ -11,9 +12,18 @@
   },
   "categories": ["Programming Languages"],
   "keywords": ["godot", "gdscript", "reactiveui", "guitkx", "jsx"],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:guitkx"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "guitkx.restartLanguageServer",
+        "title": "Restart Language Server",
+        "category": "GUITKX"
+      }
+    ],
     "languages": [
       {
         "id": "guitkx",
@@ -51,6 +61,16 @@
           "description": "When gdformat (gdscript-toolkit) is installed, also reflow embedded GDScript when formatting a .guitkx. Safe: any change beyond whitespace/quote style is rejected, so it never alters code semantics. Markup formatting works regardless; disable to keep base-indent normalization only."
         }
       }
+    },
+    "configurationDefaults": {
+      "[guitkx]": {
+        "editor.defaultFormatter": "ReactiveUITK.guitkx",
+        "editor.formatOnSave": true,
+        "editor.autoIndent": "full",
+        "editor.insertSpaces": false,
+        "editor.tabSize": 4,
+        "editor.detectIndentation": false
+      }
     }
   },
   "scripts": {
@@ -58,8 +78,8 @@
     "build": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "bundle-server": "node scripts/bundle-server.js",
-    "package": "npm run build && npm run bundle-server && npx --yes @vscode/vsce package --no-dependencies -o guitkx.vsix",
-    "publish": "npx --yes @vscode/vsce publish --no-dependencies --packagePath guitkx.vsix",
+    "package": "npm run build && npm run bundle-server && npx --yes @vscode/vsce package -o guitkx.vsix",
+    "publish": "npx --yes @vscode/vsce publish --packagePath guitkx.vsix",
     "publish:ovsx": "npx --yes ovsx publish guitkx.vsix",
     "deploy": "npm run package && npm run publish && npm run publish:ovsx"
   },

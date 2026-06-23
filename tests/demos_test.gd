@@ -10,9 +10,9 @@ func _initialize() -> void:
 	_run()
 
 func _run() -> void:
-	for entry in DemoGallery.table():
+	for entry in DemoGalleryTable.entries():
 		await _smoke(entry["title"], entry["fn"])
-	await _smoke("Gallery shell", DemoGallery.gallery)
+	await _smoke("Gallery shell", DemoGallery.render)
 	await _test_root_fills()
 	await _test_diagnostics_buttons()
 	RUIDiagnostics.enabled = false   # demos may have toggled these
@@ -39,7 +39,7 @@ func _test_root_fills() -> void:
 	var c := Control.new()
 	c.size = Vector2(900, 640)
 	root.add_child(c)
-	var app := ReactiveRoot.create(c, V.fc(DemoGallery.gallery))
+	var app := ReactiveRoot.create(c, V.fc(DemoGallery.render))
 	await process_frame
 	var hbox: Control = c.get_child(0)
 	var fills: bool = hbox.size.x >= 880 and hbox.size.y >= 620

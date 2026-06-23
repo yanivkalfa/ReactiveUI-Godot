@@ -6,6 +6,8 @@
 
 import { parseMarkup, MarkupNode, Attr } from "./markup";
 import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { existsSync, readFileSync } from "fs";
+import { dirname, join } from "path";
 
 export interface FmtOptions {
   printWidth: number;
@@ -75,7 +77,12 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
 
 function fmtComponent(name: string, params: string, setup: string, root: MarkupNode, o: FmtOptions): string {
   let out = `component ${name}${fmtParams(params)} {\n`;
-  out += fmtSetup(setup, 1, o);
+  const fs = fmtSetup(setup, 1, o);
+  if (fs !== "") {
+    if (hasLeadingBlank(setup)) out += "\n"; // keep an authored blank line after `{`
+    out += fs;
+    if (hasTrailingBlank(setup)) out += "\n"; // keep an authored blank line before `return (`
+  }
   out += pad(1, o) + "return (\n";
   out += fmtNode(root, 2, o);
   out += pad(1, o) + ")\n";
@@ -85,9 +92,24 @@ function fmtComponent(name: string, params: string, setup: string, root: MarkupN
 
 function fmtHook(name: string, params: string, body: string, o: FmtOptions): string {
   let out = `hook ${name}${fmtParams(params)} {\n`;
-  out += fmtSetup(body, 1, o);
+  const fb = fmtSetup(body, 1, o);
+  if (fb !== "") {
+    if (hasLeadingBlank(body)) out += "\n";
+    out += fb;
+    if (hasTrailingBlank(body)) out += "\n";
+  }
   out += "}\n";
   return out;
+}
+
+// An authored blank line at the start / end of an embedded block (between `{`→first-stmt or
+// last-stmt→`return`). reanchor() strips block-boundary blanks; these let fmtComponent/fmtHook keep
+// one. [audit #1]
+function hasLeadingBlank(s: string): boolean {
+  return /^[ \t]*\n[ \t]*\n/.test(s);
+}
+function hasTrailingBlank(s: string): boolean {
+  return /\n[ \t]*\n[ \t]*$/.test(s);
 }
 
 function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
@@ -283,8 +305,37 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   const p = pad(indent, o);
   let out = "";
   for (const l of lines) {
-    if (l.trim() === "") out += "\n";
-    else out += p + l.slice(px.length) + "\n";
+    if (l.trim() === "") {
+      out += "\n";
+    } else {
+      const rest = l.slice(px.length);
+      const lead = leadingWs(rest);
+      out += p + lead + collapseSpaces(rest.slice(lead.length)) + "\n";
+    }
+  }
+  return out;
+}
+
+// Collapse runs of 2+ spaces to one in a line of embedded GDScript (e.g. `==␣␣␣null` -> `== null`),
+// leaving strings/comments verbatim. Uses skipNoncode, which is byte-identical to the GD lexer's
+// skip_noncode (cross-tested via scanner-cases.json), so TS + GD stay in lock-step. [audit #6]
+function collapseSpaces(s: string): string {
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    const j = skipNoncode(s, i);
+    if (j !== i) {
+      out += s.slice(i, j);
+      i = j;
+      continue;
+    }
+    if (s[i] === " " && s[i + 1] === " ") {
+      out += " ";
+      while (i < s.length && s[i] === " ") i++;
+      continue;
+    }
+    out += s[i];
+    i++;
   }
   return out;
 }
@@ -515,4 +566,37 @@ function skipWsNl(src: string, i: number): number {
     if (k === i) return i;
     i = k;
   }
+}
+
+// --- project config: guitkx.config.json (Prettier-style walk-up) — the analogue of uitkx.config.json ---
+// Walk up from `fileDir` to the filesystem root; the first guitkx.config.json's `"formatter"` section
+// overrides the formatter options. Unknown keys are ignored; a malformed file falls back to {}.
+export function loadFormatterConfig(fileDir: string): Partial<FmtOptions> {
+  let dir = fileDir;
+  while (dir) {
+    const candidate = join(dir, "guitkx.config.json");
+    if (existsSync(candidate)) {
+      try {
+        return mapFormatterSection(JSON.parse(readFileSync(candidate, "utf8")).formatter);
+      } catch {
+        return {};
+      }
+    }
+    const parent = dirname(dir);
+    if (!parent || parent === dir) break;
+    dir = parent;
+  }
+  return {};
+}
+
+function mapFormatterSection(f: unknown): Partial<FmtOptions> {
+  if (!f || typeof f !== "object") return {};
+  const r = f as Record<string, unknown>;
+  const o: Partial<FmtOptions> = {};
+  if (typeof r.printWidth === "number") o.printWidth = r.printWidth;
+  if (typeof r.indentSize === "number") o.indentSize = r.indentSize;
+  if (r.indentStyle === "tab" || r.indentStyle === "space") o.indentStyle = r.indentStyle;
+  if (typeof r.singleAttributePerLine === "boolean") o.singleAttributePerLine = r.singleAttributePerLine;
+  if (typeof r.insertSpaceBeforeSelfClose === "boolean") o.insertSpaceBeforeSelfClose = r.insertSpaceBeforeSelfClose;
+  return o;
 }

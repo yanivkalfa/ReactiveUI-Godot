@@ -1,0 +1,50 @@
+@class_name DemoStress
+
+## Ported from uitkx Samples/Components/StressTest. N bouncing boxes, ALL re-rendered
+## every frame via keyed reconciliation, measuring avg FPS — the real throughput test.
+component DemoStress() {
+	var box_count = use_state(300)
+	var duration = use_state(10.0)
+	var count_text = use_state("300")
+	var dur_text = use_state("10")
+	var running = use_state(false)
+	var version = use_state(0)
+	var area_ref = use_ref(null)
+
+	var loop = DemoStressHooks.use_stress_loop(area_ref, box_count[0], duration[0], running[0], version[0], running[1])
+	var boxes: Array = loop["boxes"]
+
+	var status := "Stress test — Ready (press Start)"
+	if loop["finished"]:
+		status = "DONE — %d boxes | Avg FPS: %.1f | %.1fs | Frames: %d" % [boxes.size(), loop["fps"], loop["elapsed"], loop["frames"]]
+	elif running[0]:
+		status = "Running — %d boxes | FPS: %.1f | %.1f/%.0fs | Frames: %d" % [boxes.size(), loop["fps"], loop["elapsed"], duration[0], loop["frames"]]
+
+	var start := func():
+		if running[0]:
+			return
+		var n := int(count_text[0]) if count_text[0].is_valid_int() else 0
+		var d := float(dur_text[0]) if dur_text[0].is_valid_float() else 0.0
+		if n > 0 and n <= 10000 and d > 0:
+			box_count[1].call(n)
+			duration[1].call(d)
+			version[1].call(version[0] + 1)
+			running[1].call(true)
+	return (
+		<DemoBox title="Stress test — bouncing boxes (uitkx port)">
+			<HBox style={ {"separation": 8} }>
+				<Label text={ status } style={ {"expand_h": true} } />
+				<Label text="Boxes:" />
+				<LineEdit text={ count_text[0] } on_text_changed={ func(t): count_text[1].call(t) } style={ {"min_width": 70} } />
+				<Label text="Secs:" />
+				<LineEdit text={ dur_text[0] } on_text_changed={ func(t): dur_text[1].call(t) } style={ {"min_width": 50} } />
+				<Button text={ "Running…" if running[0] else ("Restart" if loop["finished"] else "Start") } on_pressed={ start } />
+			</HBox>
+			<Control ref={ area_ref } clip_contents style={ {"expand_h": true, "expand_v": true, "min_height": 320} }>
+				@for (b in boxes) {
+					<ColorRect key={ b["id"] } position={ Vector2(b["x"], b["y"]) } size={ Vector2(b["size"], b["size"]) } color={ b["color"] } />
+				}
+			</Control>
+		</DemoBox>
+	)
+}

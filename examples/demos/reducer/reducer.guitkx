@@ -1,0 +1,21 @@
+@class_name DemoReducer
+
+component DemoReducer() {
+	var reducer = func(state, action):
+		match action:
+			"inc": return state + 1
+			"dec": return state - 1
+			"reset": return 0
+		return state
+	var r = use_reducer(reducer, 0)
+	return (
+		<DemoBox title="use_reducer — actions instead of raw setters">
+			<Label text={ "State: %d" % r[0] } style={ {"font_size": 28} } />
+			<HBox style={ {"separation": 8} }>
+				<Button text="dec" on_pressed={ func(): r[1].call("dec") } />
+				<Button text="inc" on_pressed={ func(): r[1].call("inc") } />
+				<Button text="reset" on_pressed={ func(): r[1].call("reset") } />
+			</HBox>
+		</DemoBox>
+	)
+}

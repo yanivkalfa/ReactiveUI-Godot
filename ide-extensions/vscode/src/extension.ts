@@ -1,6 +1,6 @@
 import * as path from "path";
 import * as fs from "fs";
-import { workspace, ExtensionContext, window } from "vscode";
+import { workspace, ExtensionContext, window, commands } from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -46,6 +46,16 @@ export function activate(context: ExtensionContext): void {
 
   client = new LanguageClient("guitkx", "GUITKX Language Server", serverOptions, clientOptions);
   client.start();
+
+  // Lets the user recover the server without reloading the window (e.g. after starting the Godot
+  // editor so the embedded-GDScript proxy can connect). Mirrors uitkx's restart command.
+  context.subscriptions.push(
+    commands.registerCommand("guitkx.restartLanguageServer", async () => {
+      if (!client) return;
+      await client.restart();
+      window.showInformationMessage("GUITKX: language server restarted.");
+    })
+  );
 }
 
 export function deactivate(): Thenable<void> | undefined {

@@ -45,7 +45,7 @@ export class GodotProxy {
           await this.request("initialize", {
             processId: process.pid,
             rootUri: this.rootUri || null,
-            capabilities: { textDocument: { completion: {}, hover: {}, publishDiagnostics: {} } },
+            capabilities: { textDocument: { completion: {}, hover: {}, definition: {}, publishDiagnostics: {} } },
           });
           this.notify("initialized", {});
           this.ready = true;
@@ -103,6 +103,18 @@ export class GodotProxy {
     if (!(await this.ensureConnected())) return null;
     try {
       return await this.request("textDocument/hover", {
+        textDocument: { uri },
+        position: { line, character },
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async definition(uri: string, line: number, character: number): Promise<any | null> {
+    if (!(await this.ensureConnected())) return null;
+    try {
+      return await this.request("textDocument/definition", {
         textDocument: { uri },
         position: { line, character },
       });

@@ -64,6 +64,7 @@ jobs:
       - name: Verify tests pass
         if: steps.check.outputs.exists == 'false'
         run: |
+          godot --headless --path . --script res://tests/guitkx_build.gd
           godot --headless --path . --editor --quit || true
           godot --headless --path . --script res://tests/core_test.gd
           godot --headless --path . --script res://tests/style_test.gd
@@ -143,7 +144,7 @@ jobs:
         working-directory: ide-extensions/vscode
         run: |
           node scripts/bundle-server.js
-          npx --yes @vscode/vsce package --no-dependencies -o guitkx.vsix
+          npx --yes @vscode/vsce package -o guitkx.vsix
 
       - name: Publish to VS Marketplace
         id: publish-vsce
@@ -151,7 +152,7 @@ jobs:
         working-directory: ide-extensions/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --no-dependencies --packagePath guitkx.vsix --pat "$VSCE_PAT"
+        run: npx --yes @vscode/vsce publish --packagePath guitkx.vsix --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX
         id: publish-ovsx

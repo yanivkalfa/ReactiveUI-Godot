@@ -10,7 +10,7 @@ var _app: ReactiveRoot
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	_app = ReactiveRoot.create(self, V.fc(DemoGallery.gallery))
+	_app = ReactiveRoot.create(self, V.fc(DemoGallery.render))
 
 func _exit_tree() -> void:
 	if _app != null:

@@ -13,12 +13,37 @@
     <RootNamespace>GuitkxVsix</RootNamespace>
     <AssemblyName>GuitkxVsix</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
-    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <!-- This is a pure MEF extension (ILanguageClient + ContentTypeDefinition) with NO VSPackage /
+         registration attributes, and it ships its registration via the static guitkx.pkgdef. So do
+         NOT auto-generate a pkgdef from the assembly; CreatePkgDef would throw "No Visual Studio
+         registration attribute found" and CreateVsixContainer would then fail (VSSDK1025). Matches
+         ReactiveUIToolKit's UitkxVsix.csproj. [audit] -->
+    <GeneratePkgDefFile>false</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
     <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
     <CreateVsixContainer>true</CreateVsixContainer>
     <DeployExtension>true</DeployExtension>
+  </PropertyGroup>
+  <!-- Per-configuration output paths. Without an OutputPath, Microsoft.Common.targets aborts with
+       "BaseOutputPath/OutputPath property is not set" and never produces GuitkxVsix.dll (so
+       CreateVsixContainer then fails with VSSDK1025). [audit] -->
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="GuitkxContentDefinition.cs" />
@@ -37,6 +62,13 @@
       <IncludeInVSIX>true</IncludeInVSIX>
       <VSIXSubPath>Syntaxes</VSIXSubPath>
     </Content>
+    <!-- Extension icon (manifest <Icon>, ~90px) + marketplace preview (manifest <PreviewImage>). -->
+    <Content Include="icon.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="preview.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <!-- The bundled Node language server (populate .\server before packaging). -->
     <Content Include="server\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -49,5 +81,12 @@
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.7.37357" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.7.2189" PrivateAssets="all" />
   </ItemGroup>
+  <!-- REQUIRED: Microsoft.CSharp.targets pulls in Microsoft.Common.targets (which defines the `Build`
+       target) AND imports obj\*.nuget.g.targets (which loads the Microsoft.VSSDK.BuildTools package
+       targets). Without this line BOTH `Build` and `CreateVsixContainer` are undefined -> MSB4057. -->
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- Defines CreateVsixContainer / VSCTCompile / GeneratePkgDef. Microsoft.VSSDK.BuildTools' auto-
+       imported props point $(VSToolsPath) at the package's OWN tools folder, so this resolves to the
+       NuGet copy of VsSDK.targets even on a CI runner with no VS-installed VSSDK workload. -->
   <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="Exists('$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets')" />
 </Project>

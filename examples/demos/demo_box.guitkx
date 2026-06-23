@@ -1,0 +1,15 @@
+@class_name DemoBox
+
+## The titled content box every demo wraps itself in — the .guitkx markup analogue of the old
+## DemoUtil.box(title, kids) helper. Children passed to <DemoBox> render below the heading.
+component DemoBox(title: String = "") {
+	return (
+		<Margin style={ {"margin": 20} }>
+			<VBox style={ {"separation": 12} }>
+				<Label text={ title } style={ {"font_size": 24, "font_color": Color(0.55, 0.8, 1.0)} } />
+				<HSeparator />
+				{ children }
+			</VBox>
+		</Margin>
+	)
+}
