@@ -8,9 +8,11 @@ on:
   push:
     branches: [master, dev]
     paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
+  # No `paths:` filter on PRs: these two jobs are *required* status checks, so they must
+  # always report a conclusion — otherwise a PR that doesn't touch ide-extensions/ (e.g.
+  # docs or issue templates) can never satisfy them and is permanently un-mergeable.
   pull_request:
     branches: [master, dev]
-    paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
 
 permissions:
   contents: read
