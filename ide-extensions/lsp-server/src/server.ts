@@ -1,8 +1,8 @@
 // guitkx language server. Markup intelligence (tag/attribute/directive completion + hover) is
 // answered locally from the schema; embedded-GDScript intelligence ({expr}, setup, conditions) is
-// forwarded to Godot's GDScript LSP through a virtual `.gd` document + source map. Diagnostics are a
-// light structural pass (unbalanced tags/braces); embedded-code diagnostics come from Godot when its
-// editor is running. Transport: stdio (VS Code client + VS2022 ILanguageClient both speak this).
+// answered by @gdscript-analyzer/core (a headless GDScript analyzer) over a virtual `.gd` document +
+// source map — no running Godot editor required. Diagnostics are a light structural pass (unbalanced
+// tags/braces). Transport: stdio (VS Code client + VS2022 ILanguageClient both speak this).
 
 import {
   createConnection,
@@ -39,7 +39,7 @@ import { scanTagRefs } from "./refs";
 import { buildSemanticTokens, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
 import { readFileSync } from "fs";
-import { GodotProxy } from "./godotProxy";
+import { AnalyzerAdapter } from "./analyzerAdapter";
 import {
   HOST_TAGS,
   STRUCTURAL_ATTRS,
@@ -54,20 +54,26 @@ import {
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const index = new WorkspaceIndex();
-let proxy: GodotProxy;
-let godotPort = 6005;
+const analyzer = new AnalyzerAdapter();
 let projectPath = "";
 let useGdformat = true;
-let proxyEnabled = true;
+let embeddedEnabled = true;
 
 connection.onInitialize((params: InitializeParams) => {
   const opts = (params.initializationOptions as any) || {};
-  if (typeof opts.godotPort === "number") godotPort = opts.godotPort;
   if (typeof opts.useGdformat === "boolean") useGdformat = opts.useGdformat;
-  if (typeof opts.enableGodotProxy === "boolean") proxyEnabled = opts.enableGodotProxy;
+  // `enableEmbeddedAnalysis` toggles embedded-GDScript intelligence (completion/hover/definition
+  // inside {expr}/setup). `enableGodotProxy` is the legacy name, still honored.
+  if (typeof opts.enableEmbeddedAnalysis === "boolean") embeddedEnabled = opts.enableEmbeddedAnalysis;
+  else if (typeof opts.enableGodotProxy === "boolean") embeddedEnabled = opts.enableGodotProxy;
   const rootUri = params.rootUri || (params.workspaceFolders?.[0]?.uri ?? "");
   projectPath = uriToProjectPath(rootUri);
-  proxy = new GodotProxy("127.0.0.1", godotPort, rootUri);
+  // Feed project.godot to the analyzer (enables [autoload] singleton resolution). Best-effort.
+  try {
+    analyzer.setProjectConfig(readFileSync(join(projectPath, "project.godot"), "utf8"));
+  } catch {
+    /* no project.godot here — embedded analysis still works per-file */
+  }
   scanWorkspace(index, projectPath);
   return {
     capabilities: {
@@ -281,26 +287,16 @@ function builtinMemberCompletions(src: string, offset: number): CompletionItem[]
   return members.map((m) => ({ label: m, kind: CompletionItemKind.Constant, detail: `${type}.${m}` }));
 }
 
-async function forwardCompletion(uri: string, src: string, offset: number): Promise<CompletionItem[]> {
-  if (!proxyEnabled) return []; // embedded-GDScript forwarding disabled by the client
+function forwardCompletion(uri: string, src: string, offset: number): CompletionItem[] {
+  if (!embeddedEnabled) return []; // embedded-GDScript intelligence disabled by the client
   const { text, map } = buildVirtualDoc(src);
   const genOffset = map.toGenerated(offset);
   if (genOffset === null) return [];
   const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
-  await proxy.sync(vUri, text);
-  const pos = offsetToPosition(text, genOffset);
-  const res = await proxy.completion(vUri, pos.line, pos.character);
-  if (!res) return [];
-  const items = Array.isArray(res) ? res : res.items ?? [];
-  // strip virtual-space textEdits; rely on label/insertText (GDScript symbols are position-free)
-  return items.map((it: any) => ({
-    label: it.label,
-    kind: it.kind,
-    detail: it.detail,
-    documentation: it.documentation,
-    insertText: it.insertText ?? it.label,
-    sortText: it.sortText,
-  }));
+  analyzer.sync(vUri, text);
+  // The analyzer answers from the virtual `.gd`; items carry no positions (GDScript symbols are
+  // position-free), so we use them as-is. Byte<->char conversion is handled inside the adapter.
+  return analyzer.completionsAt(vUri, text, genOffset);
 }
 
 // --- hover ---
@@ -319,15 +315,14 @@ connection.onHover(async (params): Promise<Hover | null> => {
     if (attr) return md(`**${attr.name}**: \`${attr.type}\` — ${attr.detail}`);
     return null;
   }
-  if (ctx.kind === "embedded" && proxyEnabled) {
+  if (ctx.kind === "embedded" && embeddedEnabled) {
     const { text, map } = buildVirtualDoc(src);
     const genOffset = map.toGenerated(offset);
     if (genOffset === null) return null;
     const vUri = params.textDocument.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
-    await proxy.sync(vUri, text);
-    const pos = offsetToPosition(text, genOffset);
-    const res = await proxy.hover(vUri, pos.line, pos.character);
-    if (res?.contents) return { contents: res.contents };
+    analyzer.sync(vUri, text);
+    const contents = analyzer.hoverAt(vUri, text, genOffset);
+    if (contents) return { contents };
   }
   return null;
 });
@@ -403,23 +398,24 @@ connection.onDefinition(async (params) => {
   return forwardDefinition(params.textDocument.uri, src, offset);
 });
 
-async function forwardDefinition(uri: string, src: string, offset: number): Promise<Location[] | null> {
-  if (!proxyEnabled) return null;
+function forwardDefinition(uri: string, src: string, offset: number): Location[] | null {
+  if (!embeddedEnabled) return null;
   const { text, map } = buildVirtualDoc(src);
   const genOffset = map.toGenerated(offset);
   if (genOffset === null) return null;
   const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
-  await proxy.sync(vUri, text);
-  const pos = offsetToPosition(text, genOffset);
-  const res = await proxy.definition(vUri, pos.line, pos.character);
-  if (!res) return null;
-  const raw = Array.isArray(res) ? res : [res];
+  analyzer.sync(vUri, text);
+  const defs = analyzer.definitionsAt(vUri, text, genOffset);
   const out: Location[] = [];
-  for (const loc of raw) {
-    const u: string = loc.uri ?? loc.targetUri;
-    const range = loc.range ?? loc.targetRange ?? loc.targetSelectionRange;
-    if (!u || !range || u === vUri) continue; // skip same-file virtual-doc hits (no reverse map yet)
-    out.push({ uri: resToFileUri(u), range });
+  for (const d of defs) {
+    // A single virtual doc is loaded, so every target is in it: reverse-map the target range from the
+    // virtual `.gd` back into the .guitkx source. Targets that land in generated glue (toSource ===
+    // null) have no user-visible location and are skipped. (Cross-file preload/extends navigation needs
+    // the referenced .gd files loaded into the analyzer too — a follow-up; resToFileUri is kept for it.)
+    const s = map.toSource(d.range.start);
+    const e = map.toSource(d.range.end);
+    if (s === null || e === null) continue;
+    out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
   }
   return out.length ? out : null;
 }
