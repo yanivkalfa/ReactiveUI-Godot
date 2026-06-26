@@ -31,6 +31,12 @@ for (const dep of deps) {
   const depPath = path.join(serverSrc, "node_modules", dep);
   if (fs.existsSync(depPath)) copyDir(depPath, path.join(dest, "node_modules", dep));
 }
+// the headless GDScript analyzer (@gdscript-analyzer/core — a native napi addon) + its installed
+// per-platform binary sub-package. NOTE: this bundles only the CURRENT machine's `.node`, so the
+// resulting .vsix is platform-specific. A cross-platform release needs per-platform packaging
+// (`vsce package --target <triple>`) or switching the server to the wasm build. See the swap notes.
+const analyzerScope = path.join(serverSrc, "node_modules", "@gdscript-analyzer");
+if (fs.existsSync(analyzerScope)) copyDir(analyzerScope, path.join(dest, "node_modules", "@gdscript-analyzer"));
 // the ClassDB dump (loaded by classdb.js via ../classdb/) — bundle it next to ./server
 const classdbSrc = path.join(serverSrc, "classdb");
 if (fs.existsSync(classdbSrc)) copyDir(classdbSrc, path.join(root, "classdb"));

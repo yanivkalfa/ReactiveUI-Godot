@@ -1,7 +1,7 @@
 {
   "name": "guitkx-language-server",
   "version": "0.1.0",
-  "description": "Language server for .guitkx (ReactiveUI for Godot markup): markup intelligence + a proxy that forwards embedded-GDScript requests to Godot's built-in GDScript LSP.",
+  "description": "Language server for .guitkx (ReactiveUI for Godot markup): markup intelligence + headless embedded-GDScript analysis via @gdscript-analyzer/core (no running Godot editor required).",
   "license": "MIT",
   "main": "out/server.js",
   "bin": {
@@ -16,6 +16,7 @@
     "test": "tsc -p ./ && node --test out/test/"
   },
   "dependencies": {
+    "@gdscript-analyzer/core": "^0.1.0",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.11"
   },
