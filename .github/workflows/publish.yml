@@ -105,13 +105,14 @@ jobs:
     # One platform-specific .vsix per platform that has a published @gdscript-analyzer/core-<triple>
     # native addon. The bundled server is a native napi addon, so the .vsix can't be universal — each
     # leg installs the target's binary, bundles only that one (scripts/bundle-server.js --target), and
-    # `vsce package --target`s a platform-specific package. (win32-arm64 + alpine/musl join once the
-    # analyzer's napi matrix publishes those triples — see gdscript-analyzer release-napi.yml.)
+    # `vsce package --target`s a platform-specific package. (alpine/musl join once the analyzer's napi
+    # matrix publishes those triples — see gdscript-analyzer release-napi.yml.)
     strategy:
       fail-fast: false
       matrix:
         include:
           - { target: win32-x64, napi: core-win32-x64-msvc }
+          - { target: win32-arm64, napi: core-win32-arm64-msvc }
           - { target: linux-x64, napi: core-linux-x64-gnu }
           - { target: linux-arm64, napi: core-linux-arm64-gnu }
           - { target: darwin-x64, napi: core-darwin-x64 }

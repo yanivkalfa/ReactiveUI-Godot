@@ -81,8 +81,8 @@ so a `.vsix` is **platform-specific**. The local `bundle-server.js` above bundle
 each leg installs the target's `@gdscript-analyzer/core-<triple>` binary, runs
 `node scripts/bundle-server.js --target <vsce-target>` (bundling only that platform's addon), and
 `vsce package --target <vsce-target>` → one platform-specific `.vsix` per platform
-(win32-x64, linux-x64, linux-arm64, darwin-x64, darwin-arm64 — the triples the analyzer currently
-publishes; win32-arm64 + alpine/musl join as the analyzer's napi matrix grows).
+(win32-x64, win32-arm64, linux-x64, linux-arm64, darwin-x64, darwin-arm64 — the triples the analyzer
+currently publishes; alpine/musl join as the analyzer's napi matrix grows).
 
 **VS2022 extension** (needs VS2022 + the "Visual Studio extension development" workload):
 
