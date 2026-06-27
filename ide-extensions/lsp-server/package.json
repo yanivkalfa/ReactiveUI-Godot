@@ -16,7 +16,7 @@
     "test": "tsc -p ./ && node --test out/test/"
   },
   "dependencies": {
-    "@gdscript-analyzer/core": "^0.1.0",
+    "@gdscript-analyzer/core": "^0.2.0",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.11"
   },

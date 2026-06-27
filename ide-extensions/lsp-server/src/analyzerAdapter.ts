@@ -73,11 +73,15 @@ const SEVERITY: Record<string, DiagnosticSeverity> = {
   hint: DiagnosticSeverity.Hint,
 };
 
-/** A go-to-definition target, with its range already mapped to CHAR offsets in the virtual-doc text. */
+/** A go-to-definition target. `range` is mapped to CHAR offsets in the TARGET file's text (the file
+ *  `uri` identifies — the virtual doc for a same-file hit, a project library `.gd` for a cross-file
+ *  one), so the caller maps it back without re-guessing which document the offsets belong to. */
 export interface AdapterDef {
-  /** FileId reported by the analyzer; 0 is the (single) virtual document we load. */
+  /** FileId reported by the analyzer. */
   file: number;
-  /** char-offset range in the virtual `.gd` text that was queried. */
+  /** The URI of `file` via the adapter's id↔uri mirror, or `null` if the file isn't tracked. */
+  uri: string | null;
+  /** char-offset range in `uri`'s text (the TARGET file). */
   range: { start: number; end: number };
   name: string;
   kind: string;
@@ -85,7 +89,24 @@ export interface AdapterDef {
 
 export class AnalyzerAdapter {
   private az = new AnalysisHandle();
-  private open = new Set<string>();
+  /** uri -> { the FileId the analyzer assigned (mirrored), the doc's current text }. */
+  private docs = new Map<string, { id: number; text: string }>();
+  /** Reverse of `docs`: FileId -> uri. The analyzer interns sequentially from 0 and we are its sole
+   *  opener (we never close a doc), so mirroring the counter reproduces its FileId↔uri map exactly —
+   *  the binding does not expose one, and a cross-file def reports only the numeric FileId. */
+  private fileIds = new Map<number, string>();
+  private nextId = 0;
+
+  /** Record a doc's FileId (first open) + current text, mirroring the analyzer's sequential interning. */
+  private track(uri: string, text: string): void {
+    const existing = this.docs.get(uri);
+    if (existing) existing.text = text;
+    else {
+      const id = this.nextId++;
+      this.docs.set(uri, { id, text });
+      this.fileIds.set(id, uri);
+    }
+  }
 
   /** Set the project's project.godot text (enables `[autoload]` singleton resolution). Best-effort. */
   setProjectConfig(text: string): void {
@@ -98,11 +119,23 @@ export class AnalyzerAdapter {
 
   /** Open (first time) or replace the virtual `.gd` document at `uri`. */
   sync(uri: string, text: string): void {
-    if (this.open.has(uri)) this.az.changeDocument(uri, text);
-    else {
-      this.az.openDocument(uri, text, null);
-      this.open.add(uri);
-    }
+    if (this.docs.has(uri)) this.az.changeDocument(uri, text);
+    else this.az.openDocument(uri, text, null);
+    this.track(uri, text);
+  }
+
+  /** Load a project library `.gd` file ONCE, with its `res://` path so the analyzer can resolve
+   *  cross-file `class_name`/`preload`/`extends` against it (e.g. `Hooks` -> `core/hooks.gd`). A
+   *  repeat call is a no-op (the res-path is recorded on first open only). */
+  loadLibrary(uri: string, text: string, resPath: string): void {
+    if (this.docs.has(uri)) return;
+    this.az.openDocument(uri, text, resPath);
+    this.track(uri, text);
+  }
+
+  /** The tracked text of `uri` (for offset->position mapping at the call site), or undefined. */
+  textOf(uri: string): string | undefined {
+    return this.docs.get(uri)?.text;
   }
 
   /** Completions at a CHAR offset in `text`, as LSP items. */
@@ -156,7 +189,9 @@ export class AnalyzerAdapter {
     });
   }
 
-  /** Definition target(s) at a CHAR offset in `text`; ranges mapped back to CHAR offsets in `text`. */
+  /** Definition target(s) at a CHAR offset in `text`. Each target's range is in its OWN file's text
+   *  (the virtual doc for a same-file hit, a library `.gd` for a cross-file one), resolved via the
+   *  id↔uri mirror — so a cross-file def's byte range is converted against the TARGET file's text. */
   definitionsAt(uri: string, text: string, charOffset: number): AdapterDef[] {
     let defs: any[];
     try {
@@ -165,10 +200,16 @@ export class AnalyzerAdapter {
       return [];
     }
     return defs.map((d) => {
+      const file: number = d.file ?? 0;
+      const targetUri = this.fileIds.get(file) ?? null;
+      // A cross-file def's range is in the TARGET file; convert with that file's text (falling back to
+      // the queried text for an untracked file id).
+      const targetText = (targetUri ? this.docs.get(targetUri)?.text : undefined) ?? text;
       const r = d.focus_range ?? d.full_range ?? d.range ?? { start: 0, end: 0 };
       return {
-        file: d.file ?? 0,
-        range: { start: byteToChar(text, r.start), end: byteToChar(text, r.end) },
+        file,
+        uri: targetUri,
+        range: { start: byteToChar(targetText, r.start), end: byteToChar(targetText, r.end) },
         name: d.name,
         kind: d.kind,
       };
