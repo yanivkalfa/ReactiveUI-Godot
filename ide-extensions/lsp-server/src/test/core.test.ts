@@ -14,6 +14,7 @@ import { buildSemanticTokens } from "../semanticTokens";
 import { normalizeUri } from "../workspaceIndex";
 import { srcHash } from "../diagsSidecar";
 import { parseMarkup } from "../markup";
+import { AnalyzerAdapter } from "../analyzerAdapter";
 
 test("findMatching balances braces, skipping strings/comments", () => {
   const s = '{ a = "}" # }\n ; b }';
@@ -223,6 +224,39 @@ test("virtualDoc is scope-aware (loop var visible to its {expr})", () => {
   assert.ok(exprLine, "emits the loop-var {expr}");
   const lead = (s: string) => s.match(/^\t*/)![0].length;
   assert.ok(lead(exprLine!) > lead(forLine!), "the {expr} is nested INSIDE the for block (loop var in scope)");
+});
+
+test("cross-file goto: a Hooks.<hook> reference resolves INTO the library file (FileId<->uri mirror)", () => {
+  // The §7(a) headline: with the addon library loaded (res:// path + `class_name Hooks`), a
+  // `Hooks.use_ref` reference in the virtual doc resolves cross-file to the real hooks.gd — and the
+  // adapter reports the target by URI (mirroring the analyzer's sequential FileIds) with its range in
+  // THAT file's text. The server chains a bare `use_ref` to this RHS; here we drive both steps.
+  const az = new AnalyzerAdapter();
+  const hooksUri = "file:///proj/addons/reactive_ui/core/hooks.gd";
+  const hooks = "class_name Hooks\nstatic func use_ref(initial = null) -> Dictionary:\n\treturn {}\n";
+  az.loadLibrary(hooksUri, hooks, "res://addons/reactive_ui/core/hooks.gd");
+
+  const vUri = "file:///proj/x.__guitkx_virtual.gd";
+  const vtext =
+    "extends RefCounted\n" +
+    "static func render(props, children):\n" +
+    "\tvar use_ref = Hooks.use_ref\n" +
+    "\tvar _e0 = (use_ref(0))\n" +
+    "\tpass\n";
+  az.sync(vUri, vtext);
+
+  // (1) The bare `use_ref(0)` in the embedded expr resolves to the in-scope hook STUB (same file).
+  const bareUse = vtext.indexOf("use_ref(0)") + 1;
+  const localDefs = az.definitionsAt(vUri, vtext, bareUse);
+  assert.ok(localDefs.length >= 1, "bare use_ref resolves to the local stub");
+  assert.equal(localDefs[0].uri, vUri, "the stub lives in the virtual doc (same file)");
+
+  // (2) The stub's RHS `Hooks.use_ref` resolves CROSS-FILE to the real method in hooks.gd.
+  const rhs = vtext.indexOf("Hooks.use_ref") + "Hooks.".length;
+  const libDefs = az.definitionsAt(vUri, vtext, rhs);
+  const d = libDefs.find((x) => x.uri === hooksUri);
+  assert.ok(d, `Hooks.use_ref should point at the library file, got ${JSON.stringify(libDefs)}`);
+  assert.equal(hooks.slice(d!.range.start, d!.range.end), "use_ref", "range lands on hooks.gd's use_ref decl");
 });
 
 test("virtualDoc paramNames is noncode-aware (comma/colon inside a string default does not mis-split)", () => {

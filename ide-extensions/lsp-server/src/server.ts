@@ -30,7 +30,7 @@ import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { uriToProjectPath } from "./guitkxFormat";
 import { formatGuitkx, FmtOptions, markupWindows, loadFormatterConfig } from "./formatGuitkx";
-import { dirname, join } from "path";
+import { dirname, join, relative } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
@@ -38,7 +38,7 @@ import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offs
 import { scanTagRefs } from "./refs";
 import { buildSemanticTokens, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync, statSync } from "fs";
 import { AnalyzerAdapter } from "./analyzerAdapter";
 import {
   HOST_TAGS,
@@ -75,6 +75,10 @@ connection.onInitialize((params: InitializeParams) => {
     /* no project.godot here — embedded analysis still works per-file */
   }
   scanWorkspace(index, projectPath);
+  // Load the project's addon `.gd` libraries (e.g. ReactiveUI's `core/hooks.gd` with `class_name
+  // Hooks`) into the analyzer so embedded code resolves cross-file — enabling go-to-definition into
+  // the real library files (`use_ref` -> hooks.gd, `V.create` -> v.gd). Best-effort, once.
+  loadLibraries();
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -436,19 +440,81 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
   if (genOffset === null) return null;
   const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
   analyzer.sync(vUri, text);
-  const defs = analyzer.definitionsAt(vUri, text, genOffset);
   const out: Location[] = [];
-  for (const d of defs) {
-    // A single virtual doc is loaded, so every target is in it: reverse-map the target range from the
-    // virtual `.gd` back into the .guitkx source. Targets that land in generated glue (toSource ===
-    // null) have no user-visible location and are skipped. (Cross-file preload/extends navigation needs
-    // the referenced .gd files loaded into the analyzer too — a follow-up; resToFileUri is kept for it.)
+  // Push a library `.gd` def (its range is in that file's own text). Used both directly and for the
+  // chained hook-stub target.
+  const pushLibrary = (libUri: string, r: { start: number; end: number }) => {
+    const t = analyzer.textOf(libUri) ?? "";
+    out.push({ uri: libUri, range: { start: offsetToPosition(t, r.start), end: offsetToPosition(t, r.end) } });
+  };
+  for (const d of analyzer.definitionsAt(vUri, text, genOffset)) {
+    // (1) A cross-file target in a project library `.gd` (e.g. `V.create` -> v.gd) -> a direct Location.
+    if (d.uri && d.uri !== vUri) {
+      pushLibrary(d.uri, d.range);
+      continue;
+    }
+    // (2) A virtual-doc target that maps back into the .guitkx source -> a Location in the source.
     const s = map.toSource(d.range.start);
     const e = map.toSource(d.range.end);
-    if (s === null || e === null) continue;
-    out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
+    if (s !== null && e !== null) {
+      out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
+      continue;
+    }
+    // (3) A target in generated glue — most usefully a hook stub `var use_ref = Hooks.use_ref`. Chain
+    // ONCE through the `Hooks.<name>` on its RHS to the real library definition (`core/hooks.gd`).
+    const rhs = hookStubRhsOffset(text, d.range.start);
+    if (rhs === null) continue;
+    for (const cd of analyzer.definitionsAt(vUri, text, rhs)) {
+      if (cd.uri && cd.uri !== vUri) pushLibrary(cd.uri, cd.range);
+    }
   }
   return out.length ? out : null;
+}
+
+// The char offset of `<name>` in a `Hooks.<name>` reference on the same line as `lhsOffset` — the RHS
+// of a generated hook stub `var <name> = Hooks.<name>`. `null` if that line carries no `Hooks.` ref.
+function hookStubRhsOffset(vText: string, lhsOffset: number): number | null {
+  const lineStart = vText.lastIndexOf("\n", lhsOffset) + 1;
+  let lineEnd = vText.indexOf("\n", lhsOffset);
+  if (lineEnd === -1) lineEnd = vText.length;
+  const m = /\bHooks\.([A-Za-z_][A-Za-z0-9_]*)/.exec(vText.slice(lineStart, lineEnd));
+  return m ? lineStart + m.index + "Hooks.".length : null;
+}
+
+// Every `.gd` file under `dir` (recursive); a missing/unreadable dir or entry yields nothing.
+function gdFilesUnder(dir: string, out: string[] = []): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const name of entries) {
+    const p = join(dir, name);
+    let isDir = false;
+    try {
+      isDir = statSync(p).isDirectory();
+    } catch {
+      continue;
+    }
+    if (isDir) gdFilesUnder(p, out);
+    else if (name.endsWith(".gd")) out.push(p);
+  }
+  return out;
+}
+
+// Load the project's `addons/**/*.gd` into the analyzer (with `res://` paths) so embedded code
+// resolves library `class_name`s / `preload`s cross-file. Best-effort; skips unreadable files.
+function loadLibraries(): void {
+  if (!projectPath) return;
+  for (const file of gdFilesUnder(join(projectPath, "addons"))) {
+    const resPath = "res://" + relative(projectPath, file).replace(/\\/g, "/");
+    try {
+      analyzer.loadLibrary(pathToFileURL(file).toString(), readFileSync(file, "utf8"), resPath);
+    } catch {
+      /* unreadable .gd — skip */
+    }
+  }
 }
 
 // Godot's LSP returns `res://` URIs; VS Code needs a real file:// URI.
