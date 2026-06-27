@@ -6,10 +6,10 @@ Editor support for **`.guitkx`**, the JSX-like markup of [ReactiveUI for Godot](
 
 - **Syntax highlighting** for the JSX-like markup *and* the embedded GDScript, via a self-contained TextMate grammar.
 - **Markup IntelliSense** — completion and hover for host-element tags, structural/common attributes, control-flow directives (`@if`/`@elif`/`@else`/`@for`/`@while`/`@match`/`@case`/`@default`), and per-element event handlers.
-- **Embedded-GDScript IntelliSense** — completion and hover inside `{expr}`, setup, and control-flow conditions, forwarded to Godot's own GDScript language server so you get real `V.*` / `Hooks.*` / Godot-API completion.
+- **Embedded-GDScript IntelliSense** — completion, hover, and go-to-definition inside `{expr}`, setup, and control-flow conditions, analyzed **in-process** by the headless [`@gdscript-analyzer/core`](https://www.npmjs.com/package/@gdscript-analyzer/core) so you get real `V.*` / `Hooks.*` / Godot-API intelligence — **no running Godot editor required**, fully offline.
 - **Diagnostics** for structural problems.
 
 ## Requirements
 
 - **Node.js** on your PATH (the bundled language server runs on Node).
-- For embedded-GDScript intelligence: the **Godot editor running** with your project open and its GDScript language server enabled (Editor Settings → Network → Language Server; engine default port 6005).
+- That's it — embedded-GDScript intelligence runs offline; no Godot editor, no TCP/language-server connection.

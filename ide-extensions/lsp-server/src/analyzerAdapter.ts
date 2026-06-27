@@ -7,7 +7,7 @@
 // JS-string (UTF-16) offsets, so this adapter owns the conversion at the boundary — callers pass and
 // receive plain character offsets into the virtual-doc text.
 
-import { CompletionItem, CompletionItemKind, MarkupContent, MarkupKind } from "vscode-languageserver/node";
+import { CompletionItem, CompletionItemKind, DiagnosticSeverity, MarkupContent, MarkupKind } from "vscode-languageserver/node";
 import { AnalysisHandle } from "@gdscript-analyzer/core";
 
 const enc = new TextEncoder();
@@ -49,6 +49,28 @@ const KIND: Record<string, CompletionItemKind> = {
   namespace: CompletionItemKind.Module,
   module: CompletionItemKind.Module,
   snippet: CompletionItemKind.Snippet,
+};
+
+/** One embedded-GDScript diagnostic, its range mapped to CHAR offsets in the virtual-doc text. */
+export interface AdapterDiag {
+  /** char-offset range in the virtual `.gd` text. */
+  range: { start: number; end: number };
+  /** LSP severity (mapped from the analyzer's string severity). */
+  severity: DiagnosticSeverity;
+  /** The analyzer diagnostic code (e.g. `INTEGER_DIVISION`, `UNSAFE_METHOD_ACCESS`). */
+  code: string;
+  /** The human message. */
+  message: string;
+}
+
+// The analyzer's diagnostic `severity` is a lowercase string; map to the LSP enum.
+const SEVERITY: Record<string, DiagnosticSeverity> = {
+  error: DiagnosticSeverity.Error,
+  warning: DiagnosticSeverity.Warning,
+  warn: DiagnosticSeverity.Warning,
+  info: DiagnosticSeverity.Information,
+  information: DiagnosticSeverity.Information,
+  hint: DiagnosticSeverity.Hint,
 };
 
 /** A go-to-definition target, with its range already mapped to CHAR offsets in the virtual-doc text. */
@@ -113,6 +135,25 @@ export class AnalyzerAdapter {
     let value = "```gdscript\n" + h.ty_label + "\n```";
     if (h.doc) value += "\n\n" + h.doc;
     return { kind: MarkupKind.Markdown, value };
+  }
+
+  /** Parse + type diagnostics for the virtual doc, with ranges mapped to CHAR offsets in `text`. */
+  diagnosticsAt(uri: string, text: string): AdapterDiag[] {
+    let diags: any[];
+    try {
+      diags = JSON.parse(this.az.diagnostics(uri));
+    } catch {
+      return [];
+    }
+    return diags.map((d) => {
+      const r = d.range ?? { start: 0, end: 0 };
+      return {
+        range: { start: byteToChar(text, r.start), end: byteToChar(text, r.end) },
+        severity: SEVERITY[String(d.severity).toLowerCase()] ?? DiagnosticSeverity.Warning,
+        code: String(d.code ?? ""),
+        message: String(d.message ?? ""),
+      };
+    });
   }
 
   /** Definition target(s) at a CHAR offset in `text`; ranges mapped back to CHAR offsets in `text`. */
