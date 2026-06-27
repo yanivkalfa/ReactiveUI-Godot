@@ -68,12 +68,21 @@ cd lsp-server && npm install && npm run build && node --test out/test/*.test.js 
 
 # VS Code extension (dev: F5 in VS Code, or package a .vsix)
 cd ../vscode && npm install && npm run build
-node scripts/bundle-server.js          # copy the built server into ./server
+node scripts/bundle-server.js          # bundle the server (+ this machine's analyzer .node) into ./server
 npx --yes @vscode/vsce package         # -> guitkx.vsix ; also publishable to Open VSX via ovsx
 ```
 
 `@vscode/vsce` / `ovsx` are NOT project dependencies (they're publishing tools that pull in a large
 Azure/MSAL tree) — the scripts invoke them via `npx`, so a contributor's `npm install` stays small.
+
+**Cross-platform packaging.** The bundled language server is a native napi addon (`@gdscript-analyzer/core`),
+so a `.vsix` is **platform-specific**. The local `bundle-server.js` above bundles only the builder's own
+`.node` (fine for F5/dev). The release CI (`publish-extensions` → `publish-vscode`) instead runs a matrix:
+each leg installs the target's `@gdscript-analyzer/core-<triple>` binary, runs
+`node scripts/bundle-server.js --target <vsce-target>` (bundling only that platform's addon), and
+`vsce package --target <vsce-target>` → one platform-specific `.vsix` per platform
+(win32-x64, linux-x64, linux-arm64, darwin-x64, darwin-arm64 — the triples the analyzer currently
+publishes; win32-arm64 + alpine/musl join as the analyzer's napi matrix grows).
 
 **VS2022 extension** (needs VS2022 + the "Visual Studio extension development" workload):
 

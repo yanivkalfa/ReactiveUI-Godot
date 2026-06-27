@@ -102,6 +102,20 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   publish-vscode:
     runs-on: ubuntu-latest
+    # One platform-specific .vsix per platform that has a published @gdscript-analyzer/core-<triple>
+    # native addon. The bundled server is a native napi addon, so the .vsix can't be universal — each
+    # leg installs the target's binary, bundles only that one (scripts/bundle-server.js --target), and
+    # `vsce package --target`s a platform-specific package. (win32-arm64 + alpine/musl join once the
+    # analyzer's napi matrix publishes those triples — see gdscript-analyzer release-napi.yml.)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: win32-x64, napi: core-win32-x64-msvc }
+          - { target: linux-x64, napi: core-linux-x64-gnu }
+          - { target: linux-arm64, napi: core-linux-arm64-gnu }
+          - { target: darwin-x64, napi: core-darwin-x64 }
+          - { target: darwin-arm64, napi: core-darwin-arm64 }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -130,6 +144,16 @@ jobs:
         working-directory: ide-extensions/lsp-server
         run: npm ci && npm run build
 
+      - name: Fetch the ${{ matrix.target }} analyzer binary
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/lsp-server
+        run: |
+          # npm only installs the runner's own optional dep; fetch the target's binary explicitly,
+          # pinned to the resolved @gdscript-analyzer/core version so loader + addon always match.
+          ANALYZER_VER=$(node -p "require('@gdscript-analyzer/core/package.json').version")
+          echo "Installing @gdscript-analyzer/${{ matrix.napi }}@${ANALYZER_VER}"
+          npm i --no-save "@gdscript-analyzer/${{ matrix.napi }}@${ANALYZER_VER}"
+
       - name: Generate CHANGELOG.md from centralized changelog
         if: steps.check.outputs.skip == 'false'
         run: node ide-extensions/scripts/changelog.mjs extract --ide vscode --out ide-extensions/vscode/CHANGELOG.md
@@ -139,12 +163,12 @@ jobs:
         working-directory: ide-extensions/vscode
         run: npm ci && npm run build
 
-      - name: Bundle server + package extension
+      - name: Bundle server (target) + package platform-specific VSIX
         if: steps.check.outputs.skip == 'false'
         working-directory: ide-extensions/vscode
         run: |
-          node scripts/bundle-server.js
-          npx --yes @vscode/vsce package -o guitkx.vsix
+          node scripts/bundle-server.js --target ${{ matrix.target }}
+          npx --yes @vscode/vsce package --target ${{ matrix.target }} -o "guitkx-${{ matrix.target }}.vsix"
 
       - name: Publish to VS Marketplace
         id: publish-vsce
@@ -152,7 +176,7 @@ jobs:
         working-directory: ide-extensions/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --packagePath guitkx.vsix --pat "$VSCE_PAT"
+        run: npx --yes @vscode/vsce publish --packagePath "guitkx-${{ matrix.target }}.vsix" --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX
         id: publish-ovsx
@@ -160,11 +184,11 @@ jobs:
         working-directory: ide-extensions/vscode
         env:
           OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
-        run: npx --yes ovsx publish guitkx.vsix -p "$OVSX_TOKEN"
+        run: npx --yes ovsx publish "guitkx-${{ matrix.target }}.vsix" -p "$OVSX_TOKEN"
         continue-on-error: true
 
-      - name: Tag published version
-        if: steps.check.outputs.skip == 'false' && steps.publish-vsce.outcome == 'success'
+      - name: Tag published version (once, from the primary leg)
+        if: steps.check.outputs.skip == 'false' && matrix.target == 'linux-x64' && steps.publish-vsce.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -175,8 +199,8 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: guitkx-vscode-${{ steps.check.outputs.version }}
-          path: ide-extensions/vscode/guitkx.vsix
+          name: guitkx-vscode-${{ steps.check.outputs.version }}-${{ matrix.target }}
+          path: ide-extensions/vscode/guitkx-${{ matrix.target }}.vsix
 
   # ════════════════════════════════════════════════════════════════════════════
   # Visual Studio 2022 extension — publishes only if version changed
