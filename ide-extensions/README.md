@@ -89,8 +89,9 @@ The VS2022 extension is **self-contained**: `fetch-node.ps1` drops a pinned Wind
 NOT need Node on PATH** (it falls back to a PATH `node` only if the bundle is somehow missing). This is
 why the VS2022 `.vsix` is ~80 MB. (VS Code needs no bundled Node — it runs the server in its own host.)
 
-Configure Godot's port in VS Code / VS2022 settings (`guitkx.godotLanguageServerPort`, default 6005) and
-make sure Godot's language server is enabled (Editor Settings → Network → Language Server).
+Embedded-GDScript intelligence ({expr}/setup completion, hover, go-to-definition) is analyzed in-process
+by **gdscript-analyzer** — no running Godot editor required. Toggle it with the
+`guitkx.enableEmbeddedAnalysis` setting (default on).
 
 ## Publishing
 

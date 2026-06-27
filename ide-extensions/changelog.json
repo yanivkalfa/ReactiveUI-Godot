@@ -1,6 +1,16 @@
 {
   "entries": [
     {
+      "date": "2026-06-27",
+      "versions": {
+        "vscode": "0.2.5",
+        "vs2022": "0.2.5"
+      },
+      "shared": [
+        "Embedded-GDScript intelligence (completion, hover, and go-to-definition inside {expr}/setup blocks) is now analyzed in-process by gdscript-analyzer, with no running Godot editor or TCP connection required, so it works fully offline. Go-to-definition now resolves same-file symbols (the previous Godot-proxy path could not). The `guitkx.enableGodotProxy` and `guitkx.godotLanguageServerPort` settings are replaced by a single `guitkx.enableEmbeddedAnalysis` toggle (the legacy `enableGodotProxy` value is still honored for back-compat)."
+      ]
+    },
+    {
       "date": "2026-06-22",
       "versions": {
         "vscode": "0.2.4",
