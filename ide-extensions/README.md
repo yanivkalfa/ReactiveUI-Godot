@@ -5,7 +5,7 @@ shared language server:
 
 ```
 grammar/        TextMate grammar (guitkx.tmLanguage.json) + schema (guitkx-schema.json)
-lsp-server/     TypeScript language server (stdio). Markup intelligence + a TCP proxy to Godot's LSP
+lsp-server/     TypeScript language server (stdio). Markup intelligence + headless embedded GDScript
 vscode/         VS Code extension (grammar + language config + LSP client)
 visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient -> same LSP server)
 ```
@@ -20,16 +20,16 @@ visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient
   and VS2022 (VS never drives coloring over LSP, so the grammar is required there too).
 - **Markup intelligence** (tag / attribute / directive completion + hover) — answered locally by the
   language server from the schema (`grammar/guitkx-schema.json`, embedded in `lsp-server/src/schema.ts`).
-- **Embedded-GDScript intelligence** (completion/hover inside `{expr}`/setup/conditions) — the server
-  builds a synthetic `.gd` **virtual document** with a length-preserving **source map** (Volar's
-  technique, hand-rolled), then **forwards** the request to **Godot's built-in GDScript language
-  server** over TCP (engine default **port 6005**), and maps the result back. Requires the Godot
-  editor to be running with the project open; degrades gracefully (markup features still work) when
-  it is not.
+- **Embedded-GDScript intelligence** (completion/hover/go-to-definition inside `{expr}`/setup/conditions)
+  — the server builds a synthetic `.gd` **virtual document** with a length-preserving **source map**
+  (Volar's technique, hand-rolled), then analyzes it **in-process** with
+  [`@gdscript-analyzer/core`](https://www.npmjs.com/package/@gdscript-analyzer/core) — a headless
+  GDScript static analyzer ("Roslyn for Godot") — and maps the result back. **No running Godot editor
+  and no TCP connection are required**, so it works fully offline; markup features work regardless.
 
-The language server is **TypeScript** (not C#): the Godot port's compiler/parser is GDScript and the
-embedded language is GDScript, so there is no C# language-lib to reuse — and VS Code (the primary
-Godot audience) gets a zero-runtime Node server. VS2022 drives the same server over stdio.
+The language server is **TypeScript** (not C#): the embedded language is GDScript and the analyzer
+ships as an npm package (a napi native addon), so VS Code (the primary Godot audience) gets a
+zero-runtime Node server. VS2022 drives the same server over stdio.
 
 ## Formatter configuration (`guitkx.config.json`)
 
@@ -68,12 +68,21 @@ cd lsp-server && npm install && npm run build && node --test out/test/*.test.js 
 
 # VS Code extension (dev: F5 in VS Code, or package a .vsix)
 cd ../vscode && npm install && npm run build
-node scripts/bundle-server.js          # copy the built server into ./server
+node scripts/bundle-server.js          # bundle the server (+ this machine's analyzer .node) into ./server
 npx --yes @vscode/vsce package         # -> guitkx.vsix ; also publishable to Open VSX via ovsx
 ```
 
 `@vscode/vsce` / `ovsx` are NOT project dependencies (they're publishing tools that pull in a large
 Azure/MSAL tree) — the scripts invoke them via `npx`, so a contributor's `npm install` stays small.
+
+**Cross-platform packaging.** The bundled language server is a native napi addon (`@gdscript-analyzer/core`),
+so a `.vsix` is **platform-specific**. The local `bundle-server.js` above bundles only the builder's own
+`.node` (fine for F5/dev). The release CI (`publish-extensions` → `publish-vscode`) instead runs a matrix:
+each leg installs the target's `@gdscript-analyzer/core-<triple>` binary, runs
+`node scripts/bundle-server.js --target <vsce-target>` (bundling only that platform's addon), and
+`vsce package --target <vsce-target>` → one platform-specific `.vsix` per platform
+(win32-x64, win32-arm64, linux-x64, linux-arm64, darwin-x64, darwin-arm64 — the triples the analyzer
+currently publishes; alpine/musl join as the analyzer's napi matrix grows).
 
 **VS2022 extension** (needs VS2022 + the "Visual Studio extension development" workload):
 
@@ -89,8 +98,9 @@ The VS2022 extension is **self-contained**: `fetch-node.ps1` drops a pinned Wind
 NOT need Node on PATH** (it falls back to a PATH `node` only if the bundle is somehow missing). This is
 why the VS2022 `.vsix` is ~80 MB. (VS Code needs no bundled Node — it runs the server in its own host.)
 
-Configure Godot's port in VS Code / VS2022 settings (`guitkx.godotLanguageServerPort`, default 6005) and
-make sure Godot's language server is enabled (Editor Settings → Network → Language Server).
+Embedded-GDScript intelligence ({expr}/setup completion, hover, go-to-definition) is analyzed in-process
+by **gdscript-analyzer** — no running Godot editor required. Toggle it with the
+`guitkx.enableEmbeddedAnalysis` setting (default on).
 
 ## Publishing
 
@@ -119,7 +129,7 @@ Releases are automated. The changelog source of truth is **`changelog.json`**; p
 |-------|-------|
 | Grammar + schema | Done (valid JSON, adapted from the shipping Unity grammar) |
 | Language server — markup completion/hover, structural diagnostics | Done + tested (`npm test`, `smoke.js`) |
-| Language server — Godot GDScript proxy | **Verified live** — round-trips against a running Godot editor (`scripts/live-godot.js`, `live-full.js`) |
+| Language server — embedded GDScript (completion/hover/goto/diagnostics) | Done — headless, in-process via `@gdscript-analyzer/core` (no Godot editor, no TCP) |
 | VS Code extension | Builds; server bundles + serves over stdio (proven); packages to a self-contained `.vsix` |
 | VS2022 extension | ILanguageClient + `.pkgdef` pattern; needs VS2022 + VSSDK to build/verify |
 | Publishing + changelogs | Done — `changelog.json` + `changelog.mjs`, `publish-extensions.yml` (VS Marketplace + Open VSX + VsixPublisher), local publish scripts, version-gating + tagging |

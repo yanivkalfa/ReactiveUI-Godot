@@ -24,7 +24,7 @@ namespace GuitkxVsix
     {
         public string Name => "GUITKX Language Server";
         public IEnumerable<string> ConfigurationSections => new[] { "guitkx" };
-        public object InitializationOptions => new { godotPort = 6005, enableGodotProxy = true };
+        public object InitializationOptions => new { enableEmbeddedAnalysis = true };
         public IEnumerable<string> FilesToWatch => null;
         public bool ShowNotificationOnInitializeFailed => true;
 

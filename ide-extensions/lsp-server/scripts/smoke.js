@@ -59,7 +59,7 @@ function fail(m) {
 }
 
 (async () => {
-  await request("initialize", { processId: process.pid, rootUri: null, capabilities: {}, initializationOptions: { enableGodotProxy: false } });
+  await request("initialize", { processId: process.pid, rootUri: null, capabilities: {}, initializationOptions: { enableEmbeddedAnalysis: false } });
   notify("initialized", {});
 
   const uri = "file:///tmp/Counter.guitkx";
