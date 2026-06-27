@@ -1,8 +1,8 @@
 {
   "name": "guitkx",
   "displayName": "GUITKX",
-  "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence forwarded to Godot's language server.",
-  "version": "0.2.4",
+  "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence analyzed headlessly via gdscript-analyzer (no running Godot editor required).",
+  "version": "0.2.5",
   "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",
@@ -45,15 +45,10 @@
     "configuration": {
       "title": "GUITKX",
       "properties": {
-        "guitkx.godotLanguageServerPort": {
-          "type": "number",
-          "default": 6005,
-          "description": "TCP port of Godot's built-in GDScript language server (Editor Settings > Network > Language Server). The engine default is 6005."
-        },
-        "guitkx.enableGodotProxy": {
+        "guitkx.enableEmbeddedAnalysis": {
           "type": "boolean",
           "default": true,
-          "description": "Forward embedded-GDScript completion/hover to Godot's language server (requires the Godot editor to be running with the project open)."
+          "description": "Provide completion/hover/go-to-definition for embedded GDScript ({expr}/setup blocks) via the in-process gdscript-analyzer — no running Godot editor required."
         },
         "guitkx.useGdformat": {
           "type": "boolean",

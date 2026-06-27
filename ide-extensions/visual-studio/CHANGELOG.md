@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.5] - 2026-06-27
+- Embedded-GDScript intelligence (completion, hover, and go-to-definition inside {expr}/setup blocks) is now analyzed in-process by gdscript-analyzer, with no running Godot editor or TCP connection required, so it works fully offline. Go-to-definition now resolves same-file symbols (the previous Godot-proxy path could not). The `guitkx.enableGodotProxy` and `guitkx.godotLanguageServerPort` settings are replaced by a single `guitkx.enableEmbeddedAnalysis` toggle (the legacy `enableGodotProxy` value is still honored for back-compat).
+
+## [0.2.4] - 2026-06-22
+- Formatting: an authored blank line at the start or end of a component/hook setup block is now preserved (it was being stripped), and runs of 2+ spaces in embedded GDScript are collapsed to one outside strings/comments (e.g. `if x ==     null` becomes `if x == null`).
+- Diagnostics: an unknown element (GUITKX0105) and an unknown host attribute (GUITKX0107) are now reported as Errors (a red squiggle) instead of a faint hint / a warning.
+- Completion: style-dict keys (`bg_color`, `corner_radius`, `pad`, `separation`, `expand_h`, `font_size`, the theme channels, the per-state slots, …) are offered inside a `style={ {…} }` (or `*_style`) dictionary; common built-in constants (`Color.WHITE`, `Vector2.ZERO`, …) complete after `Type.`; and go-to-definition on an embedded GDScript symbol now forwards to Godot's language server (jumping to the library `.gd`, e.g. `use_ref` → core/hooks.gd) when the editor is running.
+
+## [0.2.3] - 2026-06-22
+- Formatting now always uses tab indentation for `.guitkx` (the embedded GDScript requires tabs, and the compiler emits tabs), so the markup and the embedded setup no longer mix indentation units — previously, with an editor configured for spaces, a deeper setup line kept its authored tab and produced a "2 spaces + tab" indent. Diagnostics: unknown attributes on a host element are now flagged (e.g. a typo'd `te` / `xt` on `<Label>`) with a did-you-mean suggestion, validated against the bundled Godot ClassDB property + signal data; component tags (which take arbitrary props) are not flagged, and the check is skipped when the ClassDB dump is unavailable so it never false-flags.
+- Formatter configuration: a project `guitkx.config.json` (Prettier-style walk-up, the analogue of ReactiveUIToolKit's `uitkx.config.json`) now overrides the formatter — `printWidth`, `indentStyle` ("tab" | "space"), `indentSize`, `singleAttributePerLine`, `insertSpaceBeforeSelfClose`. Tab indentation is the default when no config is present.
+
 ## [0.2.1] - 2026-06-22
 - Renamed the extension to just "GUITKX" (it was "GUITKX (ReactiveUI for Godot)", which truncated to "GUITKX (React..." in the editor UI) and added the Godot logo as the extension / marketplace icon.
 

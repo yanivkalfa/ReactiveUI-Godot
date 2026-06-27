@@ -335,9 +335,40 @@ function md(value: string): Hover {
 
 documents.onDidChangeContent((change) => {
   index.reindex(change.document.uri, change.document.getText());
-  const live = [...structuralDiagnostics(change.document), ...markupDiagnostics(change.document)];
+  const live = [
+    ...structuralDiagnostics(change.document),
+    ...markupDiagnostics(change.document),
+    ...embeddedDiagnostics(change.document),
+  ];
   connection.sendDiagnostics({ uri: change.document.uri, diagnostics: mergeCompilerSidecar(change.document, live) });
 });
+
+// Embedded-GDScript type/parse diagnostics from @gdscript-analyzer/core, mapped back into the .guitkx
+// source. Safe to surface: the analyzer's seam design resolves an unknown cross-file symbol (a library
+// call like `use_state`, a `V.*`/`Hooks.*` reference whose .gd we haven't loaded) to the Unknown seam,
+// which NEVER warns — so this adds real diagnostics (INTEGER_DIVISION, TYPE_MISMATCH, syntax errors)
+// with no false positives. Diagnostics that land in generated glue (toSource === null) are dropped.
+function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
+  if (!embeddedEnabled) return [];
+  const src = doc.getText();
+  const { text, map } = buildVirtualDoc(src);
+  const vUri = doc.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  const out: Diagnostic[] = [];
+  for (const d of analyzer.diagnosticsAt(vUri, text)) {
+    let s = map.toSource(d.range.start);
+    let e = map.toSource(d.range.end);
+    if (s === null || e === null) continue; // a diagnostic in generated glue, not user code
+    if (s > e) [s, e] = [e, s];
+    out.push({
+      severity: d.severity,
+      range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) },
+      message: d.code ? `${d.code}: ${d.message}` : d.message,
+      source: "gdscript",
+    });
+  }
+  return out;
+}
 
 // Surface the compiler's full diagnostic catalog (from the on-save Foo.guitkx.diags.json sidecar) in
 // VS Code without a running editor. Only when the sidecar still matches the buffer (source hash);
