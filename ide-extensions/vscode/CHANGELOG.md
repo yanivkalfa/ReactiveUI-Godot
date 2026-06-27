@@ -2,6 +2,8 @@
 
 ## [0.2.5] - 2026-06-27
 - Embedded-GDScript intelligence (completion, hover, and go-to-definition inside {expr}/setup blocks) is now analyzed in-process by gdscript-analyzer, with no running Godot editor or TCP connection required, so it works fully offline. Go-to-definition now resolves same-file symbols (the previous Godot-proxy path could not). The `guitkx.enableGodotProxy` and `guitkx.godotLanguageServerPort` settings are replaced by a single `guitkx.enableEmbeddedAnalysis` toggle (the legacy `enableGodotProxy` value is still honored for back-compat).
+- Embedded-GDScript type and parse diagnostics (e.g. integer division, type mismatch, syntax errors) now surface as squiggles inside {expr}/setup blocks, mapped back into the .guitkx source. Unresolved library/cross-file symbols never warn (the analyzer treats them as the Unknown seam), so this adds real diagnostics with no false positives.
+- The VS Code extension now ships as platform-specific .vsix packages (one per OS/arch), so the bundled native analyzer always matches the user's machine — no manual setup, no `node` on PATH, fully offline.
 
 ## [0.2.4] - 2026-06-22
 - Formatting: an authored blank line at the start or end of a component/hook setup block is now preserved (it was being stripped), and runs of 2+ spaces in embedded GDScript are collapsed to one outside strings/comments (e.g. `if x ==     null` becomes `if x == null`).
