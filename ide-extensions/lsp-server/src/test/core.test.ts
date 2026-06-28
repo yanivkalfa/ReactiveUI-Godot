@@ -226,11 +226,12 @@ test("virtualDoc is scope-aware (loop var visible to its {expr})", () => {
   assert.ok(lead(exprLine!) > lead(forLine!), "the {expr} is nested INSIDE the for block (loop var in scope)");
 });
 
-test("cross-file goto: a Hooks.<hook> reference resolves INTO the library file (FileId<->uri mirror)", () => {
+test("cross-file goto: a Hooks.<hook> reference resolves INTO the library file (binding-reported uri)", () => {
   // The §7(a) headline: with the addon library loaded (res:// path + `class_name Hooks`), a
   // `Hooks.use_ref` reference in the virtual doc resolves cross-file to the real hooks.gd — and the
-  // adapter reports the target by URI (mirroring the analyzer's sequential FileIds) with its range in
-  // THAT file's text. The server chains a bare `use_ref` to this RHS; here we drive both steps.
+  // adapter reports the target by URI (the binding enriches each navigation target's FileId with its
+  // uri) with its range in THAT file's text. The server chains a bare `use_ref` to this RHS; here we
+  // drive both steps.
   const az = new AnalyzerAdapter();
   const hooksUri = "file:///proj/addons/reactive_ui/core/hooks.gd";
   const hooks = "class_name Hooks\nstatic func use_ref(initial = null) -> Dictionary:\n\treturn {}\n";

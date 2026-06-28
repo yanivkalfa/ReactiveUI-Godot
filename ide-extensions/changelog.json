@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "date": "2026-06-28",
+      "versions": {
+        "vscode": "0.2.6",
+        "vs2022": "0.2.6"
+      },
+      "shared": [
+        "Go-to-definition now resolves across files fully offline (no running Godot editor): a library symbol such as a hook's `use_ref` now jumps to its real implementation in `core/hooks.gd`, landing on the declaration in that file. Previously only same-file symbols resolved headlessly; cross-file navigation required a running Godot editor.",
+        "Upgraded the bundled GDScript analyzer to 0.4.0: navigation and diagnostics now cross the extension boundary as native objects, and each navigation target reports its file directly, making cross-file go-to-definition faster and more robust."
+      ]
+    },
+    {
       "date": "2026-06-27",
       "versions": {
         "vscode": "0.2.5",
