@@ -79,7 +79,8 @@ const SEVERITY: Record<string, DiagnosticSeverity> = {
 export interface AdapterDef {
   /** FileId reported by the analyzer. */
   file: number;
-  /** The URI of `file` via the adapter's id↔uri mirror, or `null` if the file isn't tracked. */
+  /** The URI of the target file, reported directly by the analyzer (the binding enriches every
+   *  navigation target's `file` id with its `uri`), or `null` if the file isn't tracked. */
   uri: string | null;
   /** char-offset range in `uri`'s text (the TARGET file). */
   range: { start: number; end: number };
@@ -89,24 +90,9 @@ export interface AdapterDef {
 
 export class AnalyzerAdapter {
   private az = new AnalysisHandle();
-  /** uri -> { the FileId the analyzer assigned (mirrored), the doc's current text }. */
-  private docs = new Map<string, { id: number; text: string }>();
-  /** Reverse of `docs`: FileId -> uri. The analyzer interns sequentially from 0 and we are its sole
-   *  opener (we never close a doc), so mirroring the counter reproduces its FileId↔uri map exactly —
-   *  the binding does not expose one, and a cross-file def reports only the numeric FileId. */
-  private fileIds = new Map<number, string>();
-  private nextId = 0;
-
-  /** Record a doc's FileId (first open) + current text, mirroring the analyzer's sequential interning. */
-  private track(uri: string, text: string): void {
-    const existing = this.docs.get(uri);
-    if (existing) existing.text = text;
-    else {
-      const id = this.nextId++;
-      this.docs.set(uri, { id, text });
-      this.fileIds.set(id, uri);
-    }
-  }
+  /** uri -> the doc's current text (for offset<->position mapping at the call site). The analyzer's
+   *  binding now reports each navigation target's `uri` directly, so we no longer mirror its FileIds. */
+  private docs = new Map<string, string>();
 
   /** Set the project's project.godot text (enables `[autoload]` singleton resolution). Best-effort. */
   setProjectConfig(text: string): void {
@@ -121,7 +107,7 @@ export class AnalyzerAdapter {
   sync(uri: string, text: string): void {
     if (this.docs.has(uri)) this.az.changeDocument(uri, text);
     else this.az.openDocument(uri, text, null);
-    this.track(uri, text);
+    this.docs.set(uri, text);
   }
 
   /** Load a project library `.gd` file ONCE, with its `res://` path so the analyzer can resolve
@@ -130,22 +116,18 @@ export class AnalyzerAdapter {
   loadLibrary(uri: string, text: string, resPath: string): void {
     if (this.docs.has(uri)) return;
     this.az.openDocument(uri, text, resPath);
-    this.track(uri, text);
+    this.docs.set(uri, text);
   }
 
   /** The tracked text of `uri` (for offset->position mapping at the call site), or undefined. */
   textOf(uri: string): string | undefined {
-    return this.docs.get(uri)?.text;
+    return this.docs.get(uri);
   }
 
-  /** Completions at a CHAR offset in `text`, as LSP items. */
+  /** Completions at a CHAR offset in `text`, as LSP items. The binding returns a native JS array
+   *  (no JSON.parse). */
   completionsAt(uri: string, text: string, charOffset: number): CompletionItem[] {
-    let items: any[];
-    try {
-      items = JSON.parse(this.az.completions(uri, charToByte(text, charOffset)));
-    } catch {
-      return [];
-    }
+    const items: any[] = this.az.completions(uri, charToByte(text, charOffset)) ?? [];
     return items.map((c) => ({
       label: String(c.label),
       kind: KIND[c.kind] ?? CompletionItemKind.Text,
@@ -154,16 +136,10 @@ export class AnalyzerAdapter {
     }));
   }
 
-  /** Hover at a CHAR offset in `text`; markdown (inferred type + doc), or null if nothing is there. */
+  /** Hover at a CHAR offset in `text`; markdown (inferred type + doc), or null if nothing is there.
+   *  The binding returns a native object (or null) — no JSON.parse. */
   hoverAt(uri: string, text: string, charOffset: number): MarkupContent | null {
-    const raw = this.az.hover(uri, charToByte(text, charOffset));
-    if (!raw) return null;
-    let h: any;
-    try {
-      h = JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    const h: any = this.az.hover(uri, charToByte(text, charOffset));
     if (!h?.ty_label) return null;
     let value = "```gdscript\n" + h.ty_label + "\n```";
     if (h.doc) value += "\n\n" + h.doc;
@@ -172,12 +148,7 @@ export class AnalyzerAdapter {
 
   /** Parse + type diagnostics for the virtual doc, with ranges mapped to CHAR offsets in `text`. */
   diagnosticsAt(uri: string, text: string): AdapterDiag[] {
-    let diags: any[];
-    try {
-      diags = JSON.parse(this.az.diagnostics(uri));
-    } catch {
-      return [];
-    }
+    const diags: any[] = this.az.diagnostics(uri) ?? [];
     return diags.map((d) => {
       const r = d.range ?? { start: 0, end: 0 };
       return {
@@ -190,24 +161,19 @@ export class AnalyzerAdapter {
   }
 
   /** Definition target(s) at a CHAR offset in `text`. Each target's range is in its OWN file's text
-   *  (the virtual doc for a same-file hit, a library `.gd` for a cross-file one), resolved via the
-   *  id↔uri mirror — so a cross-file def's byte range is converted against the TARGET file's text. */
+   *  (the virtual doc for a same-file hit, a library `.gd` for a cross-file one); the analyzer reports
+   *  the target file by `uri` directly (the binding's enrichment), so a cross-file def's byte range is
+   *  converted against that file's text. */
   definitionsAt(uri: string, text: string, charOffset: number): AdapterDef[] {
-    let defs: any[];
-    try {
-      defs = JSON.parse(this.az.gotoDefinition(uri, charToByte(text, charOffset)));
-    } catch {
-      return [];
-    }
+    const defs: any[] = this.az.gotoDefinition(uri, charToByte(text, charOffset)) ?? [];
     return defs.map((d) => {
-      const file: number = d.file ?? 0;
-      const targetUri = this.fileIds.get(file) ?? null;
+      const targetUri: string | null = d.uri ?? null;
       // A cross-file def's range is in the TARGET file; convert with that file's text (falling back to
-      // the queried text for an untracked file id).
-      const targetText = (targetUri ? this.docs.get(targetUri)?.text : undefined) ?? text;
+      // the queried text for an untracked file).
+      const targetText = (targetUri ? this.docs.get(targetUri) : undefined) ?? text;
       const r = d.focus_range ?? d.full_range ?? d.range ?? { start: 0, end: 0 };
       return {
-        file,
+        file: d.file ?? 0,
         uri: targetUri,
         range: { start: byteToChar(targetText, r.start), end: byteToChar(targetText, r.end) },
         name: d.name,

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.6] - 2026-06-28
+- Go-to-definition now resolves across files fully offline (no running Godot editor): a library symbol such as a hook's `use_ref` now jumps to its real implementation in `core/hooks.gd`, landing on the declaration in that file. Previously only same-file symbols resolved headlessly; cross-file navigation required a running Godot editor.
+- Upgraded the bundled GDScript analyzer to 0.4.0: navigation and diagnostics now cross the extension boundary as native objects, and each navigation target reports its file directly, making cross-file go-to-definition faster and more robust.
+
 ## [0.2.5] - 2026-06-27
 - Embedded-GDScript intelligence (completion, hover, and go-to-definition inside {expr}/setup blocks) is now analyzed in-process by gdscript-analyzer, with no running Godot editor or TCP connection required, so it works fully offline. Go-to-definition now resolves same-file symbols (the previous Godot-proxy path could not). The `guitkx.enableGodotProxy` and `guitkx.godotLanguageServerPort` settings are replaced by a single `guitkx.enableEmbeddedAnalysis` toggle (the legacy `enableGodotProxy` value is still honored for back-compat).
 - Embedded-GDScript type and parse diagnostics (e.g. integer division, type mismatch, syntax errors) now surface as squiggles inside {expr}/setup blocks, mapped back into the .guitkx source. Unresolved library/cross-file symbols never warn (the analyzer treats them as the Unknown seam), so this adds real diagnostics with no false positives.
