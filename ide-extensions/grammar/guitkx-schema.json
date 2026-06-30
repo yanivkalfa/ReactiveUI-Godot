@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "GUITKX element and directive schema for IDE tooling. Per-property completion is resolved live from Godot's ClassDB (via the LSP) against each element's godotClass; this file catalogs the structural attributes, the host-element tag map, and common signals.",
+  "description": "GUITKX element and directive schema for IDE tooling. Per-property completion is resolved from a bundled ClassDB dump against each element's godotClass; this file catalogs the structural attributes, the host-element tag map, and common signals.",
   "preambleDirectives": [
     { "name": "@class_name", "description": "Override the generated class name (defaults to the component/file name)." },
     { "name": "@uss", "description": "Associate a Godot Theme/StyleBox resource path for styling (reserved)." }
@@ -8,7 +8,7 @@
   "declarations": [
     { "keyword": "component", "description": "A function component. Compiles to `static func render(props, children) -> RUIVNode`." },
     { "keyword": "hook", "description": "A reusable hook. Compiles to a static function; hook calls (use_*) are auto-prefixed to Hooks.*" },
-    { "keyword": "module", "description": "Reserved — not yet supported; use one component or hook per file." }
+    { "keyword": "module", "description": "Group multiple components/hooks in one file (compiles to one .gd class with a static func per declaration)." }
   ],
   "controlFlow": [
     { "directive": "@if", "form": "@if (expr) { markup }", "description": "Conditional. Renders the branch whose expr is truthy; a missed @if with no @else renders nothing." },

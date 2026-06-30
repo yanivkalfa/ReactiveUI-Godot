@@ -10,10 +10,12 @@ extends RefCounted
 ##   "style"        -> handed to RUIStyle
 ##   "ref"          -> a Callable(node) or a { "current": ... } box, receives the node
 ##   "on_<signal>"  -> a Callable connected to the node's "<signal>" (e.g. on_pressed -> "pressed")
+##   "draw_fn"      -> a Callable(canvas_item) for custom drawing (invoked via the node's `draw` signal)
+##   "redraw_key"   -> bump to repaint `draw_fn` without changing the callback (pair with use_stable_callback)
 ##   "key"          -> reconciliation key (consumed by V; never applied)
 ##   anything else  -> set directly as a node property (text, editable, disabled, ...)
 
-const RESERVED := { "key": true, "ref": true, "style": true, "classes": true, "children": true, "items": true }  # O(1) lookup [perf #4]
+const RESERVED := { "key": true, "ref": true, "style": true, "classes": true, "children": true, "items": true, "draw_fn": true, "redraw_key": true }  # O(1) lookup [perf #4]
 
 static func create_node(type: String) -> Node:
 	if not ClassDB.class_exists(type):
@@ -81,6 +83,10 @@ static func apply_props(node: Node, old_props: Dictionary, new_props: Dictionary
 	# 5. declarative item-model controls (stateful adapters) — dispatched through an extensible
 	#    registry so userland can register adapters for custom controls (see register_item_adapter).
 	_apply_item_model(node, old_props, new_props)
+
+	# 6. custom drawing (draw_fn / redraw_key) — skip the machinery when neither side declares it. [perf]
+	if new_props.has("draw_fn") or old_props.has("draw_fn"):
+		_apply_custom_draw(node, old_props, new_props)
 
 ## Resolve a host element's effective style: merge the styles of its `classes` (left-to-right via
 ## RUIStyleSheet) then overlay its inline `style` (which wins). A plain dictionary merge — no CSS
@@ -158,6 +164,43 @@ static func _disconnect_event(node: Node, key: String) -> void:
 		node.disconnect(sig, cb)
 	m.erase(key)
 	node.set_meta("__rui_events", m)
+
+## Custom drawing. `draw_fn` is a Callable(canvas_item) that issues the node's `draw_*` calls; it runs
+## during the node's `draw` signal. A register-once trampoline reads the LATEST `draw_fn` from meta, so
+## a fresh closure each render never re-subscribes — it repaints (`queue_redraw`) only when the callback
+## identity OR `redraw_key` changes (the Godot analogue of Unity's OnGenerateVisualContent + RedrawKey).
+static func _apply_custom_draw(node: Node, old_props: Dictionary, new_props: Dictionary) -> void:
+	var new_fn = new_props.get("draw_fn")
+	if new_fn is Callable and new_fn.is_valid():
+		if not (node is CanvasItem):
+			push_warning("[reactive_ui] 'draw_fn' ignored: %s is not a CanvasItem." % node.get_class())
+			return
+		node.set_meta("__rui_draw", new_fn)
+		if not node.has_meta("__rui_draw_tramp"):
+			# Register the trampoline exactly once; it always reads the current draw_fn from meta.
+			var tramp := func() -> void:
+				var d = node.get_meta("__rui_draw", null)
+				if d is Callable and d.is_valid():
+					d.call(node)
+			node.connect("draw", tramp)
+			node.set_meta("__rui_draw_tramp", tramp)
+		# Repaint when the callback identity changed OR redraw_key changed.
+		if new_fn != old_props.get("draw_fn") or new_props.get("redraw_key") != old_props.get("redraw_key"):
+			(node as CanvasItem).queue_redraw()
+	elif old_props.has("draw_fn"):
+		_remove_custom_draw(node)
+
+## Drop a node's custom drawing: disconnect the trampoline, clear the meta, and repaint to erase it.
+static func _remove_custom_draw(node: Node) -> void:
+	if node.has_meta("__rui_draw_tramp"):
+		var tramp = node.get_meta("__rui_draw_tramp")
+		if tramp is Callable and node.is_connected("draw", tramp):
+			node.disconnect("draw", tramp)
+		node.remove_meta("__rui_draw_tramp")
+	if node.has_meta("__rui_draw"):
+		node.remove_meta("__rui_draw")
+	if node is CanvasItem:
+		(node as CanvasItem).queue_redraw()
 
 # --------------------------------------------------------------------------
 # Declarative item-model adapters (stateful controls) + extensible registry

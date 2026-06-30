@@ -4,6 +4,27 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] — 2026-06-30
+
+Custom drawing on any element, a README that finally matches the library, and a much smarter IDE.
+
+### Runtime
+- **Custom drawing.** A `draw_fn` prop (a `Callable(canvas_item)`) on any host element issues the node's
+  `draw_*` calls during its `draw` signal; an optional `redraw_key` forces a repaint without changing the
+  callback. A register-once trampoline reads the latest callback, so a fresh closure each render never
+  re-subscribes — the Godot analogue of Unity's `OnGenerateVisualContent` / `RedrawKey`.
+
+### Docs
+- The README is rewritten to reflect the real surface — 21 hooks, ~14 router hooks, 63 `V.*` factories,
+  router / signals / Suspense / item-model adapters / custom drawing / IDE tooling — instead of the old
+  "MVP / 10 host elements" framing.
+
+### IDE extensions
+- **GUITKX VS Code 0.3.0 / VS 2022 0.3.0** now drive **plain `.gd`** files through gdscript-analyzer —
+  diagnostics, completion, hover, navigation, project-wide rename, formatting, and semantic tokens — in
+  addition to `.guitkx` markup + embedded GDScript (which gained find-references, rename, signature help,
+  inlay hints, and code actions). On by default; bundles `@gdscript-analyzer/core` 0.5.2.
+
 ## [0.2.1] — 2026-06-22
 
 A `.guitkx` toolchain fix, plus the demo gallery rewritten in markup.

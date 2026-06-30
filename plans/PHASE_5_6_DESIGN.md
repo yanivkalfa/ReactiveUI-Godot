@@ -1,5 +1,12 @@
 # Phase 5 (Formatter) + Phase 6 (LSP depth) — production design
 
+> ⚠️ **Backend correction (2026-06-30).** §6's embedded-GDScript intelligence is no longer the **"Godot LSP
+> proxy / port 6005 / probe `InitializeResult.capabilities`"** model described below — that path
+> (`godotProxy.ts`) was **deleted** and replaced by **`@gdscript-analyzer/core`** in-process (headless,
+> offline) via `analyzerAdapter.ts`. The §6 refs/rename/symbols are *markup-level* (component tags); the
+> **embedded-GDScript** equivalents are pending the G1 "wire the remaining analyzer queries" work. Live status:
+> `PARITY_PLAN.md`.
+
 Source: a 10-agent design+critique workflow (2026-06-22). Every first-pass design came back
 "needs-work"; the corrected designs below bake in the critics' fixes.
 
