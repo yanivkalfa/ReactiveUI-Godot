@@ -27,7 +27,7 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 
-import { classifyContext } from "./context";
+import { classifyContext, CursorContext } from "./context";
 import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
@@ -39,7 +39,7 @@ import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations } from "./workspaceIndex";
 import { scanTagRefs } from "./refs";
-import { buildSemanticTokens, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
+import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
 import { readFileSync, readdirSync, statSync } from "fs";
 import { AnalyzerAdapter, AdapterSymbol } from "./analyzerAdapter";
@@ -59,12 +59,15 @@ const documents = new TextDocuments(TextDocument);
 const index = new WorkspaceIndex();
 const analyzer = new AnalyzerAdapter();
 let projectPath = "";
-let useGdformat = true;
+let embeddedReflow = true;
 let embeddedEnabled = true;
 
 connection.onInitialize((params: InitializeParams) => {
   const opts = (params.initializationOptions as any) || {};
-  if (typeof opts.useGdformat === "boolean") useGdformat = opts.useGdformat;
+  // `embeddedReflow` runs embedded GDScript through the analyzer's formatter (so it matches a real .gd
+  // file); `useGdformat` is the legacy name for the same toggle.
+  if (typeof opts.embeddedReflow === "boolean") embeddedReflow = opts.embeddedReflow;
+  else if (typeof opts.useGdformat === "boolean") embeddedReflow = opts.useGdformat;
   // `enableEmbeddedAnalysis` toggles embedded-GDScript intelligence (completion/hover/definition
   // inside {expr}/setup). `enableGodotProxy` is the legacy name, still honored.
   if (typeof opts.enableEmbeddedAnalysis === "boolean") embeddedEnabled = opts.enableEmbeddedAnalysis;
@@ -120,10 +123,11 @@ function formatOptsFor(uri: string): Partial<FmtOptions> {
   return { indentStyle: "tab", indentSize: 4, ...(dir ? loadFormatterConfig(dir) : {}) };
 }
 
-// In-process markup format (formatGuitkx) + optional gdformat embedded reflow (no-op when absent).
+// In-process markup format (formatGuitkx) + embedded-GDScript reflow through the analyzer's formatter —
+// the SAME gdscript-fmt that drives plain .gd files — so embedded code formats identically (BUG-1).
 function formatFull(src: string, opts: Partial<FmtOptions>): { text: string; changed: boolean } {
   const base = formatGuitkx(src, opts).text;
-  const text = useGdformat ? reflowEmbedded(base) : base;
+  const text = embeddedReflow ? reflowEmbedded(base, (gd) => analyzer.formatGd(gd)) : base;
   return { text, changed: text !== src };
 }
 
@@ -189,12 +193,15 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
 
   switch (ctx.kind) {
     case "tagName":
-      return HOST_TAGS.map((t) => ({
-        label: t.tag,
-        kind: CompletionItemKind.Class,
-        detail: `${t.factory} (${t.godotClass})`,
-        documentation: `Host element — Godot ${t.godotClass}.`,
-      }));
+      return [
+        ...HOST_TAGS.map((t) => ({
+          label: t.tag,
+          kind: CompletionItemKind.Class,
+          detail: `${t.factory} (${t.godotClass})`,
+          documentation: `Host element — Godot ${t.godotClass}.`,
+        })),
+        ...componentNames().map((n) => ({ label: n, kind: CompletionItemKind.Class, detail: "component" })),
+      ];
     case "attrName": {
       const items: CompletionItem[] = [];
       // structural attrs are valid on every element
@@ -233,6 +240,7 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     case "markup":
       return [
         ...HOST_TAGS.map((t) => ({ label: "<" + t.tag, kind: CompletionItemKind.Class, detail: t.factory })),
+        ...componentNames().map((n) => ({ label: "<" + n, kind: CompletionItemKind.Class, detail: "component" })),
         ...CONTROL_FLOW.map((d) => ({
           label: d.label,
           kind: CompletionItemKind.Keyword,
@@ -254,6 +262,12 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     }
   }
 });
+
+// Indexed component bindings that can appear as a `<Tag>`: PascalCase and not a host element. Hooks
+// (snake_case) are naturally excluded; module-member components are included. (BUG-7)
+function componentNames(): string[] {
+  return index.names().filter((n) => /^[A-Z]/.test(n) && !findTag(n));
+}
 
 // '{' positions enclosing `offset` (string/comment-aware), innermost last.
 function openBraceStack(src: string, offset: number): number[] {
@@ -327,35 +341,65 @@ function forwardCompletion(uri: string, src: string, offset: number): Completion
 // --- hover ---
 
 connection.onHover(async (params): Promise<Hover | null> => {
-  const doc = documents.get(params.textDocument.uri);
-  if (!doc) return null;
-  const src = doc.getText();
-  const offset = doc.offsetAt(params.position);
-  if (isGd(params.textDocument.uri)) {
-    analyzer.sync(params.textDocument.uri, src);
-    const c = analyzer.hoverAt(params.textDocument.uri, src, offset);
-    return c ? { contents: c } : null;
-  }
-  const ctx = classifyContext(src, offset);
+  try {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    const src = doc.getText();
+    const offset = doc.offsetAt(params.position);
+    if (isGd(params.textDocument.uri)) {
+      analyzer.sync(params.textDocument.uri, src);
+      const c = analyzer.hoverAt(params.textDocument.uri, src, offset);
+      return c ? { contents: c } : null;
+    }
+    const ctx = classifyContext(src, offset);
 
-  if (ctx.kind === "tagName" || ctx.kind === "attrName") {
-    const tag = findTag(ctx.word.replace(/^</, ""));
-    if (tag) return md(`**<${tag.tag}>** — host element, compiles to \`${tag.factory}\` (Godot \`${tag.godotClass}\`).`);
-    const attr = [...STRUCTURAL_ATTRS, ...COMMON_ATTRS].find((a) => a.name === ctx.word);
-    if (attr) return md(`**${attr.name}**: \`${attr.type}\` — ${attr.detail}`);
+    if (ctx.kind === "tagName" || ctx.kind === "attrName") return markupHover(src, offset, ctx);
+    if (ctx.kind === "embedded" && embeddedEnabled) {
+      const { text, map } = buildVirtualDoc(src);
+      const genOffset = map.toGenerated(offset);
+      if (genOffset === null) return null;
+      const vUri = params.textDocument.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+      analyzer.sync(vUri, text);
+      const contents = analyzer.hoverAt(vUri, text, genOffset);
+      if (contents) return { contents };
+    }
+    return null;
+  } catch {
+    return null; // hover is best-effort; never throw out of the handler
+  }
+});
+
+// Markup hover. Resolve the FULL identifier under the cursor (not the truncated word-before) against a
+// host element, a workspace component, or — for an attribute — the enclosing host tag's ClassDB
+// property/signal dump, mirroring completion. The old path only matched a host tag at the exact end of
+// its name and never consulted ClassDB, so real attributes and component tags hovered to nothing (BUG-6).
+function markupHover(src: string, offset: number, ctx: CursorContext): Hover | null {
+  const w = wordRangeAt(src, offset);
+  const word = src.slice(w.start, w.end);
+  if (!word) return null;
+  if (ctx.kind === "tagName") {
+    const tag = findTag(word);
+    if (tag) return md(`**<${word}>** — host element, compiles to \`${tag.factory}\` (Godot \`${tag.godotClass}\`).`);
+    if (index.has(word)) {
+      const e = index.lookup(word)[0];
+      return md(`**<${word}>** — user ${e.kind === "member" ? "component" : e.kind}.`);
+    }
     return null;
   }
-  if (ctx.kind === "embedded" && embeddedEnabled) {
-    const { text, map } = buildVirtualDoc(src);
-    const genOffset = map.toGenerated(offset);
-    if (genOffset === null) return null;
-    const vUri = params.textDocument.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
-    analyzer.sync(vUri, text);
-    const contents = analyzer.hoverAt(vUri, text, genOffset);
-    if (contents) return { contents };
+  // attrName — resolve against the enclosing host tag's ClassDB props/signals, then structural/common.
+  const host = ctx.tag ? findTag(ctx.tag) : undefined;
+  if (host && hasDump()) {
+    if (word.startsWith("on_")) {
+      const sig = classSignals(host.godotClass).find((s) => `on_${s.name}` === word);
+      if (sig) return md(`**${word}** — Godot signal \`${sig.name}(${sig.args.map((a) => `${a.name}: ${a.type}`).join(", ")})\` on \`${host.godotClass}\`.`);
+    }
+    const prop = classProperties(host.godotClass).find((p) => p.name === word);
+    if (prop) return md(`**${word}**: \`${prop.type}\` — property on \`${host.godotClass}\`.`);
   }
+  const attr = [...STRUCTURAL_ATTRS, ...COMMON_ATTRS].find((a) => a.name === word);
+  if (attr) return md(`**${attr.name}**: \`${attr.type}\` — ${attr.detail}`);
   return null;
-});
+}
 
 function md(value: string): Hover {
   return { contents: { kind: MarkupKind.Markdown, value } };
@@ -578,11 +622,12 @@ function bindingUnderCursor(uri: string, src: string, offset: number): string | 
   return null;
 }
 
-// Renameable only for a component binding that is NOT a host tag, IS indexed, and has no @class_name
-// override (override-rename would need to retarget the @class_name token — out of v1 scope).
+// Renameable when it is an indexed component binding that is NOT a host tag. A component WITH an
+// `@class_name` override is renameable too: the rename rewrites the override token, the `component` decl
+// name, and every `<Tag>` usage atomically (BUG-4), so it never leaves a usage bound to a stale
+// `@class_name` (which previously produced a dangling GUITKX0105 "unknown element").
 function isRenameable(name: string): boolean {
-  if (findTag(name) || !index.has(name)) return false;
-  return index.lookup(name).every((e) => e.name === e.binding);
+  return !findTag(name) && index.has(name);
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -858,7 +903,15 @@ connection.onRenameRequest((params) => {
       edits.push({ range: { start: offsetToPos(text, s), end: offsetToPos(text, e) }, newText: newName });
     };
     for (const r of scanTagRefs(text, name)) add(r.start, r.end);
-    for (const e of index.entriesFor(uri)) if (e.binding === name) add(e.nameStart, e.nameEnd);
+    for (const e of index.entriesFor(uri)) {
+      if (e.binding !== name) continue;
+      // Rewrite the decl-name token only when it IS the binding (no override, or `@class_name X` over
+      // `component X`) — so renaming `@class_name X` over `component Y` (X != Y) does not relabel the
+      // unrelated decl name Y; the common X/X case still keeps the decl name + override in sync.
+      if (e.name === e.binding) add(e.nameStart, e.nameEnd);
+      // The `@class_name` override token always renames in lockstep with the binding (BUG-4).
+      if (e.classNameStart != null && e.classNameEnd != null) add(e.classNameStart, e.classNameEnd);
+    }
     if (edits.length) changes[uri] = edits;
   }
   return { changes };
@@ -909,13 +962,50 @@ function symbolKind(kind: string): SymbolKind {
 connection.languages.semanticTokens.on((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return { data: [] };
-  // .gd: analyzer-backed semantic tokens (the markup path below handles .guitkx).
+  // .gd: analyzer-backed semantic tokens (guitkxSemanticTokens handles .guitkx).
   if (isGd(params.textDocument.uri)) {
     analyzer.sync(params.textDocument.uri, doc.getText());
     return { data: analyzer.semanticTokensAt(params.textDocument.uri, doc.getText()) };
   }
-  return { data: buildSemanticTokens(doc.getText(), (name) => index.has(name)) };
+  return { data: guitkxSemanticTokens(params.textDocument.uri, doc.getText()) };
 });
+
+// .guitkx semantic tokens: the markup tokens (tag identity / @-directive keywords / attr names / events)
+// MERGED with the analyzer's embedded-GDScript tokens, mapped back from the virtual doc into the .guitkx
+// source — so embedded code highlights the same as a real .gd file (BUG-2). Embedded tokens are
+// best-effort: any failure still returns the markup tokens.
+function guitkxSemanticTokens(uri: string, src: string): number[] {
+  const toks: Tok[] = markupTokens(src, (name) => index.has(name));
+  if (embeddedEnabled) {
+    try {
+      const { text, map } = buildVirtualDoc(src);
+      const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+      analyzer.sync(vUri, text);
+      const lineStart = [0];
+      for (let i = 0; i < src.length; i++) if (src[i] === "\n") lineStart.push(i + 1);
+      const posOf = (off: number) => {
+        let lo = 0;
+        let hi = lineStart.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (lineStart[mid] <= off) lo = mid;
+          else hi = mid - 1;
+        }
+        return { line: lo, char: off - lineStart[lo] };
+      };
+      for (const t of analyzer.semanticTokensRawAt(vUri, text)) {
+        const s = map.toSource(t.start);
+        const e = map.toSource(t.end);
+        if (s === null || e === null || e <= s) continue; // generated glue, or maps to nothing
+        const p = posOf(s);
+        toks.push({ line: p.line, char: p.char, len: e - s, type: t.type, mods: t.mods });
+      }
+    } catch {
+      /* embedded tokens are best-effort; the markup tokens are always returned */
+    }
+  }
+  return encodeTokens(toks);
+}
 
 // --- signature help (opportunistic): on_<signal>={ func(... ) } on a host element ---
 

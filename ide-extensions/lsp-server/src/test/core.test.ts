@@ -10,7 +10,8 @@ import { classProperties, classSignals } from "../classdb";
 import { formatGuitkx } from "../formatGuitkx";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
-import { buildSemanticTokens, TOKEN_TYPES } from "../semanticTokens";
+import { buildSemanticTokens, encodeTokens, TOKEN_TYPES } from "../semanticTokens";
+import { classifyContext } from "../context";
 import { normalizeUri } from "../workspaceIndex";
 import { srcHash } from "../diagsSidecar";
 import { parseMarkup } from "../markup";
@@ -110,9 +111,15 @@ test("gdformat reflow safety net: token-equivalence ignores whitespace/quote, re
   assert.ok(!tokenEquivalent("a + b", "a - b")); // operator change -> rejected
 });
 
-test("reflowEmbedded never corrupts (no-op without gdformat; token-equivalent with it)", () => {
-  const formatted = "component X {\n\tvar a = 1\n\treturn (\n\t\t<Label />\n\t)\n}\n";
-  assert.ok(tokenEquivalent(formatted, reflowEmbedded(formatted)));
+test("reflowEmbedded reflows embedded GDScript via the analyzer formatter, token-equivalently (BUG-1)", () => {
+  const az = new AnalyzerAdapter();
+  const fmt = (gd: string) => az.formatGd(gd);
+  // `var a=1` (no spaces) — the analyzer's gdscript-fmt should normalize it the same as in a real .gd.
+  const formatted = "component X {\n\tvar a=1\n\treturn (\n\t\t<Label />\n\t)\n}\n";
+  const out = reflowEmbedded(formatted, fmt);
+  assert.ok(tokenEquivalent(formatted, out), "reflow only changes whitespace/quote style, never tokens");
+  // a no-op formatter leaves the document untouched (the safety/identity path)
+  assert.equal(reflowEmbedded(formatted, () => null), formatted, "a formatter that declines leaves the region as-is");
 });
 
 test("classdb dump base-flattens Button props (text + inherited disabled) and signals", () => {
@@ -367,4 +374,79 @@ test("codeActionsAt returns well-formed quick-fixes over the virtual doc (no cra
     actions.every((a) => typeof a.title === "string" && (a.kind === null || typeof a.kind === "string") && Array.isArray(a.edits)),
     "each action is well-formed (title + optional kind + per-file edits)",
   );
+});
+
+// --- regression tests for the BUG_V1 fixes ---
+
+test("BUG-5: a setup-block offset round-trips even with CRLF + a trailing blank line", () => {
+  // The old whole-block length guard dropped the setup span whenever reindent changed any length —
+  // which a trailing whitespace-only line (and CRLF) always does. Per-line mapping fixes it.
+  const src = ["component C {", "\tvar n = use_state(3)", "\tvar g = use_st", "\treturn (", "\t\t<Label />", "\t)", "}"].join("\r\n");
+  const { map } = buildVirtualDoc(src);
+  for (const needle of ["use_state", "use_st"]) {
+    const at = src.indexOf(needle) + 1; // inside the setup identifier
+    const gen = map.toGenerated(at);
+    assert.notEqual(gen, null, `setup offset for '${needle}' maps into the virtual doc`);
+    assert.equal(map.toSource(gen!), at, `and back to the same source offset for '${needle}'`);
+  }
+});
+
+test("BUG-3: componentTagAt resolves when the cursor sits on the tag opener '<' (and closing '</')", () => {
+  const a = "\t<Card idx={ 1 } />";
+  assert.equal(componentTagAt(a, a.indexOf("<")), "Card"); // cursor ON the '<'
+  assert.equal(componentTagAt(a, a.indexOf("Card") + 2), "Card"); // inside the name (regression: still works)
+  assert.equal(componentTagAt("</Card>", 0), "Card"); // on the '<' of a closing tag
+  assert.equal(componentTagAt("\t<vbox />", "\t<vbox />".indexOf("<")), null); // lowercase host factory ignored
+});
+
+test("BUG-4: scanDeclarations + the index carry the @class_name override offsets for an atomic rename", () => {
+  const src = "@class_name Fancy\ncomponent Card() {\n\treturn (<Label />)\n}\n";
+  const d = scanDeclarations(src)[0];
+  assert.equal(d.binding, "Fancy");
+  assert.equal(src.slice(d.classNameStart!, d.classNameEnd!), "Fancy", "override token located");
+  assert.equal(src.slice(d.nameStart, d.nameEnd), "Card", "decl name token located");
+  const idx = new WorkspaceIndex();
+  idx.reindex("file:///X.guitkx", src);
+  const e = idx.lookup("Fancy")[0];
+  assert.equal(src.slice(e.classNameStart!, e.classNameEnd!), "Fancy", "index entry carries the override offsets");
+  // a component with NO override leaves the offsets undefined
+  assert.equal(scanDeclarations("component Card() { return (<Label />) }")[0].classNameStart, undefined);
+});
+
+test("BUG-7: a blank slot inside a @for body is markup; a setup statement is embedded", () => {
+  const markupSrc = "component C(n: int = 0) {\n\treturn (\n\t\t@for (i in n) {\n\t\t\tHERE\n\t\t}\n\t)\n}\n";
+  assert.equal(classifyContext(markupSrc, markupSrc.indexOf("HERE")).kind, "markup");
+  const setupSrc = "component C() {\n\tvar g = use_st\n\treturn (<Label />)\n}\n";
+  assert.equal(classifyContext(setupSrc, setupSrc.indexOf("use_st") + 6).kind, "embedded");
+});
+
+test("BUG-2: semanticTokensRawAt yields raw in-legend tokens; encodeTokens sorts a merged set", () => {
+  const az = new AnalyzerAdapter();
+  const uri = "file:///proj/st.gd";
+  const src = "func f(a: int):\n\tvar x := a + 1\n\treturn x\n";
+  az.sync(uri, src);
+  const raw = az.semanticTokensRawAt(uri, src);
+  assert.ok(Array.isArray(raw) && raw.length > 0, "raw tokens present");
+  assert.ok(raw.every((t) => t.end > t.start && t.type >= 0 && t.type < TOKEN_TYPES.length), "well-formed, in-legend");
+  // encodeTokens must order an out-of-order (markup + embedded) merge before delta-encoding
+  const data = encodeTokens([
+    { line: 2, char: 0, len: 3, type: 0, mods: 0 },
+    { line: 0, char: 4, len: 2, type: 1, mods: 0 },
+  ]);
+  assert.deepEqual(data.slice(0, 5), [0, 4, 2, 1, 0], "first emitted token is the line-0 one (proves the sort)");
+  assert.equal(data[5], 2, "next token's delta-line is 0 -> 2");
+});
+
+test("BUG-3 (review): a GDScript comparison `a < Bcd` is not mistaken for a tag (cursor on '<' or in the name)", () => {
+  const s = "x = a < Bcd";
+  assert.equal(componentTagAt(s, s.indexOf("<")), null, "cursor on the comparison '<'");
+  assert.equal(componentTagAt(s, s.indexOf("Bcd") + 1), null, "cursor inside the PascalCase RHS");
+  const t = "return ( <Card /> )";
+  assert.equal(componentTagAt(t, t.indexOf("<C")), "Card", "a real tag at a value boundary still resolves");
+});
+
+test("BUG-4 (review): a bare `@class_name` grabs no override (not the following `component` keyword)", () => {
+  const d = scanDeclarations("@class_name\ncomponent Card() { return (<Label />) }")[0];
+  assert.equal(d.binding, "Card", "binding falls back to the decl name, NOT 'component'");
+  assert.equal(d.classNameStart, undefined, "no override token, so a rename can't rewrite the keyword");
 });

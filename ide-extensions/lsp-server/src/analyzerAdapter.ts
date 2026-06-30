@@ -350,6 +350,15 @@ export class AnalyzerAdapter {
     return this.az.format(uri) ?? null;
   }
 
+  /** Format a standalone GDScript snippet through the SAME formatter that drives plain `.gd` files, so
+   *  embedded `.guitkx` code reflows identically (BUG-1). Synced under a private scratch URI; returns the
+   *  tidied text (possibly identical to the input), or null if the analyzer can't format it. */
+  formatGd(text: string): string | null {
+    const uri = "inmemory://__rui_reflow.gd";
+    this.sync(uri, text);
+    return this.az.format(uri) ?? null;
+  }
+
   /** Format the lines overlapping the CHAR range `[charStart, charEnd)` in `text`; one edit (range in
    *  CHAR offsets + `newText`), or null when nothing changes / `uri` is unknown. */
   formatRangeAt(uri: string, text: string, charStart: number, charEnd: number): { start: number; end: number; newText: string } | null {
@@ -359,11 +368,31 @@ export class AnalyzerAdapter {
     return { start: byteToChar(text, range.start), end: byteToChar(text, range.end), newText: String(r.new_text ?? "") };
   }
 
+  /** RAW semantic tokens for `uri`, each range in CHAR offsets within `text` + its unified-legend type
+   *  index and modifier bitset. Lets the `.guitkx` path map a virtual-doc token back to the source and
+   *  merge it with the markup tokens before encoding (BUG-2); the `.gd` path encodes them directly. */
+  semanticTokensRawAt(uri: string, text: string): { start: number; end: number; type: number; mods: number }[] {
+    const raw: any[] = this.az.semanticTokens(uri) ?? [];
+    return raw
+      .map((t) => {
+        const rg = t.range ?? { start: 0, end: 0 };
+        return {
+          start: byteToChar(text, rg.start),
+          end: byteToChar(text, rg.end),
+          type: GD_TOKEN_TYPE[String(t.token_type)] ?? 0,
+          mods: Number(t.modifiers ?? 0),
+        };
+      })
+      // Drop empty AND multi-line tokens: the LSP semantic-tokens spec requires each token to stay on
+      // one line, so a token spanning a newline (e.g. a triple-quoted string) would be invalid — let the
+      // TextMate grammar colour those instead.
+      .filter((t) => t.end > t.start && !text.slice(t.start, t.end).includes("\n"));
+  }
+
   /** Semantic-highlighting tokens for a real `.gd` document, delta-encoded per the LSP spec (ready to
    *  hand back as `{ data }`). Token-type names map onto the unified legend; the analyzer's modifier
    *  bitset carries over directly (same bit order). */
   semanticTokensAt(uri: string, text: string): number[] {
-    const raw: any[] = this.az.semanticTokens(uri) ?? [];
     const lineStarts = [0];
     for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
     const pos = (charOff: number) => {
@@ -376,15 +405,11 @@ export class AnalyzerAdapter {
       }
       return { line: lo, char: charOff - lineStarts[lo] };
     };
-    const items = raw
+    const items = this.semanticTokensRawAt(uri, text)
       .map((t) => {
-        const rg = t.range ?? { start: 0, end: 0 };
-        const sc = byteToChar(text, rg.start);
-        const ec = byteToChar(text, rg.end);
-        const p = pos(sc);
-        return { line: p.line, char: p.char, len: ec - sc, type: GD_TOKEN_TYPE[String(t.token_type)] ?? 0, mods: Number(t.modifiers ?? 0) };
+        const p = pos(t.start);
+        return { line: p.line, char: p.char, len: t.end - t.start, type: t.type, mods: t.mods };
       })
-      .filter((t) => t.len > 0)
       .sort((a, b) => a.line - b.line || a.char - b.char);
     const data: number[] = [];
     let prevLine = 0;

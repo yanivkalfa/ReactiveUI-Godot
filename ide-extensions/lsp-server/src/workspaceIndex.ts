@@ -6,6 +6,7 @@
 // copy+rename never deletes a live declarant.
 
 import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { isTagBoundary } from "./refs";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -18,15 +19,25 @@ export interface DeclInfo {
   nameEnd: number;
   declStart: number; // offset of the component/hook/module keyword (for documentSymbol range)
   declEnd: number; // offset just past the closing `}` (or nameEnd if bodyless) — also bounds a module's members
+  // First component with an `@class_name` override: the override identifier's offsets, so a rename can
+  // rewrite the directive in lockstep with the decl name + every `<Tag>` usage (BUG-4). Undefined otherwise.
+  classNameStart?: number;
+  classNameEnd?: number;
+}
+
+interface ClassNameRef {
+  text: string;
+  start: number;
+  end: number;
 }
 
 /** All top-level + module-member declarations (not just the first), mirroring the compiler dispatch. */
 export function scanDeclarations(src: string): DeclInfo[] {
-  const classOverride = readClassName(src);
-  return scanRange(src, 0, src.length, classOverride, undefined);
+  const override = readClassName(src);
+  return scanRange(src, 0, src.length, override, undefined);
 }
 
-function scanRange(src: string, start: number, end: number, classOverride: string, mod: string | undefined): DeclInfo[] {
+function scanRange(src: string, start: number, end: number, override: ClassNameRef | null, mod: string | undefined): DeclInfo[] {
   const out: DeclInfo[] = [];
   let i = start;
   let firstComponent = true;
@@ -57,12 +68,17 @@ function scanRange(src: string, start: number, end: number, classOverride: strin
         continue;
       }
       const isComp = kw === "component";
-      const binding = isComp && !mod && firstComponent && classOverride ? classOverride : nm.text;
+      const useOverride = isComp && !mod && firstComponent && override != null;
+      const binding = useOverride ? override!.text : nm.text;
       if (isComp) firstComponent = false;
       const body = readBody(src, nm.end);
       const declEnd = body ? body.end + 1 : nm.end;
-      out.push({ kind, name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd });
-      if (kw === "module" && body) out.push(...scanRange(src, body.start, body.end, "", nm.text));
+      out.push({
+        kind, name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
+        classNameStart: useOverride ? override!.start : undefined,
+        classNameEnd: useOverride ? override!.end : undefined,
+      });
+      if (kw === "module" && body) out.push(...scanRange(src, body.start, body.end, null, nm.text));
       i = declEnd;
       continue;
     }
@@ -71,7 +87,7 @@ function scanRange(src: string, start: number, end: number, classOverride: strin
   return out;
 }
 
-function readClassName(src: string): string {
+function readClassName(src: string): ClassNameRef | null {
   const n = src.length;
   let i = 0;
   while (i < n) {
@@ -82,12 +98,18 @@ function readClassName(src: string): string {
       continue;
     }
     if (src.startsWith("@class_name", i) && (i + 11 >= n || /\s/.test(src[i + 11]))) {
-      return readIdent(src, skipWs(src, i + 11)).text;
+      // Read the override on the SAME line (skip only spaces/tabs, never a newline), matching the
+      // compiler's read-to-EOL — so a bare `@class_name` does not grab the following `component`
+      // keyword as the override (which a rename would then rewrite, BUG-4).
+      let p = i + 11;
+      while (p < n && (src[p] === " " || src[p] === "\t")) p++;
+      const id = readIdent(src, p);
+      return id.text ? { text: id.text, start: id.start, end: id.end } : null;
     }
     if (keywordAt(src, i, "component") || keywordAt(src, i, "hook") || keywordAt(src, i, "module")) break;
     i++;
   }
-  return "";
+  return null;
 }
 
 function readBody(src: string, from: number): { start: number; end: number } | null {
@@ -133,6 +155,8 @@ export interface IndexEntry {
   module?: string;
   nameStart: number;
   nameEnd: number;
+  classNameStart?: number;
+  classNameEnd?: number;
 }
 
 export class WorkspaceIndex {
@@ -157,6 +181,8 @@ export class WorkspaceIndex {
       module: d.module,
       nameStart: d.nameStart,
       nameEnd: d.nameEnd,
+      classNameStart: d.classNameStart,
+      classNameEnd: d.classNameEnd,
     }));
     this.byUri.set(uri, entries);
     for (const e of entries) {
@@ -243,13 +269,30 @@ export function componentTagAt(src: string, offset: number): string | null {
   let e = offset;
   while (s > 0 && isIdent(src[s - 1])) s--;
   while (e < src.length && isIdent(src[e])) e++;
-  if (s === e) return null;
+  if (s === e) {
+    // Cursor isn't inside an identifier — it sits on the `<`, the closing-tag `/`, or whitespace
+    // between them (common with a mouse-driven ctrl+click on a tab-indented tag, where F12 with a
+    // caret inside the name would have worked). Look RIGHT to the following tag name so navigation,
+    // find-references, and rename all work from the tag opener too.
+    let p = offset;
+    if (src[p] === "<") p++;
+    if (src[p] === "/") p++;
+    while (p < src.length && (src[p] === " " || src[p] === "\t")) p++;
+    s = p;
+    e = p;
+    while (e < src.length && isIdent(src[e])) e++;
+    if (s === e) return null;
+  }
   const name = src.slice(s, e);
   if (!/^[A-Z]/.test(name)) return null;
   let b = s - 1;
-  if (src[b] === "/") b--;
+  const closing = src[b] === "/";
+  if (closing) b--;
   while (b > 0 && (src[b] === " " || src[b] === "\t")) b--;
-  return src[b] === "<" ? name : null;
+  if (src[b] !== "<") return null;
+  // An opening `<Name` must sit at a tag boundary so a GDScript comparison `a < Name` (cursor on the
+  // `<` or inside the PascalCase RHS) is not mistaken for a tag; a closing `</Name>` is unambiguous.
+  return closing || isTagBoundary(src, b) ? name : null;
 }
 
 export function offsetToPosition(text: string, offset: number): { line: number; character: number } {

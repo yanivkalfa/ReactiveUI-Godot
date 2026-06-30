@@ -4,6 +4,7 @@
 
 import { skipString, findMatching } from "./scanner";
 import { isBodyBrace } from "./semanticTokens";
+import { markupWindows } from "./formatGuitkx";
 
 export type ContextKind = "tagName" | "attrName" | "directive" | "embedded" | "markup";
 
@@ -34,8 +35,18 @@ export function classifyContext(src: string, offset: number): CursorContext {
     return { kind: "directive", word: "@" + word };
   }
 
-  // not in a tag and not starting markup punctuation -> embedded GDScript (setup / {expr} / cond)
-  if (insideUnmatchedBrace(src, offset) || insideUnmatchedParen(src, offset) || looksLikeSetup(src, offset)) {
+  // Not in a tag and not starting markup punctuation. Distinguish embedded GDScript from a blank markup
+  // position. The cursor is EMBEDDED when it is:
+  //  - outside every markup window (component setup, params, a hook/module body) — plain GDScript; or
+  //  - inside an {expr} hole (the innermost open `{` is NOT a control-flow / component BODY brace); or
+  //  - inside an @directive `(...)` condition (an unmatched paren earlier on the line); or
+  //  - on a line that begins with a GDScript statement keyword (a setup statement).
+  // Otherwise it is a markup position — a blank child slot or an @for/@if body. BUG-7: a blank slot
+  // inside a control-flow / component BODY brace used to be misread as embedded (the brace was unmatched),
+  // so tag/component completion never fired there.
+  const openBrace = innermostOpenBrace(src, offset);
+  const inExprHole = openBrace !== -1 && !isBodyBrace(src, openBrace);
+  if (!inMarkupWindow(src, offset) || inExprHole || insideUnmatchedParen(src, offset) || looksLikeSetup(src, offset)) {
     return { kind: "embedded", word };
   }
   return { kind: "markup", word };
@@ -96,8 +107,10 @@ function enclosingTag(src: string, offset: number): TagAt | null {
   return { ltPos: openLt, name: src.slice(openLt + 1, j) };
 }
 
-function insideUnmatchedBrace(src: string, offset: number): boolean {
-  let depth = 0;
+// The innermost `{` still open at `offset` (string/comment-aware), or -1. Lets the caller ask whether
+// that brace is a markup BODY brace (component/control-flow) vs an {expr} hole.
+function innermostOpenBrace(src: string, offset: number): number {
+  const stack: number[] = [];
   let i = 0;
   while (i < offset) {
     const c = src[i];
@@ -109,11 +122,17 @@ function insideUnmatchedBrace(src: string, offset: number): boolean {
       while (i < offset && src[i] !== "\n") i++;
       continue;
     }
-    if (c === "{") depth++;
-    else if (c === "}") depth = Math.max(0, depth - 1);
+    if (c === "{") stack.push(i);
+    else if (c === "}") stack.pop();
     i++;
   }
-  return depth > 0;
+  return stack.length ? stack[stack.length - 1] : -1;
+}
+
+// True when `offset` is inside some component's markup window (its return(...) region).
+function inMarkupWindow(src: string, offset: number): boolean {
+  for (const w of markupWindows(src)) if (offset >= w.start && offset <= w.end) return true;
+  return false;
 }
 
 function insideUnmatchedParen(src: string, offset: number): boolean {
