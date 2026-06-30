@@ -382,7 +382,9 @@ function markupHover(src: string, offset: number, ctx: CursorContext): Hover | n
     if (tag) return md(`**<${word}>** — host element, compiles to \`${tag.factory}\` (Godot \`${tag.godotClass}\`).`);
     if (index.has(word)) {
       const e = index.lookup(word)[0];
-      return md(`**<${word}>** — user ${e.kind === "member" ? "component" : e.kind}.`);
+      const kind = e.kind === "member" ? "component" : e.kind;
+      const sig = componentSignature(e);
+      return md(`**<${word}>** — user ${kind} \`${word}${sig}\`. Press F12 / ctrl+click to open its declaration.`);
     }
     return null;
   }
@@ -493,8 +495,11 @@ connection.onDefinition(async (params) => {
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
   if (isGd(params.textDocument.uri)) return gdDefinition(params.textDocument.uri, src, offset);
-  // A <Component/> tag -> its declaration, from the workspace index.
-  const name = componentTagAt(src, offset);
+  // A <Component/> tag, the `component`/member decl name, or its `@class_name` token -> the declaration,
+  // from the workspace index. Using bindingUnderCursor (not just componentTagAt) means F12 / ctrl+click
+  // works from a usage AND from the declaration itself / the @class_name directive, instead of falling
+  // through to the analyzer and surfacing VS Code's "no definition found".
+  const name = bindingUnderCursor(params.textDocument.uri, src, offset);
   if (name) {
     const entries = index.lookup(name);
     if (entries.length)
@@ -612,12 +617,29 @@ function textForUri(uri: string): string {
   return documents.get(uri)?.getText() ?? readTextForUri(uri);
 }
 
-// The component binding under the cursor — a <Foo/> tag OR a component/member declaration name.
+// The `(params)` signature of a component declaration (read from its file), e.g. "(idx, append)" — or
+// "" when it takes none. Shown in hover so a <Tag>'s props read like a function signature.
+function componentSignature(e: { uri: string; nameEnd: number }): string {
+  const text = textForUri(e.uri);
+  let i = e.nameEnd;
+  while (i < text.length && /\s/.test(text[i])) i++;
+  if (text[i] !== "(") return "";
+  const close = findMatching(text, i);
+  if (close === -1) return "";
+  return text.slice(i, close + 1).replace(/\s+/g, " ");
+}
+
+// The component binding under the cursor — a <Foo/> tag, a component/member declaration name, OR its
+// `@class_name` override token (so navigation / find-references / rename all work from the declaration
+// AND the @class_name directive, not just from a usage).
 function bindingUnderCursor(uri: string, src: string, offset: number): string | null {
   const tag = componentTagAt(src, offset);
   if (tag) return tag;
   for (const e of index.entriesFor(uri)) {
-    if (offset >= e.nameStart && offset <= e.nameEnd && e.kind !== "hook") return e.binding;
+    if (e.kind === "hook") continue;
+    const onName = offset >= e.nameStart && offset <= e.nameEnd;
+    const onOverride = e.classNameStart != null && e.classNameEnd != null && offset >= e.classNameStart && offset <= e.classNameEnd;
+    if (onName || onOverride) return e.binding;
   }
   return null;
 }
