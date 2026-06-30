@@ -1,6 +1,6 @@
 // Classify what the cursor is sitting in, to route completion/hover: markup contexts (tag name,
 // attribute name, a `<`/`@` start) are answered from the schema; everything else (setup, {expr},
-// control-flow conditions) is treated as embedded GDScript and forwarded to Godot's LSP.
+// control-flow conditions) is treated as embedded GDScript and analyzed by @gdscript-analyzer/core.
 
 import { skipString, findMatching } from "./scanner";
 import { isBodyBrace } from "./semanticTokens";

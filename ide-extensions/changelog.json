@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "date": "2026-06-30",
+      "versions": {
+        "vscode": "0.3.0",
+        "vs2022": "0.3.0"
+      },
+      "shared": [
+        "The extension now drives plain `.gd` files through gdscript-analyzer, not just `.guitkx` markup: diagnostics, completion, hover, go-to-definition, project-wide find-references and rename, signature help, inlay hints, code actions, document symbols, formatting, and semantic highlighting, all headless with no running Godot editor. It is ON by default; the new `guitkx.enableGdscriptAnalysis` setting turns it off. Because it runs alongside the godot-tools extension, disable godot-tools' language server to avoid duplicate diagnostics on `.gd` files.",
+        "Embedded GDScript inside `.guitkx` now also gets find-references, project-wide rename (correct-or-refuse), signature help, inlay hints, and code actions, on top of the existing completion, hover, diagnostics, and go-to-definition.",
+        "Upgraded the bundled GDScript analyzer to 0.5.2, which exposes GDScript formatting and semantic highlighting, now wired for `.gd` via Format Document and semantic tokens."
+      ]
+    },
+    {
       "date": "2026-06-28",
       "versions": {
         "vscode": "0.2.6",

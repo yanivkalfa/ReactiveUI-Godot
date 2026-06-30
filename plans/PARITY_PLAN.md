@@ -1,183 +1,172 @@
-# Godot Port — Parity Plan (ReactiveUIToolKit → ReactiveUI-Godot)
+# Godot Port — Parity Plan & Live Status (ReactiveUIToolKit → ReactiveUI-Godot)
 
-Source: an 18-agent gap analysis (9 areas × analyze+verify, 2026-06-21) comparing the Unity reference
-(`…/ReactiveUIToolKit`) against this port. **102 gaps (12 critical, 30 high).** Per-area parity:
-
-| Area | Parity | Headline |
-|---|---|---|
-| Core library | **62%** | Engine is as sophisticated as Unity; gaps are BREADTH (router, signals, suspense, hooks) |
-| GDScript fidelity | **45%** | Region extraction mostly works; the real defect is the LSP virtual-doc (flat scope + un-stripped JSX) |
-| Tests | **28%** | No formatter/golden corpus; substring asserts only |
-| Compiler | **25%** | Walking skeleton: no JSX-as-value, no module, ~9 of ~45 diagnostics |
-| HMR | **25%** | Godot-native reload works; footguns (hook-shape desync, no live re-render) — user accepts the model |
-| LSP features | **15%** | Completion+hover only; no live diagnostics, go-to-def, ClassDB props |
-| Publishing | **15%** | Build+artifact only; no publish workflow / changelog.json / scripts |
-| Docs/samples | **8%** | 1 sample vs 163; no docs site; stale README |
-| **Formatter** | **3%** | Essentially nothing vs Unity's ~3000-LOC AstFormatter |
-
-Guiding constraints (unchanged): **full GDScript everywhere embedded** (not a subset), GDScript-in-markup,
-all Control types, pure GDScript, audience = everyone. Goal = ReactiveUIToolKit's *capabilities*, not an MVP.
-
----
-
-## Phase 3 — Publishing & release infrastructure  *(DOING NOW, user priority)*
-
-Closes the publishing area (15%→100%). Mirrors Unity's `publish.yml` + `changelog.json` + `scripts/changelog.mjs`
-+ `publish-extension.ps1`/`publish-vsix.ps1`, **retargeted to the TypeScript LSP server** (Unity's model
-`dotnet publish`es a C# server; ours bundles a Node server) and **adds Open VSX** (Unity has none, but the
-Godot/VSCodium/Cursor audience needs it).
-
-Deliverables:
-- `ide-extensions/changelog.json` — central source of truth (`{date, versions:{vscode,vs2022}, shared:[…]}`).
-- `ide-extensions/scripts/changelog.mjs` — generate per-IDE `CHANGELOG.md` + marketplace `overview.md`; an
-  `add` authoring command with the CP1252-mojibake guard / `--message-file` safety the verifier flagged.
-- `ide-extensions/vscode/CHANGELOG.md` + `ide-extensions/visual-studio/CHANGELOG.md` (generated).
-- `.github/workflows/publish-extensions.yml` — workflow-dispatch, **idempotent per-extension version gating**
-  (skip if `vscode-v*`/`vs2022-v*` tag exists), builds the Node server + bundles, `vsce publish` (VS Marketplace)
-  + `ovsx publish` (Open VSX) + VS2022 `VsixPublisher`, then auto-tags. `permissions: contents: write` + git
-  identity for tag-push; `extract` step so the `.vsix` ships its CHANGELOG.
-- `ide-extensions/scripts/publish-extension.ps1` (VS Code local publish, patch-bump) +
-  `publish-vsix.ps1` (VS2022 local publish — Node-server bundle, NOT a dotnet DLL).
-- `vscode/package.json` `package`/`publish`/`deploy` scripts + `@vscode/vsce`/`ovsx` devDeps.
-- `visual-studio/publishManifest.json` + `overview.md` template.
-- Secret matrix doc (`VSCE_PAT`, `OVSX_TOKEN`, `VS_MARKETPLACE_PAT`) in `ide-extensions/README.md`;
-  `plans/VERSIONING_PROCESS.md` (extension release process); `.gitignore` for `publisher-secrets.json`/`*.vsix`/`server/`.
+> **STATUS UPDATE — 2026-06-30.** This file is the living source of truth for *where we stand*. Two
+> things changed since the original 2026-06-21 gap analysis, and the older design docs never captured them:
+>
+> 1. **The IDE LSP swapped from Godot's built-in LSP to our own `@gdscript-analyzer/core`.** Embedded
+>    GDScript inside `.guitkx` (the `{expr}` / setup / `@if`/`@for` conditions) is now answered **in-process,
+>    headless, offline** by the Rust analyzer — *no running Godot editor, no TCP port 6005*. The old
+>    "Godot LSP proxy / port 6005 / shell-out to headless Godot" model described in `PHASE_2_GUITKX_PLAN`,
+>    `PHASE_4_DESIGN`, `PHASE_5_6_DESIGN`, and `IDE_EXTENSION_ISSUES` is **DEAD/SUPERSEDED** — `godotProxy.ts`
+>    was deleted. See *Analyzer integration* below.
+> 2. **The core runtime reached ~Unity parity.** `PHASE_7_PLAN` is COMPLETE: full router, 21 hooks (+~14
+>    router hooks), signals + registry, Suspense, 3-layer styles, item-model adapters, 63 `V.*` factories,
+>    green suite on Godot 4.7. The original "Core 62%" line below is the *baseline*, not the current state.
+>
+> **The decision going forward (set 2026-06-30): swap to our analyzer COMPLETELY** — not just the
+> `.guitkx`-embedded surface, but drive plain `.gd` too and wire the analyzer's full capability set. The
+> Forward Roadmap section is the operative plan; the Phase 3–10 history below is kept as record.
 
 ---
 
-## Phase 4 — Compiler parity + embedded-GDScript fidelity  *(toolchain correctness — your #6)*
+## Current status by goal — 2026-06-30
 
-The two areas are coupled: the compiler must LOWER markup-in-expressions, and the LSP virtual-doc must present
-that embedded GDScript to Godot with correct scope. Closes compiler 25%→~90% and fidelity 45%→~90%.
+**G1 — use `@gdscript-analyzer/core` instead of Godot's built-in LSP → DONE for `.guitkx`-embedded; not yet "complete".**
+- Shipped: `ide-extensions/lsp-server` embeds `@gdscript-analyzer/core` via `analyzerAdapter.ts` (`AnalysisHandle`);
+  `godotProxy.ts` deleted; release 0.2.6 (commits `5e5dc5d → 4f4c5d8 → 4f74cfd`).
+- Gaps to "complete swap": (a) only **4 of 13** analyzer queries wired (completions/hover/diagnostics/gotoDefinition);
+  find-refs, rename, documentSymbols, foldingRanges, inlayHints, signatureHelp, codeActions, workspaceSymbols are
+  not analyzer-backed for embedded GDScript. (b) `format`/`semantic_tokens` exist in `gdscript-ide` + standalone
+  `gdscript-lsp` but are **not in the napi binding** — need new `#[napi]` delegators in the analyzer repo. (c) The
+  IDE `documentSelector` is `language:'guitkx'` only — plain `.gd` still uses Godot's `godot-tools`. (d) Pinned
+  `^0.4.0` (0.4.0 installed); **npm latest is 0.5.0**.
 
-Critical / high:
-- **JSX-as-value splicing** (C): markup inside `{expr}`, ternary `x if c else y`, `and`/`or`, and lambda returns
-  must lower to `V.*` calls — today it's passed verbatim → invalid `.gd`. Runtime already has `V.fragment/fc/portal`,
-  so this is a compiler-emit change, not new runtime.
-- **Setup-embedded markup** (H): JSX assigned to setup locals / returned from local funcs.
-- **Scope-aware virtual doc** (C, fidelity): emit `{expr}`/conditions INSIDE their real scope (loop var, `@if`
-  binding, setup locals visible) instead of flat `var __eN = (...)`, so Godot's LSP stops reporting false
-  "undeclared identifier". Strip JSX/markup nested in `{expr}`/lambda bodies so Godot doesn't see raw markup.
-- **Module declaration kind** (H) + multi-declaration files, with source-mapped bodies.
-- **Full diagnostics catalog** (H): port the ~45 `UITKX####` codes with a real severity+location model (the port
-  has 9 ad-hoc strings; `0301/0302/0305/0306` aren't even implemented). Include rules-of-hooks 0014/0015/0016
-  (loop/switch/handler), unknown element/attr + did-you-mean, dup/missing key, single-root in block bodies.
-- **Preamble directives** (H): support `@using/@inject/@props/@key` (and don't SILENTLY DROP unknown ones — emit a
-  diagnostic; today it's data-loss).
-- **Hook-alias fix** (M, real bug): blind substring replace corrupts identifiers/strings containing a hook name —
-  replace with scope-correct, token-boundary wrapping.
-- Fidelity leaf fixes: grammar mis-colors `<`/`>` comparison as tags; `R` vs `r` raw-prefix scanner divergence;
-  `$NodePath`/`%Unique`/`^"path"`/`&"name"`/`await` leaf rules; `find_matching` cross-type imbalance; source-map
-  needs entry-kind/straddle handling once regions are rewritten; `__C` deep child-flattener (V._norm is 1-level).
+**G2 — finish the reactive_ui library → ~Unity parity (PHASE_7 COMPLETE); a few edges + docs left.**
+- Done: see PHASE_7. Remaining: **custom-draw escape hatch** (`onGenerateVisualContent` / `_draw` + `redraw_key`)
+  — not ported, but the Unity/C# sibling shipped it @0.6.3 as a reference; optional niche adapters (SubViewport /
+  GraphEdit / GraphNode); **badly stale README** (claims MVP / 10 elements / 6 hooks vs the real 21+ hooks / 63
+  factories); Tests (~28%) + Docs (~8%) parity (Phases 10/9).
+
+**G3 — Godot's own editor learns `.guitkx` → HALF done.**
+- Done: `@tool EditorPlugin` (`addons/reactive_ui/plugin.gd`) compiles each `Foo.guitkx` → sibling `Foo.gd` and
+  hot-reloads it (deliberately NOT an EditorImportPlugin, NOT a ScriptLanguageExtension).
+- Not started: **no `EditorSyntaxHighlighter`** — Godot's own script editor shows `.guitkx` as plain text; all
+  syntax intelligence lives in the external VS Code / VS 2022 extensions. Native in-Godot intelligence beyond
+  highlighting would need a C++/GDExtension `ScriptLanguageExtension` — out of scope for a GDScript-only addon.
+
+---
+
+## Analyzer integration (the corrected model)
+
+```
+.guitkx file ─▶ LSP server (ide-extensions/lsp-server, TS, shared by VS Code + VS 2022)
+                 ├─ markup language  → local schema + ClassDB dump (tags, attrs, style keys)
+                 └─ embedded GDScript → virtualDoc.ts (synthetic length-preserving .gd) + sourceMap.ts
+                                         └─▶ analyzerAdapter.ts → @gdscript-analyzer/core (AnalysisHandle)
+                                              completions · hover · diagnostics · gotoDefinition   [4 of 13 wired]
+```
+- Headless/offline/deterministic. `setProjectConfig(project.godot)` resolves `[autoload]`; `loadLibrary(res://…)`
+  loads `addons/**/*.gd` so embedded code resolves cross-file (`Hooks.use_ref` → `core/hooks.gd`).
+- UTF-16 ↔ UTF-8 byte-offset conversion is owned at the adapter boundary (the analyzer speaks byte offsets).
+- The compiler's full diagnostic catalog is surfaced offline via the `Foo.guitkx.diags.json` sidecar (FNV-1a
+  hash-gated), independent of the analyzer.
 
 ---
 
-## Phase 5 — Formatter  *(DONE — see PHASE_5_6_DESIGN.md)*
+## Parity — baseline (2026-06-21) → now (2026-06-30)
 
-**Shipped (IN-PROCESS, no Godot binary needed):** the formatter runs entirely inside the TS language server
-so VS Code / VS2022 "Format Document" is instant + offline. To avoid a drifting 2nd parser, `markup.ts` is a
-faithful port of `guitkx_markup.gd` (same AST node shapes) over the byte-identical `scanner.ts`, and
-`formatGuitkx.ts` ports `guitkx_formatter.gd`'s emit. Both formatters are kept **byte-identical via a shared
-golden-fixture corpus** (`test-fixtures/formatter-cases.json`, generated by the GDScript authority) asserted on
-BOTH sides — the same discipline as `scanner.ts ≡ guitkx_lexer.gd`. `guitkx_formatter.gd` (`RUIGuitkxFormatter`)
-remains the GDScript authority (editor-side / corpus). Formats the *actual* Godot grammar (preamble `@class_name`
-only; `@if/@elif/@else`, `@for/@while (header)`, `@match{@case(){}@default{}}`; bodies re-parsed; self-close
-normalization; base-indent-normalized embedded GDScript). Verbatim on parse error; idempotent (tested both sides).
-`textDocument/formatting` **+ rangeFormatting** (minimal common-prefix/suffix hunk, range-intersected). **gdformat
-Tier-1 embedded reflow** (`reflowEmbedded.ts`): optional, layered on top, token-equivalence-guarded (never alters
-semantics), no-op when gdformat absent; `guitkx.useGdformat` setting. The old shell-out path + `godotBinaryPath`
-config were removed.
+| Area | Baseline | Now | Notes |
+|---|---|---|---|
+| Core library | 62% | **~parity** | PHASE_7 COMPLETE. Left: custom-draw hatch, niche adapters |
+| GDScript fidelity | 45% | **high** | scope-aware virtual doc shipped; backend is now `@gdscript-analyzer/core` |
+| Compiler | 25% | **~90%** | PHASE_4 COMPLETE: jsx-as-value, module, full diagnostics catalog |
+| LSP features | 15% | **high** | ClassDB completion, index, goto, refs/rename (markup), diagnostics, symbols, sig-help, semantic tokens + embedded GDScript via analyzer |
+| Formatter | 3% | **DONE** | PHASE_5: GDScript authority + byte-identical TS port |
+| Publishing | 15% | **DONE** | PHASE_3: changelog.json + idempotent version-gated publish workflow |
+| HMR | 25% | **partial** | Godot-native reload works; live-root re-render + hook-shape guard still open (PHASE_8) |
+| Tests | 28% | **~40%** | per-suite green, but no golden codegen corpus / rules-of-hooks matrix (PHASE_10) |
+| Docs/samples | 8% | **low** | README stale; no docs site (PHASE_9) |
 
----
-*Original plan below.*
-
-Port Unity's `AstFormatter` (markup indentation, attribute wrapping at print-width, self-closing normalization,
-control-flow body formatting, component/hook/module headers, blank-line capping, **idempotency**) as a GDScript or
-TS AST formatter over the existing markup parser.
-- `FormatterOptions` + config discovery (`guitkx.config.json` directory-walk merged with editor settings).
-- **Embedded-GDScript formatting** (the hard part — Godot's LSP has NO formatting): recommend shelling out to
-  `gdscript-toolkit`'s `gdformat` when present, else a conservative re-indent (the existing `_reindent_setup`
-  generalized); the TS-LSP→formatter bridge runs the formatter out-of-process.
-- Wire `textDocument/formatting` (+ range) into the LSP; advertise the capability.
-- Idempotency / round-trip harness: `format(format(x)) == format(x)`.
-
-## Phase 6 — LSP feature depth  *(DONE v1 — see PHASE_5_6_DESIGN.md)*
-
-**Shipped:**
-- **ClassDB-driven completion** (6c): `addons/reactive_ui/dev/classdb_dump.gd` (@tool/headless) generates a
-  base-flattenable dump (76 Control classes); `classdb.ts` loads it; attribute-NAME completion now offers every
-  real Control property of a host element's `godotClass` (Button: 102 items incl. inherited `disabled`) + each
-  signal as `on_<signal>`. PascalCase tags absent from HOST_TAGS get only structural attrs (function components).
-  Bundled into the `.vsix`.
-- **Workspace index + go-to-definition** (6b): `workspaceIndex.ts` — `scanDeclarations` enumerates all top-level +
-  module-member decls; the index is keyed by **binding identity = (@class_name override) ?? decl name** (not
-  basename), multi-valued `byName`+`byUri`, parse-failure-tolerant, init-scan + on-change reindex. `<Foo/>` →
-  its declaration (PascalCase only; lowercase = host factory). `definitionProvider` advertised.
-- **Live diagnostics depth** (6a): dup-key `GUITKX0104` (sibling-scoped) + unknown-element `GUITKX0105` with
-  Levenshtein did-you-mean (PascalCase + index-gated → no false positives on host factories / unindexed comps).
-- **find-references + rename + prepareRename** (`refs.ts`): a tag-boundary-gated cross-file scan (matches real
-  `<Tag>`/`</Tag>` incl. jsx-as-value inside `{expr}`, excludes `a < B` comparisons + strings/comments); rename
-  builds a WorkspaceEdit, gates host tags via `findTag` + collisions, skips @class_name-override renames.
-- **documentSymbol** — component/hook/module outline with module members nested (`scanDeclarations` + decl spans).
-- **signatureHelp** — opportunistic: `on_<signal>={ func(…) }` on a host element → the signal's params from the
-  ClassDB dump, activeParameter by comma count; method-refs get none.
-- **semanticTokens** — host vs component vs unknown tag identity, `@`-directives, attr names, `on_<signal>` events
-  (the semantic colouring TextMate can't decide); nothing inside `{expr}`.
-- **Compiler diagnostics sidecar** — `guitkx_codegen.gd` writes `Foo.guitkx.diags.json` (FNV-1a source hash +
-  parsed code/severity/message) on every compile; the LSP surfaces the compiler's full catalog in VS Code (no
-  editor needed), gated on a matching hash (stale → suppressed) and deduped by code against the precise live tier.
+Guiding constraints (unchanged): full GDScript everywhere embedded (not a subset), GDScript-in-markup, all Control
+types, pure GDScript, audience = everyone. Goal = ReactiveUIToolKit's *capabilities*, not an MVP.
 
 ---
-*Original plan below.*
 
-- **Live compiler diagnostics** (C): run the compiler on change, surface its diagnostics (today only brace-balance).
-- **Structural diagnostics tier**: unknown element/attribute (+did-you-mean), duplicate/missing key, rules-of-hooks,
-  multiple render roots — as LSP diagnostics, not just compile-time.
-- **ClassDB-driven completion** (H): per-control properties/signals from Godot (via the proxy or a generated dump),
-  + attribute-VALUE completion (enums, style keys).
-- **Workspace component index** (H): scan `.guitkx`/`.gd` for user components + their props for tag/attr completion.
-- Go-to-definition, find-references, rename, signatureHelp, semantic tokens.
-- Perf: cache/debounce `buildVirtualDoc` (today rebuilt + full-resynced per keystroke); fix SourceMap boundary
-  ambiguity + O(n) scan.
+## Forward roadmap — user-set order (2026-06-30)
 
-## Phase 7 — Core library breadth  *(62% → parity)*
+**0. Update the stale plans ← (in progress this session).** This file refreshed; correction banners added to
+   `PHASE_2_GUITKX_PLAN`, `PHASE_4_DESIGN`, `PHASE_5_6_DESIGN`, `IDE_EXTENSION_ISSUES`.
 
-- **Router rewrite** (C, XL): nested/layout routes + `<Outlet>`, basename, query strings, `<NavLink>` active styling,
-  `<Navigate>`, blockers, `useMatches/useSearchParams/useResolvedPath/useGo`, nested-router guard. Port `RouterPath`,
-  `RouteMatch`, `RouteRanker`.
-- **Signal registry/factory** (H): process-wide string-keyed shared signals + `use_signal_key`.
-- **Suspense** (M): `V.suspense` + a poll/await-driven boundary (GDScript has no throw-to-suspend).
-- Hook-order validation + dev diagnostics (StrictMode-ish), missing-deps warnings, state-update-during-render guard.
-- `Text` vnode (string children); `Memo`/structural-equality bailout; remaining hooks (`use_deferred_value` real
-  scheduler, media/animation hooks); host-config item-model adapters + `resolve_child_host`; style USS-class/
-  pseudo-state (hover/pressed) layer.
+**1. G1 — complete the analyzer swap.**  *(status — 2026-06-30)*
+   - ✅ **Bumped `@gdscript-analyzer/core` → 0.5.1** in `lsp-server`; verified no `AnalysisHandle` API drift (36 tests green).
+   - ✅ **Wired the embedded-GDScript analyzer queries**: find-references, rename (**correct-or-refuse**, file-local
+     only), signatureHelp, inlayHints, codeActions — on top of the existing completion/hover/diagnostics/gotoDefinition.
+     **9 of 13** capabilities now analyzer-backed; the rest (foldingRanges/documentSymbols/workspaceSymbols/syntaxTree)
+     are owned by the markup-level handlers or N/A for the embedded surface. (`analyzerAdapter.ts` + `server.ts`.)
+   - ✅ **format/formatRange + semanticTokens** — shipped in `@gdscript-analyzer/core` **0.5.2** (`#[napi]` +
+     `#[wasm_bindgen]` delegators) and consumed: `.gd` formatting (`textDocument/formatting` + rangeFormatting →
+     `analyzer.format`/`formatRange`) and semantic tokens (a unified legend over markup + GDScript) are now wired.
+   - ✅ **Drive plain `.gd`** — DONE for VS Code (opt-in `guitkx.enableGdscriptAnalysis`, default off). Dedicated
+     `.gd` handlers in `server.ts` (offsets 1:1; **project-wide** `.gd` load at init so cross-file nav + rename
+     resolve), wiring diagnostics / completion / hover / definition / **project-wide references + rename** /
+     signatureHelp / inlayHints / codeActions / documentSymbols + **formatting + semantic tokens** (analyzer-backed
+     via core 0.5.2's `format`/`semanticTokens`). Runs alongside `godot-tools` — the setting tells the user to
+     disable it to fully swap. **VS 2022 `.gd`
+     registration deferred** (low value — VS 2022 is a `.guitkx`-authoring tool; `.gd` editing lives in VS Code / Godot).
+   - ◻ Clean the stale "forwarded to Godot's LSP" comments in `context.ts`/`virtualDoc.ts`/`sourceMap.ts` (fold into G3).
 
-## Phase 8 — HMR hardening  *(user accepts Godot-native; close the footguns)*
+**2. G2 — finish the library.**
+   - Port the **custom-draw escape hatch** (`onGenerateVisualContent` / `_draw` + `redraw_key`) from the Unity 0.6.3
+     sibling → Godot `_draw()` / `RenderingServer` + `redraw_key`.
+   - Refresh the **stale README** to the real surface (21+ hooks, ~14 router hooks, 63 `V.*` factories, router /
+     signals / suspense / styles / adapters).
+   - Decide the niche adapters (SubViewport / GraphEdit / GraphNode) — port or explicitly defer.
+   - Close Tests (PHASE_10) + Docs (PHASE_9) parity.
 
-- Live-root re-render on hot-reload via a `ReactiveRootNode` registry (re-render mounted trees on sibling `.gd` reload).
-- **Hook-shape-change guard** (H): a hook count/order signature → auto-remount when a refresh changes hook shape
-  (today positional slots desync silently).
-- Re-run `useEffect` cleanups on reload. (Family-based identity + HMR UX are optional/low.)
+**3. G3 — finish `.guitkx → .gd`; native editor support is a SEPARATE future plan.**
+   - The compile-on-save EditorPlugin is done; harden + update stale in-code docs (the `guitkx.gd` "walking
+     skeleton" docstring, the schema's `module = reserved` note — both now implemented).
+   - **Native Godot-editor syntax understanding = deferred planning track** (per the user): an
+     `EditorSyntaxHighlighter` (pure GDScript, highlighting only) vs a `ScriptLanguageExtension` (C++/GDExtension,
+     full intelligence). To be designed in its own plan when G1/G2 land.
 
-## Phase 9 — Documentation & samples  *(8% → parity)*
+---
 
-- Docs site (or a structured `docs/` set): getting-started, `.guitkx` language guide, concepts (hooks rules,
-  context, signals, router, error boundary, differences-from-React/Unity), per-component reference, style vocabulary.
-- Port a meaningful subset of the 163 Unity samples to `.guitkx` (incl. a couple of the game samples); an
-  `examples/README.md` index; document the `examples/app.gd`/`main.tscn` launch path.
-- Refresh the stale README (it claims "10 host elements" / understates 18 hooks + 51 `V.*` factories).
+## Phase history (3–10) — status as of 2026-06-30
 
-## Phase 10 — Test parity  *(28% → parity)*
+### Phase 3 — Publishing & release infrastructure — **DONE**
+`ide-extensions/changelog.json` + `scripts/changelog.mjs` + `publish-extensions.yml` (workflow-dispatch, idempotent
+per-extension version gating, VS Marketplace + Open VSX + VS2022 VsixPublisher, auto-tag) + local publish scripts +
+`VERSIONING_PROCESS.md`. (The publish workflow is healthy; jobs are version-gated and *skip* when a version is not
+bumped — that is by design, not a regression.)
 
-- Formatter idempotency + snapshot tests (Unity's biggest suite).
-- Golden codegen corpus (replace substring asserts; mirror EmitterTests' ~81 cases).
-- Full diagnostics coverage incl. rules-of-hooks loop/switch/handler matrix.
-- JSX-in-expression-position tests; grammar TextMate snapshot tests; virtual-doc/source-map round-trip breadth;
-  samples-as-golden; a consolidated test runner + CI aggregation.
+### Phase 4 — Compiler parity + embedded-GDScript fidelity — **DONE** (see PHASE_4_DESIGN)
+JSX-as-value splicing, setup-embedded markup, scope-aware virtual doc, module declarations, full `GUITKX####`
+diagnostics catalog, hook-alias token-boundary fix, fidelity leaf fixes + byte-identity CI. **Backend correction:**
+the virtual doc is now consumed by `@gdscript-analyzer/core`, not Godot's LSP.
+
+### Phase 5 — Formatter — **DONE** (see PHASE_5_6_DESIGN)
+In-process TS formatter (`formatGuitkx.ts`) kept byte-identical with the GDScript authority
+(`guitkx_formatter.gd`) via a shared golden corpus; `textDocument/formatting` + rangeFormatting; optional gdformat
+Tier-1 embedded reflow. Verbatim-on-parse-error; idempotent. (Open: an analyzer-driven embedded reflow once the
+napi `format` delegator lands — see Roadmap G1.)
+
+### Phase 6 — LSP feature depth — **DONE v1** (see PHASE_5_6_DESIGN)
+ClassDB-driven completion, workspace index + go-to-definition, live dup-key/unknown-element diagnostics,
+find-references + rename + prepareRename, documentSymbol, signatureHelp, semanticTokens, compiler-diagnostics
+sidecar. **Note:** refs/rename/symbols here are *markup-level* (component tags); the embedded-GDScript equivalents
+are the G1 "wire the remaining analyzer queries" work.
+
+### Phase 7 — Core library breadth — **DONE** (see PHASE_7_PLAN)
+Router rewrite (nested/layout routes, `<Outlet>`, basename, query, blockers, NavLink, full `use_*` router hooks),
+signal registry, Suspense, dev diagnostics + strict flags, `V.text`/`V.memo`, remaining hooks
+(`use_deferred_value`/`use_transition`/`use_animate`/`use_sfx`), `V.audio`/`V.video`, item-model adapters. Left for
+G2: custom-draw hatch, niche adapters, README.
+
+### Phase 8 — HMR hardening — **PARTIAL**
+Godot-native reload works; the live-root re-render registry + hook-shape-change guard + effect-cleanup-on-reload
+remain open. Low priority unless a consumer hits the footguns.
+
+### Phase 9 — Documentation & samples — **OPEN**
+Docs site / structured `docs/`, `.guitkx` language guide, per-component reference, style vocabulary; port a subset
+of the Unity samples; **refresh the stale README** (folded into G2).
+
+### Phase 10 — Test parity — **OPEN**
+Formatter idempotency + snapshot tests, golden codegen corpus (replace substring asserts), rules-of-hooks
+loop/switch/handler matrix, virtual-doc/source-map round-trip breadth, consolidated runner + CI aggregation.
 
 ---
 
 ### Sequencing
-Phase 3 first (now). Then 4 (toolchain correctness) → 5 (formatter) → 6 (LSP depth) are the IDE track;
-7 (core breadth) → 8 (HMR) are the runtime track (independent, can interleave); 9 (docs) + 10 (tests) run
-throughout and consolidate at the end. Each phase ships green tests before the next.
+Plans first (0), then the G1 complete-swap, then G2 (library finish + docs), then G3 cleanup; native Godot-editor
+support is designed in its own plan afterward. Each step ships green tests before the next.

@@ -21,6 +21,9 @@ import {
   DocumentSymbol,
   SymbolKind,
   TextEdit,
+  SignatureHelp,
+  InlayHint,
+  CodeAction,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 
@@ -39,7 +42,7 @@ import { scanTagRefs } from "./refs";
 import { buildSemanticTokens, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
 import { readFileSync, readdirSync, statSync } from "fs";
-import { AnalyzerAdapter } from "./analyzerAdapter";
+import { AnalyzerAdapter, AdapterSymbol } from "./analyzerAdapter";
 import {
   HOST_TAGS,
   STRUCTURAL_ATTRS,
@@ -91,6 +94,8 @@ connection.onInitialize((params: InitializeParams) => {
       renameProvider: { prepareProvider: true },
       documentSymbolProvider: true,
       signatureHelpProvider: { triggerCharacters: ["(", ","] },
+      inlayHintProvider: true,
+      codeActionProvider: true,
       semanticTokensProvider: {
         legend: { tokenTypes: TOKEN_TYPES, tokenModifiers: TOKEN_MODIFIERS },
         full: true,
@@ -126,6 +131,13 @@ connection.onDocumentFormatting((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
+  if (isGd(params.textDocument.uri)) {
+    analyzer.sync(params.textDocument.uri, src);
+    const formatted = analyzer.formatAt(params.textDocument.uri);
+    return formatted === null || formatted === src
+      ? []
+      : [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: formatted }];
+  }
   const r = formatFull(src, formatOptsFor(params.textDocument.uri));
   if (!r.changed) return [];
   return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: r.text }];
@@ -135,6 +147,11 @@ connection.onDocumentRangeFormatting((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
+  if (isGd(params.textDocument.uri)) {
+    analyzer.sync(params.textDocument.uri, src);
+    const e = analyzer.formatRangeAt(params.textDocument.uri, src, doc.offsetAt(params.range.start), doc.offsetAt(params.range.end));
+    return e ? [{ range: { start: doc.positionAt(e.start), end: doc.positionAt(e.end) }, newText: e.newText }] : [];
+  }
   const r = formatFull(src, formatOptsFor(params.textDocument.uri));
   if (!r.changed) return [];
   // Whole-doc format, then return the single minimal line-hunk (common prefix/suffix diff). The whole
@@ -164,6 +181,10 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
   if (!doc) return [];
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
+  if (isGd(params.textDocument.uri)) {
+    analyzer.sync(params.textDocument.uri, src);
+    return analyzer.completionsAt(params.textDocument.uri, src, offset);
+  }
   const ctx = classifyContext(src, offset);
 
   switch (ctx.kind) {
@@ -221,7 +242,7 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
         })),
       ];
     case "embedded": {
-      // style={ {…} } dict -> RUIStyle keys (Godot's LSP has no vocabulary for these).
+      // style={ {…} } dict -> RUIStyle keys (the GDScript analyzer has no vocabulary for these).
       if (inStyleDict(src, offset))
         return STYLE_KEYS.map((a) => ({ label: a.name, kind: CompletionItemKind.Property, detail: a.type, documentation: a.detail }));
       // `<Type>.<frag>` built-in constants (Color.WHITE, …) as a static fallback, merged with Godot's.
@@ -310,6 +331,11 @@ connection.onHover(async (params): Promise<Hover | null> => {
   if (!doc) return null;
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
+  if (isGd(params.textDocument.uri)) {
+    analyzer.sync(params.textDocument.uri, src);
+    const c = analyzer.hoverAt(params.textDocument.uri, src, offset);
+    return c ? { contents: c } : null;
+  }
   const ctx = classifyContext(src, offset);
 
   if (ctx.kind === "tagName" || ctx.kind === "attrName") {
@@ -338,6 +364,10 @@ function md(value: string): Hover {
 // --- diagnostics (light structural pass) ---
 
 documents.onDidChangeContent((change) => {
+  if (isGd(change.document.uri)) {
+    connection.sendDiagnostics({ uri: change.document.uri, diagnostics: gdDiagnostics(change.document.uri, change.document.getText()) });
+    return;
+  }
   index.reindex(change.document.uri, change.document.getText());
   const live = [
     ...structuralDiagnostics(change.document),
@@ -418,6 +448,7 @@ connection.onDefinition(async (params) => {
   if (!doc) return null;
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
+  if (isGd(params.textDocument.uri)) return gdDefinition(params.textDocument.uri, src, offset);
   // A <Component/> tag -> its declaration, from the workspace index.
   const name = componentTagAt(src, offset);
   if (name) {
@@ -428,7 +459,7 @@ connection.onDefinition(async (params) => {
         return { uri: e.uri, range: { start: offsetToPos(targetText, e.nameStart), end: offsetToPos(targetText, e.nameEnd) } };
       });
   }
-  // Otherwise an embedded-GDScript symbol -> forward to Godot's LSP; return cross-file (library)
+  // Otherwise an embedded-GDScript symbol -> resolve via @gdscript-analyzer/core; return cross-file (library)
   // locations (e.g. `use_ref` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
   return forwardDefinition(params.textDocument.uri, src, offset);
 });
@@ -503,12 +534,14 @@ function gdFilesUnder(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-// Load the project's `addons/**/*.gd` into the analyzer (with `res://` paths) so embedded code
-// resolves library `class_name`s / `preload`s cross-file. Best-effort; skips unreadable files.
+// Load the project's `.gd` files into the analyzer (with `res://` paths) so both embedded `.guitkx`
+// code AND plain `.gd` editing resolve `class_name`s / `preload`s / autoloads cross-file. Walks the
+// whole project (skipping the `.godot` cache + hidden dirs), not just `addons/`. Best-effort.
 function loadLibraries(): void {
   if (!projectPath) return;
-  for (const file of gdFilesUnder(join(projectPath, "addons"))) {
+  for (const file of gdFilesUnder(projectPath)) {
     const resPath = "res://" + relative(projectPath, file).replace(/\\/g, "/");
+    if (resPath.startsWith("res://.")) continue; // skip res://.godot/** and other hidden dirs
     try {
       analyzer.loadLibrary(pathToFileURL(file).toString(), readFileSync(file, "utf8"), resPath);
     } catch {
@@ -517,7 +550,7 @@ function loadLibraries(): void {
   }
 }
 
-// Godot's LSP returns `res://` URIs; VS Code needs a real file:// URI.
+// The analyzer may report `res://` URIs (preload / res-path resolution); VS Code needs a real file:// URI.
 function resToFileUri(uri: string): string {
   if (uri.startsWith("res://") && projectPath) return pathToFileURL(join(projectPath, uri.slice("res://".length))).toString();
   return uri;
@@ -552,6 +585,103 @@ function isRenameable(name: string): boolean {
   return index.lookup(name).every((e) => e.name === e.binding);
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Plain `.gd` mode — drive real GDScript files directly through @gdscript-analyzer/core. Offsets are
+// 1:1 (no virtual doc / source map), and cross-file results are honoured in full (a real project-wide
+// rename, not the `.guitkx` refuse-cross-file rule). Reached only when the client sends a `.gd` doc,
+// which it does only if the user opts in via `guitkx.enableGdscriptAnalysis`. All project `.gd` are
+// loaded at init (loadLibraries), so cross-file navigation / rename resolve.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+function isGd(uri: string): boolean {
+  return uri.endsWith(".gd");
+}
+
+// A CHAR offset -> Position in `uri`'s text (the analyzer's loaded copy if present, else disk/open).
+function gdPos(uri: string, off: number): { line: number; character: number } {
+  return offsetToPosition(analyzer.textOf(uri) ?? textForUri(uri), off);
+}
+
+function gdLoc(uri: string, r: { start: number; end: number }): Location {
+  return { uri: resToFileUri(uri), range: { start: gdPos(uri, r.start), end: gdPos(uri, r.end) } };
+}
+
+function gdDiagnostics(uri: string, src: string): Diagnostic[] {
+  analyzer.sync(uri, src);
+  return analyzer.diagnosticsAt(uri, src).map((d) => ({
+    severity: d.severity,
+    range: { start: offsetToPosition(src, d.range.start), end: offsetToPosition(src, d.range.end) },
+    message: d.code ? `${d.code}: ${d.message}` : d.message,
+    source: "gdscript",
+  }));
+}
+
+function gdDefinition(uri: string, src: string, offset: number): Location[] {
+  analyzer.sync(uri, src);
+  return analyzer.definitionsAt(uri, src, offset).flatMap((d) => (d.uri ? [gdLoc(d.uri, d.range)] : []));
+}
+
+function gdReferences(uri: string, src: string, offset: number): Location[] {
+  analyzer.sync(uri, src);
+  return analyzer.referencesAt(uri, src, offset).flatMap((r) => (r.uri ? [gdLoc(r.uri, r.range)] : []));
+}
+
+// A project-wide rename: apply EVERY file's edits (the analyzer is correct-or-refuse, so a non-null
+// result is safe to apply across files).
+function gdRename(uri: string, src: string, offset: number, newName: string): { changes: { [uri: string]: TextEdit[] } } | null {
+  if (!/^[A-Za-z_]\w*$/.test(newName)) return null;
+  analyzer.sync(uri, src);
+  const res = analyzer.renameAt(uri, src, offset, newName);
+  if (!("ok" in res)) return null;
+  const changes: { [uri: string]: TextEdit[] } = {};
+  for (const fe of res.ok) {
+    if (!fe.uri) continue;
+    changes[resToFileUri(fe.uri)] = fe.edits.map((e) => ({
+      range: { start: gdPos(fe.uri!, e.range.start), end: gdPos(fe.uri!, e.range.end) },
+      newText: e.newText,
+    }));
+  }
+  return Object.keys(changes).length ? { changes } : null;
+}
+
+function gdCodeActions(uri: string, src: string, offset: number): CodeAction[] {
+  analyzer.sync(uri, src);
+  const out: CodeAction[] = [];
+  for (const a of analyzer.codeActionsAt(uri, src, offset)) {
+    const changes: { [uri: string]: TextEdit[] } = {};
+    for (const fe of a.edits) {
+      if (!fe.uri) continue;
+      changes[resToFileUri(fe.uri)] = fe.edits.map((e) => ({
+        range: { start: gdPos(fe.uri!, e.range.start), end: gdPos(fe.uri!, e.range.end) },
+        newText: e.newText,
+      }));
+    }
+    if (Object.keys(changes).length) out.push({ title: a.title, kind: a.kind ?? undefined, edit: { changes } });
+  }
+  return out;
+}
+
+function gdDocumentSymbols(uri: string, src: string): DocumentSymbol[] {
+  analyzer.sync(uri, src);
+  const conv = (s: AdapterSymbol): DocumentSymbol => ({
+    name: s.name,
+    detail: s.detail,
+    kind: s.kind,
+    range: { start: offsetToPosition(src, s.range.start), end: offsetToPosition(src, s.range.end) },
+    selectionRange: { start: offsetToPosition(src, s.selectionRange.start), end: offsetToPosition(src, s.selectionRange.end) },
+    children: s.children.map(conv),
+  });
+  return analyzer.documentSymbolsAt(uri, src).map(conv);
+}
+
+function gdInlayHints(uri: string, src: string, range: { start: number; end: number }): InlayHint[] {
+  analyzer.sync(uri, src);
+  return analyzer
+    .inlayHintsAt(uri, src)
+    .filter((h) => h.offset >= range.start && h.offset <= range.end)
+    .map((h) => ({ position: offsetToPosition(src, h.offset), label: h.label, kind: h.kind }));
+}
+
 function wordRangeAt(src: string, offset: number): { start: number; end: number } {
   let s = offset;
   let e = offset;
@@ -560,14 +690,104 @@ function wordRangeAt(src: string, offset: number): { start: number; end: number 
   return { start: s, end: e };
 }
 
+// --- embedded-GDScript references + rename (analyzer-backed, source-mapped, correct-or-refuse) ---
+
+// References to the embedded-GDScript symbol at `offset`. Same-file hits are mapped back from the
+// virtual doc into the .guitkx source; a hit in a loaded library `.gd` is returned in that file. The
+// analyzer only sees THIS file's virtual doc + libraries, so the set is complete for file-local symbols.
+function embeddedReferences(uri: string, src: string, offset: number): Location[] {
+  if (!embeddedEnabled) return [];
+  const { text, map } = buildVirtualDoc(src);
+  const genOffset = map.toGenerated(offset);
+  if (genOffset === null) return [];
+  const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  const out: Location[] = [];
+  const seen = new Set<string>();
+  const push = (u: string, t: string, s: number, e: number) => {
+    const range = { start: offsetToPosition(t, s), end: offsetToPosition(t, e) };
+    const key = `${u}:${range.start.line}:${range.start.character}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ uri: u, range });
+  };
+  for (const r of analyzer.referencesAt(vUri, text, genOffset)) {
+    if (r.uri && r.uri !== vUri) {
+      push(r.uri, analyzer.textOf(r.uri) ?? "", r.range.start, r.range.end); // a library `.gd` hit
+      continue;
+    }
+    const s = map.toSource(r.range.start); // a virtual-doc hit -> back to the .guitkx source (drop glue)
+    const e = map.toSource(r.range.end);
+    if (s !== null && e !== null) push(uri, src, s, e);
+  }
+  return out;
+}
+
+// The source word-range iff the embedded symbol at `offset` is renameable — i.e. its definition is
+// LOCAL to this file's embedded code (not a library `.gd`, not generated glue). Library/glue symbols
+// are refused (we will not edit core/hooks.gd from a .guitkx, and cross-.guitkx refs aren't loaded).
+function embeddedRenameRange(uri: string, src: string, offset: number): { start: number; end: number } | null {
+  if (!embeddedEnabled) return null;
+  const w = wordRangeAt(src, offset);
+  if (w.start === w.end) return null;
+  const { text, map } = buildVirtualDoc(src);
+  const genOffset = map.toGenerated(offset);
+  if (genOffset === null) return null;
+  const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  const defs = analyzer.definitionsAt(vUri, text, genOffset);
+  const local = defs.length > 0 && defs.every((d) => (!d.uri || d.uri === vUri) && map.toSource(d.range.start) !== null);
+  return local ? w : null;
+}
+
+// Rename the embedded-GDScript symbol at `offset`. Correct-or-refuse: every edit must map back into
+// THIS file's .guitkx source; any edit in a library `.gd` or generated glue refuses the whole rename.
+function embeddedRename(uri: string, src: string, offset: number, newName: string): { changes: { [uri: string]: TextEdit[] } } | null {
+  if (!embeddedEnabled || !/^[A-Za-z_]\w*$/.test(newName)) return null;
+  const { text, map } = buildVirtualDoc(src);
+  const genOffset = map.toGenerated(offset);
+  if (genOffset === null) return null;
+  const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  const res = analyzer.renameAt(vUri, text, genOffset, newName);
+  if (!("ok" in res)) return null; // the analyzer refused
+  const edits: TextEdit[] = [];
+  const seen = new Set<number>();
+  for (const fe of res.ok) {
+    if (fe.uri !== vUri) return null; // an edit outside this file's virtual doc -> refuse
+    for (const e of fe.edits) {
+      const s = map.toSource(e.range.start);
+      const en = map.toSource(e.range.end);
+      if (s === null || en === null) return null; // an edit in generated glue -> refuse
+      if (seen.has(s)) continue;
+      seen.add(s);
+      edits.push({ range: { start: offsetToPosition(src, s), end: offsetToPosition(src, en) }, newText: e.newText });
+    }
+  }
+  return edits.length ? { changes: { [uri]: edits } } : null;
+}
+
+// Signature help for an embedded-GDScript call site, via the analyzer over the virtual doc.
+function embeddedSignatureHelp(uri: string, src: string, offset: number): SignatureHelp | null {
+  if (!embeddedEnabled) return null;
+  const { text, map } = buildVirtualDoc(src);
+  const genOffset = map.toGenerated(offset);
+  if (genOffset === null) return null;
+  const vUri = uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  return analyzer.signatureHelpAt(vUri, text, genOffset);
+}
+
 // --- find-references ---
 
 connection.onReferences((params): Location[] => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
+  if (isGd(params.textDocument.uri)) return gdReferences(params.textDocument.uri, src, doc.offsetAt(params.position));
   const name = bindingUnderCursor(params.textDocument.uri, src, doc.offsetAt(params.position));
-  if (!name) return [];
+  // Not a component tag -> try an embedded-GDScript symbol (analyzer-backed, source-mapped).
+  if (!name) return embeddedReferences(params.textDocument.uri, src, doc.offsetAt(params.position));
   const seen = new Set<string>();
   const locs: Location[] = [];
   const push = (uri: string, text: string, s: number, e: number) => {
@@ -598,8 +818,17 @@ connection.onPrepareRename((params) => {
   if (!doc) return null;
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
+  if (isGd(params.textDocument.uri)) {
+    const gw = wordRangeAt(src, offset);
+    return gw.start === gw.end ? null : { range: { start: doc.positionAt(gw.start), end: doc.positionAt(gw.end) }, placeholder: src.slice(gw.start, gw.end) };
+  }
   const name = bindingUnderCursor(params.textDocument.uri, src, offset);
-  if (!name || !isRenameable(name)) return null;
+  if (!name) {
+    // An embedded-GDScript symbol -> renameable iff it's local to this file's embedded code.
+    const ew = embeddedRenameRange(params.textDocument.uri, src, offset);
+    return ew ? { range: { start: doc.positionAt(ew.start), end: doc.positionAt(ew.end) }, placeholder: src.slice(ew.start, ew.end) } : null;
+  }
+  if (!isRenameable(name)) return null;
   const w = wordRangeAt(src, offset);
   if (w.start === w.end) return null;
   return { range: { start: doc.positionAt(w.start), end: doc.positionAt(w.end) }, placeholder: name };
@@ -609,8 +838,11 @@ connection.onRenameRequest((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return null;
   const src = doc.getText();
+  if (isGd(params.textDocument.uri)) return gdRename(params.textDocument.uri, src, doc.offsetAt(params.position), params.newName);
   const name = bindingUnderCursor(params.textDocument.uri, src, doc.offsetAt(params.position));
-  if (!name || !isRenameable(name)) return null;
+  // Not a component tag -> rename an embedded-GDScript symbol (correct-or-refuse, file-local only).
+  if (!name) return embeddedRename(params.textDocument.uri, src, doc.offsetAt(params.position), params.newName);
+  if (!isRenameable(name)) return null;
   const newName = params.newName;
   if (!/^[A-Za-z_]\w*$/.test(newName)) return null;
   if (findTag(newName) || index.has(newName)) return null; // collide with a host tag or existing component
@@ -638,6 +870,7 @@ connection.onDocumentSymbol((params): DocumentSymbol[] => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
+  if (isGd(params.textDocument.uri)) return gdDocumentSymbols(params.textDocument.uri, src);
   const top: DocumentSymbol[] = [];
   const modules = new Map<string, DocumentSymbol>();
   for (const d of scanDeclarations(src)) {
@@ -676,6 +909,11 @@ function symbolKind(kind: string): SymbolKind {
 connection.languages.semanticTokens.on((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return { data: [] };
+  // .gd: analyzer-backed semantic tokens (the markup path below handles .guitkx).
+  if (isGd(params.textDocument.uri)) {
+    analyzer.sync(params.textDocument.uri, doc.getText());
+    return { data: analyzer.semanticTokensAt(params.textDocument.uri, doc.getText()) };
+  }
   return { data: buildSemanticTokens(doc.getText(), (name) => index.has(name)) };
 });
 
@@ -684,7 +922,79 @@ connection.languages.semanticTokens.on((params) => {
 connection.onSignatureHelp((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return null;
-  return signatureHelpAt(doc.getText(), doc.offsetAt(params.position));
+  const src = doc.getText();
+  const offset = doc.offsetAt(params.position);
+  if (isGd(params.textDocument.uri)) {
+    analyzer.sync(params.textDocument.uri, src);
+    return analyzer.signatureHelpAt(params.textDocument.uri, src, offset);
+  }
+  // Markup signature help (on_<signal>={ func(…) }) first; otherwise an embedded-GDScript call site.
+  return signatureHelpAt(src, offset) ?? embeddedSignatureHelp(params.textDocument.uri, src, offset);
+});
+
+// --- inlay hints (embedded-GDScript inferred types, mapped back into the .guitkx source) ---
+
+connection.languages.inlayHint.on((params) => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return [];
+  const src = doc.getText();
+  if (isGd(params.textDocument.uri))
+    return gdInlayHints(params.textDocument.uri, src, { start: doc.offsetAt(params.range.start), end: doc.offsetAt(params.range.end) });
+  if (!embeddedEnabled) return [];
+  const { text, map } = buildVirtualDoc(src);
+  const vUri = params.textDocument.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  const start = doc.offsetAt(params.range.start);
+  const end = doc.offsetAt(params.range.end);
+  const out: InlayHint[] = [];
+  for (const h of analyzer.inlayHintsAt(vUri, text)) {
+    const s = map.toSource(h.offset); // a hint in generated glue (toSource === null) is dropped
+    if (s === null || s < start || s > end) continue;
+    out.push({ position: offsetToPosition(src, s), label: h.label, kind: h.kind });
+  }
+  return out;
+});
+
+// --- code actions (embedded-GDScript quick-fixes; per-action correct-or-refuse) ---
+
+connection.onCodeAction((params): CodeAction[] => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return [];
+  const src = doc.getText();
+  if (isGd(params.textDocument.uri)) return gdCodeActions(params.textDocument.uri, src, doc.offsetAt(params.range.start));
+  if (!embeddedEnabled) return [];
+  const { text, map } = buildVirtualDoc(src);
+  const genOffset = map.toGenerated(doc.offsetAt(params.range.start));
+  if (genOffset === null) return [];
+  const vUri = params.textDocument.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
+  analyzer.sync(vUri, text);
+  const out: CodeAction[] = [];
+  for (const a of analyzer.codeActionsAt(vUri, text, genOffset)) {
+    // Keep an action only if EVERY edit maps back into this file's embedded code (correct-or-refuse);
+    // an edit in a library `.gd` or generated glue drops just that action, not the whole list.
+    const edits: TextEdit[] = [];
+    let ok = a.edits.length > 0;
+    for (const fe of a.edits) {
+      if (fe.uri !== vUri) {
+        ok = false;
+        break;
+      }
+      for (const e of fe.edits) {
+        const s = map.toSource(e.range.start);
+        const en = map.toSource(e.range.end);
+        if (s === null || en === null) {
+          ok = false;
+          break;
+        }
+        edits.push({ range: { start: offsetToPosition(src, s), end: offsetToPosition(src, en) }, newText: e.newText });
+      }
+      if (!ok) break;
+    }
+    if (ok && edits.length) {
+      out.push({ title: a.title, kind: a.kind ?? undefined, edit: { changes: { [params.textDocument.uri]: edits } } });
+    }
+  }
+  return out;
 });
 
 function signatureHelpAt(src: string, offset: number): any {

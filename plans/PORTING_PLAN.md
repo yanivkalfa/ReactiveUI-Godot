@@ -1,5 +1,12 @@
 # ReactiveUI for Godot — Master Porting Plan
 
+> ℹ️ **This is the aspirational "map" — checkboxes here are NOT a status report** (the doc is intentionally not
+> updated as code lands). For LIVE status see **`PARITY_PLAN.md`** (refreshed 2026-06-30). Quick reconciliation:
+> the markup is **`.guitkx`** (this doc's older `.gitkx`/`.uitkx` spellings = the same language); codegen ships
+> as **sibling-`.gd` via a `@tool EditorPlugin`**, *not* the Phase 2.3 EditorImportPlugin; the core runtime is
+> **~Unity parity** (PHASE_7 COMPLETE, not the Part-1 `[ ]` state shown here); and the IDE LSP uses
+> **`@gdscript-analyzer/core`**, not a standalone-vs-skip decision.
+
 > Porting **ReactiveUIToolKit** (C# / Unity UI Toolkit) to **Godot 4.x (GDScript)**.
 > This is the authoritative plan; we execute against it phase by phase. No code is
 > written from this document directly — it is the map.

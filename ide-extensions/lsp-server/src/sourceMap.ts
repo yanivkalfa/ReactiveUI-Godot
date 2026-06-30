@@ -1,5 +1,5 @@
 // Bidirectional, offset-based source map between a .guitkx document and the synthetic .gd
-// "virtual document" we hand to Godot's LSP. Each span is length-preserving: the embedded GDScript
+// "virtual document" we hand to @gdscript-analyzer/core. Each span is length-preserving: the embedded GDScript
 // text (a {expr}, a setup region, an @if condition) is spliced into the virtual doc VERBATIM, so an
 // offset inside a mapped span translates by a constant delta. This is the reusable, engine-free core
 // (the analog of the Unity SourceMap.cs the research said reuses verbatim). Volar's *technique*,

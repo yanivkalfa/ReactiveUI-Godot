@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.0] - 2026-06-30
+- The extension now drives plain `.gd` files through gdscript-analyzer, not just `.guitkx` markup: diagnostics, completion, hover, go-to-definition, project-wide find-references and rename, signature help, inlay hints, code actions, document symbols, formatting, and semantic highlighting, all headless with no running Godot editor. It is ON by default; the new `guitkx.enableGdscriptAnalysis` setting turns it off. Because it runs alongside the godot-tools extension, disable godot-tools' language server to avoid duplicate diagnostics on `.gd` files.
+- Embedded GDScript inside `.guitkx` now also gets find-references, project-wide rename (correct-or-refuse), signature help, inlay hints, and code actions, on top of the existing completion, hover, diagnostics, and go-to-definition.
+- Upgraded the bundled GDScript analyzer to 0.5.2, which exposes GDScript formatting and semantic highlighting, now wired for `.gd` via Format Document and semantic tokens.
+
 ## [0.2.6] - 2026-06-28
 - Go-to-definition now resolves across files fully offline (no running Godot editor): a library symbol such as a hook's `use_ref` now jumps to its real implementation in `core/hooks.gd`, landing on the declaration in that file. Previously only same-file symbols resolved headlessly; cross-file navigation required a running Godot editor.
 - Upgraded the bundled GDScript analyzer to 0.4.0: navigation and diagnostics now cross the extension boundary as native objects, and each navigation target reports its file directly, making cross-file go-to-definition faster and more robust.

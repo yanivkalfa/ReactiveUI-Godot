@@ -41,7 +41,35 @@ func _run() -> void:
 	await _test_classes_lean_path()
 	await _test_reference_equality()
 	await _test_signal_rebind()
+	await _test_custom_draw()
 	print("\n[core_test] %d passed, %d failed" % [_passes, _fails])
+
+func _test_custom_draw() -> void:
+	var drawn := { "node": null }
+	var draw_fn := func(canvas): drawn["node"] = canvas
+	var panel := Control.new()
+	# initial apply: stores the latest draw_fn + registers ONE trampoline on the `draw` signal
+	RUIHost.apply_props(panel, {}, { "draw_fn": draw_fn })
+	_ok(panel.has_meta("__rui_draw_tramp"), "draw_fn registers a draw trampoline")
+	_ok(panel.get_meta("__rui_draw") == draw_fn, "latest draw_fn stored in meta")
+	var tramp: Callable = panel.get_meta("__rui_draw_tramp")
+	_ok(panel.is_connected("draw", tramp), "trampoline connected to the `draw` signal")
+	# invoking the trampoline (what the `draw` signal does at paint time) calls draw_fn(node)
+	tramp.call()
+	_ok(drawn["node"] == panel, "trampoline invokes draw_fn(node)")
+	# a fresh closure each render swaps the meta but reuses the SAME trampoline (no re-subscribe)
+	var draw_fn2 := func(canvas): pass
+	RUIHost.apply_props(panel, { "draw_fn": draw_fn }, { "draw_fn": draw_fn2 })
+	_ok(panel.get_meta("__rui_draw") == draw_fn2, "draw_fn swapped to the new closure")
+	_ok(panel.get_meta("__rui_draw_tramp") == tramp, "same trampoline reused (no re-subscribe)")
+	# bumping redraw_key with a stable callback is handled (same trampoline, no crash)
+	RUIHost.apply_props(panel, { "draw_fn": draw_fn2, "redraw_key": 0 }, { "draw_fn": draw_fn2, "redraw_key": 1 })
+	_ok(panel.get_meta("__rui_draw_tramp") == tramp, "redraw_key bump keeps the same trampoline")
+	# removing draw_fn disconnects the trampoline + clears the meta
+	RUIHost.apply_props(panel, { "draw_fn": draw_fn2 }, {})
+	_ok(not panel.has_meta("__rui_draw_tramp"), "removing draw_fn disconnects the trampoline")
+	_ok(not panel.is_connected("draw", tramp), "trampoline disconnected from `draw`")
+	panel.free()
 
 func _test_classes_lean_path() -> void:
 	# [audit #1] A `classes`-only element (no inline style / events / ref) must take the GENERIC

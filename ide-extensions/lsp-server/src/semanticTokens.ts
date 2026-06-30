@@ -7,10 +7,29 @@ import { skipNoncode, skipString, findMatching, isIdent } from "./scanner";
 import { findTag } from "./schema";
 import { markupWindows } from "./formatGuitkx";
 
-export const TOKEN_TYPES = ["class", "type", "keyword", "property", "event"];
-export const TOKEN_MODIFIERS = ["defaultLibrary"];
-const T = { class: 0, type: 1, keyword: 2, property: 3, event: 4 };
-const MOD_DEFAULT_LIBRARY = 1; // bit 0
+// A UNIFIED semantic-tokens legend covering BOTH the markup tokens (this file) and the embedded /
+// plain-`.gd` GDScript tokens (analyzer-backed, in server.ts). The first 15 mirror
+// @gdscript-analyzer/core's `SemanticTokenType` (camelCase); `keyword` + `event` are markup-only. The
+// 4 modifiers mirror the analyzer's bit order, so its modifier bitset maps onto this legend directly.
+export const TOKEN_TYPES = [
+  "function", "method", "variable", "parameter", "property", "class", "enum", "enumMember",
+  "type", "decorator", "number", "string", "comment", "signal", "constant",
+  "keyword", "event",
+];
+export const TOKEN_MODIFIERS = ["declaration", "readonly", "static", "defaultLibrary"];
+
+/** The analyzer's camelCase `SemanticTokenType` -> this legend's index (used by the `.gd` path). */
+export const GD_TOKEN_TYPE: Record<string, number> = Object.fromEntries(TOKEN_TYPES.map((t, i) => [t, i]));
+
+// The markup tokenizer emits a small subset; index it onto the unified legend.
+const T = {
+  class: TOKEN_TYPES.indexOf("class"),
+  type: TOKEN_TYPES.indexOf("type"),
+  keyword: TOKEN_TYPES.indexOf("keyword"),
+  property: TOKEN_TYPES.indexOf("property"),
+  event: TOKEN_TYPES.indexOf("event"),
+};
+const MOD_DEFAULT_LIBRARY = 1 << TOKEN_MODIFIERS.indexOf("defaultLibrary"); // bit 3
 
 const DIRECTIVES = new Set(["if", "elif", "else", "for", "while", "match", "case", "default"]);
 

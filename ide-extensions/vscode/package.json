@@ -2,7 +2,7 @@
   "name": "guitkx",
   "displayName": "GUITKX",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence analyzed headlessly via gdscript-analyzer (no running Godot editor required).",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",
@@ -13,7 +13,8 @@
   "categories": ["Programming Languages"],
   "keywords": ["godot", "gdscript", "reactiveui", "guitkx", "jsx"],
   "activationEvents": [
-    "onLanguage:guitkx"
+    "onLanguage:guitkx",
+    "onLanguage:gdscript"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -54,6 +55,11 @@
           "type": "boolean",
           "default": true,
           "description": "When gdformat (gdscript-toolkit) is installed, also reflow embedded GDScript when formatting a .guitkx. Safe: any change beyond whitespace/quote style is rejected, so it never alters code semantics. Markup formatting works regardless; disable to keep base-indent normalization only."
+        },
+        "guitkx.enableGdscriptAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyze plain .gd files with gdscript-analyzer — diagnostics, completion, hover, navigation, project-wide rename, formatting, semantic highlighting, inlay hints, code actions, and document symbols, all headless (no running Godot editor). On by default. Runs ALONGSIDE the godot-tools extension; to avoid duplicate diagnostics, disable godot-tools' language server — or turn this off to keep godot-tools as your .gd LSP."
         }
       }
     },
