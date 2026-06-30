@@ -127,9 +127,13 @@ jobs:
         run: |
           VERSION=$(node -p "require('./ide-extensions/vscode/package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if git tag --list "vscode-v$VERSION" | grep -q .; then
+          # Per-target gate: each platform's .vsix is published independently, so the idempotency
+          # check must be per-target too. A single shared "vscode-v$VERSION" tag would let ONE leg's
+          # success (e.g. linux-x64, the runner's own platform) block re-publishing the other five
+          # on a re-run — exactly the partial-publish trap that stranded 5 platforms once.
+          if git tag --list "vscode-v$VERSION-${{ matrix.target }}" | grep -q .; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::VS Code extension v$VERSION already published — skipping"
+            echo "::notice::VS Code extension v$VERSION (${{ matrix.target }}) already published — skipping"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -198,13 +202,17 @@ jobs:
         run: npx --yes ovsx publish "guitkx-${{ matrix.target }}.vsix" -p "$OVSX_TOKEN"
         continue-on-error: true
 
-      - name: Tag published version (once, from the primary leg)
-        if: steps.check.outputs.skip == 'false' && matrix.target == 'linux-x64' && steps.publish-vsce.outcome == 'success'
+      - name: Tag published target
+        # Each leg tags ONLY its own target (vscode-v<version>-<target>) on its own publish success,
+        # so the per-target gate above can re-publish exactly the platforms that failed without
+        # re-publishing (and erroring on) the ones already on the marketplace.
+        if: steps.check.outputs.skip == 'false' && steps.publish-vsce.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "vscode-v${{ steps.check.outputs.version }}"
-          git push origin "vscode-v${{ steps.check.outputs.version }}"
+          TAG="vscode-v${{ steps.check.outputs.version }}-${{ matrix.target }}"
+          git tag "$TAG"
+          git push origin "$TAG"
 
       - name: Upload VSIX artifact
         if: steps.check.outputs.skip == 'false'
