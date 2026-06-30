@@ -152,8 +152,18 @@ jobs:
           # npm only installs the runner's own optional dep; fetch the target's binary explicitly,
           # pinned to the resolved @gdscript-analyzer/core version so loader + addon always match.
           ANALYZER_VER=$(node -p "require('@gdscript-analyzer/core/package.json').version")
-          echo "Installing @gdscript-analyzer/${{ matrix.napi }}@${ANALYZER_VER}"
-          npm i --no-save "@gdscript-analyzer/${{ matrix.napi }}@${ANALYZER_VER}"
+          PKG="@gdscript-analyzer/${{ matrix.napi }}"
+          # `npm i` rejects a cross-target native package with EBADPLATFORM on this linux runner, and
+          # npm's --os/--cpu overrides do NOT bypass it for a direct install. `npm pack` just downloads
+          # the tarball (no platform check), so we unpack it into node_modules ourselves — the same
+          # layout `npm i` would produce, so the loader + bundle-server.js find the binary.
+          echo "Fetching ${PKG}@${ANALYZER_VER} via npm pack"
+          TGZ=$(npm pack "${PKG}@${ANALYZER_VER}" 2>/dev/null | tail -1)
+          DEST="node_modules/${PKG}"
+          mkdir -p "$DEST"
+          tar -xzf "$TGZ" -C "$DEST" --strip-components=1
+          rm -f "$TGZ"
+          ls "$DEST"/*.node || { echo "::error::no .node binary fetched into $DEST"; exit 1; }
 
       - name: Generate CHANGELOG.md from centralized changelog
         if: steps.check.outputs.skip == 'false'
