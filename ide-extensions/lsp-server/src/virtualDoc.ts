@@ -36,13 +36,10 @@ export function buildVirtualDoc(src: string): VirtualDoc {
     if (!body) return { text: ctx.gen, map: ctx.map };
     ctx.gen += "static func __hook(props, children):\n";
     declareHookStubs(ctx, 1);
-    const gs = ctx.gen.length;
-    const block = reindent(body.text, 1);
-    ctx.gen += block;
-    // reindent() can change per-line lengths; only map when it didn't, else offsets drift. Mirrors
-    // the component path's emitVerbatimBlock guard so hover/completion inside a hook stay accurate.
-    if (block.length === body.text.length) ctx.map.addSpan(body.start, gs, body.text.length);
-    ctx.gen += "\n\tpass\n";
+    // Map the hook body per line (see emitVerbatimBlock) so hover/completion/definition resolve
+    // inside it regardless of re-indentation or CRLF line endings.
+    emitVerbatimBlock(ctx, body.start, body.start + body.text.length, 1);
+    ctx.gen += "\tpass\n";
     return { text: ctx.gen, map: ctx.map };
   }
 
@@ -280,35 +277,45 @@ function mapInline(ctx: Ctx, srcStart: number, text: string): string {
   return text;
 }
 
-// Emit a verbatim source block [start,end) at `indent`, mapping it (best-effort, line-preserving).
+// Emit a verbatim source block [start,end) at `indent`, mapping it PER LINE. Re-indentation changes a
+// line's length (dedent to the common leading whitespace, then re-indent to `indent`) and blank lines
+// collapse, so a single whole-block span would drift and — with a trailing blank line or CRLF — be
+// dropped entirely (the old all-or-nothing length guard). Instead we map each non-blank line's CODE
+// (everything after the common prefix) on its own span. Line-ending agnostic: a trailing CR is stripped
+// from both the generated text and the mapped length, so CRLF .guitkx files round-trip exactly.
 function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number): void {
   const text = ctx.src.slice(start, end);
-  const block = reindent(text, indent);
-  // map the whole block verbatim where lengths line up (setup is rarely re-indented in practice)
-  const gs = ctx.gen.length;
-  ctx.gen += block;
-  if (block.length === text.length) ctx.map.addSpan(start, gs, text.length);
-  if (!block.endsWith("\n")) ctx.gen += "\n";
+  const pad = "\t".repeat(indent);
+  const rawLines = text.split("\n");
+  // common leading whitespace across non-blank lines (CR-stripped) — the dedent amount
+  let prefix: string | null = null;
+  for (const raw of rawLines) {
+    const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (l.trim() === "") continue;
+    const lead = l.match(/^[\t ]*/)![0];
+    prefix = prefix === null ? lead : commonPrefix(prefix, lead);
+  }
+  const dedent = (prefix ?? "").length;
+  let srcOff = start; // absolute source offset of the current line's first char
+  for (let k = 0; k < rawLines.length; k++) {
+    const raw = rawLines[k];
+    const code = raw.endsWith("\r") ? raw.slice(0, -1) : raw; // strip CR for gen + mapping
+    if (code.trim() !== "") {
+      // leading whitespace (through `dedent`) is glue; map only the code that follows it
+      ctx.gen += pad;
+      const genCodeStart = ctx.gen.length;
+      ctx.gen += code.slice(dedent);
+      ctx.map.addSpan(srcOff + dedent, genCodeStart, code.length - dedent);
+    }
+    if (k < rawLines.length - 1) ctx.gen += "\n";
+    srcOff += raw.length + 1; // + the "\n" consumed by split
+  }
+  if (!ctx.gen.endsWith("\n")) ctx.gen += "\n";
 }
 
 function declareHookStubs(ctx: Ctx, indent: number): void {
   const pad = "\t".repeat(indent);
   for (const h of HOOK_STUBS) ctx.gen += `${pad}var ${h} = Hooks.${h}\n`;
-}
-
-function reindent(text: string, indent: number): string {
-  // dedent to common leading whitespace, re-indent to `indent` tabs
-  const lines = text.split("\n");
-  let prefix: string | null = null;
-  for (const l of lines) {
-    if (l.trim() === "") continue;
-    const lead = l.match(/^[\t ]*/)![0];
-    prefix = prefix === null ? lead : commonPrefix(prefix, lead);
-  }
-  const pad = "\t".repeat(indent);
-  return lines
-    .map((l) => (l.trim() === "" ? "" : pad + l.slice((prefix ?? "").length)))
-    .join("\n");
 }
 
 function commonPrefix(a: string, b: string): string {

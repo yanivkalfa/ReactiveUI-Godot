@@ -1,41 +1,27 @@
-// OPTIONAL Tier-1 reflow of embedded GDScript via gdformat (gdscript-toolkit), layered ON TOP of the
-// in-process formatter's base-indent normalization (Tier-2). Pure polish: when gdformat is absent (the
-// default for most users) this is a no-op and the base-indent output stands. STRICT SAFETY NET: every
-// reflowed region must be token-equivalent to the original (whitespace ignored, string-quote style
-// normalized) — any anomaly, spawn failure, or non-equivalence leaves the region untouched, so it can
-// never corrupt code. Scope: top-level component setup / hook body (modules keep base-indent in v1).
+// Reflow the embedded-GDScript regions of an already-formatted .guitkx document through the analyzer's
+// formatter — the SAME gdscript-fmt that drives plain `.gd` files — so a snippet formats IDENTICALLY
+// whether it lives in a `.gd` or inside `.guitkx` (BUG-1). Layered on top of the in-process markup
+// formatter's base-indent normalization. The bundled analyzer is always available, so this no longer
+// depends on an external `gdformat` binary. STRICT SAFETY NET: every reflowed region must be
+// token-equivalent to the original (whitespace ignored, string-quote style normalized) — any anomaly or
+// non-equivalence leaves the region untouched, so it can never corrupt code. Scope: top-level component
+// setup / hook body (modules keep base-indent in v1).
 
-import { spawnSync } from "child_process";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import { skipString } from "./scanner";
 import { embeddedRegions } from "./formatGuitkx";
 
-let probe: string | null | undefined;
+/** A standalone-GDScript formatter (the analyzer's `gdscript-fmt`); returns the tidied text, or null. */
+export type GdFormatter = (gd: string) => string | null;
 
-/** The gdformat binary if available (cached), else null. */
-export function gdformatBin(): string | null {
-  if (probe !== undefined) return probe;
-  try {
-    const r = spawnSync("gdformat", ["--version"], { timeout: 4000, encoding: "utf8" });
-    probe = r.status === 0 || (r.stdout && /\d/.test(r.stdout)) ? "gdformat" : null;
-  } catch {
-    probe = null;
-  }
-  return probe;
-}
-
-/** Reflow embedded-GDScript regions of an already-formatted document. No-op when gdformat is absent. */
-export function reflowEmbedded(formatted: string): string {
-  const bin = gdformatBin();
-  if (!bin) return formatted;
+/** Reflow embedded-GDScript regions of an already-formatted document via `format`. A region that fails
+ *  to format, or whose reflow is not token-equivalent to the original, is left exactly as-is. */
+export function reflowEmbedded(formatted: string, format: GdFormatter): string {
   const regions = embeddedRegions(formatted).sort((a, b) => b.start - a.start); // descending: offsets stay valid
   let out = formatted;
   for (const r of regions) {
     const original = out.slice(r.start, r.end);
-    const reflowed = reflowRegion(bin, original);
-    if (reflowed !== null && tokenEquivalent(stripWrap(original), stripWrap(reflowed))) {
+    const reflowed = reflowRegion(format, original);
+    if (reflowed !== null && tokenEquivalent(original, reflowed)) {
       out = out.slice(0, r.start) + reflowed + out.slice(r.end);
     }
   }
@@ -43,7 +29,7 @@ export function reflowEmbedded(formatted: string): string {
 }
 
 // Reflow one region, preserving its boundary whitespace; null on any failure.
-function reflowRegion(bin: string, region: string): string | null {
+function reflowRegion(format: GdFormatter, region: string): string | null {
   const lead = region.slice(0, region.length - region.replace(/^[ \t\r\n]+/, "").length);
   const trail = region.slice(region.replace(/[ \t\r\n]+$/, "").length);
   const core = region.slice(lead.length, region.length - trail.length);
@@ -54,31 +40,17 @@ function reflowRegion(bin: string, region: string): string | null {
   const coreLines = core.split("\n");
   const hostIndent = commonIndent(coreLines);
   const dedented = coreLines.map((l) => (l.startsWith(hostIndent) ? l.slice(hostIndent.length) : l.replace(/^[ \t]+/, "")));
+  // Wrap in a throwaway func so the analyzer formats it as a real statement body, format, then lift the
+  // body back out and re-anchor to the region's host indentation.
   const wrapped = "func __rui_reflow():\n" + dedented.map((l) => (l === "" ? "" : "\t" + l)).join("\n") + "\n";
-  let dir: string | null = null;
-  try {
-    dir = mkdtempSync(join(tmpdir(), "guitkx-gdf-"));
-    const file = join(dir, "r.gd");
-    writeFileSync(file, wrapped, "utf8");
-    const res = spawnSync(bin, [file], { timeout: 8000 });
-    if (res.status !== 0) return null;
-    const fl = readFileSync(file, "utf8").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
-    if (!fl.length || !/^func __rui_reflow\(\):/.test(fl[0])) return null;
-    const body = fl.slice(1);
-    const bodyIndent = commonIndent(body.filter((l) => l.trim() !== ""));
-    const reflowedCore = body.map((l) => (l.trim() === "" ? "" : hostIndent + l.slice(bodyIndent.length))).join("\n");
-    return lead + reflowedCore + trail;
-  } catch {
-    return null;
-  } finally {
-    if (dir) {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+  const formatted = format(wrapped);
+  if (formatted === null) return null;
+  const fl = formatted.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
+  if (!fl.length || !/^func __rui_reflow\(\):/.test(fl[0])) return null;
+  const body = fl.slice(1);
+  const bodyIndent = commonIndent(body.filter((l) => l.trim() !== ""));
+  const reflowedCore = body.map((l) => (l.trim() === "" ? "" : hostIndent + l.slice(bodyIndent.length))).join("\n");
+  return lead + reflowedCore + trail;
 }
 
 function hasMultilineString(s: string): boolean {
@@ -114,13 +86,9 @@ function common(a: string, b: string): string {
   return a.slice(0, i);
 }
 
-function stripWrap(s: string): string {
-  return s; // tokenEquivalent ignores whitespace anyway; kept for symmetry/clarity
-}
-
 // Token-equivalence: identical after removing inter-token whitespace + comments and normalizing string
 // quote style. Rejects structural changes (idents/operators/commas/trailing-commas) — conservative but
-// guarantees gdformat only reflows whitespace/quote style, never semantics.
+// guarantees the reflow only changes whitespace/quote style, never semantics.
 export function tokenEquivalent(a: string, b: string): boolean {
   return normalizeGd(a) === normalizeGd(b);
 }

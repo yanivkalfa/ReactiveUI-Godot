@@ -47,8 +47,8 @@ export function scanTagRefs(text: string, name: string): Ref[] {
 const VALUE_KEYWORDS = new Set(["else", "return", "and"]);
 
 // The token before `<` (skipping inline whitespace) must not be an operand — else `<` is a comparison.
-// An identifier is only a boundary when it is a value-introducing keyword.
-function isTagBoundary(text: string, ltIndex: number): boolean {
+// An identifier is only a boundary when it is a value-introducing keyword. Shared with componentTagAt.
+export function isTagBoundary(text: string, ltIndex: number): boolean {
   let b = ltIndex - 1;
   while (b >= 0 && (text[b] === " " || text[b] === "\t" || text[b] === "\n" || text[b] === "\r")) b--;
   if (b < 0) return true;
