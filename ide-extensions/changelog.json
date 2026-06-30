@@ -1,6 +1,25 @@
 {
   "entries": [
     {
+      "date": "2026-07-01",
+      "versions": {
+        "vscode": "0.3.1",
+        "vs2022": "0.3.1"
+      },
+      "shared": [
+        "Hover, completion, and go-to-definition now work for embedded GDScript in a component's setup block (the lines before `return (...)`). They were returning nothing — including hooks like `use_state` — because the setup region's source map was dropped on CRLF files or when the block ended in a blank line; it is now mapped line by line.",
+        "Hover in markup now resolves the full identifier under the cursor against host elements, your own components, and the host element's ClassDB properties and signals. Previously it only matched a host tag at the exact end of its name, so attributes (`text`, `separation`, `on_pressed`, …) and component tags hovered to nothing.",
+        "Completion now fires at a blank markup position — an empty child slot or inside an `@for`/`@if` body — and offers your project's components as `<Tag>` suggestions. Those positions were being misread as embedded GDScript, so nothing was offered.",
+        "Go-to-definition, find-references, and rename now work when the cursor sits on a tag's opening `<` (not only inside the name), so a mouse ctrl+click on a tab-indented `<Component/>` resolves. A GDScript comparison such as `a < Name` is never mistaken for a tag.",
+        "Renaming a component that declares `@class_name` now rewrites the `@class_name` directive, the declaration, and every `<Tag>` usage together. It previously left `@class_name` stale, so the renamed usages reported a dangling `GUITKX0105` 'unknown element' error.",
+        "Embedded GDScript inside `.guitkx` is now semantically highlighted by the analyzer (type-aware), the same way a real `.gd` file is, instead of grammar-only colouring.",
+        "Embedded GDScript inside `.guitkx` is now formatted by the bundled analyzer — the same `gdscript-fmt` that formats plain `.gd` files — so a snippet formats identically in a `.gd` and in `.guitkx`. The optional external `gdformat` dependency is gone."
+      ],
+      "vscode": [
+        "Pressing Enter after a multi-line opening tag (the `<Label` line, with its attributes on the following lines) now indents the attributes one level instead of jumping back to the tag's column; the line after a self-closing `/>` outdents back."
+      ]
+    },
+    {
       "date": "2026-06-30",
       "versions": {
         "vscode": "0.3.0",
