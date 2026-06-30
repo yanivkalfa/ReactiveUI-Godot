@@ -1,3 +1,23 @@
+## [IDE 0.3.1] - 2026-07-01
+
+### The .guitkx editor experience, debugged -- hover, completion, rename, and formatting that actually work
+
+A focused bug-fix pass on the **VS Code / VS 2022 extension** after real hands-on testing. Eight defects, all in the language server -- the runtime library is untouched (still 0.2.2).
+
+**Hover and completion light up again inside components.** In a component's setup block, hovering a variable or typing for completion (even a hook like `use_state`) was returning *nothing* -- the embedded-GDScript source map was being dropped on CRLF files and whenever the setup ended in a blank line. It now maps line by line, so hover, completion, and go-to-definition work throughout setup. Markup hover also got smarter: it resolves the full word under the cursor against host elements, your own components, and the host's real Godot properties/signals, so `text`, `separation`, `on_pressed`, and `<MyComponent>` all hover instead of silently doing nothing.
+
+**Completion fills the blanks.** A blank child slot, or the inside of an `@for` / `@if` body, used to be misread as embedded GDScript -- so no tags were offered. Now those positions complete host elements **and your project's components** as `<Tag>` suggestions.
+
+**Navigation and rename stop missing the target.** Ctrl+click / find-references / rename now work when the cursor lands on a tag's opening `<` (a mouse ctrl+click on a tab-indented `<Component/>` used to do nothing), while a GDScript comparison like `a < Name` is never mistaken for a tag. And renaming a component that declares `@class_name` now rewrites the `@class_name`, the declaration, and every usage **together** -- previously it left `@class_name` stale and the renamed tags lit up with a bogus "unknown element" (GUITKX0105) error.
+
+**Embedded GDScript is now a first-class citizen.** The GDScript inside `.guitkx` is now **semantically highlighted** by the analyzer (type-aware, just like a real `.gd`) and **formatted** by the same bundled `gdscript-fmt` that formats plain `.gd` files -- so a snippet looks and formats identically whether it lives in a `.gd` or a `.guitkx`. (The optional external `gdformat` dependency is gone.)
+
+**Editing nicety (VS Code).** Pressing Enter after a multi-line opening tag now indents the attributes one level instead of snapping back to the tag's column.
+
+Reinstall **GUITKX 0.3.1** (VS Code + VS 2022) to get all of it.
+
+---
+
 ## [0.2.2] - 2026-06-30
 
 ### Custom drawing, a real README, and an IDE that now speaks plain GDScript

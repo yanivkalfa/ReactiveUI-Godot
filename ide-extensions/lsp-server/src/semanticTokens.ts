@@ -33,7 +33,7 @@ const MOD_DEFAULT_LIBRARY = 1 << TOKEN_MODIFIERS.indexOf("defaultLibrary"); // b
 
 const DIRECTIVES = new Set(["if", "elif", "else", "for", "while", "match", "case", "default"]);
 
-interface Tok {
+export interface Tok {
   line: number;
   char: number;
   len: number;
@@ -41,8 +41,11 @@ interface Tok {
   mods: number;
 }
 
-/** Build the delta-encoded token data. `isComponent(name)` is the workspace-index membership test. */
-export function buildSemanticTokens(src: string, isComponent: (name: string) => boolean): number[] {
+/** The RAW markup tokens (tag identity, @-directive keywords, attribute names, on_<signal> events), in
+ *  document order. The server merges these with the analyzer's embedded-GDScript tokens (mapped back
+ *  from the virtual doc) before encoding, so `.guitkx` highlights the embedded code the same way a real
+ *  `.gd` file does (BUG-2). `isComponent(name)` is the workspace-index membership test. */
+export function markupTokens(src: string, isComponent: (name: string) => boolean): Tok[] {
   const toks: Tok[] = [];
   const lineStart = [0];
   for (let i = 0; i < src.length; i++) if (src[i] === "\n") lineStart.push(i + 1);
@@ -65,7 +68,18 @@ export function buildSemanticTokens(src: string, isComponent: (name: string) => 
   // Only scan the markup windows (the return(...) of each component). Everything else — params, setup,
   // @directive conditions, {expr} bodies — is GDScript where `<` is a comparison, not a tag.
   for (const w of markupWindows(src)) scanWindow(src, w.start, w.end, emit, isComponent);
-  return encode(toks);
+  return toks;
+}
+
+/** Sort tokens into document order and delta-encode per the LSP spec. Tolerates an unordered, merged
+ *  set (markup + embedded), which the plain `markupTokens` scan would not produce on its own. */
+export function encodeTokens(toks: Tok[]): number[] {
+  return encode([...toks].sort((a, b) => a.line - b.line || a.char - b.char));
+}
+
+/** Build the delta-encoded markup-only token data (used by tests + as the `.guitkx` fallback). */
+export function buildSemanticTokens(src: string, isComponent: (name: string) => boolean): number[] {
+  return encodeTokens(markupTokens(src, isComponent));
 }
 
 function scanWindow(src: string, start: number, end: number, emit: (off: number, len: number, type: number, mods?: number) => void, isComponent: (name: string) => boolean): void {
