@@ -1,6 +1,6 @@
 // guitkx vocabulary for markup-side completion/hover. Embedded (not loaded from disk) so the
 // server is self-contained; mirrors ide-extensions/grammar/guitkx-schema.json. Per-control Godot
-// properties are NOT enumerated here — those come live from Godot's ClassDB via the proxy.
+// properties are NOT enumerated here — those come from a bundled ClassDB dump (see classdb.ts).
 
 export interface TagInfo {
   tag: string;

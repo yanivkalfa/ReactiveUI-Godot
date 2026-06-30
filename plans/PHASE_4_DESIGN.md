@@ -1,5 +1,10 @@
 # Phase 4 — Compiler Parity + Embedded-GDScript Fidelity (production design)
 
+> ⚠️ **Backend correction (2026-06-30).** §2's "scope-aware virtual doc" is now consumed by
+> **`@gdscript-analyzer/core`** (in-process, headless), **not** Godot's built-in GDScript LSP. Anywhere this
+> design says "forward to Godot's LSP" / "the proxy", read `@gdscript-analyzer/core` via `analyzerAdapter.ts`.
+> The design itself stands; only the consumer changed. Live status: `PARITY_PLAN.md`.
+
 > **STATUS: COMPLETE (2026-06-22).** §1 (jsx-as-value), §4 (module), §5 (fidelity + grammar +
 > byte-identity CI), §2 (scope-aware virtual doc — LIVE-verified against the editor), §3 (structured
 > diagnostics + live LSP dup-key tier) all shipped + tested. **§0 (the GDScript-parser absolute-offset

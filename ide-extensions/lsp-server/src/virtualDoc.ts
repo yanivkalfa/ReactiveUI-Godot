@@ -1,4 +1,4 @@
-// Build the synthetic GDScript "virtual document" handed to Godot's LSP, plus a source map.
+// Build the synthetic GDScript "virtual document" handed to @gdscript-analyzer/core, plus a source map.
 // SCOPE-AWARE (Phase 4 §2): models Unity's VirtualDocumentGenerator — emit the REAL control-flow
 // structure (`for x in xs:`, `if cond:`, `match subj:`) so loop/branch variables are in scope, with
 // each embedded `{expr}` (attribute or child) as a `var _eN = (expr)` check INSIDE its block,

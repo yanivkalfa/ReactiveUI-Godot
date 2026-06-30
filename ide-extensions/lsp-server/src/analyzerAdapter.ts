@@ -7,7 +7,17 @@
 // JS-string (UTF-16) offsets, so this adapter owns the conversion at the boundary — callers pass and
 // receive plain character offsets into the virtual-doc text.
 
-import { CompletionItem, CompletionItemKind, DiagnosticSeverity, MarkupContent, MarkupKind } from "vscode-languageserver/node";
+import {
+  CompletionItem,
+  CompletionItemKind,
+  DiagnosticSeverity,
+  InlayHintKind,
+  MarkupContent,
+  MarkupKind,
+  SignatureHelp,
+  SymbolKind,
+} from "vscode-languageserver/node";
+import { GD_TOKEN_TYPE } from "./semanticTokens";
 import { AnalysisHandle } from "@gdscript-analyzer/core";
 
 const enc = new TextEncoder();
@@ -87,6 +97,56 @@ export interface AdapterDef {
   name: string;
   kind: string;
 }
+
+/** One reference (find-references result), its range in CHAR offsets within its OWN file's text (`uri`). */
+export interface AdapterRef {
+  /** The URI of the file the reference is in (the virtual doc for a same-file hit, a library `.gd` for
+   *  a cross-file one), or `null` if untracked. */
+  uri: string | null;
+  /** char-offset range in `uri`'s text. */
+  range: { start: number; end: number };
+}
+
+/** The edits for one file in a rename, each range in CHAR offsets within that file's text. */
+export interface AdapterFileEdit {
+  uri: string | null;
+  edits: { range: { start: number; end: number }; newText: string }[];
+}
+
+/** A rename outcome — per-file edits, or a refusal reason. The analyzer is "correct-or-refuse": it
+ *  never returns a partial edit, always an `{ ok }` / `{ error }` envelope. */
+export type AdapterRename = { ok: AdapterFileEdit[] } | { error: string };
+
+/** A document-outline node, ranges in CHAR offsets within the file's text (the server builds the LSP
+ *  DocumentSymbol from this, converting offsets to positions). Used for plain `.gd` documents. */
+export interface AdapterSymbol {
+  name: string;
+  detail?: string;
+  kind: SymbolKind;
+  range: { start: number; end: number };
+  selectionRange: { start: number; end: number };
+  children: AdapterSymbol[];
+}
+
+// The analyzer's snake_case SymbolKind -> the LSP SymbolKind enum.
+const SYMBOL_KIND: Record<string, SymbolKind> = {
+  class: SymbolKind.Class,
+  func: SymbolKind.Function,
+  function: SymbolKind.Function,
+  method: SymbolKind.Method,
+  var: SymbolKind.Variable,
+  variable: SymbolKind.Variable,
+  const: SymbolKind.Constant,
+  constant: SymbolKind.Constant,
+  signal: SymbolKind.Event,
+  enum: SymbolKind.Enum,
+  enum_member: SymbolKind.EnumMember,
+  enum_value: SymbolKind.EnumMember,
+  member: SymbolKind.Field,
+  field: SymbolKind.Field,
+  property: SymbolKind.Property,
+  parameter: SymbolKind.Variable,
+};
 
 export class AnalyzerAdapter {
   private az = new AnalysisHandle();
@@ -180,5 +240,162 @@ export class AnalyzerAdapter {
         kind: d.kind,
       };
     });
+  }
+
+  /** Every reference to the symbol at a CHAR offset in `text`. Each reference's range is in its OWN
+   *  file's text (the virtual doc `uri` for a same-file hit, a library `.gd` for a cross-file one), so
+   *  the caller maps virtual-doc hits back to the `.guitkx` source and keeps library hits as-is. The
+   *  analyzer only sees this session's open docs, so the set is complete for file-local symbols. */
+  referencesAt(uri: string, text: string, charOffset: number): AdapterRef[] {
+    const refs: any[] = this.az.findReferences(uri, charToByte(text, charOffset)) ?? [];
+    return refs.map((r) => {
+      const targetUri: string | null = r.uri ?? null;
+      const targetText = (targetUri ? this.docs.get(targetUri) : undefined) ?? text;
+      const rr = r.range ?? { start: 0, end: 0 };
+      return { uri: targetUri, range: { start: byteToChar(targetText, rr.start), end: byteToChar(targetText, rr.end) } };
+    });
+  }
+
+  /** Rename the symbol at a CHAR offset in `text` to `newName`. Returns per-file edits (each edit's
+   *  range in CHAR offsets within that file's text) on success, or `{ error }` on the analyzer's
+   *  "correct-or-refuse" refusal. The binding always returns an envelope, never a partial edit. */
+  renameAt(uri: string, text: string, charOffset: number, newName: string): AdapterRename {
+    const res: any = this.az.rename(uri, charToByte(text, charOffset), newName);
+    if (!res || res.ok === undefined) {
+      const err = res?.error;
+      return { error: typeof err === "string" ? err : err ? JSON.stringify(err) : "rename refused" };
+    }
+    return { ok: this.mapFileEdits(res.ok.edits, text) };
+  }
+
+  /** Map analyzer per-file edits (byte ranges) to AdapterFileEdits (CHAR offsets in each file's text).
+   *  Shared by rename and code actions; each `FileEdit`'s ranges are converted against that file's text. */
+  private mapFileEdits(fileEdits: any[], text: string): AdapterFileEdit[] {
+    return (fileEdits ?? []).map((fe: any) => {
+      const targetUri: string | null = fe.uri ?? null;
+      const targetText = (targetUri ? this.docs.get(targetUri) : undefined) ?? text;
+      const edits = (fe.edits ?? []).map((e: any) => {
+        const r = e.range ?? { start: 0, end: 0 };
+        return {
+          range: { start: byteToChar(targetText, r.start), end: byteToChar(targetText, r.end) },
+          newText: String(e.new_text ?? ""),
+        };
+      });
+      return { uri: targetUri, edits };
+    });
+  }
+
+  /** Code actions (quick-fixes) at a CHAR offset in `text`. Each action's edits are per-file (ranges in
+   *  CHAR offsets within each file's text) — the caller maps virtual-doc edits back to the .guitkx
+   *  source and refuses any action carrying a non-local or generated-glue edit. */
+  codeActionsAt(uri: string, text: string, charOffset: number): { title: string; kind: string | null; edits: AdapterFileEdit[] }[] {
+    const actions: any[] = this.az.codeActions(uri, charToByte(text, charOffset)) ?? [];
+    return actions.map((a) => ({
+      title: String(a.title ?? "action"),
+      kind: (a.kind as string) ?? null,
+      edits: this.mapFileEdits(a.edit?.edits ?? [], text),
+    }));
+  }
+
+  /** Signature help at a CHAR offset in `text` (a call site in embedded GDScript), as an LSP
+   *  SignatureHelp, or null when not at a call site. */
+  signatureHelpAt(uri: string, text: string, charOffset: number): SignatureHelp | null {
+    const s: any = this.az.signatureHelp(uri, charToByte(text, charOffset));
+    if (!s?.signatures?.length) return null;
+    return {
+      signatures: s.signatures.map((sig: any) => ({
+        label: String(sig.label ?? ""),
+        documentation: sig.doc ? { kind: MarkupKind.Markdown, value: sig.doc } : undefined,
+        parameters: (sig.params ?? []).map((p: any) => ({
+          label: String(p.label ?? ""),
+          documentation: p.doc ? { kind: MarkupKind.Markdown, value: p.doc } : undefined,
+        })),
+      })),
+      activeSignature: s.active_signature ?? 0,
+      activeParameter: s.active_parameter ?? 0,
+    };
+  }
+
+  /** Inlay hints for the virtual doc, each at a CHAR offset in `text` (the caller maps it back to the
+   *  .guitkx source and drops hints landing in generated glue). `kind` is the LSP InlayHintKind. */
+  inlayHintsAt(uri: string, text: string): { offset: number; label: string; kind: InlayHintKind }[] {
+    const hints: any[] = this.az.inlayHints(uri) ?? [];
+    return hints.map((h) => ({
+      offset: byteToChar(text, h.offset ?? 0),
+      label: String(h.label ?? ""),
+      kind: h.kind === "parameter" ? InlayHintKind.Parameter : InlayHintKind.Type,
+    }));
+  }
+
+  /** The document outline for a real `.gd` document, as a tree with CHAR-offset ranges in `text`
+   *  (used for plain `.gd` — for a `.guitkx` virtual doc the markup-level outline is used instead). */
+  documentSymbolsAt(uri: string, text: string): AdapterSymbol[] {
+    const conv = (sym: any): AdapterSymbol => {
+      const r = sym.range ?? { start: 0, end: 0 };
+      const sr = sym.selection_range ?? r;
+      return {
+        name: String(sym.name ?? ""),
+        detail: sym.detail ?? undefined,
+        kind: SYMBOL_KIND[String(sym.kind)] ?? SymbolKind.Variable,
+        range: { start: byteToChar(text, r.start), end: byteToChar(text, r.end) },
+        selectionRange: { start: byteToChar(text, sr.start), end: byteToChar(text, sr.end) },
+        children: (sym.children ?? []).map(conv),
+      };
+    };
+    return ((this.az.documentSymbols(uri) as any[]) ?? []).map(conv);
+  }
+
+  /** Format the whole document `uri` (a real `.gd`); the tidied text, or null if unknown/unchanged. */
+  formatAt(uri: string): string | null {
+    return this.az.format(uri) ?? null;
+  }
+
+  /** Format the lines overlapping the CHAR range `[charStart, charEnd)` in `text`; one edit (range in
+   *  CHAR offsets + `newText`), or null when nothing changes / `uri` is unknown. */
+  formatRangeAt(uri: string, text: string, charStart: number, charEnd: number): { start: number; end: number; newText: string } | null {
+    const r: any = this.az.formatRange(uri, charToByte(text, charStart), charToByte(text, charEnd));
+    if (!r) return null;
+    const range = r.range ?? { start: 0, end: 0 };
+    return { start: byteToChar(text, range.start), end: byteToChar(text, range.end), newText: String(r.new_text ?? "") };
+  }
+
+  /** Semantic-highlighting tokens for a real `.gd` document, delta-encoded per the LSP spec (ready to
+   *  hand back as `{ data }`). Token-type names map onto the unified legend; the analyzer's modifier
+   *  bitset carries over directly (same bit order). */
+  semanticTokensAt(uri: string, text: string): number[] {
+    const raw: any[] = this.az.semanticTokens(uri) ?? [];
+    const lineStarts = [0];
+    for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
+    const pos = (charOff: number) => {
+      let lo = 0;
+      let hi = lineStarts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineStarts[mid] <= charOff) lo = mid;
+        else hi = mid - 1;
+      }
+      return { line: lo, char: charOff - lineStarts[lo] };
+    };
+    const items = raw
+      .map((t) => {
+        const rg = t.range ?? { start: 0, end: 0 };
+        const sc = byteToChar(text, rg.start);
+        const ec = byteToChar(text, rg.end);
+        const p = pos(sc);
+        return { line: p.line, char: p.char, len: ec - sc, type: GD_TOKEN_TYPE[String(t.token_type)] ?? 0, mods: Number(t.modifiers ?? 0) };
+      })
+      .filter((t) => t.len > 0)
+      .sort((a, b) => a.line - b.line || a.char - b.char);
+    const data: number[] = [];
+    let prevLine = 0;
+    let prevChar = 0;
+    for (const t of items) {
+      const dLine = t.line - prevLine;
+      const dChar = dLine === 0 ? t.char - prevChar : t.char;
+      data.push(dLine, dChar, t.len, t.type, t.mods);
+      prevLine = t.line;
+      prevChar = t.char;
+    }
+    return data;
   }
 }

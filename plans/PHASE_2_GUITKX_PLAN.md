@@ -1,5 +1,15 @@
 # Phase 2 — `guitkx` Markup Language + IDE Extensions (Godot/GDScript port of `uitkx`)
 
+> ⚠️ **STALE in part — read with `PARITY_PLAN.md` (refreshed 2026-06-30) as the live status.** Two things in
+> this plan's body are SUPERSEDED by what actually shipped:
+> 1. **The LSP is NOT C#/OmniSharp/Roslyn and does NOT proxy to Godot's GDScript LSP (TCP 6005).** The shipped
+>    server is **TypeScript embedding `@gdscript-analyzer/core`** in-process (headless, offline). Section **0b**
+>    is the operative correction; PART C.2 / D3 / the milestone-2.3 / E-ledger text below is historical.
+> 2. **Codegen is sibling-`.gd` via a `@tool EditorPlugin`** (`addons/reactive_ui/plugin.gd`) — *not* an
+>    EditorImportPlugin (confirmed in 0b). Control-flow (`@if/@for/@while/@match`), hooks, and `module` files are
+>    **implemented + tested**, despite "next iterations" wording in `guitkx.gd`'s header and the schema's
+>    "module = reserved" note (both stale in-code docs, flagged for cleanup in G3).
+
 > Goal: full markup parity with ReactiveUIToolkit's `.uitkx` toolchain, but the embedded
 > component-body language is **GDScript** instead of C#. A developer writes a `.guitkx` file
 > (JSX-like markup + GDScript), it compiles to a `.gd` component, and an IDE extension

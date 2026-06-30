@@ -1,3 +1,15 @@
+## [0.2.2] - 2026-06-30
+
+### Custom drawing, a real README, and an IDE that now speaks plain GDScript
+
+**Draw anything, anywhere.** Any host element now takes a `draw_fn` -- a `Callable(canvas_item)` that runs during the node's `draw` and issues its `draw_*` calls (lines, rects, polygons, text, whatever you like). Pair it with an optional `redraw_key` to force a repaint without changing the callback. It is the Godot analogue of ReactiveUIToolKit's `OnGenerateVisualContent` / `RedrawKey`, and a register-once trampoline means a fresh closure each render never re-subscribes -- so it stays cheap.
+
+**The README finally tells the truth.** It used to claim a "10 host element MVP." It is rewritten to match what is actually here: 21 hooks, ~14 router hooks, 63 `V.*` factories, the router, signals, Suspense, item-model adapters, custom drawing, and the IDE tooling.
+
+**The extension is now a full GDScript LSP (GUITKX 0.3.0).** Until now the VS Code / VS 2022 extensions only understood `.guitkx`. They now drive **plain `.gd`** files too, through gdscript-analyzer and fully headless (no running Godot editor): diagnostics, completion, hover, go-to-definition, project-wide find-references and rename, formatting, semantic highlighting, inlay hints, code actions, and document symbols. It is **on by default** -- install the extension and your `.gd` files light up. (It runs alongside godot-tools, so disable godot-tools' language server if you want ours to be the one.) Embedded GDScript inside `.guitkx` gained the same find-references / rename / signature-help / inlay / code-actions, and the bundled analyzer moved to **0.5.2** (which added the GDScript formatter + semantic tokens we just wired up).
+
+---
+
 ## [0.2.1] - 2026-06-22
 
 ### The demo gallery, now in .guitkx — and a VS Code extension that actually turns on

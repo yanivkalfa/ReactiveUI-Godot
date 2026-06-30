@@ -1,5 +1,10 @@
 # Phase 7 — Core library breadth (parity push)
 
+> ✅ **Done — what's next (2026-06-30):** the runtime is at ~Unity parity. The remaining library work (G2) lives
+> in `PARITY_PLAN.md`'s Forward Roadmap: port the **custom-draw escape hatch**
+> (`onGenerateVisualContent`/`_draw` + `redraw_key`) from the Unity 0.6.3 sibling, refresh the **stale README**,
+> and decide the niche adapters (SubViewport / GraphEdit / GraphNode).
+
 > **STATUS (2026-06-22): COMPLETE.** All 12 sub-phases (7.0–7.11) done + tested. Full regression
 > green: core 86 · style 25 · guitkx ALL · router_match 18 · router_spine 30 · demos 28 · update ·
 > LSP 30. Router rewritten as a faithful component-tree spine (V.route/routes-children/outlet/

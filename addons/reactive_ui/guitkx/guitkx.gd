@@ -2,10 +2,10 @@
 extends RefCounted
 ## The .guitkx -> .gd compiler entry point (Phase 2, Milestone 2.1). Pure GDScript; run from a
 ## @tool EditorPlugin file-watcher that writes the sibling .gd (see PHASE_2_GUITKX_PLAN.md 0b â€”
-## NOT an import plugin). This is the walking skeleton: a `component` with setup + static markup
-## (elements, attributes, {expr}, nested children, child components, fragments). Control-flow
-## emit (@if/@for/@while/@match), hooks/module files, and the full diagnostics catalog are the
-## next iterations; the markup parser already recognizes the control-flow directives.
+## NOT an import plugin). Compiles a `component`, `hook`, or `module` declaration: setup + static
+## markup (elements, attributes, {expr}, nested children, child components, fragments), control-flow
+## emit (@if/@elif/@else/@for/@while/@match, lowered inline inside {expr}/lambdas), hook
+## auto-prefixing (bare use_* -> Hooks.use_*), and the GUITKX#### diagnostics catalog.
 ##
 ## API:  RUIGuitkx.compile(source: String, basename: String) -> { ok, gd, diagnostics }
 

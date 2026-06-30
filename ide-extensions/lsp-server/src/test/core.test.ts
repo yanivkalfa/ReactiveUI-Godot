@@ -10,7 +10,7 @@ import { classProperties, classSignals } from "../classdb";
 import { formatGuitkx } from "../formatGuitkx";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
-import { buildSemanticTokens } from "../semanticTokens";
+import { buildSemanticTokens, TOKEN_TYPES } from "../semanticTokens";
 import { normalizeUri } from "../workspaceIndex";
 import { srcHash } from "../diagsSidecar";
 import { parseMarkup } from "../markup";
@@ -88,8 +88,8 @@ test("buildSemanticTokens only scans markup windows — a `<` in setup GDScript 
   const src = 'component X() {\n\tvar t = a<B\n\treturn (\n\t\t<Label text="hi" />\n\t)\n}\n';
   const data = buildSemanticTokens(src, () => false);
   assert.equal(data.length, 10); // exactly 2 tokens — <Label> + text — setup excluded
-  assert.equal(data[3], 1); // host 'type' (Label)
-  assert.equal(data[8], 3); // 'property' (attr name `text`)
+  assert.equal(data[3], TOKEN_TYPES.indexOf("type")); // host 'type' (Label)
+  assert.equal(data[8], TOKEN_TYPES.indexOf("property")); // 'property' (attr name `text`)
 });
 
 test("normalizeUri canonicalizes the Windows drive so disk + editor URIs key the same entry", () => {
@@ -272,4 +272,99 @@ test("virtualDoc paramNames is noncode-aware (comma/colon inside a string defaul
   assert.ok(text.includes('var label = props.get("label")'), "param `label` stub present (string default with comma)");
   assert.ok(text.includes('var path = props.get("path")'), "param `path` stub present (string default with colon)");
   assert.ok(text.includes('var n = props.get("n")'), "param `n` after a comma-in-string default still survives");
+});
+
+// --- embedded-GDScript references / rename / signature-help / inlay (analyzer-backed) ---
+
+const VDOC =
+  "extends RefCounted\n" +
+  "static func render(props: Dictionary, children: Array) -> Variant:\n" +
+  "\tvar count := 1\n" +
+  "\tvar doubled := count + count\n" +
+  "\treturn doubled\n";
+
+test("referencesAt: a local embedded var resolves all its in-file references (same virtual-doc uri)", () => {
+  const az = new AnalyzerAdapter();
+  const vUri = "file:///proj/y.__guitkx_virtual.gd";
+  az.sync(vUri, VDOC);
+  const at = VDOC.indexOf("count") + 1;
+  const refs = az.referencesAt(vUri, VDOC, at);
+  assert.ok(refs.length >= 2, `expected >=2 references to count, got ${refs.length}`);
+  assert.ok(refs.every((r) => r.uri === vUri), "every reference is in this file's virtual doc");
+  assert.ok(refs.every((r) => VDOC.slice(r.range.start, r.range.end) === "count"), "ranges land on `count`");
+});
+
+test("renameAt: renaming a local embedded var returns an ok envelope with in-file edits only", () => {
+  const az = new AnalyzerAdapter();
+  const vUri = "file:///proj/y.__guitkx_virtual.gd";
+  az.sync(vUri, VDOC);
+  const res = az.renameAt(vUri, VDOC, VDOC.indexOf("count") + 1, "amount");
+  assert.ok("ok" in res, `expected an ok envelope, got ${JSON.stringify(res)}`);
+  if ("ok" in res) {
+    assert.ok(res.ok.every((fe) => fe.uri === vUri), "edits stay in this file (correct-or-refuse)");
+    const edits = res.ok.flatMap((fe) => fe.edits);
+    assert.ok(edits.length >= 2, `expected >=2 edits, got ${edits.length}`);
+    assert.ok(edits.every((e) => e.newText === "amount"), "every edit writes the new name");
+  }
+});
+
+test("signatureHelpAt + inlayHintsAt return well-formed shapes over the virtual doc (no crash)", () => {
+  const az = new AnalyzerAdapter();
+  const vUri = "file:///proj/z.__guitkx_virtual.gd";
+  const vtext = VDOC.replace("\treturn doubled\n", "\treturn str(count)\n");
+  az.sync(vUri, vtext);
+  const hints = az.inlayHintsAt(vUri, vtext);
+  assert.ok(Array.isArray(hints), "inlayHintsAt returns an array");
+  assert.ok(
+    hints.every((h) => typeof h.offset === "number" && typeof h.label === "string" && typeof h.kind === "number"),
+    "each inlay hint is well-formed",
+  );
+  const sig = az.signatureHelpAt(vUri, vtext, vtext.indexOf("str(") + 4);
+  assert.ok(sig === null || Array.isArray(sig.signatures), "signatureHelpAt returns null or a SignatureHelp");
+});
+
+test("documentSymbolsAt: outlines a real .gd file (class/func/var) with in-bounds char ranges", () => {
+  const az = new AnalyzerAdapter();
+  const uri = "file:///proj/player.gd";
+  const src = "class_name Player\nvar hp := 10\nfunc take_damage(amount: int) -> void:\n\thp -= amount\n";
+  az.sync(uri, src);
+  const syms = az.documentSymbolsAt(uri, src);
+  assert.ok(syms.length >= 1, `expected symbols, got ${JSON.stringify(syms)}`);
+  const wellFormed = (s: any): boolean =>
+    typeof s.name === "string" &&
+    typeof s.kind === "number" &&
+    s.range.start >= 0 &&
+    s.range.end <= src.length &&
+    (s.children ?? []).every(wellFormed);
+  assert.ok(syms.every(wellFormed), "every symbol is well-formed with in-bounds ranges");
+  const names = (s: any): string[] => [s.name, ...(s.children ?? []).flatMap(names)];
+  const all = syms.flatMap(names);
+  assert.ok(all.includes("take_damage"), `outline should include the func, got ${all.join(", ")}`);
+});
+
+test("formatAt + semanticTokensAt over a real .gd (analyzer-backed, well-formed)", () => {
+  const az = new AnalyzerAdapter();
+  const uri = "file:///proj/fmt.gd";
+  const src = "func  f(a: int):\n\tvar x := a + 1\n\treturn x\n";
+  az.sync(uri, src);
+  // format: a tidied full-document string (or null if unknown/unchanged)
+  const formatted = az.formatAt(uri);
+  assert.ok(formatted === null || (typeof formatted === "string" && formatted.length > 0), "formatAt returns tidied text or null");
+  // semantic tokens: a flat delta-encoded array (length a multiple of 5), token types within the legend
+  const data = az.semanticTokensAt(uri, src);
+  assert.ok(Array.isArray(data) && data.length % 5 === 0, "semanticTokensAt is a 5-tuple-aligned array");
+  assert.ok(data.length > 0, "real code yields some tokens");
+  for (let i = 3; i < data.length; i += 5) assert.ok(data[i] >= 0 && data[i] < TOKEN_TYPES.length, "token type index is within the unified legend");
+});
+
+test("codeActionsAt returns well-formed quick-fixes over the virtual doc (no crash)", () => {
+  const az = new AnalyzerAdapter();
+  const vUri = "file:///proj/c.__guitkx_virtual.gd";
+  az.sync(vUri, VDOC);
+  const actions = az.codeActionsAt(vUri, VDOC, VDOC.indexOf("count") + 1);
+  assert.ok(Array.isArray(actions), "codeActionsAt returns an array");
+  assert.ok(
+    actions.every((a) => typeof a.title === "string" && (a.kind === null || typeof a.kind === "string") && Array.isArray(a.edits)),
+    "each action is well-formed (title + optional kind + per-file edits)",
+  );
 });

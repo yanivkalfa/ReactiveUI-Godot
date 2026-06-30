@@ -1,5 +1,12 @@
 # GUITKX IDE extension — issue tracker
 
+> ⚠️ **OBSOLETE caveat (2026-06-30).** The "#3/#4 forward to Godot's LSP, so they need the Godot editor
+> running (port 6005)" framing below is **no longer true.** Since IDE 0.2.5/0.2.6 the embedded-GDScript
+> completion / hover / diagnostics / go-to-definition are answered **in-process by `@gdscript-analyzer/core`**
+> — *no Godot editor, no TCP*. The open residuals worth re-checking against IDE 0.2.6 are: find-references +
+> rename on embedded GDScript symbols (still markup-level — that's the G1 work in `PARITY_PLAN.md`), and the
+> optional gdformat embedded-reflow dependency (#6).
+
 Tracking reported problems in the `.guitkx` editor tooling (VS Code + VS 2022, which share one Node
 LSP server under `ide-extensions/lsp-server/`). Logged 2026-06-22 against **VS Code / VS 2022 0.2.3**.
 

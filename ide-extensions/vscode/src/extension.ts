@@ -34,8 +34,14 @@ export function activate(context: ExtensionContext): void {
   };
 
   const config = workspace.getConfiguration("guitkx");
+  const documentSelector = [{ scheme: "file", language: "guitkx" }];
+  // On by default: also drive plain .gd files through gdscript-analyzer. It runs alongside godot-tools;
+  // users disable that (or this `guitkx.enableGdscriptAnalysis` setting) to settle on one .gd LSP.
+  if (config.get<boolean>("enableGdscriptAnalysis", true)) {
+    documentSelector.push({ scheme: "file", language: "gdscript" });
+  }
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "guitkx" }],
+    documentSelector,
     initializationOptions: {
       enableEmbeddedAnalysis: config.get<boolean>("enableEmbeddedAnalysis", true),
       useGdformat: config.get<boolean>("useGdformat", true),
@@ -46,8 +52,8 @@ export function activate(context: ExtensionContext): void {
   client = new LanguageClient("guitkx", "GUITKX Language Server", serverOptions, clientOptions);
   client.start();
 
-  // Lets the user recover the server without reloading the window (e.g. after starting the Godot
-  // editor so the embedded-GDScript proxy can connect). Mirrors uitkx's restart command.
+  // Lets the user recover the server without reloading the window (e.g. after a crash or a config
+  // change). Mirrors uitkx's restart command.
   context.subscriptions.push(
     commands.registerCommand("guitkx.restartLanguageServer", async () => {
       if (!client) return;
