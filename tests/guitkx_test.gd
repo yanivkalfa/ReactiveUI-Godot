@@ -24,6 +24,7 @@ func _run() -> void:
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
+	_test_loop_single_root()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
@@ -298,6 +299,24 @@ func _test_diagnostics() -> void:
 	# a clean component emits no warnings
 	var clean := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
 	_check_true(clean["ok"] and str(clean["diagnostics"]) == "[]", "clean component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+
+func _test_loop_single_root() -> void:
+	# BUG-V3: a @for/@while body with >1 sibling root is a hard error (single-root; parity Unity UITKX0108)
+	var multi := RUIGuitkx.compile("component M(n: int = 3) {\n" + \
+		"\treturn (\n\t\t<VBox>\n" + \
+		"\t\t\t@for (i in n) {\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t}\n" + \
+		"\t\t</VBox>\n\t)\n}\n", "M")
+	_check_true(not multi["ok"] and str(multi["diagnostics"]).contains("GUITKX0108"), "loop body with 2 roots fails with GUITKX0108 (got %s)" % str(multi["diagnostics"]))
+	# BUG-V3: duplicate EXPRESSION keys among siblings are caught (not only literal key="..." keys)
+	var dupe := RUIGuitkx.compile("component D() {\n" + \
+		"\treturn (\n\t\t<VBox>\n\t\t\t<Label key={ str(0) } />\n\t\t\t<Label key={ str(0) } />\n\t\t</VBox>\n\t)\n}\n", "D")
+	_check_true(str(dupe["diagnostics"]).contains("GUITKX0104"), "duplicate expr key caught with GUITKX0104 (got %s)" % str(dupe["diagnostics"]))
+	# valid: a fragment root wrapping distinctly-keyed siblings inside the loop compiles cleanly
+	var okc := RUIGuitkx.compile("component OK(n: int = 3) {\n" + \
+		"\treturn (\n\t\t<VBox>\n" + \
+		"\t\t\t@for (i in n) {\n\t\t\t\t<>\n\t\t\t\t\t<Label key={ \"a\" + str(i) } />\n\t\t\t\t\t<Label key={ \"b\" + str(i) } />\n\t\t\t\t</>\n\t\t\t}\n" + \
+		"\t\t</VBox>\n\t)\n}\n", "OK")
+	_check_true(okc["ok"], "loop with fragment-wrapped distinct-key siblings compiles (got %s)" % str(okc["diagnostics"]))
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \

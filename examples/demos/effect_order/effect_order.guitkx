@@ -16,8 +16,10 @@ component DemoEffectOrder {
 			</HBox>
 			<VBox style={ {"separation": 2} }>
 				@for (i in n[0]) {
-					<DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
-					<DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
+					<>
+						<DemoEffectOrderRow key={ "a" + str(i) } idx={ i } append={ append } />
+						<DemoEffectOrderRow key={ "b" + str(i) } idx={ i } append={ append } />
+					</>
 				}
 			</VBox>
 			<Label

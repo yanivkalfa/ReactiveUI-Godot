@@ -82,6 +82,11 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if class_name_override == "" and pc["name"] != basename:
 		diags.append("GUITKX0103 (warning): component `%s` differs from file name `%s`" % [pc["name"], basename])
 	_validate(pc["setup"], pc["root"], diags)
+	# A hard-error diagnostic from validation (e.g. GUITKX0108 in a loop body) fails the compile —
+	# warnings (containing "(warning)") do not.
+	for d in diags:
+		if not (d as String).contains("(warning)"):
+			return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
 	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags)
 	return { "ok": true, "gd": gd, "diagnostics": diags }
@@ -190,9 +195,14 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool) -> voi
 	if pr["error"] != "":
 		return
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
-	if is_loop and nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
-		if not _has_key(nodes[0]):
-			diags.append("GUITKX0106 (warning): element in @for/@while has no `key` -- add key= so reordered children reconcile correctly")
+	if is_loop:
+		if nodes.size() > 1:
+			# A loop body must have a single root (like a component) so each iteration yields one keyed
+			# child. Wrap siblings in a fragment <>...</> with distinct keys. (Parity: Unity UITKX0108.)
+			diags.append("GUITKX0108: a @for/@while body must contain exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size())
+		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
+			if not _has_key(nodes[0]):
+				diags.append("GUITKX0106 (warning): element in @for/@while has no `key` -- add key= so reordered children reconcile correctly")
 	for nx in nodes:
 		_validate_node(nx, diags)
 
@@ -205,7 +215,7 @@ static func _check_dup_keys(children: Array, diags: Array) -> void:
 		if k == "":
 			continue
 		if seen.has(k):
-			diags.append("GUITKX0104 (warning): duplicate key '%s' among sibling elements" % k)
+			diags.append("GUITKX0104 (warning): duplicate key '%s' among sibling elements" % k.substr(2))
 		seen[k] = true
 
 static func _has_key(el: Dictionary) -> bool:
@@ -214,10 +224,17 @@ static func _has_key(el: Dictionary) -> bool:
 			return true
 	return false
 
+## A comparable signature for an element's `key`, so sibling duplicates are caught for BOTH literal
+## (key="x") and expression (key={ str(i) }) keys — two siblings with the SAME key expression collide
+## every iteration, while genuinely-different expressions are left alone. Prefixed "s:"/"e:" so a
+## string key never false-collides with an expr key. "" = no key.
 static func _literal_key(el: Dictionary) -> String:
 	for a in el.get("attrs", []):
-		if a["name"] == "key" and a["kind"] == "str":
-			return a["value"]
+		if a["name"] == "key":
+			if a["kind"] == "str":
+				return "s:" + str(a["value"])
+			if a["kind"] == "expr":
+				return "e:" + str(a["value"]).strip_edges()
 	return ""
 
 ## hook file: `hook name(params) [-> (...)] { body }` -> a class with one static function. The
