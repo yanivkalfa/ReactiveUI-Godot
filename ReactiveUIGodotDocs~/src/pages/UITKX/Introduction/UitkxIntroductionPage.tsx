@@ -6,7 +6,7 @@ import Styles from '../../Introduction/IntroductionPage.style'
 const QUICK_SAMPLE = `@class_name CounterCard
 
 component CounterCard() {
-  var s = use_state(0)
+  var s = useState(0)
   return (
     <VBox>
       <Label text={ "Count: %d" % s[0] } />

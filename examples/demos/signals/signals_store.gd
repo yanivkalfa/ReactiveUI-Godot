@@ -2,6 +2,6 @@ class_name DemoSignalsStore
 extends RefCounted
 ## Shared module-level signal for the Signals demo. A process-global RUISignal can't live in
 ## .guitkx markup (the component/module grammar has no class-level `static var`), so the store
-## stays a tiny plain script; the view (signals.guitkx) reads it via Hooks.use_signal.
+## stays a tiny plain script; the view (signals.guitkx) reads it via Hooks.useSignal.
 
 static var shared := RUISignal.new(0)

@@ -1,3 +1,45 @@
+## [0.4.0] - 2026-07-01
+
+### Hooks go camelCase -- full React parity (breaking)
+
+Hooks now read exactly like React: `useState`, `useEffect`, `useRef`, `useMemo`, `useCallback`, `useReducer`, `useContext`, `createContext`, `provideContext`, and the rest -- 23 in all. This is the one deliberate **breaking** change: there are no snake_case aliases, so do a `use_state` -> `useState` sweep across your `.guitkx` / `.gd`. As a bonus the compiler now auto-prefixes bare calls for *all* 23 hooks -- before, only 11 were auto-wired to `Hooks.*`. The **router hooks came along too** -- all 17 on `RUIRouter` (`useNavigate`, `useLocation`, `useParams`, `useSearchParams`, `useBlocker`, ...) are camelCase now, so the entire hook surface is consistent.
+
+Alongside the rename, a round of **compiler validation** fixes -- mistakes that used to compile silently and blow up at runtime now get a clear diagnostic:
+- A `@for` / `@while` body must return a **single root** (wrap siblings in a fragment `<>...</>`).
+- **Duplicate keys** are caught even when the key is an expression (`key={ str(i) }`), not just `key="x"`.
+- `@class_name` is **validated** as a real identifier instead of producing a broken `.gd`.
+- A misspelled `componeent` gets a **"did you mean 'component'?"** hint.
+- `<  a>` (a stray space after `<`) is flagged as an invalid tag name.
+- **Unreachable code** after your `return (...)` is flagged -- and dimmed in the editors.
+
+And two long-missing **demos** landed in the gallery: prop spread and the context handle.
+
+Update to **Reactive UI 0.4.0** (copy `addons/reactive_ui/` into your project) and run the snake->camel hook rename.
+
+---
+
+## [Editor 0.2.0] - 2026-07-01
+
+### The in-Godot .guitkx editor gets its own changelog -- and dims dead code
+
+The native Godot editor addon (`addons/reactive_ui_editor`) now versions on its own track, like the IDE extensions. This release **fades unreachable code** after a component's `return (...)` (same as VS Code), and picks up every new compiler validation above *live* -- it renders `RUIGuitkx.compile()` straight into the Problems panel and gutter. Also squashed a batch of "auto brace completion open key already exists" errors that fired on editor load.
+
+Update to **Reactive UI Editor 0.2.0** (copy `addons/reactive_ui_editor/` into your project; it needs `reactive_ui`).
+
+---
+
+## [IDE 0.5.0] - 2026-07-01
+
+### The editor catches up: camelCase hooks, real hook hovers, and faded dead code
+
+The VS Code / VS 2022 extension now speaks the new **camelCase hooks** everywhere -- completion, hover, go-to-definition, and the embedded-GDScript analysis all use `useState` / `useEffect` / `useRef` / ... (migrate your snake_case code alongside the library). Hovering a hook finally shows its **signature** (`useState(initial) -> [value, setter]`) instead of a bare `Callable`, and host-element hover drops the internal `V.*` detail in favor of the Godot class it maps to.
+
+Two more live niceties: **unreachable code** after a `return (...)` is now **dimmed** (faded like GDScript dead code), and **duplicate-key** detection catches expression keys (`key={ str(i) }`), not just literal ones. The parser also flags a stray `<  a>` as an invalid tag name.
+
+Reinstall **GUITKX 0.5.0** (VS Code + VS 2022).
+
+---
+
 ## [0.3.0] - 2026-07-01
 
 ### React parity, for real -- onClick, prop spread, and context handles

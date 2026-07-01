@@ -15,10 +15,10 @@ extends RefCounted
 ##   is_ready     : Callable() -> bool — checked once immediately, then polled each frame if no signal
 
 static func suspense_fn(props: Dictionary, children: Array):
-	var ready_box: Array = Hooks.use_state(false)
+	var ready_box: Array = Hooks.useState(false)
 	var ready: bool = ready_box[0]
 	var set_ready: Callable = ready_box[1]
-	Hooks.use_effect(func():
+	Hooks.useEffect(func():
 		if ready:
 			return func(): pass
 		var is_ready_cb = props.get("is_ready")
@@ -35,7 +35,7 @@ static func suspense_fn(props: Dictionary, children: Array):
 		return func(): token["cancelled"] = true   # stop the driver on unmount / dep change
 	# Depend on the readiness source (and `ready`) so a parent that swaps ready_signal/is_ready tears
 	# down the stale driver and re-subscribes to the new one. (Pass a STABLE is_ready, e.g. via
-	# use_callback, to avoid re-subscribing every render.) [audit]
+	# useCallback, to avoid re-subscribing every render.) [audit]
 	, [props.get("ready_signal"), props.get("is_ready"), ready])
 	if ready:
 		return children

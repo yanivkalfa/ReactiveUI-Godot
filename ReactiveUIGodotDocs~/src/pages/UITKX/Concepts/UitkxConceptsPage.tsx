@@ -36,7 +36,7 @@ export const UitkxConceptsPage: FC = () => (
           <ListItemText primary="Function-style components are the only form: setup code first (GDScript statements + hook calls), then a single returned markup tree." />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="use_state returns a [value, setter] array; you update state by calling the setter, e.g. s[1].call(s[0] + 1)." />
+          <ListItemText primary="useState returns a [value, setter] array; you update state by calling the setter, e.g. s[1].call(s[0] + 1)." />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary="Three file types: component (.guitkx) for UI, hook (module with the hook keyword) for reusable state logic, and module (.style.guitkx, .utils.guitkx) for styles, types, and utilities." />
@@ -133,7 +133,7 @@ export const UitkxConceptsPage: FC = () => (
         </li>
         <li>
           <strong>Effects</strong> — After commit, cleanup functions from the previous render run,
-          then new <code>use_effect</code> / <code>use_layout_effect</code> callbacks fire.
+          then new <code>useEffect</code> / <code>useLayoutEffect</code> callbacks fire.
         </li>
       </Typography>
     </Box>

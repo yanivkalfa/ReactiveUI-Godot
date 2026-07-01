@@ -182,7 +182,7 @@ test("offset <-> position helpers agree", () => {
 test("virtualDoc splices setup + {expr} with a correct round-trip mapping", () => {
   const src = [
     "component Counter(start: int = 0) {",
-    "\tvar s = use_state(start)",
+    "\tvar s = useState(start)",
     "\treturn (",
     "\t\t<Label text={ str(s[0]) } />",
     "\t)",
@@ -190,7 +190,7 @@ test("virtualDoc splices setup + {expr} with a correct round-trip mapping", () =
   ].join("\n");
   const { text, map } = buildVirtualDoc(src);
   assert.ok(text.includes("static func render(props: Dictionary, children: Array)"), "has render scaffold");
-  assert.ok(text.includes("var s = use_state(start)"), "setup spliced verbatim");
+  assert.ok(text.includes("var s = useState(start)"), "setup spliced verbatim");
   assert.ok(text.includes("str(s[0])"), "expr spliced");
   const exprIdx = src.indexOf("str(s[0])") + 1; // inside the expr
   const genIdx = map.toGenerated(exprIdx);
@@ -236,36 +236,36 @@ test("virtualDoc is scope-aware (loop var visible to its {expr})", () => {
 
 test("cross-file goto: a Hooks.<hook> reference resolves INTO the library file (binding-reported uri)", () => {
   // The §7(a) headline: with the addon library loaded (res:// path + `class_name Hooks`), a
-  // `Hooks.use_ref` reference in the virtual doc resolves cross-file to the real hooks.gd — and the
+  // `Hooks.useRef` reference in the virtual doc resolves cross-file to the real hooks.gd — and the
   // adapter reports the target by URI (the binding enriches each navigation target's FileId with its
-  // uri) with its range in THAT file's text. The server chains a bare `use_ref` to this RHS; here we
+  // uri) with its range in THAT file's text. The server chains a bare `useRef` to this RHS; here we
   // drive both steps.
   const az = new AnalyzerAdapter();
   const hooksUri = "file:///proj/addons/reactive_ui/core/hooks.gd";
-  const hooks = "class_name Hooks\nstatic func use_ref(initial = null) -> Dictionary:\n\treturn {}\n";
+  const hooks = "class_name Hooks\nstatic func useRef(initial = null) -> Dictionary:\n\treturn {}\n";
   az.loadLibrary(hooksUri, hooks, "res://addons/reactive_ui/core/hooks.gd");
 
   const vUri = "file:///proj/x.__guitkx_virtual.gd";
   const vtext =
     "extends RefCounted\n" +
     "static func render(props, children):\n" +
-    "\tvar use_ref = Hooks.use_ref\n" +
-    "\tvar _e0 = (use_ref(0))\n" +
+    "\tvar useRef = Hooks.useRef\n" +
+    "\tvar _e0 = (useRef(0))\n" +
     "\tpass\n";
   az.sync(vUri, vtext);
 
-  // (1) The bare `use_ref(0)` in the embedded expr resolves to the in-scope hook STUB (same file).
-  const bareUse = vtext.indexOf("use_ref(0)") + 1;
+  // (1) The bare `useRef(0)` in the embedded expr resolves to the in-scope hook STUB (same file).
+  const bareUse = vtext.indexOf("useRef(0)") + 1;
   const localDefs = az.definitionsAt(vUri, vtext, bareUse);
-  assert.ok(localDefs.length >= 1, "bare use_ref resolves to the local stub");
+  assert.ok(localDefs.length >= 1, "bare useRef resolves to the local stub");
   assert.equal(localDefs[0].uri, vUri, "the stub lives in the virtual doc (same file)");
 
-  // (2) The stub's RHS `Hooks.use_ref` resolves CROSS-FILE to the real method in hooks.gd.
-  const rhs = vtext.indexOf("Hooks.use_ref") + "Hooks.".length;
+  // (2) The stub's RHS `Hooks.useRef` resolves CROSS-FILE to the real method in hooks.gd.
+  const rhs = vtext.indexOf("Hooks.useRef") + "Hooks.".length;
   const libDefs = az.definitionsAt(vUri, vtext, rhs);
   const d = libDefs.find((x) => x.uri === hooksUri);
-  assert.ok(d, `Hooks.use_ref should point at the library file, got ${JSON.stringify(libDefs)}`);
-  assert.equal(hooks.slice(d!.range.start, d!.range.end), "use_ref", "range lands on hooks.gd's use_ref decl");
+  assert.ok(d, `Hooks.useRef should point at the library file, got ${JSON.stringify(libDefs)}`);
+  assert.equal(hooks.slice(d!.range.start, d!.range.end), "useRef", "range lands on hooks.gd's useRef decl");
 });
 
 test("virtualDoc paramNames is noncode-aware (comma/colon inside a string default does not mis-split)", () => {
@@ -382,9 +382,9 @@ test("codeActionsAt returns well-formed quick-fixes over the virtual doc (no cra
 test("BUG-5: a setup-block offset round-trips even with CRLF + a trailing blank line", () => {
   // The old whole-block length guard dropped the setup span whenever reindent changed any length —
   // which a trailing whitespace-only line (and CRLF) always does. Per-line mapping fixes it.
-  const src = ["component C {", "\tvar n = use_state(3)", "\tvar g = use_st", "\treturn (", "\t\t<Label />", "\t)", "}"].join("\r\n");
+  const src = ["component C {", "\tvar n = useState(3)", "\tvar g = use_st", "\treturn (", "\t\t<Label />", "\t)", "}"].join("\r\n");
   const { map } = buildVirtualDoc(src);
-  for (const needle of ["use_state", "use_st"]) {
+  for (const needle of ["useState", "use_st"]) {
     const at = src.indexOf(needle) + 1; // inside the setup identifier
     const gen = map.toGenerated(at);
     assert.notEqual(gen, null, `setup offset for '${needle}' maps into the virtual doc`);

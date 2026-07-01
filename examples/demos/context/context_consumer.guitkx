@@ -1,7 +1,7 @@
 @class_name DemoContextConsumer
 
 component DemoContextConsumer() {
-	var accent = use_context("accent")
+	var accent = useContext("accent")
 	return (
 		<Panel style={ {"bg_color": accent, "corner_radius": 6, "pad": 12} }>
 			<Label text="I'm tinted by context" style={ {"font_color": Color.WHITE} } />

@@ -1,12 +1,12 @@
 @class_name DemoRef
 
 component DemoRef() {
-	var input_ref = use_ref(null)
+	var input_ref = useRef(null)
 	var focus = func():
 		if input_ref["current"] != null:
 			input_ref["current"].grab_focus()
 	return (
-		<DemoBox title="use_ref — imperative node access">
+		<DemoBox title="useRef — imperative node access">
 			<LineEdit placeholder_text="focus me with the button →" ref={ input_ref } style={ {"min_width": 280} } />
 			<Button text="Focus the field" onClick={ focus } />
 		</DemoBox>

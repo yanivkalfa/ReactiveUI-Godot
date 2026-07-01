@@ -1,15 +1,15 @@
 export const REF_BASIC_EXAMPLE = `@class_name MeasureDemo
 
 component MeasureDemo() {
-  var label_ref = use_ref(null)   # box: { "current": <Control> }
-  var width = use_state(0.0)
+  var label_ref = useRef(null)   # box: { "current": <Control> }
+  var width = useState(0.0)
 
   # After commit, label_ref["current"] is the mounted Label Control.
   var measure = func():
     if label_ref["current"] != null:
       width[1].call(label_ref["current"].size.x)
     return Callable()
-  use_layout_effect(measure, [])
+  useLayoutEffect(measure, [])
 
   return (
     <VBox>
@@ -23,10 +23,10 @@ export const REF_MUTABLE_EXAMPLE = `@class_name RenderCounter
 
 component RenderCounter() {
   # Mutating .current never triggers a re-render — the box persists across renders.
-  var render_count = use_ref(0)
+  var render_count = useRef(0)
   render_count["current"] += 1
 
-  var tick = use_state(0)
+  var tick = useState(0)
 
   return (
     <VBox>
@@ -40,13 +40,13 @@ component RenderCounter() {
 export const REF_FOCUS_EXAMPLE = `@class_name AutoFocusInput
 
 component AutoFocusInput() {
-  var input_ref = use_ref(null)
+  var input_ref = useRef(null)
 
   var focus_on_mount = func():
     if input_ref["current"] != null:
       input_ref["current"].grab_focus()
     return Callable()
-  use_effect(focus_on_mount, [])   # [] => run once on mount
+  useEffect(focus_on_mount, [])   # [] => run once on mount
 
   return (
     <LineEdit ref={ input_ref } placeholder_text="Auto-focused on mount" />
@@ -57,11 +57,11 @@ export const REF_IMPERATIVE_EXAMPLE = `# A child builds an imperative handle ove
 @class_name FancyInput
 
 component FancyInput() {
-  var input_ref = use_ref(null)
-  var val = use_state("")
+  var input_ref = useRef(null)
+  var val = useState("")
 
-  # use_imperative_handle memoizes the handle Dictionary until deps change.
-  var handle = use_imperative_handle(func(): return {
+  # useImperativeHandle memoizes the handle Dictionary until deps change.
+  var handle = useImperativeHandle(func(): return {
     "focus": func():
       if input_ref["current"] != null: input_ref["current"].grab_focus(),
     "clear": func(): val[1].call(""),
@@ -78,7 +78,7 @@ component FancyInput() {
 @class_name FormHost
 
 component FormHost() {
-  var child = use_ref(null)   # will hold FancyInput's handle
+  var child = useRef(null)   # will hold FancyInput's handle
   return (
     <VBox>
       <FancyInput handle_ref={ child } />
@@ -92,7 +92,7 @@ component FormHost() {
 export const KEY_BASIC_EXAMPLE = `@class_name TodoList
 
 component TodoList() {
-  var items = use_state(["Buy milk", "Walk dog"])
+  var items = useState(["Buy milk", "Walk dog"])
 
   return (
     <VBox>
@@ -117,7 +117,7 @@ export const KEY_INDEX_ANTIPATTERN = `# BAD — using the loop index as key brea
 export const KEY_REORDER_EXAMPLE = `@class_name ReorderDemo
 
 component ReorderDemo() {
-  var items = use_state(["A", "B", "C", "D", "E"])
+  var items = useState(["A", "B", "C", "D", "E"])
 
   var shuffle = func():
     var arr: Array = items[0].duplicate()
@@ -130,7 +130,7 @@ component ReorderDemo() {
       <HBox style={ {"separation": 6} }>
         @for (id in items[0]) {
           # Stable key => the reconciler MOVES the node (and its per-node
-          # state, like a random color from use_ref) instead of recreating it.
+          # state, like a random color from useRef) instead of recreating it.
           <KeyedTile key={ id } id={ id } />
         }
       </HBox>
@@ -151,12 +151,12 @@ component UserProfile(user_id) {
 
 component ProfileContent(user_id) {
   # All hooks reset when key changes — fresh state for each user.
-  var data = use_state(null)
+  var data = useState(null)
 
   var load = func():
     load_user_async(user_id, data[1])   # calls data[1].call(user_data) when done
     return Callable()
-  use_effect(load, [user_id])
+  useEffect(load, [user_id])
 
   return (
     <VBox>

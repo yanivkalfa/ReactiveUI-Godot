@@ -40,7 +40,7 @@ const attributes: AttrRow[] = [
   {
     name: 'redraw_key',
     type: 'any',
-    desc: 'Change this value to force a repaint without changing the callback reference. Pair it with a stable callback (use_stable_callback / use_stable_action). Leaving it unchanged never forces a repaint on its own.',
+    desc: 'Change this value to force a repaint without changing the callback reference. Pair it with a stable callback (useStableCallback / useStableAction). Leaving it unchanged never forces a repaint on its own.',
   },
 ]
 
@@ -176,8 +176,8 @@ export const CustomRenderingPage: FC = () => (
       </Typography>
       <Typography variant="body1" paragraph>
         When drawing is expensive, stabilise the callback so it is <strong>not</strong>{' '}
-        reallocated each render — use <code>use_stable_callback</code> (0-arg) or{' '}
-        <code>use_stable_action</code> (1-arg), which keep a stable identity while
+        reallocated each render — use <code>useStableCallback</code> (0-arg) or{' '}
+        <code>useStableAction</code> (1-arg), which keep a stable identity while
         always invoking the latest closure body. With a stable reference the node
         no longer repaints on every render; instead, bump <code>redraw_key</code>{' '}
         exactly when you want a fresh frame.
@@ -187,7 +187,7 @@ export const CustomRenderingPage: FC = () => (
         For a continuous animation that repaints without re-rendering, capture
         the node with a <code>ref</code> and call{' '}
         <code>queue_redraw()</code> on it from a ticker (or drive a property with{' '}
-        <code>use_tween</code>). <code>redraw_key</code> is for discrete,
+        <code>useTween</code>). <code>redraw_key</code> is for discrete,
         on-demand repaints.
       </Alert>
     </Box>

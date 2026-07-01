@@ -187,7 +187,7 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   // ── Buttons ───────────────────────────────────────────────────────────────
   Button: {
     blurb:
-      'A clickable button (Godot Button). Fires `onClick` when pressed. Combine it with `use_state` to build controlled, interactive UI. This is the workhorse of the counter demo.',
+      'A clickable button (Godot Button). Fires `onClick` when pressed. Combine it with `useState` to build controlled, interactive UI. This is the workhorse of the counter demo.',
     guitkx: `<Button text="  +1  " onClick={ func(): s[1].call(func(c): return c + 1) } />`,
     gd: `V.button({
   "text": "  +1  ",

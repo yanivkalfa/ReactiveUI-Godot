@@ -139,8 +139,8 @@ export const CompanionFilesPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       Declare custom hooks inside a <code>module</code> with the <code>hook</code> keyword. Hook
-      bodies are pure GDScript — they can call <code>Hooks.use_state</code>,{' '}
-      <code>Hooks.use_effect</code>, <code>Hooks.use_memo</code>, and any other built-in hook. Use{' '}
+      bodies are pure GDScript — they can call <code>Hooks.useState</code>,{' '}
+      <code>Hooks.useEffect</code>, <code>Hooks.useMemo</code>, and any other built-in hook. Use{' '}
       <code>{'-> ReturnType'}</code> to declare the return type:
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_HOOKS} />

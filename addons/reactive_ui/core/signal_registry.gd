@@ -3,7 +3,7 @@ extends RefCounted
 ## Process-wide string-keyed shared signal registry (Phase 7.1). Mirrors ReactiveUIToolKit's signal
 ## factory: `get_or_create(key, initial)` lazily creates ONE shared RUISignal per key, so any
 ## component anywhere in the tree (or across scenes) that reads the same key sees the same store.
-## Subscribe with `Hooks.use_signal_key(key, initial)`.
+## Subscribe with `Hooks.useSignalKey(key, initial)`.
 ##
 ## LIFETIME: the registry is a static (process-global) Dictionary; keyed signals OUTLIVE the
 ## components that read them — that is the point (shared app state). Call `clear()` on a full
@@ -13,7 +13,7 @@ extends RefCounted
 ## EQUALITY: RUISignal change-detection is reference-aware (Object.is): value types by value,
 ## reference types (Array/Dictionary/Object) by IDENTITY — so set a freshly-built collection to
 ## notify. In-place mutation of the same reference will NOT notify; pass a per-subscriber `comparer`
-## to use_signal_key if you must detect in-place mutation.
+## to useSignalKey if you must detect in-place mutation.
 
 static var _signals: Dictionary = {}   ## key:String -> RUISignal
 

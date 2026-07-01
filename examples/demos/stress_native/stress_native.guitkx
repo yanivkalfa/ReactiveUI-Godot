@@ -5,13 +5,13 @@
 ## engine's native ceiling vs the library's per-frame reconcile cost, in-game. The only thing the
 ## library renders here is the chrome (status/inputs/button) + the empty box area.
 component DemoStressNative() {
-	var box_count = use_state(300)
-	var duration = use_state(10.0)
-	var count_text = use_state("300")
-	var dur_text = use_state("10")
-	var running = use_state(false)
-	var version = use_state(0)
-	var area_ref = use_ref(null)
+	var box_count = useState(300)
+	var duration = useState(10.0)
+	var count_text = useState("300")
+	var dur_text = useState("10")
+	var running = useState(false)
+	var version = useState(0)
+	var area_ref = useRef(null)
 
 	var loop = DemoStressNativeHooks.use_stress_loop(area_ref, box_count[0], duration[0], running[0], version[0], running[1])
 

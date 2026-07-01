@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0] - 2026-07-01
+- Hooks are now camelCase (React parity): completion, hover, go-to-definition, and the embedded-GDScript virtual document all use the camelCase names — `useState`, `useEffect`, `useRef`, `useMemo`, `useContext`, `createContext`, … (23 hooks). Existing snake_case hook code must be migrated (a snake→camel rename over the 23 hook names).
+- Hovering a hook now shows its signature — e.g. `useState(initial) → [value, setter]` — instead of a bare `Callable`. Host-element hover drops the internal `V.*` factory detail and keeps the Godot class reference.
+- Unreachable code after a component's `return (...)` is now dimmed (faded) live, the same way dead code is shown for GDScript — via an `Unnecessary`-tagged diagnostic.
+- Duplicate-`key` detection now covers expression keys (`key={ str(i) }`), not only literal `key="x"` — two siblings sharing the same key expression collide on every iteration.
+- The markup parser now reports a `<` followed by whitespace (e.g. `<  a>`) as an invalid tag name, instead of silently treating it as a fragment plus an attribute.
+
 ## [0.4.0] - 2026-07-01
 - Event handlers in `.guitkx` now use React-style camelCase names — `onClick`, `onChange`, `onSubmit`, `onFocus`, `onBlur`, `onPointerDown`/`onPointerUp`/`onPointerEnter`/`onPointerLeave`, `onResize` — and the editor understands them everywhere: completion offers the right events per control, hover shows the underlying Godot signal and its argument signature, signature help fires inside the handler, unknown-attribute validation accepts them, and they are semantically highlighted as events. `onChange` is polymorphic — it is offered for (and binds to) whichever value/selection signal the control actually exposes (`text_changed`, `value_changed`, `item_selected`, `tab_changed`, or `toggled`). The native `on_<signal>` spelling is still recognized as an escape hatch to any Godot signal.
 - Prop spread `{...obj}` is now recognized in markup: it is highlighted, never flagged as an unknown attribute, and preserved (and kept idempotent) by the formatter — matching the compiler, which merges a spread with explicit props left-to-right (later wins), on both host elements and components.

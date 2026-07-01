@@ -1,7 +1,7 @@
 @class_name DemoDeepTree
 
 component DemoDeepTree() {
-	var depth = use_state(8)
+	var depth = useState(8)
 	return (
 		<DemoBox title="Deep component tree">
 			<HBox style={ {"separation": 8} }>

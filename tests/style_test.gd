@@ -49,7 +49,7 @@ func _test_state_styles() -> void:
 func _test_style_apply_and_reset() -> void:
 	var ctrl := { "set": null }
 	var comp := func(_p, _ch):
-		var s = Hooks.use_state(true)
+		var s = Hooks.useState(true)
 		ctrl["set"] = s[1]
 		var style := { "min_width": 120, "modulate": Color(1, 0, 0) }
 		if s[0]:
@@ -73,7 +73,7 @@ func _test_style_apply_and_reset() -> void:
 func _test_theme_channels() -> void:
 	var ctrl := { "set": null }
 	var comp := func(_p, _ch):
-		var s = Hooks.use_state(true)
+		var s = Hooks.useState(true)
 		ctrl["set"] = s[1]
 		var colors := { "font_color": Color(0, 1, 0) }
 		if s[0]:

@@ -25,8 +25,8 @@ static var PANEL := { "bg_color": Color(0.16, 0.17, 0.24), "corner_radius": 10, 
 <Panel classes={ ["card"] } style={ {"pad": 20} } />   # inline style wins last`
 
 export const EXAMPLE_CONDITIONAL = `# A style dict is a plain GDScript Dictionary — build it with any expression.
-var is_hovered = use_state(false)
-var is_enabled = use_state(true)
+var is_hovered = useState(false)
+var is_enabled = useState(true)
 
 var button_style = {
     "bg_color": Color(0.3, 0.85, 0.45) if is_hovered[0] else Color(0.2, 0.2, 0.25),

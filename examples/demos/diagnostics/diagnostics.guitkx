@@ -2,12 +2,12 @@
 
 component DemoDiagnostics() {
 	RUIDiagnostics.enabled = true
-	var tick = use_state(0)
-	var shown = use_state(RUIDiagnostics.report())
+	var tick = useState(0)
+	var shown = useState(RUIDiagnostics.report())
 	var capture = func():
 		shown[1].call(RUIDiagnostics.report())
 		return Callable()
-	use_effect(capture, [tick[0]])
+	useEffect(capture, [tick[0]])
 	var do_reset = func():
 		RUIDiagnostics.reset()
 		shown[1].call(RUIDiagnostics.report())

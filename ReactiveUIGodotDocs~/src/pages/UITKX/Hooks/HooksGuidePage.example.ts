@@ -1,8 +1,8 @@
 export const HOOKS_USESTATE_EXAMPLE = `@class_name CounterDemo
 
 component CounterDemo() {
-  # use_state returns [value, setter]. Destructure by index.
-  var count = use_state(0)
+  # useState returns [value, setter]. Destructure by index.
+  var count = useState(0)
 
   # Direct value:            count[1].call(5)
   # Functional updater:      count[1].call(func(c): return c + 1)   # reads latest state
@@ -27,8 +27,8 @@ component ReducerDemo() {
       "reset": return 0
     return state
 
-  # use_reducer returns [state, dispatch].
-  var r = use_reducer(reducer, 0)
+  # useReducer returns [state, dispatch].
+  var r = useReducer(reducer, 0)
 
   return (
     <VBox>
@@ -43,7 +43,7 @@ component ReducerDemo() {
 export const HOOKS_USEEFFECT_EXAMPLE = `@class_name EffectDemo
 
 component EffectDemo() {
-  var seconds = use_state(0)
+  var seconds = useState(0)
 
   # [] => run once on mount. The effect returns a cleanup Callable (run on unmount).
   var tick = func():
@@ -57,7 +57,7 @@ component EffectDemo() {
     loop.call()
     return func(): running[0] = false   # cleanup
 
-  use_effect(tick, [])
+  useEffect(tick, [])
 
   return (<Label text={ "Elapsed: %ds" % seconds[0] } />)
 }`
@@ -65,15 +65,15 @@ component EffectDemo() {
 export const HOOKS_USELAYOUTEFFECT_EXAMPLE = `@class_name LayoutMeasure
 
 component LayoutMeasure() {
-  var el_ref = use_ref(null)     # Control ref box
-  var width = use_state(0.0)
+  var el_ref = useRef(null)     # Control ref box
+  var width = useState(0.0)
 
   # Runs synchronously during commit, before the frame paints.
   var measure = func():
     if el_ref["current"] != null:
       width[1].call(el_ref["current"].size.x)
     return Callable()
-  use_layout_effect(measure, [])
+  useLayoutEffect(measure, [])
 
   return (
     <VBox ref={ el_ref }>
@@ -85,11 +85,11 @@ component LayoutMeasure() {
 export const HOOKS_USEMEMO_EXAMPLE = `@class_name ExpensiveList
 
 component ExpensiveList() {
-  var filter = use_state("")
-  var items = use_state(get_all_items())   # an Array
+  var filter = useState("")
+  var items = useState(get_all_items())   # an Array
 
   # Recomputes only when filter or items change (shallow dep compare).
-  var filtered = use_memo(func():
+  var filtered = useMemo(func():
     return items[0].filter(func(i): return filter[0] in i),
     [filter[0], items[0]])
 
@@ -106,10 +106,10 @@ component ExpensiveList() {
 export const HOOKS_USECALLBACK_EXAMPLE = `@class_name StableCallback
 
 component StableCallback() {
-  var count = use_state(0)
+  var count = useState(0)
 
   # Returns a Callable whose identity is stable while deps are unchanged.
-  var get_count = use_callback(func(): return count[0], [count[0]])
+  var get_count = useCallback(func(): return count[0], [count[0]])
 
   return (
     <VBox>
@@ -123,17 +123,17 @@ export const HOOKS_USEREF_EXAMPLE = `@class_name RefDemo
 
 component RefDemo() {
   # Mutable value ref — persists across renders, no re-render on change.
-  var render_count = use_ref(0)
+  var render_count = useRef(0)
   render_count["current"] += 1
 
   # Control ref — gives access to the underlying Godot node after commit.
-  var label_ref = use_ref(null)
+  var label_ref = useRef(null)
 
   var log_name = func():
     if label_ref["current"] != null:
       print("Label node: ", label_ref["current"].name)
     return Callable()
-  use_effect(log_name, [])
+  useEffect(log_name, [])
 
   return (
     <VBox>
@@ -147,7 +147,7 @@ export const HOOKS_CONTEXT_EXAMPLE = `# Provider component
 @class_name ThemeProvider
 
 component ThemeProvider() {
-  Hooks.provide_context("theme", "dark")
+  Hooks.provideContext("theme", "dark")
 
   return (
     <VBox>
@@ -160,7 +160,7 @@ component ThemeProvider() {
 @class_name ThemedCard
 
 component ThemedCard() {
-  var theme = use_context("theme")   # "dark"
+  var theme = useContext("theme")   # "dark"
 
   return (
     <Panel style={ {
@@ -175,14 +175,14 @@ component ThemedCard() {
 export const HOOKS_STABLE_EXAMPLE = `@class_name EventOptimization
 
 component EventOptimization() {
-  var name = use_state("")
+  var name = useState("")
 
-  # use_stable_action wraps a 1-arg callback with a stable identity that always
+  # useStableAction wraps a 1-arg callback with a stable identity that always
   # calls through to the latest closure body.
-  var on_name_changed = use_stable_action(func(v): name[1].call(v))
+  var on_name_changed = useStableAction(func(v): name[1].call(v))
 
-  # use_stable_callback for 0-arg callbacks.
-  var on_reset = use_stable_callback(func(): name[1].call(""))
+  # useStableCallback for 0-arg callbacks.
+  var on_reset = useStableCallback(func(): name[1].call(""))
 
   return (
     <VBox>
@@ -195,11 +195,11 @@ component EventOptimization() {
 export const HOOKS_DEFERRED_EXAMPLE = `@class_name SearchResults
 
 component SearchResults() {
-  var query = use_state("")
+  var query = useState("")
 
   # Deferred value lags one frame behind: the LineEdit updates immediately while
   # the expensive ResultsList catches up at low priority next frame.
-  var deferred_query = use_deferred_value(query[0])
+  var deferred_query = useDeferredValue(query[0])
 
   return (
     <VBox>
@@ -212,11 +212,11 @@ component SearchResults() {
 export const HOOKS_IMPERATIVE_EXAMPLE = `@class_name FancyInput
 
 component FancyInput(handle_ref) {
-  var input_ref = use_ref(null)
-  var val = use_state("")
+  var input_ref = useRef(null)
+  var val = useState("")
 
   # Build a handle Dictionary of imperative methods, memoized until deps change.
-  var handle = use_imperative_handle(func(): return {
+  var handle = useImperativeHandle(func(): return {
     "focus": func():
       if input_ref["current"] != null: input_ref["current"].grab_focus(),
     "clear": func(): val[1].call(""),
@@ -227,20 +227,20 @@ component FancyInput(handle_ref) {
     if handle_ref != null:
       handle_ref["current"] = handle
     return Callable()
-  use_layout_effect(publish, [handle])
+  useLayoutEffect(publish, [handle])
 
   return (<LineEdit ref={ input_ref } text={ val[0] }
                     onChange={ func(t): val[1].call(t) } />)
 }`
 
 export const HOOKS_DEPENDENCY_RULES = `# deps == null  ->  runs cleanup + effect EVERY commit
-use_effect(func(): ... return cleanup)
+useEffect(func(): ... return cleanup)
 
 # empty array [] -> runs once on mount, cleanup on unmount
-use_effect(func(): ... return cleanup, [])
+useEffect(func(): ... return cleanup, [])
 
 # with deps    ->  runs when any dep changes (shallow, == value comparison)
-use_effect(func(): ... return cleanup, [dep1, dep2])
+useEffect(func(): ... return cleanup, [dep1, dep2])
 
 # The effect body may return a Callable cleanup (or Callable() for none).
 # Dependency comparison is shallow value-equality (==) per element.`

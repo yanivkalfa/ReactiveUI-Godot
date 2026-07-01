@@ -24,6 +24,8 @@ func _run() -> void:
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
+	_test_loop_single_root()
+	_test_decl_validation()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
@@ -112,32 +114,32 @@ func _test_jsx_value() -> void:
 func _test_hook_alias() -> void:
 	# token-boundary hook aliasing: real calls prefixed; identifiers/strings/qualified left alone
 	var src := "component HA() {\n" + \
-		"\tvar s = use_state(0)\n" + \
+		"\tvar s = useState(0)\n" + \
 		"\tvar my_use_state_val = 1\n" + \
-		"\tvar note = \"call use_state() at the top\"\n" + \
-		"\tvar r = Hooks.use_ref(null)\n" + \
+		"\tvar note = \"call useState() at the top\"\n" + \
+		"\tvar r = Hooks.useRef(null)\n" + \
 		"\treturn ( <Label text={ str(s[0]) + str(my_use_state_val) + str(r) } /> )\n}\n"
 	var res := RUIGuitkx.compile(src, "HA")
 	if not res["ok"]:
 		_fail("hook_alias: compile failed: " + str(res["diagnostics"]))
 	var gd: String = res["gd"]
-	_check(gd, "Hooks.use_state(0)", "bare hook call prefixed")
-	_check_true(not ("my_Hooks.use_state" in gd), "identifier substring NOT corrupted")
-	_check(gd, "\"call use_state() at the top\"", "string literal NOT corrupted")
+	_check(gd, "Hooks.useState(0)", "bare hook call prefixed")
+	_check_true(not ("my_Hooks.useState" in gd), "identifier substring NOT corrupted")
+	_check(gd, "\"call useState() at the top\"", "string literal NOT corrupted")
 	_check_true(not ("Hooks.Hooks." in gd), "already-qualified not double-prefixed")
-	_check(gd, "Hooks.use_ref(null)", "already-qualified preserved")
+	_check(gd, "Hooks.useRef(null)", "already-qualified preserved")
 
 func _test_hook_member_not_mangled() -> void:
 	# [audit #6] A member call on a non-Hooks receiver named like a hook must NOT be auto-prefixed.
 	var src := "component MM() {\n" + \
 		"\tvar obj = make_thing()\n" + \
-		"\tvar v = obj.use_state(0)\n" + \
+		"\tvar v = obj.useState(0)\n" + \
 		"\treturn ( <Label text={ str(v) } /> )\n}\n"
 	var res := RUIGuitkx.compile(src, "MM")
 	if not res["ok"]:
 		_fail("hook_member: compile failed: " + str(res["diagnostics"]))
 	var gd: String = res["gd"]
-	_check(gd, "obj.use_state(0)", "member .use_state NOT prefixed")
+	_check(gd, "obj.useState(0)", "member .useState NOT prefixed")
 	_check_true(not ("obj.Hooks." in gd), "no spurious Hooks. after member access")
 
 func _test_ctrl_flow_in_lambda() -> void:
@@ -194,7 +196,7 @@ func _test_return_null_guard() -> void:
 func _test_formatter() -> void:
 	const Fmt = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
 	var src := "component  Foo( name: String = \"x\" )  {\n" + \
-		"  var s = use_state(0)\n" + \
+		"  var s = useState(0)\n" + \
 		"  return (\n" + \
 		"<VBox>\n" + \
 		"<Label text={ name }/>\n" + \
@@ -287,7 +289,7 @@ func _test_deep_flatten() -> void:
 
 func _test_diagnostics() -> void:
 	# rules of hooks: a hook called inside an if-block in setup
-	var roh := RUIGuitkx.compile("component Bad(c: bool = true) {\n\tvar a = use_state(0)\n\tif c:\n\t\tvar b = use_state(1)\n\treturn ( <Label /> )\n}\n", "Bad")
+	var roh := RUIGuitkx.compile("component Bad(c: bool = true) {\n\tvar a = useState(0)\n\tif c:\n\t\tvar b = useState(1)\n\treturn ( <Label /> )\n}\n", "Bad")
 	_check_true(str(roh["diagnostics"]).contains("GUITKX0013"), "rules-of-hooks warning (got %s)" % str(roh["diagnostics"]))
 	# duplicate literal keys among siblings
 	var dk := RUIGuitkx.compile("component Dup() {\n\treturn (\n\t\t<VBox>\n\t\t\t<Label key=\"x\" />\n\t\t\t<Label key=\"x\" />\n\t\t</VBox>\n\t)\n}\n", "Dup")
@@ -296,12 +298,49 @@ func _test_diagnostics() -> void:
 	var lk := RUIGuitkx.compile("component LK(items: Array = []) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) { <Label text={ it } /> }\n\t\t</VBox>\n\t)\n}\n", "LK")
 	_check_true(str(lk["diagnostics"]).contains("GUITKX0106"), "keyless-loop-child warning (got %s)" % str(lk["diagnostics"]))
 	# a clean component emits no warnings
-	var clean := RUIGuitkx.compile("component Clean() {\n\tvar a = use_state(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
+	var clean := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
 	_check_true(clean["ok"] and str(clean["diagnostics"]) == "[]", "clean component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+
+func _test_loop_single_root() -> void:
+	# BUG-V3: a @for/@while body with >1 sibling root is a hard error (single-root; parity Unity UITKX0108)
+	var multi := RUIGuitkx.compile("component M(n: int = 3) {\n" + \
+		"\treturn (\n\t\t<VBox>\n" + \
+		"\t\t\t@for (i in n) {\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t}\n" + \
+		"\t\t</VBox>\n\t)\n}\n", "M")
+	_check_true(not multi["ok"] and str(multi["diagnostics"]).contains("GUITKX0108"), "loop body with 2 roots fails with GUITKX0108 (got %s)" % str(multi["diagnostics"]))
+	# BUG-V3: duplicate EXPRESSION keys among siblings are caught (not only literal key="..." keys)
+	var dupe := RUIGuitkx.compile("component D() {\n" + \
+		"\treturn (\n\t\t<VBox>\n\t\t\t<Label key={ str(0) } />\n\t\t\t<Label key={ str(0) } />\n\t\t</VBox>\n\t)\n}\n", "D")
+	_check_true(str(dupe["diagnostics"]).contains("GUITKX0104"), "duplicate expr key caught with GUITKX0104 (got %s)" % str(dupe["diagnostics"]))
+	# valid: a fragment root wrapping distinctly-keyed siblings inside the loop compiles cleanly
+	var okc := RUIGuitkx.compile("component OK(n: int = 3) {\n" + \
+		"\treturn (\n\t\t<VBox>\n" + \
+		"\t\t\t@for (i in n) {\n\t\t\t\t<>\n\t\t\t\t\t<Label key={ \"a\" + str(i) } />\n\t\t\t\t\t<Label key={ \"b\" + str(i) } />\n\t\t\t\t</>\n\t\t\t}\n" + \
+		"\t\t</VBox>\n\t)\n}\n", "OK")
+	_check_true(okc["ok"], "loop with fragment-wrapped distinct-key siblings compiles (got %s)" % str(okc["diagnostics"]))
+
+func _test_decl_validation() -> void:
+	# BUG-V2: an invalid @class_name value (multiple tokens) is rejected with GUITKX0300
+	var badcn := RUIGuitkx.compile("@class_name Foo Bar\ncomponent X() { return ( <Label /> ) }\n", "X")
+	_check_true(not badcn["ok"] and str(badcn["diagnostics"]).contains("GUITKX0300"), "invalid @class_name rejected (got %s)" % str(badcn["diagnostics"]))
+	# a valid @class_name is accepted, and a trailing comment on the directive line is tolerated
+	var okcn := RUIGuitkx.compile("@class_name MyThing  # ok\ncomponent X() { return ( <Label /> ) }\n", "X")
+	_check_true(okcn["ok"], "valid @class_name accepted (got %s)" % str(okcn["diagnostics"]))
+	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint.
+	# NOTE: join the diagnostics rather than str() the Array -- Godot 4.7's Array-to-string escapes
+	# inner single quotes (did you mean \'component\'), which would never match a plain-quote needle.
+	var typo := RUIGuitkx.compile("componeent X() { return ( <Label /> ) }\n", "X")
+	_check_true(not typo["ok"] and "\n".join(typo["diagnostics"]).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
+	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
+	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
+	_check_true(not badtag["ok"] and str(badtag["diagnostics"]).contains("GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
+	# BUG-V5: code after the markup return is flagged unreachable (GUITKX0114 warning)
+	var unreach := RUIGuitkx.compile("component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n", "U")
+	_check_true(unreach["ok"] and str(unreach["diagnostics"]).contains("GUITKX0114"), "unreachable code after return warned (got %s)" % str(unreach["diagnostics"]))
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \
-		"\tvar s = use_state(start)\n" + \
+		"\tvar s = useState(start)\n" + \
 		"\treturn [s[0], func(): s[1].call(s[0] + 1)]\n" + \
 		"}\n"
 	var r := RUIGuitkx.compile(src, "UseCounter")
@@ -311,7 +350,7 @@ func _test_hook() -> void:
 	print("--- generated (UseCounter) ---\n" + gd + "----------------------------")
 	_check(gd, "class_name UseCounter", "hook class name from file")
 	_check(gd, "static func use_counter(start: int = 0):", "hook function signature (params verbatim)")
-	_check(gd, "Hooks.use_state(start)", "hook body auto-prefixed")
+	_check(gd, "Hooks.useState(start)", "hook body auto-prefixed")
 	_check_true(not ("\t\tvar s " in gd), "hook body single-indented")
 	var gd2 := gd.replace("class_name UseCounter\n", "")
 	var path := "user://__guitkx_hook.gd"
@@ -460,7 +499,7 @@ func _test_spread() -> void:
 
 func _test_emit() -> void:
 	var src := "@class_name Greeting\n\ncomponent Greeting(name: String = \"World\") {\n" + \
-		"\tvar s = use_state(0)\n" + \
+		"\tvar s = useState(0)\n" + \
 		"\treturn (\n" + \
 		"\t\t<VBox style={ {\"separation\": 8} }>\n" + \
 		"\t\t\t<Label text={ \"Hello, %s (%d)\" % [name, s[0]] } />\n" + \
@@ -474,7 +513,7 @@ func _test_emit() -> void:
 	print("--- generated (Greeting) ---\n" + gd + "----------------------------")
 	_check(gd, "class_name Greeting", "class_name")
 	_check(gd, "props.get(\"name\", \"World\")", "param unpack")
-	_check(gd, "Hooks.use_state(0)", "hook auto-prefix")
+	_check(gd, "Hooks.useState(0)", "hook auto-prefix")
 	_check(gd, "V.vbox(", "VBox -> V.vbox")
 	_check(gd, "V.label(", "Label -> V.label")
 	_check(gd, "V.button(", "Button -> V.button")

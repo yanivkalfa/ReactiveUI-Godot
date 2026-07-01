@@ -24,7 +24,7 @@ component MyButton(label: String = "Click") {
 const FUNCTION_STYLE_EXAMPLE = `@class_name Counter
 
 component Counter(label: String = "Count") {
-  var s = use_state(0)
+  var s = useState(0)
   var count = s[0]
   return (
     <VBox>
@@ -421,8 +421,8 @@ export const UitkxReferencePage: FC = () => (
     return "%d / %d HP" % [current, max]
 
   hook use_flash(active: bool) -> bool {
-    var s = Hooks.use_state(false)
-    Hooks.use_effect(func():
+    var s = Hooks.useState(false)
+    Hooks.useEffect(func():
       s[1].call(active)
       return Callable()
     , [active])

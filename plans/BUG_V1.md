@@ -357,3 +357,189 @@ papercut size.
 
 All BUG-1…BUG-7 fixes live entirely in `ide-extensions/lsp-server` (+ `language-configuration.json`
 for BUG-8) and need no analyzer changes; the React-parity fixes touch the compiler + runtime.
+
+---
+---
+
+# BUG_V2 — round 2 (2026-07): validation gaps + the camelCase-hooks overhaul
+
+Research pass (workflow, 2026-07-01): traced each reported repro through the Godot compiler, compared
+against the **Unity ReactiveUIToolKit** (which has a full `.uitkx` markup compiler — the direct ancestor
+of `.guitkx`, with a UITKX#### diagnostic catalog + structure/hooks validators), and verified the prior
+round.
+
+### Prior round — VERIFIED fixed-present in current code
+All **BUG-1…BUG-8** and React-parity **#1 event names / #2 prop spread / #3 context handle** were
+confirmed present in the current tree (not just claimed), with code evidence for each. Branch
+`fix/guitkx-lsp-bugs-v1` is **merged** (PR #20, commit `a3671b0`); parity shipped in library 0.3.0 /
+IDE 0.4.0 (PR #22). Nothing was missing, partial, or regressed. So: **the previous bugs are actually fixed.**
+
+### Honest correction to the new reports
+Two of the five reported "no error" cases **do** emit an error today — the gap is the *quality*/*position*
+of the error, not its absence:
+- **R1** (`componeent`) → already errors, but with the generic `GUITKX0102 "no declaration found"`, not a
+  targeted "did you mean `component`?".
+- **R4** (`return <s><  a>`, `return <><  a>`) → already errors (`GUITKX0300` unexpected-token / `GUITKX0301`
+  unclosed-tag). The genuine sub-gap is that `<  a>` (space after `<`) is silently reinterpreted as `<>` +
+  a boolean attribute instead of being flagged as an invalid/empty tag name.
+
+### Unity parity verdict (the "nuanced differences" you asked for)
+| Case | Unity `.uitkx` | Godot `.guitkx` today | Verdict |
+|---|---|---|---|
+| Misspelled keyword (V1) | `UITKX0305 UnknownDirective` (did-you-mean) | generic `GUITKX0102` | **regression (weak)** |
+| Invalid `@class_name` (V2) | `UITKX0109` unknown-attr (schema-dependent) | none — raw passthrough → GDScript parse error | **shared gap** |
+| Multi-root loop body / keys (V3) | `UITKX0108` (Error, even in loops) + `UITKX0104`/`0106` | `0108` only at top level; loop body auto-fragmented, dup expr-keys undetected | **regression (high)** |
+| Malformed markup (V4) | `UITKX0300-0304` | `0300`/`0301` fire, but `<  a>` mis-parsed | **mostly parity, 1 gap** |
+| Double return / unreachable (V5/V6) | `UITKX0108` + **`UITKX0107 UnreachableAfterReturn` (Hint, dimmed)** | second return silently dropped; no dimming | **regression** |
+
+---
+
+## BUG-0 — [TOP PRIORITY / OVERHAUL] Hooks snake_case → camelCase (full React parity)
+
+**Decision (user): Option B — camelCase is canonical, NO aliases, clean breaking change.** Reverses the old
+"parity gap #9 (hooks are snake_case, byDesign)".
+
+### Scope — 23 public hooks, 8 layers, ~100 files
+Canonical source `addons/reactive_ui/core/hooks.gd` (23 hooks): `useState useReducer useRef useMemo
+useCallback useImperativeHandle useEffect useLayoutEffect createContext useContext provideContext
+useDeferredValue useTransition useStableCallback useStableFunc useStableAction useSafeArea useSignal
+useSignalKey useTween useTweenValue useAnimate useSfx`.
+
+- **Core**: `hooks.gd` (rename 23 decls + internal cross-calls) — 57 refs.
+- **Internal callers**: `core/router/router.gd` (~53 real calls — the heaviest), `core/suspense.gd` (2); comment-only in context/signal_registry/signal_store/reconciler.
+- **Compiler**: `guitkx.gd` — **two hardcoded lists** must go camelCase: `HOOK_NAMES` (~:916, auto-prefixes bare `use_*(…)`→`Hooks.use_*`) and `_line_calls_hook` (~:161, the GUITKX0013 rules-of-hooks heuristic). **Both currently list only 11 of the 23 hooks** — a latent bug (12 hooks don't auto-prefix today); complete them during the overhaul.
+- **LSP**: `lsp-server/src/virtualDoc.ts` `HOOK_STUBS` (the editor mirror of `HOOK_NAMES`) + `core.test.ts` fixtures; rebuild `vscode/server/*.js` artifacts. `server.ts` regex is name-agnostic.
+- **Grammars / schema**: **no change** (no hardcoded hook names — verified).
+- **Docs**: `ReactiveUIGodotDocs~` — 35 files, ~320 refs (`HooksAPIPage.tsx` is the canonical list).
+- **Examples**: 29 `.guitkx`/`.gd` files, ~84 refs.
+
+### Migration (bottom-up so each layer compiles against the one below)
+1. `hooks.gd` decls + internal cross-calls (atomic). 2. internal callers (`router.gd`, `suspense.gd`) same commit. 3. compiler `HOOK_NAMES` + `_line_calls_hook` → camelCase **and complete to all 23**. 4. LSP `HOOK_STUBS` + tests, rebuild server.js. 5. codemod 29 examples. 6. codemod 35 docs files. Codemod keyed on the 23-name snake→camel map; guard false positives (`_record` kind-strings `'state'/'effect'/'ref'`, helper names). **Hard break for all existing user code** → bump MAJOR + ship a migration note with the 23-name map.
+
+---
+
+## BUG-V1 — Misspelled declaration keyword gives only a generic error *(low; parity regression)*
+`_find_decl` (`guitkx.gd:61-76`) matches the exact words `component`/`hook`/`module`; a near-miss falls
+through to `GUITKX0102 "no declaration found"` (`:56-58`) — no pointer at the offending token. **Fix**: add
+near-miss detection on a leading identifier at a line start → `unknown declaration 'X' — did you mean
+'component'?`. (Unity: `UITKX0305`.)
+
+## BUG-V2 — `@class_name` value is never validated *(medium; shared gap)*
+`guitkx.gd:40-43` does a raw `substr + strip_edges` of everything after `@class_name` to EOL with no
+validation; an empty/illegal value flows into the emitted `class_name X` (`:85/266/368/420`) and only fails
+later as a GDScript parse error in the generated `.gd`. **Fix**: validate a single PascalCase identifier at
+the directive and emit a diagnostic otherwise. (Unity's nearest analogue is schema-dependent `UITKX0109`.)
+
+## BUG-V3 — `@for`/`@while` body: no single-root rule + dup expr-keys undetected *(HIGH; parity regression)*
+`GUITKX0108` (multiple roots) is enforced only on the top-level render root (`guitkx.gd:129-132`), never
+inside a directive body; `_validate_body` (`:188-198`) key-warning is gated on `nodes.size()==1` so a
+two-sibling loop body skips `GUITKX0106`, and `_check_dup_keys` (`:200-210`) only runs over one node's
+children — never across loop-body siblings. Worse, `_literal_key` (`:218-222`) only returns `kind=="str"`
+keys, so `key={ str(i) }` (an **expr** key) collisions are invisible — the exact repro (two siblings, same
+`key={str(i)}`) collides every iteration and breaks reconciliation with **no error**. Codegen silently wraps
+them in `V.fragment([…])` (`:585-598`). **Fix**: in `_validate_body`, enforce single-root (`GUITKX0108`)
+for loop bodies and/or run dup-key across siblings; extend `_check_dup_keys`/`_literal_key` to compare expr
+key sources. (Unity: `UITKX0108` even in loops + `UITKX0104`.)
+
+## BUG-V4 — Space after `<` mis-parsed as fragment + attribute *(medium; 1 sub-gap of otherwise-parity)*
+`return <s><  a>` and `return <><  a>` **do** error today (`GUITKX0300`/`0301`). But `_parse_element`
+(`guitkx_markup.gd:72-78`) treats a zero-length tag run after `<`+whitespace as a fragment `<>` and reads
+`a` as a boolean attribute, so `<  a>` is silently accepted rather than flagged. **Fix**: distinguish a true
+fragment `<>`/`</>` from `< name` (leading whitespace) → emit an "invalid tag name" diagnostic. (Unity:
+`UITKX0300-0304`.)
+
+## BUG-V5 — Second `return` in a component is silently dropped *(medium; parity regression)*
+`_split_return` (`guitkx.gd:384-411`) takes the **first** top-level `return` and bounds only that; everything
+after (incl. a second `return (...)`) is neither in `setup` nor markup — it's silently discarded, no error.
+**Fix**: after locating the markup return, detect trailing top-level code (esp. a second `return`) → emit an
+"unreachable code / multiple return" diagnostic. (Unity: `UITKX0108` or `UITKX0107`.) Pairs with BUG-V6.
+
+## BUG-V6 — [feature] Dim the unreachable code after `return (...)` *(parity: Unity `UITKX0107`)*
+Code after the markup `return (...)` is provably unreachable (the compiler drops it — `guitkx.gd:133`).
+Unity already fades it (`UITKX0107 UnreachableAfterReturn`, Hint, `DiagnosticTag.Unnecessary`). Feasible in
+both hosts reusing the existing return-boundary logic:
+- **VS Code** *(low effort, idiomatic)*: publish an LSP `Diagnostic { severity: Hint, tags:[Unnecessary] }`
+  over the range — VS Code renders it faded natively (like TS dead code). Reuse `markupWindows()`
+  (`formatGuitkx.ts:444`) → `markupEnd`→body-`}`, merge into the array at `server.ts:422`. Must advertise
+  `publishDiagnostics.tagSupport` in `initialize`.
+- **Godot addon**: repaint each unreachable line with a muted colour in `guitkx_code_highlighter.gd`
+  (`_get_line_syntax_highlighting` honours only `"color"` — no fade flag; use theme text lerped toward
+  background, recomputed in `update_colors()`). Reuse `RUIGuitkxLexer.keyword_at`+`find_matching` (the
+  `_split_return` boundary), compute once per buffer + cache, gate behind a `RUIEditorSettings` toggle.
+- Caveats (both): module files have many components (dim each per-component gap), skip `hook`/`module`
+  decls and pre-markup `return null` guards, and fail safe (dim nothing) on an unclosed return.
+
+---
+
+## Live-LSP addendum (VS Code testing, 2026-07)
+
+Hands-on VS Code testing revealed the validation gaps are primarily a **live-LSP** problem, distinct from
+the compiler:
+- **`markupDiagnostics` (`server.ts:1209-1213`) only scans INSIDE the markup `return (...)` window**
+  (`markupWindows`) and via `scanWindowDiagnostics` (`:1216`) does only **lightweight** checks —
+  `GUITKX0104` dup-key, `GUITKX0105` unknown-element, `GUITKX0107` unknown-attr. It runs **no** parser-error
+  catalog (0300–0306) and **never scans the setup region**.
+- The **full** compiler diagnostics (`0102`, `0108`, `0300`/`0301`, …) exist only in `guitkx.gd` and reach
+  VS Code through the **hash-gated sidecar** (`diagsSidecar.ts`, read at `server.ts:460`) — **suppressed as
+  soon as you edit** (buffer hash ≠ last-compiled hash). So while typing, none of them show.
+
+Consequence for the round-2 bugs: **BUG-V1 (typo'd keyword), BUG-V4 (malformed markup), BUG-V5 (double
+return)** are invisible *live* because (a) a typo'd keyword yields no `markupWindows` entry → nothing scanned;
+(b) `return <s><  a>` is in the **setup region**, outside every markup window; (c) `scanWindowDiagnostics` is
+not a full parser. **Fix direction:** raise the live LSP to compiler parity — port the structural/parser
+validations into the live path (extend `scanWindowDiagnostics` / wire `markup.ts`'s `parseMarkup` errors),
+and add a setup-region + no-declaration check — rather than relying on the stale sidecar. (Godot's editor
+addon compiles live via `RUIGuitkx.compile`, so it already surfaces the compiler diagnostics the sidecar
+can't — the two hosts should converge on the same catalog.)
+
+### Implementation status (round 2 — done + validated)
+All numbered bugs are fixed at the **compiler** level, so the **Godot native addon** (which renders
+`RUIGuitkx.compile()` diagnostics live) has FULL parity for V1–V5 today. Validated with the `gdscript`
+CLI (`check` clean) + LSP `tsc`/54 tests + docs build. VS Code **live-while-typing** now also covers:
+**V5/V6** unreachable (`DiagnosticTag.Unnecessary`, faded), **V3** duplicate keys incl. **expression**
+keys, and **V7/V8** hovers. A small live-scanner follow-up remains — surfaced in VS Code only **on save**
+(via the compiler sidecar) for now, but **fully live in the Godot addon**: **V1** keyword did-you-mean,
+**V2** `@class_name` validation, **V3** loop single-root (GUITKX0108), **V4** invalid-tag-name.
+
+## BUG-V7 — Host-element hover shows the internal "compiles to `V.label`" *(low; polish)*
+`markupHover` (`server.ts:380`) renders `**<Label>** — host element, compiles to \`V.label\` (Godot \`Label\`).`
+The `compiles to V.label` is an internal codegen detail users don't need. **Fix**: drop it, keep the Godot
+class reference (the valued part) — e.g. `**<Label>** — host element · Godot \`Label\`` (optionally link the
+class to the Godot docs). Confirmed working: setup-block hover (BUG-5), markup hover incl. ClassDB attrs
+(BUG-6), and component hover + F12/ctrl+click all function.
+
+## BUG-V8 — Hook hover shows only "Callable" *(medium; hover quality)*
+Hovering `use_state` in a setup block returns just `Callable` — because the hover routes through the embedded
+analyzer, which sees the virtual-doc stub `var use_state = Hooks.use_state` and reports its *type* (Callable),
+not the hook's signature. **Fix**: intercept hover on a known hook identifier (the same name list the
+compiler/LSP already maintain) and return a curated signature/doc — e.g. `useState(initial) → [value, setter]`
+— OR give the `HOOK_STUBS` real typed signatures so the analyzer hovers them meaningfully. Ties into BUG-0
+(the hook-name list) and should ship with the camelCase rename.
+
+## BUG-V9 — Shipped features have NO demo/example: prop spread + context handle *(low; coverage gap)*
+Two "DONE" React-parity features have **zero** example coverage, so they're undiscoverable and can't be
+tested by hand:
+- **Prop spread `{...obj}`** (parity #2) — no `.guitkx` in the repo uses it (`grep '{...'` over `**/*.guitkx`
+  = 0 matches). Implemented + unit-tested only (`guitkx.gd` codegen, `v.gd._spread_all`,
+  `guitkx_test::_test_spread`, `core.test.ts`).
+- **Context handle `create_context` → `RUIContext`** (parity #3) — no example uses it (`grep create_context`
+  over `examples/` = 0); the `context` demo shows only the older **string-keyed** form
+  (`provide_context("accent", …)`). Implemented + unit-tested only (`context.gd`,
+  `core_test::_test_context_handles`).
+
+**Fix — add 2 demos** (part of this fix): (1) a **prop-spread** demo (`var cfg = {…}` →
+`<Button {...cfg} … />`, showing later-wins merge); (2) a **context-handle** demo (`create_context(default)`
+→ provider `provide_context(handle, value)` + consumer `use_context(handle)`, no string key). Both must
+**compile** and be wired into the gallery so they run. Author them **after / as part of BUG-0** so the hook
+calls use the final **camelCase** names and don't need re-migration. Optionally cross-link from the docs
+Context/Styling pages.
+
+## Suggested fix order (round 2)
+1. **BUG-0 camelCase overhaul** — user's #1; do it as one bottom-up sequence (core → callers → compiler →
+   LSP → examples → docs) + complete the auto-prefix lists to all 23 hooks (closes a latent gap).
+2. **BUG-V3** (loop-body single-root + dup expr-keys) — highest-severity correctness gap; compiler-side.
+3. **BUG-V5 + BUG-V6** (post-return unreachable — error + dim) — shared root; do together (compiler diagnostic + the two-host dimming).
+4. **BUG-V2** (`@class_name` validation), **BUG-V4** (invalid-tag-name), **BUG-V1** (keyword did-you-mean) — smaller compiler/parser validations.
+
+All of BUG-V1…V5 are **compiler**-side (`guitkx.gd` / `guitkx_markup.gd`), mirrored into the LSP for live
+diagnostics; BUG-V6 is editor-only (LSP + Godot highlighter); BUG-0 spans the whole stack.

@@ -27,11 +27,9 @@ func _ready() -> void:
 		add_string_delimiter("\"", "\"")
 	if not has_string_delimiter("'"):
 		add_string_delimiter("'", "'")
+	# CodeEdit already ships the default { } ( ) [ ] " " ' ' auto-close pairs; re-adding them throws
+	# "auto brace completion open key '...' already exists", so we just enable the feature.
 	auto_brace_completion_enabled = true
-	add_auto_brace_completion_pair("{", "}")
-	add_auto_brace_completion_pair("(", ")")
-	add_auto_brace_completion_pair("[", "]")
-	add_auto_brace_completion_pair("\"", "\"")
 
 	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
 	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload.
@@ -64,6 +62,12 @@ func _exit_tree() -> void:
 func _on_theme_changed() -> void:
 	if _highlighter != null:
 		_highlighter.update_colors()
+		queue_redraw()
+
+## Fade the given lines (a set: line -> true) as unreachable code. [BUG-V6]
+func set_dim_lines(lines: Dictionary) -> void:
+	if _highlighter != null:
+		_highlighter.set_dim_lines(lines)
 		queue_redraw()
 
 func _on_gutter_clicked(line: int, gutter: int) -> void:

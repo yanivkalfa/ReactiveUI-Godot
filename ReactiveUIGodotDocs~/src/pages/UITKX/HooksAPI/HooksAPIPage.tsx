@@ -29,14 +29,14 @@ type HookSig = {
 const hooks: HookSig[] = [
   // State
   {
-    name: 'use_state',
+    name: 'useState',
     signature: '(initial = null)',
     returns: '[value, set]',
     category: 'State',
     note: 'set accepts a value or func(old) -> new',
   },
   {
-    name: 'use_reducer',
+    name: 'useReducer',
     signature: '(reducer: Callable, initial = null)',
     returns: '[state, dispatch]',
     category: 'State',
@@ -44,14 +44,14 @@ const hooks: HookSig[] = [
   },
   // Effects
   {
-    name: 'use_effect',
+    name: 'useEffect',
     signature: '(effect: Callable, deps = null)',
     returns: 'void',
     category: 'Effects',
     note: 'Passive — runs after commit',
   },
   {
-    name: 'use_layout_effect',
+    name: 'useLayoutEffect',
     signature: '(effect: Callable, deps = null)',
     returns: 'void',
     category: 'Effects',
@@ -59,20 +59,20 @@ const hooks: HookSig[] = [
   },
   // Memoization
   {
-    name: 'use_memo',
+    name: 'useMemo',
     signature: '(factory: Callable, deps: Array = [])',
     returns: 'value',
     category: 'Memoization',
   },
   {
-    name: 'use_callback',
+    name: 'useCallback',
     signature: '(cb: Callable, deps: Array = [])',
     returns: 'Callable',
     category: 'Memoization',
-    note: 'use_memo(func(): return cb, deps)',
+    note: 'useMemo(func(): return cb, deps)',
   },
   {
-    name: 'use_deferred_value',
+    name: 'useDeferredValue',
     signature: '(value, deps = null)',
     returns: 'deferred_value',
     category: 'Memoization',
@@ -80,36 +80,36 @@ const hooks: HookSig[] = [
   },
   // Refs
   {
-    name: 'use_ref',
+    name: 'useRef',
     signature: '(initial = null)',
     returns: '{ "current": initial }',
     category: 'Refs',
     note: 'Stable box; wire to the ref prop for a Control',
   },
   {
-    name: 'use_imperative_handle',
+    name: 'useImperativeHandle',
     signature: '(factory: Callable, deps: Array = [])',
     returns: 'handle',
     category: 'Refs',
-    note: 'Alias of use_memo(factory, deps)',
+    note: 'Alias of useMemo(factory, deps)',
   },
   // Context
   {
-    name: 'Hooks.create_context',
+    name: 'Hooks.createContext',
     signature: '(default_value = null, name = "")',
     returns: 'RUIContext',
     category: 'Context',
-    note: 'Handle for provide/use_context (React createContext)',
+    note: 'Handle for provide/useContext (React createContext)',
   },
   {
-    name: 'use_context',
+    name: 'useContext',
     signature: '(handle_or_key)',
     returns: 'value | default | null',
     category: 'Context',
     note: 'Handle or String; handle returns its default when unprovided; no hook slot',
   },
   {
-    name: 'Hooks.provide_context',
+    name: 'Hooks.provideContext',
     signature: '(handle_or_key, value)',
     returns: 'void',
     category: 'Context',
@@ -117,21 +117,21 @@ const hooks: HookSig[] = [
   },
   // Stable functions
   {
-    name: 'use_stable_callback',
+    name: 'useStableCallback',
     signature: '(cb: Callable)',
     returns: 'Callable',
     category: 'Stable functions',
     note: '0-arg; identity never changes',
   },
   {
-    name: 'use_stable_func',
+    name: 'useStableFunc',
     signature: '(cb: Callable)',
     returns: 'Callable',
     category: 'Stable functions',
-    note: 'Alias of use_stable_callback',
+    note: 'Alias of useStableCallback',
   },
   {
-    name: 'use_stable_action',
+    name: 'useStableAction',
     signature: '(cb: Callable)',
     returns: 'Callable',
     category: 'Stable functions',
@@ -139,7 +139,7 @@ const hooks: HookSig[] = [
   },
   // Concurrency
   {
-    name: 'use_transition',
+    name: 'useTransition',
     signature: '()',
     returns: '[is_pending, start_transition]',
     category: 'Concurrency',
@@ -147,14 +147,14 @@ const hooks: HookSig[] = [
   },
   // Signals
   {
-    name: 'use_signal',
+    name: 'useSignal',
     signature: '(sig: RUISignal, selector = null, comparer = null)',
     returns: 'value | slice',
     category: 'Signals',
     note: 'Subscribe + re-render; optional selector/comparer',
   },
   {
-    name: 'use_signal_key',
+    name: 'useSignalKey',
     signature: '(key: String, initial = null, selector = null, comparer = null)',
     returns: 'value | slice',
     category: 'Signals',
@@ -162,28 +162,28 @@ const hooks: HookSig[] = [
   },
   // Animation / Media
   {
-    name: 'use_tween',
+    name: 'useTween',
     signature: '(ref: Dictionary, property: String, to, duration: float, deps: Array = [])',
     returns: 'void',
     category: 'Animation & Media',
     note: 'Tweens a mounted node property via Godot Tween',
   },
   {
-    name: 'use_tween_value',
+    name: 'useTweenValue',
     signature: '(from, to, duration: float, on_update: Callable, deps: Array = [])',
     returns: 'void',
     category: 'Animation & Media',
     note: 'Drives on_update(value); animate without re-render',
   },
   {
-    name: 'use_animate',
+    name: 'useAnimate',
     signature: '(ref: Dictionary, tracks: Array, autoplay := true, deps: Array = [])',
     returns: 'void',
     category: 'Animation & Media',
     note: 'Plays property tracks on a node via a Tween',
   },
   {
-    name: 'use_sfx',
+    name: 'useSfx',
     signature: '(bus := "Master")',
     returns: 'Callable',
     category: 'Animation & Media',
@@ -191,7 +191,7 @@ const hooks: HookSig[] = [
   },
   // Platform
   {
-    name: 'use_safe_area',
+    name: 'useSafeArea',
     signature: '()',
     returns: '{ left, top, right, bottom }',
     category: 'Platform',
@@ -224,7 +224,7 @@ export const HooksAPIPage: FC = () => (
       (<code>addons/reactive_ui/core/hooks.gd</code>). In <code>.guitkx</code>{' '}
       markup, bare <code>use_*</code> calls are auto-prefixed to{' '}
       <code>Hooks.*</code>; in GDScript they are static methods, e.g.{' '}
-      <code>Hooks.use_state(0)</code>. Hooks return plain GDScript values —
+      <code>Hooks.useState(0)</code>. Hooks return plain GDScript values —
       Arrays, Dictionaries, and <code>Callable</code>s — not custom types.
     </Typography>
 
@@ -278,37 +278,37 @@ export const HooksAPIPage: FC = () => (
       </Typography>
 
       <Typography variant="h6" gutterBottom>
-        use_state / use_reducer
+        useState / useReducer
       </Typography>
       <CodeBlock
         language="jsx"
-        code={`# use_state -> [value, set]
-var count = use_state(0)
+        code={`# useState -> [value, set]
+var count = useState(0)
 count[0]                      # current value
 count[1].call(5)             # set to a value
 count[1].call(func(c): return c + 1)   # functional updater (reads latest)
 
-# use_reducer -> [state, dispatch]
-var r = use_reducer(reducer, 0)
+# useReducer -> [state, dispatch]
+var r = useReducer(reducer, 0)
 r[0]                          # current state
 r[1].call("inc")             # dispatch an action`}
       />
 
       <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-        use_ref box
+        useRef box
       </Typography>
       <CodeBlock
         language="jsx"
         code={`# A stable Dictionary box; mutating .current never re-renders.
-var box = use_ref(0)
+var box = useRef(0)
 box["current"] += 1
 
 # Wire the same box to a host element's ref prop to capture its Control.
-var node_ref = use_ref(null)   # after commit: node_ref["current"] is the Control`}
+var node_ref = useRef(null)   # after commit: node_ref["current"] is the Control`}
       />
 
       <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-        use_safe_area insets
+        useSafeArea insets
       </Typography>
       <CodeBlock
         language="jsx"

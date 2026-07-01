@@ -3,7 +3,7 @@ export const UITKX_INSTALL_URL = 'res://addons/reactive_ui/'
 export const UITKX_HELLO_WORLD_COMPONENT = `@class_name HelloWorld
 
 component HelloWorld() {
-  var s = use_state(0)
+  var s = useState(0)
   return (
     <VBox style={ {"separation": 8} }>
       <Label text="Hello, reactive Godot! 👋" />

@@ -13,7 +13,7 @@ component ExpensiveChild(data) {
 # Parent: only re-render ExpensiveChild when the row COUNT changes, ignoring
 # unrelated field edits inside the array.
 component Parent() {
-  var rows = use_state([])
+  var rows = useState([])
   return (
     <VBox>
       { V.fc(ExpensiveChild.render, {
@@ -25,18 +25,18 @@ component Parent() {
   )
 }
 
-# use_memo memoizes derived values; use_callback memoizes a Callable's identity.
-# var filtered = use_memo(func(): return heavy(items[0]), [items[0]])
-# var on_pick  = use_callback(func(id): select(id), [])`
+# useMemo memoizes derived values; useCallback memoizes a Callable's identity.
+# var filtered = useMemo(func(): return heavy(items[0]), [items[0]])
+# var on_pick  = useCallback(func(id): select(id), [])`
 
 // Refs to Godot nodes (repurposed slot: HOSTCONTEXT_EXAMPLE)
-export const HOSTCONTEXT_EXAMPLE = `# use_ref(null) + the ref prop capture the underlying Godot Control after commit.
+export const HOSTCONTEXT_EXAMPLE = `# useRef(null) + the ref prop capture the underlying Godot Control after commit.
 # ref["current"] is a real node — call any of its methods / read any property.
 
 @class_name ScrollToBottom
 
 component ScrollToBottom(lines) {
-  var scroll_ref = use_ref(null)   # -> ScrollContainer node
+  var scroll_ref = useRef(null)   # -> ScrollContainer node
 
   # After each new line, scroll to the bottom imperatively (layout effect = pre-paint).
   var stick = func():
@@ -44,7 +44,7 @@ component ScrollToBottom(lines) {
     if sc != null:
       sc.scroll_vertical = int(sc.get_v_scroll_bar().max_value)
     return Callable()
-  use_layout_effect(stick, [lines.size()])
+  useLayoutEffect(stick, [lines.size()])
 
   return (
     <ScrollContainer ref={ scroll_ref } style={ {"min_size": Vector2(320, 200)} }>
@@ -67,21 +67,21 @@ var on_login = func():
   role[1].call("admin")     # are batched into one
   ready[1].call(true)       # commit next frame
 
-# use_deferred_value opts a value into a LOW-priority follow-up frame, so an
+# useDeferredValue opts a value into a LOW-priority follow-up frame, so an
 # urgent update (typing) paints first and expensive work catches up a frame later:
-#   var deferred = use_deferred_value(query[0])`
+#   var deferred = useDeferredValue(query[0])`
 
-// use_stable_callback (repurposed slot: FLUSHSYNC_EXAMPLE)
+// useStableCallback (repurposed slot: FLUSHSYNC_EXAMPLE)
 export const FLUSHSYNC_EXAMPLE = `@class_name SearchForm
 
 component SearchForm() {
-  var query = use_state("")
-  var results = use_state([])
+  var query = useState("")
+  var results = useState([])
 
-  # use_stable_callback: a wrapper whose identity NEVER changes across renders,
+  # useStableCallback: a wrapper whose identity NEVER changes across renders,
   # but that always calls the latest closure body. Safe to hand to a child or a
   # Godot signal once, without re-subscribing every render.
-  var on_search = use_stable_callback(func():
+  var on_search = useStableCallback(func():
     var r := search(query[0])
     results[1].call(r))
 
@@ -110,7 +110,7 @@ component SafeApp() {
 
 # Pattern 2: reset via a changing key
 component RecoverablePanel() {
-  var reset_key = use_state("v1")
+  var reset_key = useState("v1")
   return (
     <VBox>
       <Button text="Retry"
@@ -131,7 +131,7 @@ export const DEPTH_GUARD_EXAMPLE = `# The reconciler guards against runaway re-r
 #
 # BAD — sets state on every render, looping forever:
 #   component Broken() {
-#     var n = use_state(0)
+#     var n = useState(0)
 #     n[1].call(n[0] + 1)          # <-- runs every render => infinite loop
 #     return (<Label text={ str(n[0]) } />)
 #   }
@@ -140,7 +140,7 @@ export const DEPTH_GUARD_EXAMPLE = `# The reconciler guards against runaway re-r
 #   var bump = func():
 #     n[1].call(n[0] + 1)
 #     return Callable()
-#   use_effect(bump, [])           # runs once, after commit`
+#   useEffect(bump, [])           # runs once, after commit`
 
 // Custom drawing: draw_fn + redraw_key (repurposed slot: SNAPSHOT_EXAMPLE)
 export const SNAPSHOT_EXAMPLE = `# The Godot analogue of Unity's OnGenerateVisualContent + RedrawKey.
@@ -162,7 +162,7 @@ component Gauge(value) {
   })
 }
 
-# Pair a STABLE draw_fn (use_stable_callback) with redraw_key so a fresh closure
+# Pair a STABLE draw_fn (useStableCallback) with redraw_key so a fresh closure
 # each render never re-subscribes the 'draw' signal — it only repaints.`
 
 // Item-model adapters / custom host elements (repurposed slot: ELEMENT_REGISTRY_EXAMPLE)
@@ -171,7 +171,7 @@ export const ELEMENT_REGISTRY_EXAMPLE = `# RUIHost is the only layer that knows 
 # an 'items' prop and the adapter rebuilds the control's model when it changes.
 
 component Picker() {
-  var choice = use_state(0)
+  var choice = useState(0)
   return (
     <OptionButton items={ ["Small", "Medium", "Large"] }
                   selected={ choice[0] }

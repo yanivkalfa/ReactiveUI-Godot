@@ -101,7 +101,7 @@ static func texture_progress(props := {}, children = null, key = null) -> RUIVNo
 static func color_picker(props := {}, children = null, key = null) -> RUIVNode: return h("ColorPicker", props, children, key)
 static func color_picker_button(props := {}, children = null, key = null) -> RUIVNode: return h("ColorPickerButton", props, children, key)
 
-# Media (Godot's audio/video are scene nodes — thin host elements; see also use_sfx for one-shots)
+# Media (Godot's audio/video are scene nodes — thin host elements; see also useSfx for one-shots)
 static func audio(props := {}, key = null) -> RUIVNode: return h("AudioStreamPlayer", props, null, key)
 static func video(props := {}, key = null) -> RUIVNode: return h("VideoStreamPlayer", props, null, key)
 
