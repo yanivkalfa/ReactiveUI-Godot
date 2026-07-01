@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_diagnostics()
 	_test_loop_single_root()
 	_test_decl_validation()
+	_test_codegen_staleness()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
@@ -337,6 +338,35 @@ func _test_decl_validation() -> void:
 	# BUG-V5: code after the markup return is flagged unreachable (GUITKX0114 warning)
 	var unreach := RUIGuitkx.compile("component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n", "U")
 	_check_true(unreach["ok"] and str(unreach["diagnostics"]).contains("GUITKX0114"), "unreachable code after return warned (got %s)" % str(unreach["diagnostics"]))
+
+# The stale-.gd disease: a sibling .gd that is NEWER than its source but was produced by an OLD
+# compiler must still be regenerated. Guards guitkx_codegen's compiler-version staleness mechanism —
+# the mtime-only guard silently skipped such files, so old-compiler output (e.g. an unprefixed
+# useState) persisted after a pull while CI (which recompiles unconditionally) stayed green.
+func _test_codegen_staleness() -> void:
+	var CG := preload("res://addons/reactive_ui/guitkx/guitkx_codegen.gd")
+	var fp: String = CG.compiler_fingerprint()
+	_check_true(fp.length() == 8 and fp != "00000000", "compiler fingerprint is a stable non-zero hash (got %s)" % fp)
+	_check_true(fp == CG.compiler_fingerprint(), "compiler fingerprint is deterministic")
+	if DirAccess.open("res://.godot") == null:
+		return  # the marker lives in .godot (present after an editor import scan); skip the round-trip otherwise
+	var mk := "res://.godot/rui_guitkx_compiler.fp"
+	var had := FileAccess.file_exists(mk)
+	var prev := FileAccess.get_file_as_string(mk) if had else ""
+	_write_file(mk, "deadbeef")
+	_check_true(CG.compiler_changed(), "a mismatched marker -> compiler_changed() true (forces full regen)")
+	_write_file(mk, fp)
+	_check_true(not CG.compiler_changed(), "a matching marker -> compiler_changed() false (mtime guard resumes)")
+	if had:
+		_write_file(mk, prev)
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(mk))
+
+func _write_file(path: String, s: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(s)
+		f.close()
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \
