@@ -5,9 +5,9 @@ component DemoDeepTree() {
 	return (
 		<DemoBox title="Deep component tree">
 			<HBox style={ {"separation": 8} }>
-				<Button text="− depth" on_pressed={ func(): depth[1].call(maxi(1, depth[0] - 1)) } />
+				<Button text="− depth" onClick={ func(): depth[1].call(maxi(1, depth[0] - 1)) } />
 				<Label text={ "depth %d" % depth[0] } />
-				<Button text="+ depth" on_pressed={ func(): depth[1].call(depth[0] + 1) } />
+				<Button text="+ depth" onClick={ func(): depth[1].call(depth[0] + 1) } />
 			</HBox>
 			<DemoDeepTreeNode level={ depth[0] } />
 		</DemoBox>

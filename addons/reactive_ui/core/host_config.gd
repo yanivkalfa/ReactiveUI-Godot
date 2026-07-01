@@ -9,7 +9,14 @@ extends RefCounted
 ## Prop conventions on a host vnode's props Dictionary:
 ##   "style"        -> handed to RUIStyle
 ##   "ref"          -> a Callable(node) or a { "current": ... } box, receives the node
-##   "on_<signal>"  -> a Callable connected to the node's "<signal>" (e.g. on_pressed -> "pressed")
+##   event handlers -> a Callable connected to a Godot signal on the node. Two spellings, both valid:
+##                     • React camelCase (canonical): onClick, onChange, onSubmit, onInput, onFocus,
+##                       onBlur, onPointerDown/Up/Enter/Leave, onResize — plus any onXxxYyy that maps
+##                       to the `xxx_yyy` signal. `onChange` is polymorphic (React-style): it binds to
+##                       whichever value/selection signal the node has (value_changed / text_changed /
+##                       item_selected / tab_changed / toggled). See _EVENT_ALIASES / _resolve_signal.
+##                     • Native escape hatch: on_<signal> binds verbatim to "<signal>" (e.g.
+##                       on_gui_input, on_id_pressed, on_mouse_entered) — reaches ANY Godot signal.
 ##   "draw_fn"      -> a Callable(canvas_item) for custom drawing (invoked via the node's `draw` signal)
 ##   "redraw_key"   -> bump to repaint `draw_fn` without changing the callback (pair with use_stable_callback)
 ##   "key"          -> reconciliation key (consumed by V; never applied)
@@ -135,32 +142,86 @@ static func _set_prop(node: Node, key: String, val) -> void:
 		return
 	node.set(key, val)
 
-static func _is_event(key: String) -> bool:
-	return key.begins_with("on_")
+# React-event name -> ordered candidate Godot signals. The FIRST signal the node actually HAS wins,
+# so one React name binds correctly across control types (mirrors React's element-sensitive onChange).
+# Order matters: more-specific signals first, so a Button subclass that also carries `toggled` (e.g.
+# OptionButton, which is a Button) still binds onChange -> item_selected, not toggled. Names absent
+# here fall back to a generic camelCase->snake_case transform (onValueChanged -> value_changed); a
+# native on_<signal> binds verbatim. This table only holds names whose React spelling differs from
+# the signal, or that are polymorphic.
+const _EVENT_ALIASES := {
+	"onClick": ["pressed"],
+	"onChange": ["item_selected", "value_changed", "text_changed", "tab_changed", "toggled"],
+	"onInput": ["text_changed"],
+	"onSubmit": ["text_submitted"],
+	"onFocus": ["focus_entered"],
+	"onBlur": ["focus_exited"],
+	"onPointerDown": ["button_down"],
+	"onPointerUp": ["button_up"],
+	"onPointerEnter": ["mouse_entered"],
+	"onPointerLeave": ["mouse_exited"],
+	"onResize": ["resized"],
+}
 
-static func _signal_name(key: String) -> String:
-	return key.substr(3)  # strip "on_"
+## An attribute is an event handler if it uses the native on_<signal> convention OR the React
+## camelCase convention (on + UpperCase…, e.g. onClick/onChange). Purely syntactic (no node needed)
+## so the reconciler can classify props cheaply; signal resolution happens later in _resolve_signal.
+static func _is_event(key: String) -> bool:
+	if key.begins_with("on_"):
+		return true
+	return key.length() > 2 and key.begins_with("on") and _is_ascii_upper(key.unicode_at(2))
+
+static func _is_ascii_upper(c: int) -> bool:
+	return c >= 65 and c <= 90  # 'A'..'Z'
+
+## Resolve an event prop key to the Godot signal name to connect on `node`:
+##   • on_<signal>  -> "<signal>" verbatim (escape hatch to any signal)
+##   • a React alias in _EVENT_ALIASES -> the first candidate signal `node` actually has (polymorphic)
+##   • any other on<Camel>  -> camelCase->snake_case (onValueChanged -> value_changed)
+static func _resolve_signal(node: Object, key: String) -> String:
+	if key.begins_with("on_"):
+		return key.substr(3)
+	if _EVENT_ALIASES.has(key):
+		var candidates: Array = _EVENT_ALIASES[key]
+		for sig in candidates:
+			if node != null and node.has_signal(sig):
+				return sig
+		return candidates[0]  # none present — return the primary (connect warns below)
+	return _camel_to_snake(key.substr(2))  # strip "on"
+
+static func _camel_to_snake(s: String) -> String:
+	var out := ""
+	for i in s.length():
+		var c := s.unicode_at(i)
+		if c >= 65 and c <= 90:  # 'A'..'Z'
+			if i > 0:
+				out += "_"
+			out += char(c + 32)
+		else:
+			out += char(c)
+	return out
 
 static func _connect_event(node: Node, key: String, cb) -> void:
 	if not (cb is Callable) or not cb.is_valid():
 		return
-	var sig := _signal_name(key)
-	if not node.has_signal(sig):
-		push_warning("[reactive_ui] %s has no signal '%s' (for prop '%s')." % [node.get_class(), sig, key])
+	var sig := _resolve_signal(node, key)
+	if sig == "" or not node.has_signal(sig):
+		push_warning("[reactive_ui] %s has no signal for event prop '%s' (resolved '%s')." % [node.get_class(), key, sig])
 		return
 	if not node.is_connected(sig, cb):   # guard against a stale meta/connection divergence [audit C1]
 		node.connect(sig, cb)
 	var m: Dictionary = node.get_meta("__rui_events", {})
-	m[key] = cb
+	m[key] = { "cb": cb, "sig": sig }   # store the RESOLVED signal so disconnect is node-independent
 	node.set_meta("__rui_events", m)
 
 static func _disconnect_event(node: Node, key: String) -> void:
 	var m: Dictionary = node.get_meta("__rui_events", {})
 	if not m.has(key):
 		return
-	var sig := _signal_name(key)
-	var cb = m[key]
-	if cb is Callable and node.is_connected(sig, cb):
+	var rec: Dictionary = m[key]
+	var cb = rec.get("cb")
+	var sig: String = rec.get("sig", "")
+	if cb is Callable and sig != "" and node.is_connected(sig, cb):
 		node.disconnect(sig, cb)
 	m.erase(key)
 	node.set_meta("__rui_events", m)
@@ -236,7 +297,7 @@ static func _apply_item_model(node: Node, old_props: Dictionary, new_props: Dict
 ## ItemList: declarative `items` prop (Array of String or { text, icon, disabled }).
 ## Rebuilds only when the items array changes, preserving the user's selection by index
 ## (the "tracker" pattern — runtime state survives a re-render). Wire selection changes
-## with the normal `on_item_selected` / `on_item_activated` event props.
+## with `onChange` (or the native `on_item_selected` / `on_item_activated`).
 static func _apply_item_list(node: ItemList, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -273,8 +334,8 @@ static func _item_id(it):
 	return str(it)
 
 ## TabBar: declarative `items` (Array of String or { text, icon, disabled }). Rebuilds on change,
-## preserving the current tab by item IDENTITY. Wire tab changes with the normal `on_tab_changed` /
-## `on_tab_selected` event props.
+## preserving the current tab by item IDENTITY. Wire tab changes with `onChange` (or the native
+## `on_tab_changed` / `on_tab_selected`).
 static func _apply_tab_bar(node: TabBar, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -301,7 +362,7 @@ static func _apply_tab_bar(node: TabBar, old_props: Dictionary, new_props: Dicti
 		node.current_tab = restore
 
 ## OptionButton: declarative `items` (Array of String or { text, icon, disabled, id }). Rebuilds on
-## change, preserving the selection by item IDENTITY. Wire changes with `on_item_selected`.
+## change, preserving the selection by item IDENTITY. Wire changes with `onChange` (native: `on_item_selected`).
 static func _apply_option_button(node: OptionButton, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -331,7 +392,7 @@ static func _apply_option_button(node: OptionButton, old_props: Dictionary, new_
 		node.select(restore)
 
 ## PopupMenu: declarative `items` (Array of String or { text, id, disabled, checkable, checked,
-## separator }). Stateless rebuild (menus carry no persistent selection). Wire with `on_id_pressed`.
+## separator }). Stateless rebuild (menus carry no persistent selection). Wire with `onIdPressed` (native: `on_id_pressed`).
 static func _apply_popup_menu(node: PopupMenu, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -375,7 +436,7 @@ static func warn_capacity(node: Node, count: int) -> void:
 ## Tree: declarative hierarchical `items` (Array of { id, text, children:[...], collapsed? }).
 ## Rebuilds on change but PRESERVES the user's expand/collapse state and selection by `id`
 ## (the tracker pattern) — so re-rendering a tree doesn't reset what the user expanded.
-## Wire selection/activation with the normal `on_item_selected` / `on_item_activated` props.
+## Wire selection/activation with `onChange` (or the native `on_item_selected` / `on_item_activated`).
 static func _apply_tree(node: Tree, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return

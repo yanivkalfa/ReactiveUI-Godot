@@ -6,9 +6,9 @@ component DemoCounter() {
 		<DemoBox title="Counter — use_state">
 			<Label text={ "Count: %d" % s[0] } style={ {"font_size": 28} } />
 			<HBox style={ {"separation": 8} }>
-				<Button text="  −1  " on_pressed={ func(): s[1].call(s[0] - 1) } />
-				<Button text="  +1  " on_pressed={ func(): s[1].call(func(c): return c + 1) } />
-				<Button text=" Reset " on_pressed={ func(): s[1].call(0) } />
+				<Button text="  −1  " onClick={ func(): s[1].call(s[0] - 1) } />
+				<Button text="  +1  " onClick={ func(): s[1].call(func(c): return c + 1) } />
+				<Button text=" Reset " onClick={ func(): s[1].call(0) } />
 			</HBox>
 		</DemoBox>
 	)

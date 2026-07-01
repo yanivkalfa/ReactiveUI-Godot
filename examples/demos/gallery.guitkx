@@ -11,7 +11,7 @@ component DemoGallery() {
 		var is_sel: bool = sel[0] == i
 		buttons.append(V.button({
 			"text": demos[i]["title"],
-			"on_pressed": func(): sel[1].call(idx),
+			"onClick": func(): sel[1].call(idx),
 			"style": {
 				"expand_h": true,
 				"bg_color": Color(0.2, 0.4, 0.7) if is_sel else Color(0.18, 0.18, 0.22),

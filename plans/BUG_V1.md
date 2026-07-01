@@ -17,6 +17,24 @@ is never mistaken for a tag), and BUG-4's rename rewrites the `component` decl n
 the binding (so `@class_name X` over `component Y` keeps Y) and `@class_name` reads only to end-of-line.
 Verified: tsc clean + 45/45 lsp-server tests green (incl. 7 new regression tests).
 
+**React-parity follow-up (library 0.3.0 / IDE 0.4.0):** the "Fixable" parity gaps below are now resolved
+(additive, non-breaking):
+- **#1 Event names** — DONE. Full React camelCase surface (`onClick`, polymorphic `onChange`, `onSubmit`,
+  `onFocus`/`onBlur`, `onPointerDown/Up/Enter/Leave`, `onResize`, generic `onXxxYyy`→`xxx_yyy`), resolved
+  node-aware in `host_config.gd` (`_EVENT_ALIASES`/`_resolve_signal`); native `on_<signal>` kept as an
+  escape hatch. Mirrored across the LSP (`events.ts` → completion/hover/signature/validation/tokens), all
+  3 TextMate grammars, and the schema. 51→54 lsp tests green; GDScript `core_test::_test_react_events`.
+- **#2 Prop spread `{...obj}`** — DONE. Parser (`guitkx_markup.gd`) + codegen (`guitkx.gd` → `V._spread_all`)
+  + runtime (`v.gd`) + formatter, mirrored in the LSP parser/formatter/diagnostics/semantic-tokens.
+  Left-to-right merge (later wins), host + components. `core.test.ts` (3) + GDScript `guitkx_test::_test_spread`.
+- **#3 Context handle** — DONE. `Hooks.create_context(default)` → `RUIContext` (`core/context.gd`);
+  `provide_context`/`use_context` accept a handle (object-identity key, collision-free) or a String
+  (back-compat); handle returns its default when unprovided. GDScript `core_test::_test_context_handles`.
+- **#2b `ref["current"]` (not `ref.current`) and #4 `children` param (not `props.children`)** — remain, and
+  are **GDScript constraints, not gaps**: Dictionaries have no dot-access, so `ref.current` is impossible
+  without making `ref` an Object (which breaks `ref["current"]`), and `props.children` likewise can't be a
+  dot-accessed member. Documented as by-design; the `children` render param and `ref["current"]` box stay.
+
 ---
 
 ## BUG-1 — Embedded GDScript in `.guitkx` is not formatted by our analyzer

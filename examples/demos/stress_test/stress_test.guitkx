@@ -35,10 +35,10 @@ component DemoStress() {
 			<HBox style={ {"separation": 8} }>
 				<Label text={ status } style={ {"expand_h": true} } />
 				<Label text="Boxes:" />
-				<LineEdit text={ count_text[0] } on_text_changed={ func(t): count_text[1].call(t) } style={ {"min_width": 70} } />
+				<LineEdit text={ count_text[0] } onChange={ func(t): count_text[1].call(t) } style={ {"min_width": 70} } />
 				<Label text="Secs:" />
-				<LineEdit text={ dur_text[0] } on_text_changed={ func(t): dur_text[1].call(t) } style={ {"min_width": 50} } />
-				<Button text={ "Running…" if running[0] else ("Restart" if loop["finished"] else "Start") } on_pressed={ start } />
+				<LineEdit text={ dur_text[0] } onChange={ func(t): dur_text[1].call(t) } style={ {"min_width": 50} } />
+				<Button text={ "Running…" if running[0] else ("Restart" if loop["finished"] else "Start") } onClick={ start } />
 			</HBox>
 			<Control ref={ area_ref } clip_contents style={ {"expand_h": true, "expand_v": true, "min_height": 320} }>
 				@for (b in boxes) {

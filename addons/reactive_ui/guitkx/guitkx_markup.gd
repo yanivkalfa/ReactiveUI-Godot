@@ -124,6 +124,17 @@ func _mk_el(tag: String, attrs: Array, children: Array, line: int) -> Dictionary
 
 func _parse_attribute(start: int, end: int) -> Dictionary:
 	var i := start
+	# spread attribute `{...expr}` (React `{...obj}`): merged into props at codegen. kind "spread".
+	if _src[i] == "{":
+		var sclose := L.find_matching(_src, i)
+		if sclose == -1 or sclose >= end:
+			_err = "GUITKX0304: unclosed `{` in spread attribute"
+			return { "attr": null, "next": end }
+		var inner := _src.substr(i + 1, sclose - i - 1).strip_edges()
+		if not inner.begins_with("..."):
+			_err = "GUITKX0300: expected `...spread` or an attribute name"
+			return { "attr": null, "next": end }
+		return { "attr": { "name": "", "kind": "spread", "value": inner.substr(3).strip_edges() }, "next": sclose + 1 }
 	var ns := i
 	while i < end and _is_attr_name_char(_src[i]):
 		i += 1

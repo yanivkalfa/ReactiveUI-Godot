@@ -16,6 +16,16 @@ extends RefCounted
 static func fc(render_fn: Callable, props := {}, children = null, key = null) -> RUIVNode:
 	return RUIVNode.make_component(render_fn, props, _norm(children), _key(props, key))
 
+## Merge an ordered list of prop dictionaries left-to-right (later keys win) into a NEW dict — the
+## runtime backing `{...spread}` in guitkx markup (`<C {...base} x={1} />`). Non-dict segments are
+## skipped defensively. Merges into a fresh dict (Godot 4.0+ Dictionary.merge), never mutating a source.
+static func _spread_all(parts: Array) -> Dictionary:
+	var out := {}
+	for p in parts:
+		if p is Dictionary:
+			out.merge(p, true)
+	return out
+
 ## Memoized function component (parity name for ReactiveUIToolKit's V.Memo). Functionally V.fc — every
 ## function component in this port already bails its re-render when props are unchanged. For a custom
 ## equality, pass `props.__memo_eq = func(old_props, new_props) -> bool` (consulted by the reconciler).

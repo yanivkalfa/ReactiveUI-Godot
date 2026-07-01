@@ -1,3 +1,29 @@
+## [0.3.0] - 2026-07-01
+
+### React parity, for real -- onClick, prop spread, and context handles
+
+The markup just got a lot more React, and it's all additive -- your existing `.guitkx` keeps working untouched.
+
+**Events read like React now.** Wire a button with `onClick`, a text field or slider with `onChange`, an input's Enter with `onSubmit`, hover/focus with `onPointerEnter` / `onPointerLeave` / `onFocus` / `onBlur`. Each maps to the right Godot signal under the hood -- `onClick` -> `pressed`, and `onChange` is *polymorphic*: it binds whichever of `text_changed` / `value_changed` / `item_selected` / `tab_changed` / `toggled` the control actually has, exactly like React's single `onChange`. The old `on_<signal>` spelling still works as an escape hatch to *any* signal, so nothing you wrote breaks.
+
+**Prop spread.** `<Button {...cfg} onClick={ handle } />` -- spread a dictionary of props onto any element or component, merged left-to-right (later wins), just like JSX.
+
+**Context handles.** `Hooks.create_context(default)` gives you a handle to pass to `provide_context` / `use_context` instead of a bare string key -- no more accidental collisions between two features that both keyed on `"theme"`, plus a default value when nobody provides one. String keys still work if you prefer them.
+
+Update to **Reactive UI 0.3.0** (copy `addons/reactive_ui/` into your project).
+
+---
+
+## [IDE 0.4.0] - 2026-07-01
+
+### The editor speaks React events (and prop spread)
+
+The VS Code / VS 2022 extension caught up to the library's new React-style API. Type `on` on a `<Button>` and completion offers `onClick`, `onChange`, `onPointerDown`, and the rest -- each showing the exact Godot signal it binds and that signal's arguments on hover, with signature help inside the handler and no false "unknown attribute" squiggle. `onChange` is offered per control, so a `<LineEdit>` gets the text-change binding and a `<Tree>` gets selection. And prop spread `{...obj}` is now understood in markup -- highlighted, never flagged, and preserved by the formatter.
+
+Reinstall **GUITKX 0.4.0** (VS Code + VS 2022).
+
+---
+
 ## [IDE 0.3.1] - 2026-07-01
 
 ### The .guitkx editor experience, debugged -- hover, completion, rename, and formatting that actually work

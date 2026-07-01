@@ -514,10 +514,24 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	elif HOST_TAGS.has(tag):
 		is_host = true
 		factory = HOST_TAGS[tag]
-	# build the props dict + pull out key
+	# build the props dict + pull out key. `{...spread}` attrs are merged left-to-right (later wins),
+	# order-preserving relative to explicit props, via V._spread_all([...]). No spread -> plain literal
+	# (unchanged hot path).
 	var props_parts: Array = []
 	var key_expr := ""
+	var has_spread := false
 	for a in nd["attrs"]:
+		if a.get("kind", "") == "spread":
+			has_spread = true
+			break
+	var segments: Array = []   # only used when has_spread: ordered dict-exprs to merge
+	for a in nd["attrs"]:
+		if a.get("kind", "") == "spread":
+			if not props_parts.is_empty():
+				segments.append("{ %s }" % ", ".join(props_parts))
+				props_parts = []
+			segments.append("(%s)" % a["value"])
+			continue
 		var name: String = a["name"]
 		var valcode := _attr_value_code(a, ctx)
 		if name == "key":
@@ -529,7 +543,13 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	if is_host and TEXT_FACTORIES.has(factory) and not _has_attr(nd, "text") and _all_text_children(children):
 		props_parts.append("\"text\": %s" % _merge_text_children(children, ctx))
 		children = []
-	var props_dict := "{ %s }" % ", ".join(props_parts) if not props_parts.is_empty() else "{}"
+	var props_dict: String
+	if has_spread:
+		if not props_parts.is_empty():
+			segments.append("{ %s }" % ", ".join(props_parts))
+		props_dict = "V._spread_all([%s])" % ", ".join(segments)
+	else:
+		props_dict = "{ %s }" % ", ".join(props_parts) if not props_parts.is_empty() else "{}"
 	var children_src := _emit_children_array(children, ctx)
 	if is_host:
 		var args := props_dict

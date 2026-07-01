@@ -216,17 +216,27 @@ static func use_layout_effect(effect: Callable, deps = null) -> void:
 # Context
 # --------------------------------------------------------------------------
 
-## use_context(key) -> nearest provided value (walking up the fiber tree), or null.
-## Does NOT consume a hook slot. Records the read so context changes can re-render.
-static func use_context(key: String):
+## Create a context handle — React parity for `createContext(default)`. Pass the handle to
+## provide_context/use_context instead of a string key to avoid cross-feature key collisions and to
+## get a default value when no provider exists. See [RUIContext].
+static func create_context(default_value = null, ctx_name: String = "") -> RUIContext:
+	return RUIContext.new(default_value, ctx_name)
+
+## use_context(key) -> nearest provided value walking up the fiber tree. `key` is a [RUIContext]
+## handle (recommended, collision-free) OR a String (back-compat). Returns the handle's `default`
+## when no ancestor provides it (String keys return null). Does NOT consume a hook slot; records the
+## read so context changes re-render.
+static func use_context(key):
 	var s := _cur
 	var fiber: RUIFiber = s.fiber
 	fiber.reads_context = true
 	var val = _resolve_context(fiber, key)
+	if val == null and key is RUIContext:
+		val = key.default   # no provider up the tree -> the handle's default
 	s.context_deps.append({ "key": key, "value": val })
 	return val
 
-static func _resolve_context(fiber: RUIFiber, key: String):
+static func _resolve_context(fiber: RUIFiber, key):  # key: RUIContext handle or String
 	var f := fiber
 	while f != null:
 		if f.provided_context != null and f.provided_context.has(key):
@@ -234,9 +244,11 @@ static func _resolve_context(fiber: RUIFiber, key: String):
 		f = f.parent
 	return null
 
-## provide_context(key, value): expose `value` under `key` to this fiber's subtree.
-## On change, marks consuming descendants dirty so they re-render even through bailouts.
-static func provide_context(key: String, value) -> void:
+## provide_context(key, value): expose `value` under `key` to this fiber's subtree. `key` is a
+## [RUIContext] handle (recommended) or a String (back-compat); a handle's object identity keys the
+## map so distinct contexts never collide. On change, marks consuming descendants dirty so they
+## re-render even through bailouts.
+static func provide_context(key, value) -> void:
 	var fiber: RUIFiber = _cur.fiber
 	if fiber.provided_context == null:
 		fiber.provided_context = {}
@@ -251,7 +263,7 @@ static func provide_context(key: String, value) -> void:
 ## DFS over the committed subtree marking consumers of `key` dirty. Returns whether
 ## anything was marked (so intermediate ancestors get subtree_has_updates). Stops at a
 ## nested provider that shadows the same key.
-static func _propagate_context_change(key: String, first: RUIFiber) -> bool:
+static func _propagate_context_change(key, first: RUIFiber) -> bool:  # key: RUIContext handle or String
 	var any := false
 	var f := first
 	while f != null:

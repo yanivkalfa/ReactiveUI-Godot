@@ -4,6 +4,31 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-07-01
+
+React-parity event handlers, prop spread, and context handles — the markup gets meaningfully closer to React.
+
+### Runtime
+- **React-style event handlers.** Wire events with camelCase names — `onClick` (→ Godot `pressed`),
+  `onChange` (polymorphic: binds whichever of `item_selected` / `value_changed` / `text_changed` /
+  `tab_changed` / `toggled` the control actually has), `onSubmit` (→ `text_submitted`), `onFocus` /
+  `onBlur`, `onPointerDown` / `onPointerUp` / `onPointerEnter` / `onPointerLeave`, `onResize`, and any
+  `onXxxYyy` → the `xxx_yyy` signal. The native `on_<signal>` spelling still works as an escape hatch to
+  any Godot signal, so nothing breaks.
+- **Prop spread `{...obj}`.** Spread a dictionary of props onto any element — `<Button {...cfg}
+  onClick={ f } />` — exactly like React. Spreads merge with explicit props left-to-right (later wins),
+  order-preserving, on both host elements and components.
+- **Context handles.** `Hooks.create_context(default)` returns an `RUIContext` handle; pass it to
+  `provide_context` / `use_context` instead of a bare string key to avoid cross-feature key collisions
+  (the handle's object identity is the map key) and to receive a default value when no ancestor provides
+  it. String keys still work (back-compat).
+
+### IDE extensions
+- **GUITKX VS Code 0.4.0 / VS 2022 0.4.0** teach the editor the React event names — completion (offered
+  per control), hover showing the bound Godot signal + its arguments, signature help, unknown-attribute
+  validation, and semantic highlighting — and recognize prop spread `{...obj}` in markup (highlighted,
+  never flagged as unknown, preserved by the formatter).
+
 ## [0.2.2] — 2026-06-30
 
 Custom drawing on any element, a README that finally matches the library, and a much smarter IDE.

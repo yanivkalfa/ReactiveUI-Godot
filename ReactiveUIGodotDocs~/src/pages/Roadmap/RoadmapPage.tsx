@@ -1,0 +1,96 @@
+import type { FC } from 'react'
+import { Box, Chip, List, ListItem, ListItemText, Typography } from '@mui/material'
+import Styles from './RoadmapPage.style'
+
+export const RoadmapPage: FC = () => (
+  <Box sx={Styles.root}>
+    <Typography variant="h4" component="h1" gutterBottom>
+      Roadmap
+    </Typography>
+    <Typography variant="body1" paragraph>
+      ReactiveUI for Godot is under active development. Below is a high-level view of what is
+      done and what is planned. Priorities may shift based on community feedback.
+    </Typography>
+
+    <Typography variant="h5" component="h2" gutterBottom sx={{ mt: 2 }}>
+      Completed — core runtime
+    </Typography>
+    <List>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Fiber reconciler — synchronous render with atomic two-phase commit, keyed reconciliation, and bailout</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Full hook set — use_state, use_reducer, use_effect, use_memo, use_ref, use_context, use_signal, use_tween</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />~60 host elements mapping to Godot Controls (containers, buttons, inputs, item-model controls, media)</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Styling redesigned for Godot — RUIStyle style dicts (Control props + size flags + Theme/StyleBox) and RUIStyleSheet named bundles</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Signals (RUISignal) for app-wide state, plus the client-side router (routes, outlet, navigate, nav_link)</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Fragment, Portal, Suspense, and error-boundary components</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />React-parity event handlers — onClick, onChange, onSubmit, onFocus/onBlur, onPointer*, onResize map to Godot signals, with on_&lt;signal&gt; as an escape hatch</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Prop spread <code>{'{...obj}'}</code> in .guitkx and context handles via Hooks.create_context (React createContext parity)</>} />
+      </ListItem>
+    </List>
+
+    <Typography variant="h5" component="h2" gutterBottom sx={{ mt: 2 }}>
+      Completed — tooling
+    </Typography>
+    <List>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />.guitkx markup language + @tool compiler that emits a sibling .gd render function on save</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />VS Code and Visual Studio extensions — highlighting, completion, hover, diagnostics, formatting (LSP embeds the Rust GDScript analyzer)</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="In progress" size="small" color="info" sx={{ mr: 1 }} />This documentation site (ported from the Unity docs, rewritten for Godot)</>} />
+      </ListItem>
+    </List>
+
+    <Typography variant="h5" component="h2" gutterBottom sx={{ mt: 2 }}>
+      Planned
+    </Typography>
+    <List>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />Native Godot-editor addon — full .guitkx language experience inside the editor (diagnostics, completion, hover, go-to-definition, rename, formatting), targeting Godot 4.4+</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />Custom-draw escape hatch — declarative custom rendering for elements that need _draw()-level control</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />More host elements as Godot adds Controls, and coverage for any that need a newer engine version</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />Distribution via the Godot Asset Library, versioned releases, and CI</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />Sample gallery and starter templates covering common UI patterns</>} />
+      </ListItem>
+    </List>
+
+    <Typography variant="h5" component="h2" gutterBottom sx={{ mt: 2 }}>
+      Under consideration
+    </Typography>
+    <List>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Exploring" size="small" color="warning" sx={{ mr: 1 }} />A native GDExtension backend for the editor addon&apos;s deep-intelligence layer (decided with real usage data)</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Exploring" size="small" color="warning" sx={{ mr: 1 }} />Component testing utilities (snapshot-style tree assertions)</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Exploring" size="small" color="warning" sx={{ mr: 1 }} />Render-count and performance diagnostics overlay for tuning large trees</>} />
+      </ListItem>
+    </List>
+  </Box>
+)
