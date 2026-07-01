@@ -4,6 +4,23 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] — 2026-07-02
+
+Compiler robustness: forgiving indentation and reliable regeneration.
+
+### Fixed
+- **Mixed tabs and spaces in a component's `setup` no longer break compilation.** A line indented with,
+  say, a tab + two spaces renders identically to two tabs, so the difference is invisible — yet the old
+  reindenter compared indentation by raw characters and emitted GDScript with inconsistent indentation
+  (an "unindent doesn't match" downstream) plus a spurious `GUITKX0013` "hook in a block". The compiler
+  now measures indentation by **depth** (a tab and the inferred space-unit each count as one level), so
+  mixed tabs/spaces normalize to consistent, valid GDScript. A genuine hook-in-a-block still warns.
+- **Generated `.gd` now regenerate when the compiler itself changes, not only when the `.guitkx` is
+  newer.** The staleness check was mtime-only, so after updating the library a sibling `.gd` that was
+  newer than its source (but produced by the *old* compiler) was skipped forever — the editor kept
+  loading stale output. `compile_all` now fingerprints the compiler pipeline and forces a full
+  regeneration when it changes (stored in a machine-local `.godot` marker).
+
 ## [0.4.0] — 2026-07-01
 
 Hooks go camelCase (full React parity) plus a round of compiler validation fixes.
