@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.0] - 2026-07-01
+- Event handlers in `.guitkx` now use React-style camelCase names — `onClick`, `onChange`, `onSubmit`, `onFocus`, `onBlur`, `onPointerDown`/`onPointerUp`/`onPointerEnter`/`onPointerLeave`, `onResize` — and the editor understands them everywhere: completion offers the right events per control, hover shows the underlying Godot signal and its argument signature, signature help fires inside the handler, unknown-attribute validation accepts them, and they are semantically highlighted as events. `onChange` is polymorphic — it is offered for (and binds to) whichever value/selection signal the control actually exposes (`text_changed`, `value_changed`, `item_selected`, `tab_changed`, or `toggled`). The native `on_<signal>` spelling is still recognized as an escape hatch to any Godot signal.
+- Prop spread `{...obj}` is now recognized in markup: it is highlighted, never flagged as an unknown attribute, and preserved (and kept idempotent) by the formatter — matching the compiler, which merges a spread with explicit props left-to-right (later wins), on both host elements and components.
+
 ## [0.3.1] - 2026-07-01
 - Hover, completion, and go-to-definition now work for embedded GDScript in a component's setup block (the lines before `return (...)`). They were returning nothing — including hooks like `use_state` — because the setup region's source map was dropped on CRLF files or when the block ended in a blank line; it is now mapped line by line.
 - Hover in markup now resolves the full identifier under the cursor against host elements, your own components, and the host element's ClassDB properties and signals. Previously it only matched a host tag at the exact end of its name, so attributes (`text`, `separation`, `on_pressed`, …) and component tags hovered to nothing. A component tag's hover also shows its parameter signature.
