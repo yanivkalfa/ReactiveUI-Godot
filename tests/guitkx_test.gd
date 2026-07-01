@@ -27,6 +27,7 @@ func _run() -> void:
 	_test_loop_single_root()
 	_test_decl_validation()
 	_test_codegen_staleness()
+	_test_indent_robustness()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
@@ -367,6 +368,24 @@ func _write_file(path: String, s: String) -> void:
 	if f != null:
 		f.store_string(s)
 		f.close()
+
+# A tab + spaces renders identically to tabs in every editor (so the author can't see the difference)
+# but differs byte-wise. The compiler must normalize such mixed indentation (depth-based reindent)
+# into VALID GDScript instead of emitting a broken .gd ("unindent doesn't match") or a false
+# GUITKX0013 -- while still catching a genuine hook-in-a-block.
+func _test_indent_robustness() -> void:
+	var mixed := "component X {\n\t\tvar a = useState(0)\n\t  var b = useState(0)\n\treturn ( <Label /> )\n}\n"
+	var r := RUIGuitkx.compile(mixed, "X")
+	_check_true(r["ok"] and not str(r["diagnostics"]).contains("GUITKX0013"), "mixed tab/space setup compiles, no false GUITKX0013 (got %s)" % str(r["diagnostics"]))
+	var s := GDScript.new()
+	s.source_code = (r["gd"] as String).replace("class_name X\n", "")
+	_check_true(s.reload() == OK, "mixed tab/space setup generates VALID GDScript")
+	var pure_space := RUIGuitkx.compile("component X {\n    var a = useState(0)\n    return ( <Label /> )\n}\n", "X")
+	var s2 := GDScript.new()
+	s2.source_code = (pure_space["gd"] as String).replace("class_name X\n", "")
+	_check_true(s2.reload() == OK, "pure-space setup also generates VALID GDScript")
+	var bad := RUIGuitkx.compile("component X {\n\tvar a = useState(0)\n\tif a[0]:\n\t\tvar b = useState(0)\n\treturn ( <Label /> )\n}\n", "X")
+	_check_true(str(bad["diagnostics"]).contains("GUITKX0013"), "a genuine hook-in-a-block still warns")
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \
