@@ -17,6 +17,13 @@ Status: PLAN (research complete, all claims source-cited against Godot 4.2–4.5
    subprocess) vs Path 2 (native gdext + GDScript) **at P3**, with real usage data.
 3. **Additive React-style event aliases (§7).** Add `on_click`→`pressed`, `on_change`→`text_changed`, … as
    non-breaking aliases alongside the existing `on_<signal>`. Library/compiler change, independent of the editor.
+   *(Shipped: `onClick`/`onChange`/… camelCase aliases are implemented in `host_config.gd`.)*
+4. **[RESOLVED 2026-07] Backend = §4 Path 2 (native gdext binding of `gdscript-analyzer`).** Research-confirmed
+   feasible and chosen; the analyzer's `gdscript-session` core is wrapped as a third ~200-line delegator
+   alongside napi/wasm, giving all 16 IDE queries in-process (no TCP, no Node, no config). Markup intelligence
+   is ported to GDScript (reusing the existing GDScript compiler + schema JSON); embedded GDScript is bridged
+   to the gdext analyzer. **Full design: [GODOT_ANALYZER_INTEGRATION_PLAN.md](GODOT_ANALYZER_INTEGRATION_PLAN.md).**
+   This supersedes the §4 "decide at P3" wording and §10 open question 1.
 
 > Docs caveat baked into every citation: `docs.godotengine.org/en/stable` now resolves to **4.7**, which
 > deprecated `add_control_to_dock` (→ `add_dock`/`EditorDock`) and added `DOCK_SLOT_BOTTOM` + completion
