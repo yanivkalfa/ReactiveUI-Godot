@@ -42,7 +42,7 @@ export const UitkxSuspensePage: FC = () => (
     <Typography variant="body1" paragraph>
       Pass a <code>func() -&gt; bool</code> that returns <code>true</code> when
       loading is complete. It is checked once immediately and then polled every
-      frame until it becomes true. Wrap it in <code>use_callback</code> so the
+      frame until it becomes true. Wrap it in <code>useCallback</code> so the
       boundary does not tear down and re-subscribe the poller on every render.
     </Typography>
     <CodeBlock language="gdscript" code={SUSPENSE_CALLBACK} />

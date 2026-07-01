@@ -17,6 +17,7 @@ import {
   MarkupKind,
   Diagnostic,
   DiagnosticSeverity,
+  DiagnosticTag,
   Location,
   DocumentSymbol,
   SymbolKind,
@@ -32,7 +33,7 @@ import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, loadFormatterConfig } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, loadFormatterConfig } from "./formatGuitkx";
 import { dirname, join, relative } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
@@ -84,7 +85,7 @@ connection.onInitialize((params: InitializeParams) => {
   scanWorkspace(index, projectPath);
   // Load the project's addon `.gd` libraries (e.g. ReactiveUI's `core/hooks.gd` with `class_name
   // Hooks`) into the analyzer so embedded code resolves cross-file — enabling go-to-definition into
-  // the real library files (`use_ref` -> hooks.gd, `V.create` -> v.gd). Best-effort, once.
+  // the real library files (`useRef` -> hooks.gd, `V.create` -> v.gd). Best-effort, once.
   loadLibraries();
   return {
     capabilities: {
@@ -338,6 +339,34 @@ function forwardCompletion(uri: string, src: string, offset: number): Completion
 
 // --- hover ---
 
+// BUG-V8: curated hover for the built-in hooks — the analyzer only sees the virtual-doc stub as
+// `Callable`, so hovering a hook name returned nothing useful. Signatures mirror core/hooks.gd.
+const HOOK_HOVER: Record<string, string> = {
+  useState: "**useState**(initial = null) → `[value, setter]`\n\nReactive state: read `s[0]`, set with `s[1].call(v)` (a value or an updater func).",
+  useReducer: "**useReducer**(reducer: Callable, initial = null) → `[state, dispatch]`",
+  useRef: "**useRef**(initial = null) → `{ current }`\n\nA mutable box that persists across renders (setting it does not re-render).",
+  useMemo: "**useMemo**(factory: Callable, deps = []) → value\n\nMemoized value; recomputes only when `deps` change.",
+  useCallback: "**useCallback**(cb: Callable, deps = []) → `Callable`",
+  useImperativeHandle: "**useImperativeHandle**(factory: Callable, deps = [])",
+  useEffect: "**useEffect**(effect: Callable, deps = null)\n\nRun a side effect after commit; return a Callable to clean up. `deps = []` runs once on mount.",
+  useLayoutEffect: "**useLayoutEffect**(effect: Callable, deps = null)\n\nLike `useEffect` but runs synchronously after layout.",
+  createContext: "**createContext**(default = null, name = \"\") → `RUIContext`\n\nA context handle for `provideContext` / `useContext` (object identity — no string-key collisions).",
+  useContext: "**useContext**(key) → value\n\nRead the nearest provided value for a context handle (or string key).",
+  provideContext: "**provideContext**(key, value)\n\nProvide a context value to the subtree below.",
+  useDeferredValue: "**useDeferredValue**(value, deps = null)",
+  useTransition: "**useTransition**() → `[is_pending, start]`",
+  useStableCallback: "**useStableCallback**(cb: Callable) → `Callable`\n\nA stable Callable identity that always invokes the latest `cb`.",
+  useStableFunc: "**useStableFunc**(cb: Callable) → `Callable`",
+  useStableAction: "**useStableAction**(cb: Callable) → `Callable`",
+  useSafeArea: "**useSafeArea**() → `Dictionary`",
+  useSignal: "**useSignal**(sig: RUISignal, selector = null, comparer = null)",
+  useSignalKey: "**useSignalKey**(key: String, initial = null, selector = null, comparer = null)",
+  useTween: "**useTween**(ref, property: String, to, duration: float, deps = [])",
+  useTweenValue: "**useTweenValue**(from, to, duration: float, on_update: Callable, deps = [])",
+  useAnimate: "**useAnimate**(ref, tracks: Array, autoplay = true, deps = [])",
+  useSfx: "**useSfx**(bus = \"Master\") → `Callable`",
+};
+
 connection.onHover(async (params): Promise<Hover | null> => {
   try {
     const doc = documents.get(params.textDocument.uri);
@@ -353,6 +382,10 @@ connection.onHover(async (params): Promise<Hover | null> => {
 
     if (ctx.kind === "tagName" || ctx.kind === "attrName") return markupHover(src, offset, ctx);
     if (ctx.kind === "embedded" && embeddedEnabled) {
+      // BUG-V8: a curated signature for a hook identifier beats the analyzer's bare `Callable`.
+      const hw = wordRangeAt(src, offset);
+      const hword = src.slice(hw.start, hw.end);
+      if (HOOK_HOVER[hword]) return md(HOOK_HOVER[hword]);
       const { text, map } = buildVirtualDoc(src);
       const genOffset = map.toGenerated(offset);
       if (genOffset === null) return null;
@@ -377,7 +410,7 @@ function markupHover(src: string, offset: number, ctx: CursorContext): Hover | n
   if (!word) return null;
   if (ctx.kind === "tagName") {
     const tag = findTag(word);
-    if (tag) return md(`**<${word}>** — host element, compiles to \`${tag.factory}\` (Godot \`${tag.godotClass}\`).`);
+    if (tag) return md(`**<${word}>** — host element · Godot \`${tag.godotClass}\`.`);
     if (index.has(word)) {
       const e = index.lookup(word)[0];
       const kind = e.kind === "member" ? "component" : e.kind;
@@ -420,6 +453,7 @@ documents.onDidChangeContent((change) => {
   const live = [
     ...structuralDiagnostics(change.document),
     ...markupDiagnostics(change.document),
+    ...unreachableDiagnostics(change.document),
     ...embeddedDiagnostics(change.document),
   ];
   connection.sendDiagnostics({ uri: change.document.uri, diagnostics: mergeCompilerSidecar(change.document, live) });
@@ -427,7 +461,7 @@ documents.onDidChangeContent((change) => {
 
 // Embedded-GDScript type/parse diagnostics from @gdscript-analyzer/core, mapped back into the .guitkx
 // source. Safe to surface: the analyzer's seam design resolves an unknown cross-file symbol (a library
-// call like `use_state`, a `V.*`/`Hooks.*` reference whose .gd we haven't loaded) to the Unknown seam,
+// call like `useState`, a `V.*`/`Hooks.*` reference whose .gd we haven't loaded) to the Unknown seam,
 // which NEVER warns — so this adds real diagnostics (INTEGER_DIVISION, TYPE_MISMATCH, syntax errors)
 // with no false positives. Diagnostics that land in generated glue (toSource === null) are dropped.
 function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
@@ -511,7 +545,7 @@ connection.onDefinition(async (params) => {
       });
   }
   // Otherwise an embedded-GDScript symbol -> resolve via @gdscript-analyzer/core; return cross-file (library)
-  // locations (e.g. `use_ref` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
+  // locations (e.g. `useRef` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
   return forwardDefinition(params.textDocument.uri, src, offset);
 });
 
@@ -542,7 +576,7 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
       out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
       continue;
     }
-    // (3) A target in generated glue — most usefully a hook stub `var use_ref = Hooks.use_ref`. Chain
+    // (3) A target in generated glue — most usefully a hook stub `var useRef = Hooks.useRef`. Chain
     // ONCE through the `Hooks.<name>` on its RHS to the real library definition (`core/hooks.gd`).
     const rhs = hookStubRhsOffset(text, d.range.start);
     if (rhs === null) continue;
@@ -1206,6 +1240,18 @@ function signatureHelpAt(src: string, offset: number): any {
 // in-editor tier): duplicate literal `key="…"` among siblings [GUITKX0104] + unknown-element [0105].
 // Scoped to the markup windows (the return(...) of each component) so a `<`/`>` in setup GDScript,
 // directive conditions, or child {expr} is never misread as a tag.
+// BUG-V5/V6: one Hint + Unnecessary diagnostic per component over the unreachable code after its return.
+// VS Code renders Unnecessary-tagged ranges FADED (like dead code) — the requested "dim".
+function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
+  return unreachableRegions(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Hint,
+    tags: [DiagnosticTag.Unnecessary],
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message: "Unreachable code after the component's return — the compiler drops it.",
+    source: "guitkx",
+  }));
+}
+
 function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   const src = doc.getText();
   const diags: Diagnostic[] = [];
@@ -1258,17 +1304,20 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
     }
     if (c === "<" && /[A-Za-z_]/.test(src[i + 1] || "")) {
       const tag = readTag(src, i, end);
-      if (tag.keyLiteral !== null) {
+      // BUG-V3: dedup on a signature so BOTH literal (key="x") and expression (key={ str(i) }) keys
+      // are caught — two siblings with the same key expression collide every iteration.
+      const keySig = tag.keyLiteral !== null ? "s:" + tag.keyLiteral : tag.keyExpr !== null ? "e:" + tag.keyExpr : null;
+      if (keySig !== null) {
         const scope = scopes[scopes.length - 1];
-        if (scope.has(tag.keyLiteral)) {
+        if (scope.has(keySig)) {
           diags.push({
             severity: DiagnosticSeverity.Warning,
             range: { start: doc.positionAt(tag.keyStart), end: doc.positionAt(tag.keyEnd) },
-            message: `GUITKX0104: duplicate key '${tag.keyLiteral}' among sibling elements.`,
+            message: `GUITKX0104: duplicate key '${keySig.slice(2)}' among sibling elements.`,
             source: "guitkx",
           });
         }
-        scope.add(tag.keyLiteral);
+        scope.add(keySig);
       }
       // unknown-element did-you-mean: PascalCase tag that is neither a host element nor an indexed
       // component, but is a near-miss of one (lowercase tags are host factories — never flagged).
@@ -1316,6 +1365,7 @@ interface TagInfo2 {
   next: number;
   selfClosing: boolean;
   keyLiteral: string | null;
+  keyExpr: string | null;
   keyStart: number;
   keyEnd: number;
   tagName: string;
@@ -1331,13 +1381,14 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
   const nameEnd = i;
   const tagName = src.slice(nameStart, nameEnd);
   let keyLiteral: string | null = null;
+  let keyExpr: string | null = null;
   let keyStart = lt;
   let keyEnd = lt;
   const attrs: TagAttr2[] = [];
   while (i < end) {
     while (i < end && /\s/.test(src[i])) i++;
-    if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
-    if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+    if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyExpr, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+    if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyExpr, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (i >= end) break;
     if (src[i] === "{") { // a `{...spread}` attribute — skip it whole (not an unknown attribute)
       const close = findMatching(src, i);
@@ -1364,13 +1415,18 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
         i = ve;
       } else if (src[i] === "{") {
         const close = findMatching(src, i);
+        if (name === "key" && close !== -1) {
+          keyExpr = src.slice(i + 1, close).trim(); // BUG-V3: capture the key EXPRESSION for dup detection
+          keyStart = i;
+          keyEnd = close + 1;
+        }
         i = close === -1 ? end : close + 1;
       }
     } else if (an === i) {
       i++;
     }
   }
-  return { next: end, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+  return { next: end, selfClosing: false, keyLiteral, keyExpr, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
 }
 
 // Valid attribute names for a HOST element: the structural attrs (key/ref/style) + every settable

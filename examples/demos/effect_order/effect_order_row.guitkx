@@ -4,7 +4,7 @@ component DemoEffectOrderRow(idx, append) {
 	var eff = func():
 		append.call("▶ mount row %d" % idx)
 		return func(): append.call("■ unmount row %d" % idx)
-	use_effect(eff, [])
+	useEffect(eff, [])
 	return (
 		<Label text={ "• row %d" % idx } />
 	)

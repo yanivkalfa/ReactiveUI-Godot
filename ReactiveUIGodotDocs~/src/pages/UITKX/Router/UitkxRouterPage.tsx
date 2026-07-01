@@ -100,7 +100,7 @@ export const UitkxRouterPage: FC = () => (
       <CodeBlock language="gdscript" code={UITKX_ROUTER_LAYOUT_EXAMPLE} />
       <Typography variant="body1" paragraph>
         Pass a value with <code>{'V.outlet({ "context": value })'}</code> and read it in
-        descendants with <code>RUIRouter.use_outlet_context()</code>, the same way RR&apos;s{' '}
+        descendants with <code>RUIRouter.useOutletContext()</code>, the same way RR&apos;s{' '}
         <code>useOutletContext</code> works.
       </Typography>
     </Box>
@@ -124,9 +124,9 @@ export const UitkxRouterPage: FC = () => (
         Reading route params
       </Typography>
       <Typography variant="body1" paragraph>
-        Inside a routed component, <code>RUIRouter.use_params()</code> returns the captured{' '}
+        Inside a routed component, <code>RUIRouter.useParams()</code> returns the captured{' '}
         <code>:params</code> (a defensive copy of the merged parent chain), and{' '}
-        <code>RUIRouter.use_matches()</code> returns the ordered chain of route matches from root
+        <code>RUIRouter.useMatches()</code> returns the ordered chain of route matches from root
         to current — handy for breadcrumbs and analytics.
       </Typography>
       <CodeBlock language="gdscript" code={UITKX_ROUTER_DETAILS_EXAMPLE} />
@@ -155,7 +155,7 @@ export const UitkxRouterPage: FC = () => (
       </Typography>
       <Typography variant="body1" paragraph>
         <code>{'V.navigate({ "to": "/welcome" })'}</code> performs a redirect. It runs from a{' '}
-        <code>use_effect</code> after commit (never from inside render) and defaults to{' '}
+        <code>useEffect</code> after commit (never from inside render) and defaults to{' '}
         <code>replace = true</code> so redirects don&apos;t grow the history stack — perfect for a{' '}
         <code>{'V.route({ "path": "/", "element": V.navigate({ "to": "/dashboard" }) })'}</code>{' '}
         pattern. Pass <code>state</code> to forward navigation state along.
@@ -169,7 +169,7 @@ export const UitkxRouterPage: FC = () => (
       <Typography variant="body1" paragraph>
         <code>{'V.router({ "basename": "/app" })'}</code> tells the router that{' '}
         <code>/app</code> is the application root. Inbound locations have the prefix stripped
-        before matching (so <code>use_location()</code> is app-relative), and outbound navigations
+        before matching (so <code>useLocation()</code> is app-relative), and outbound navigations
         re-attach it. Useful when an app is mounted under a path segment.
       </Typography>
     </Box>
@@ -182,10 +182,10 @@ export const UitkxRouterPage: FC = () => (
         By default <code>{'<Router>'}</code> uses an in-memory <code>RUIHistory</code>. You can
         provide a custom instance via the <code>history</code> prop to control how locations are
         stored or synchronised. Inside components, use{' '}
-        <code>RUIRouter.use_navigate()</code> to push or replace locations, and{' '}
-        <code>RUIRouter.use_go()</code> / <code>RUIRouter.use_can_go(delta)</code> to implement
-        back/forward UI. Use <code>RUIRouter.use_blocker(blocker, enabled)</code> (or the
-        convenience wrapper <code>RUIRouter.use_prompt(when, message)</code>) to prevent
+        <code>RUIRouter.useNavigate()</code> to push or replace locations, and{' '}
+        <code>RUIRouter.useGo()</code> / <code>RUIRouter.useCanGo(delta)</code> to implement
+        back/forward UI. Use <code>RUIRouter.useBlocker(blocker, enabled)</code> (or the
+        convenience wrapper <code>RUIRouter.usePrompt(when, message)</code>) to prevent
         navigation while a confirmation is pending.
       </Typography>
       <Typography variant="body1" paragraph>
@@ -207,34 +207,34 @@ export const UitkxRouterPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_location()</code> — the current path String (re-renders on navigation). <code>use_location_info()</code> returns the full <code>RUIRouterLocation</code> (path, query, state).</>} />
+          <ListItemText primary={<><code>RUIRouter.useLocation()</code> — the current path String (re-renders on navigation). <code>useLocationInfo()</code> returns the full <code>RUIRouterLocation</code> (path, query, state).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_params()</code> — the captured path parameters for the matched route.</>} />
+          <ListItemText primary={<><code>RUIRouter.useParams()</code> — the captured path parameters for the matched route.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_query()</code> — a defensive copy of the decoded query dictionary.</>} />
+          <ListItemText primary={<><code>RUIRouter.useQuery()</code> — a defensive copy of the decoded query dictionary.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_search_params()</code> — a <code>[query, setter]</code> pair. The setter <code>(next, replace := false)</code> preserves the path and replaces only the query string (RR&apos;s <code>useSearchParams</code> equivalent).</>} />
+          <ListItemText primary={<><code>RUIRouter.useSearchParams()</code> — a <code>[query, setter]</code> pair. The setter <code>(next, replace := false)</code> preserves the path and replaces only the query string (RR&apos;s <code>useSearchParams</code> equivalent).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_navigation_state()</code> — the opaque state object passed during navigation.</>} />
+          <ListItemText primary={<><code>RUIRouter.useNavigationState()</code> — the opaque state object passed during navigation.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_route_match()</code> — the nearest <code>RUIRouteMatch</code> (matched path, pattern, params).</>} />
+          <ListItemText primary={<><code>RUIRouter.useRouteMatch()</code> — the nearest <code>RUIRouteMatch</code> (matched path, pattern, params).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_matches()</code> — the ordered chain of matches root → current, for breadcrumbs and analytics.</>} />
+          <ListItemText primary={<><code>RUIRouter.useMatches()</code> — the ordered chain of matches root → current, for breadcrumbs and analytics.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_navigation_base()</code> / <code>use_resolved_path(to)</code> — the base for relative navigation, and the absolute path <code>use_navigate</code> would dispatch for <code>to</code>.</>} />
+          <ListItemText primary={<><code>RUIRouter.useNavigationBase()</code> / <code>useResolvedPath(to)</code> — the base for relative navigation, and the absolute path <code>useNavigate</code> would dispatch for <code>to</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_outlet_context()</code> — the value handed down by the closest <code>{'V.outlet({ "context": ... })'}</code>.</>} />
+          <ListItemText primary={<><code>RUIRouter.useOutletContext()</code> — the value handed down by the closest <code>{'V.outlet({ "context": ... })'}</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter.use_navigate(replace := false)</code> — returns <code>func(path, state := null) -&gt; bool</code>. It reads only the stable nav context, so navigate-only widgets do <em>not</em> re-render on every location change.</>} />
+          <ListItemText primary={<><code>RUIRouter.useNavigate(replace := false)</code> — returns <code>func(path, state := null) -&gt; bool</code>. It reads only the stable nav context, so navigate-only widgets do <em>not</em> re-render on every location change.</>} />
         </ListItem>
       </List>
     </Box>

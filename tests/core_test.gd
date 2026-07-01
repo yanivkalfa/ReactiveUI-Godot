@@ -123,7 +123,7 @@ func _test_classes_lean_path() -> void:
 	RUIStyleSheet.register("c_b", { "font_color": Color(0, 0, 1) })
 	var ctl := { "set": null }
 	var comp := func(_p, _c):
-		var s = Hooks.use_state(["c_a"])
+		var s = Hooks.useState(["c_a"])
 		ctl["set"] = s[1]
 		return V.button({ "classes": s[0], "text": "x" })
 	var m := _mount(comp)
@@ -144,7 +144,7 @@ func _test_reference_equality() -> void:
 	var ctl := { "set": null }
 	var comp := func(_p, _c):
 		renders["n"] += 1
-		var s = Hooks.use_state([1, 2, 3])
+		var s = Hooks.useState([1, 2, 3])
 		ctl["set"] = s[1]
 		return V.label({ "text": str(s[0].size()) })
 	var m := _mount(comp)
@@ -158,24 +158,24 @@ func _test_reference_equality() -> void:
 	m[0].queue_free()
 
 func _test_signal_rebind() -> void:
-	# [audit #2] use_signal must re-bind to a NEW selector across renders (not freeze the mount one).
+	# [audit #2] useSignal must re-bind to a NEW selector across renders (not freeze the mount one).
 	var sig := RUISignal.new({ "a": 10, "b": 20 })
 	var ctl := { "set_key": null }
 	var seen := { "v": null }
 	var comp := func(_p, _c):
-		var ks = Hooks.use_state("a")
+		var ks = Hooks.useState("a")
 		ctl["set_key"] = ks[1]
 		var key: String = ks[0]
-		var v = Hooks.use_signal(sig, func(d): return d.get(key))
+		var v = Hooks.useSignal(sig, func(d): return d.get(key))
 		seen["v"] = v
 		return V.label({ "text": str(v) })
 	var m := _mount(comp)
 	await process_frame
-	_ok(seen["v"] == 10, "use_signal selects 'a' = 10, got %s" % str(seen["v"]))
+	_ok(seen["v"] == 10, "useSignal selects 'a' = 10, got %s" % str(seen["v"]))
 	ctl["set_key"].call("b")   # change the selector key prop -> hook must re-bind and select 'b'
 	await process_frame
 	await process_frame
-	_ok(seen["v"] == 20, "use_signal re-bound to new selector 'b' = 20, got %s" % str(seen["v"]))
+	_ok(seen["v"] == 20, "useSignal re-bound to new selector 'b' = 20, got %s" % str(seen["v"]))
 	m[1].unmount()
 	m[0].queue_free()
 	quit(1 if _fails > 0 else 0)
@@ -220,7 +220,7 @@ func _test_memo_eq() -> void:
 		renders["n"] += 1
 		return V.label({ "text": "x" })
 	var parent := func(_p, _ch):
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		ctrl["set"] = s[1]
 		return V.memo(inner, { "v": s[0], "__memo_eq": func(_o, _new): return true })
 	_mount(parent)
@@ -249,10 +249,10 @@ func _test_signal_key() -> void:
 	var renders := { "a": 0, "b": 0 }
 	var comp_a := func(_p, _ch):
 		renders["a"] += 1
-		return V.label({ "text": str(Hooks.use_signal_key("counter", 10)) })
+		return V.label({ "text": str(Hooks.useSignalKey("counter", 10)) })
 	var comp_b := func(_p, _ch):
 		renders["b"] += 1
-		return V.label({ "text": str(Hooks.use_signal_key("counter", 10)) })
+		return V.label({ "text": str(Hooks.useSignalKey("counter", 10)) })
 	_mount(comp_a)
 	_mount(comp_b)
 	_ok(renders["a"] == 1 and renders["b"] == 1, "both keyed components mounted once")
@@ -275,17 +275,17 @@ func _test_hook_diagnostics() -> void:
 	RUIDiagnostics.clear_messages()
 	# render 1 primes the hook order: state, state, effect
 	var st := RUIComponentState.new()
-	Hooks._begin(st); Hooks.use_state(0); Hooks.use_state(1); Hooks.use_effect(func(): return null, []); Hooks._end()
+	Hooks._begin(st); Hooks.useState(0); Hooks.useState(1); Hooks.useEffect(func(): return null, []); Hooks._end()
 	_ok(RUIDiagnostics.messages.is_empty(), "first render primes hook order with no diagnostic")
-	# render 2 drops the conditional 2nd use_state -> order mismatch
-	Hooks._begin(st); Hooks.use_state(0); Hooks.use_effect(func(): return null, []); Hooks._end()
+	# render 2 drops the conditional 2nd useState -> order mismatch
+	Hooks._begin(st); Hooks.useState(0); Hooks.useEffect(func(): return null, []); Hooks._end()
 	_ok(RUIDiagnostics.messages.any(func(m): return "[Hooks][order]" in m), "hook-order mismatch detected, got %s" % str(RUIDiagnostics.messages))
 
 	# state-update-during-render guard
 	RUIDiagnostics.clear_messages()
 	var st2 := RUIComponentState.new()
 	Hooks._begin(st2)
-	var sv: Array = Hooks.use_state(0)
+	var sv: Array = Hooks.useState(0)
 	sv[1].call(1)   # setter invoked while is_rendering -> strict warning
 	Hooks._end()
 	_ok(RUIDiagnostics.messages.any(func(m): return "[Hooks][Strict]" in m), "state-set-in-render warned, got %s" % str(RUIDiagnostics.messages))
@@ -295,8 +295,8 @@ func _test_hook_diagnostics() -> void:
 	RUIConfig.enable_strict_diagnostics = false
 	RUIDiagnostics.clear_messages()
 	var st3 := RUIComponentState.new()
-	Hooks._begin(st3); Hooks.use_state(0); Hooks._end()
-	Hooks._begin(st3); Hooks.use_effect(func(): return null); Hooks._end()
+	Hooks._begin(st3); Hooks.useState(0); Hooks._end()
+	Hooks._begin(st3); Hooks.useEffect(func(): return null); Hooks._end()
 	_ok(RUIDiagnostics.messages.is_empty(), "no diagnostics emitted when flags are off, got %s" % str(RUIDiagnostics.messages))
 	RUIDiagnostics.capture = false
 	RUIConfig.enable_hook_validation = _hv
@@ -306,15 +306,15 @@ func _test_effects() -> void:
 	var log: Array = []
 	var ctrl := { "set_count": null, "set_other": null }
 	var comp := func(_p, _ch):
-		var cs = Hooks.use_state(0)
-		var os = Hooks.use_state(0)
+		var cs = Hooks.useState(0)
+		var os = Hooks.useState(0)
 		ctrl["set_count"] = cs[1]
 		ctrl["set_other"] = os[1]
 		var eff := func():
 			log.append("setup:%d" % cs[0])
 			var cur = cs[0]
 			return func(): log.append("cleanup:%d" % cur)
-		Hooks.use_effect(eff, [cs[0]])
+		Hooks.useEffect(eff, [cs[0]])
 		return V.label({ "text": "x" })
 
 	var m := _mount(comp)
@@ -342,7 +342,7 @@ func _test_bailout() -> void:
 		return V.label({ "text": str(props.get("label", "")) })
 	var parent := func(_p, _ch):
 		renders["parent"] += 1
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		ctrl["bump"] = s[1]
 		return V.vbox({}, [
 			V.label({ "text": "count %d" % s[0] }),
@@ -366,13 +366,13 @@ func _test_context() -> void:
 	var ctrl := { "set": null }
 	var consumer := func(_p, _ch):
 		renders["consumer"] += 1
-		var v = Hooks.use_context("theme")
+		var v = Hooks.useContext("theme")
 		seen["val"] = v
 		return V.label({ "text": str(v) })
 	var provider := func(_p, _ch):
-		var s = Hooks.use_state("dark")
+		var s = Hooks.useState("dark")
 		ctrl["set"] = s[1]
-		Hooks.provide_context("theme", s[0])
+		Hooks.provideContext("theme", s[0])
 		return V.fc(consumer, {})
 
 	var m := _mount(provider)
@@ -388,17 +388,17 @@ func _test_context() -> void:
 	m[0].queue_free()
 
 func _test_context_handles() -> void:
-	# Context HANDLES (create_context): object identity keys the map (no string collision) + a default.
-	var theme_ctx := Hooks.create_context("fallback", "Theme")
+	# Context HANDLES (createContext): object identity keys the map (no string collision) + a default.
+	var theme_ctx := Hooks.createContext("fallback", "Theme")
 	var seen := { "val": null }
 	var ctrl := { "set": null }
 	var consumer := func(_p, _ch):
-		seen["val"] = Hooks.use_context(theme_ctx)
+		seen["val"] = Hooks.useContext(theme_ctx)
 		return V.label({ "text": str(seen["val"]) })
 	var provider := func(_p, _ch):
-		var s = Hooks.use_state("dark")
+		var s = Hooks.useState("dark")
 		ctrl["set"] = s[1]
-		Hooks.provide_context(theme_ctx, s[0])
+		Hooks.provideContext(theme_ctx, s[0])
 		return V.fc(consumer, {})
 	var m := _mount(provider)
 	_ok(seen["val"] == "dark", "handle consumer sees provided value: %s" % str(seen["val"]))
@@ -412,7 +412,7 @@ func _test_context_handles() -> void:
 	# No provider up the tree -> the handle's default is returned.
 	var seen2 := { "val": "unset" }
 	var lone := func(_p, _ch):
-		seen2["val"] = Hooks.use_context(theme_ctx)
+		seen2["val"] = Hooks.useContext(theme_ctx)
 		return V.label({ "text": str(seen2["val"]) })
 	var m2 := _mount(lone)
 	_ok(seen2["val"] == "fallback", "unprovided handle returns its default: %s" % str(seen2["val"]))
@@ -420,9 +420,9 @@ func _test_context_handles() -> void:
 	m2[0].queue_free()
 
 	# Distinct handles never collide even with an identical default.
-	var a := Hooks.create_context(1)
-	var b := Hooks.create_context(1)
-	_ok(a != b, "distinct create_context() handles have distinct identity")
+	var a := Hooks.createContext(1)
+	var b := Hooks.createContext(1)
+	_ok(a != b, "distinct createContext() handles have distinct identity")
 
 func _test_fragment() -> void:
 	var comp := func(_p, _ch):
@@ -444,7 +444,7 @@ func _test_fragment() -> void:
 func _test_keyed_reorder() -> void:
 	var ctrl := { "set": null }
 	var comp := func(_p, _ch):
-		var s = Hooks.use_state(["a", "b", "c"])
+		var s = Hooks.useState(["a", "b", "c"])
 		ctrl["set"] = s[1]
 		var items: Array = []
 		for id in s[0]:
@@ -481,12 +481,12 @@ func _test_reducer_and_memo() -> void:
 		if action == "dec": return state - 1
 		return state
 	var comp := func(_p, _ch):
-		var r = Hooks.use_reducer(reducer, 10)
+		var r = Hooks.useReducer(reducer, 10)
 		ctrl["dispatch"] = r[1]
 		var mfn := func():
 			memo_calls["n"] += 1
 			return r[0] * 2
-		var doubled = Hooks.use_memo(mfn, [r[0]])
+		var doubled = Hooks.useMemo(mfn, [r[0]])
 		return V.label({ "text": "%d/%d" % [r[0], doubled] })
 
 	var m := _mount(comp)
@@ -511,8 +511,8 @@ func _test_layout_effect() -> void:
 		var pe := func():
 			order.append("passive")
 			return func(): pass
-		Hooks.use_layout_effect(le, [])
-		Hooks.use_effect(pe, [])
+		Hooks.useLayoutEffect(le, [])
+		Hooks.useEffect(pe, [])
 		return V.label({ "text": "x" })
 	var m := _mount(comp)
 	_ok(order == ["layout", "passive"], "layout effect runs before passive: %s" % str(order))
@@ -525,7 +525,7 @@ func _test_signal() -> void:
 	var seen := { "v": null }
 	var comp := func(_p, _ch):
 		renders["n"] += 1
-		seen["v"] = Hooks.use_signal(sig)
+		seen["v"] = Hooks.useSignal(sig)
 		return V.label({ "text": str(seen["v"]) })
 
 	var m := _mount(comp)
@@ -550,11 +550,11 @@ func _test_router() -> void:
 	var home := func(_p, _c):
 		return V.label({ "text": "home" })
 	var user := func(_p, _c):
-		var params = RUIRouter.use_params()
+		var params = RUIRouter.useParams()
 		seen["id"] = params.get("id")
 		return V.label({ "text": "user " + str(params.get("id")) })
 	var app := func(_p, _c):
-		nav["go"] = RUIRouter.use_navigate()
+		nav["go"] = RUIRouter.useNavigate()
 		return V.routes({ "routes": [
 			{ "path": "/", "component": home },
 			{ "path": "/users/:id", "component": user },
@@ -587,7 +587,7 @@ func _test_tween() -> void:
 		var on_update := func(v):
 			captured["last"] = v
 			captured["count"] += 1
-		Hooks.use_tween_value(0.0, 10.0, 0.05, on_update, [])
+		Hooks.useTweenValue(0.0, 10.0, 0.05, on_update, [])
 		return V.label({ "text": "x" })
 	var m := _mount(comp)
 	for i in 30:
@@ -602,7 +602,7 @@ func _test_diagnostics() -> void:
 	RUIDiagnostics.reset()
 	var ctrl := { "set": null }
 	var comp := func(_p, _c):
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		ctrl["set"] = s[1]
 		return V.label({ "text": str(s[0]) })
 	var m := _mount(comp)
@@ -621,7 +621,7 @@ func _test_diagnostics() -> void:
 func _test_item_list() -> void:
 	var ctrl := { "set": null }
 	var comp := func(_p, _c):
-		var s = Hooks.use_state(["apple", "banana"])
+		var s = Hooks.useState(["apple", "banana"])
 		ctrl["set"] = s[1]
 		return V.item_list({ "items": s[0] })
 	var m := _mount(comp)
@@ -652,7 +652,7 @@ func _test_root_node() -> void:
 func _test_tree() -> void:
 	var ctrl := { "set": null }
 	var comp := func(_p, _c):
-		var s = Hooks.use_state("Fruits")
+		var s = Hooks.useState("Fruits")
 		ctrl["set"] = s[1]
 		var items := [
 			{ "id": "fruits", "text": s[0], "children": [
@@ -682,7 +682,7 @@ func _test_time_slicing() -> void:
 	RUIConfig.frame_budget_ms = 0.0   # park after every unit of work
 	var ctrl := { "set": null }
 	var comp := func(_p, _c):
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		ctrl["set"] = s[1]
 		var items: Array = []
 		for i in 8:
@@ -707,21 +707,21 @@ func _test_context_survives_bailout() -> void:
 	var gp_bump := { "fn": null }
 	var c_bump := { "fn": null }
 	var consumer := func(_p, _c):
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		c_bump["fn"] = s[1]
-		seen["v"] = Hooks.use_context("k")
+		seen["v"] = Hooks.useContext("k")
 		return V.label({ "text": str(seen["v"]) })
 	var provider := func(_p, _c):
-		Hooks.provide_context("k", "hello")
+		Hooks.provideContext("k", "hello")
 		return V.fc(consumer, {})
 	var grandparent := func(_p, _c):
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		gp_bump["fn"] = s[1]
 		return V.vbox({}, [V.label({ "text": "gp %d" % s[0] }), V.fc(provider, {})])
 
 	var m := _mount(grandparent)
 	_ok(seen["v"] == "hello", "consumer sees context initially")
-	gp_bump["fn"].call(1)             # grandparent re-renders -> provider BAILS (no provide_context run)
+	gp_bump["fn"].call(1)             # grandparent re-renders -> provider BAILS (no provideContext run)
 	await process_frame
 	await process_frame
 	c_bump["fn"].call(1)              # force the consumer to re-render & re-read context
@@ -735,9 +735,9 @@ func _test_ref_null_on_unmount() -> void:
 	var ctrl := { "set": null }
 	var captured := { "ref": null }
 	var comp := func(_p, _c):
-		var show = Hooks.use_state(true)
+		var show = Hooks.useState(true)
 		ctrl["set"] = show[1]
-		var r = Hooks.use_ref(null)
+		var r = Hooks.useRef(null)
 		captured["ref"] = r
 		return V.line_edit({ "ref": r }) if show[0] else V.label({ "text": "gone" })
 
@@ -756,10 +756,10 @@ func _test_router_context_split() -> void:
 	var nav := { "go": null }
 	var nav_only := func(_p, _c):
 		nav_renders["n"] += 1
-		nav["go"] = RUIRouter.use_navigate()
+		nav["go"] = RUIRouter.useNavigate()
 		return V.button({ "text": "nav" })
 	var loc_view := func(_p, _c):
-		return V.label({ "text": RUIRouter.use_location() })
+		return V.label({ "text": RUIRouter.useLocation() })
 	var app := func(_p, _c):
 		return V.vbox({}, [V.fc(nav_only), V.fc(loc_view)])
 	var root_comp := func(_p, _c):
@@ -775,14 +775,14 @@ func _test_router_context_split() -> void:
 	m[0].queue_free()
 
 func _test_deferred_value() -> void:
-	# Phase 7.10: use_deferred_value returns the previous value on the render where it changes,
+	# Phase 7.10: useDeferredValue returns the previous value on the render where it changes,
 	# then commits the new value on a low-priority next-frame tick.
 	var ctl := { "set": null }
 	var seen := { "now": -1, "deferred": -1 }
 	var comp := func(_p, _c):
-		var st := Hooks.use_state(0)
+		var st := Hooks.useState(0)
 		ctl["set"] = st[1]
-		var d = Hooks.use_deferred_value(st[0])
+		var d = Hooks.useDeferredValue(st[0])
 		seen["now"] = st[0]
 		seen["deferred"] = d
 		return V.label({ "text": "%d/%d" % [st[0], d] })
@@ -803,8 +803,8 @@ func _test_item_model_adapters() -> void:
 	# preserved by item identity across a re-render that changes the items array.
 	var ctrl := { "tabs": null, "opts": null }
 	var comp := func(_p, _c):
-		var ts := Hooks.use_state(["One", "Two", "Three"])
-		var os2 := Hooks.use_state([{ "id": "a", "text": "Alpha" }, { "id": "b", "text": "Beta" }])
+		var ts := Hooks.useState(["One", "Two", "Three"])
+		var os2 := Hooks.useState([{ "id": "a", "text": "Alpha" }, { "id": "b", "text": "Beta" }])
 		ctrl["tabs"] = ts[1]
 		ctrl["opts"] = os2[1]
 		return V.vbox({}, [
@@ -846,14 +846,14 @@ func _test_classes_stylesheet() -> void:
 	m[0].queue_free()
 
 func _test_media_and_animate() -> void:
-	# Phase 7.10: V.audio mounts an AudioStreamPlayer (non-Control node), and use_sfx / use_animate
+	# Phase 7.10: V.audio mounts an AudioStreamPlayer (non-Control node), and useSfx / useAnimate
 	# wire up without crashing (smoke). A null SFX stream is a safe no-op.
 	var ref := { "current": null }
 	var played := { "n": 0 }
 	var comp := func(_p, _c):
-		var sfx := Hooks.use_sfx()
-		Hooks.use_animate(ref, [{ "property": "modulate:a", "to": 1.0, "from": 0.0, "duration": 0.05 }], true, [])
-		Hooks.use_effect(func():
+		var sfx := Hooks.useSfx()
+		Hooks.useAnimate(ref, [{ "property": "modulate:a", "to": 1.0, "from": 0.0, "duration": 0.05 }], true, [])
+		Hooks.useEffect(func():
 			sfx.call(null)   # null stream -> safe no-op
 			played["n"] += 1
 			return null
@@ -870,7 +870,7 @@ func _test_media_and_animate() -> void:
 		if ch is AudioStreamPlayer:
 			has_audio = true
 	_ok(has_audio, "V.audio mounted an AudioStreamPlayer node under the VBox")
-	_ok(played["n"] == 1, "use_sfx callable invoked safely (no crash on null stream)")
-	_ok(ref["current"] != null and ref["current"] is ColorRect, "use_animate target ref populated")
+	_ok(played["n"] == 1, "useSfx callable invoked safely (no crash on null stream)")
+	_ok(ref["current"] != null and ref["current"] is ColorRect, "useAnimate target ref populated")
 	m[1].unmount()
 	m[0].queue_free()

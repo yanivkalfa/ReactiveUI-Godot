@@ -78,13 +78,13 @@ func _test_outlet_fallback() -> void:
 	m[0].queue_free()
 
 func _test_can_go_reactive() -> void:
-	# [audit #13] A use_can_go consumer must re-render when the history position changes.
+	# [audit #13] A useCanGo consumer must re-render when the history position changes.
 	var history := RUIHistory.new("/")
 	var nav := { "go": null }
 	var seen := { "back": null }
 	var page := func(_p, _c):
-		nav["go"] = RUIRouter.use_navigate()
-		seen["back"] = RUIRouter.use_can_go(-1)
+		nav["go"] = RUIRouter.useNavigate()
+		seen["back"] = RUIRouter.useCanGo(-1)
 		return V.label({ "text": "x" })
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(page)])
@@ -245,9 +245,9 @@ func _test_blocker_vetoes() -> void:
 	var nav := { "go": null }
 	var gate := { "block": true }
 	var page := func(_p, _c):
-		nav["go"] = RUIRouter.use_navigate()
-		RUIRouter.use_blocker(func(_from, _to): return gate["block"], true)
-		return V.label({ "text": "loc " + RUIRouter.use_location() })
+		nav["go"] = RUIRouter.useNavigate()
+		RUIRouter.useBlocker(func(_from, _to): return gate["block"], true)
+		return V.label({ "text": "loc " + RUIRouter.useLocation() })
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(page)])
 	var m := _mount(root_comp)
@@ -269,9 +269,9 @@ func _test_query_and_basename() -> void:
 	var seen := { "q": null, "loc": null }
 	var nav := { "go": null }
 	var page := func(_p, _c):
-		nav["go"] = RUIRouter.use_navigate()
-		seen["q"] = RUIRouter.use_query()
-		seen["loc"] = RUIRouter.use_location()
+		nav["go"] = RUIRouter.useNavigate()
+		seen["q"] = RUIRouter.useQuery()
+		seen["loc"] = RUIRouter.useLocation()
 		return V.label({ "text": "x" })
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history, "basename": "/app" }, [V.fc(page)])
@@ -283,7 +283,7 @@ func _test_query_and_basename() -> void:
 	await process_frame
 	_ok(seen["loc"] == "/search", "basename-stripped location after nav, got '%s'" % str(seen["loc"]))
 	_ok(history.location() == "/app/search", "basename re-attached in history, got '%s'" % history.location())
-	_ok(seen["q"].get("term") == "godot" and seen["q"].get("page") == "2", "use_query decodes, got %s" % str(seen["q"]))
+	_ok(seen["q"].get("term") == "godot" and seen["q"].get("page") == "2", "useQuery decodes, got %s" % str(seen["q"]))
 	m[1].unmount()
 	m[0].queue_free()
 

@@ -1,10 +1,10 @@
 export const SUSPENSE_CALLBACK = `@class_name DataView
 
 component DataView() {
-  var data = use_state(null)
+  var data = useState(null)
 
   // Kick off the async load once. is_ready() below reports readiness.
-  use_effect(func():
+  useEffect(func():
     _load_data_async(data[1])   # calls data[1].call(result) when done
     return Callable()
   , [])
@@ -13,10 +13,10 @@ component DataView() {
 
   return (
     // is_ready is checked immediately, then polled each frame until true.
-    // Pass a STABLE callback (use_callback) so the boundary doesn't re-subscribe
+    // Pass a STABLE callback (useCallback) so the boundary doesn't re-subscribe
     // every render.
     <Suspense fallback={ fallback }
-              is_ready={ use_callback(func(): return data[0] != null, [data[0]]) }>
+              is_ready={ useCallback(func(): return data[0] != null, [data[0]]) }>
       <VBox style={ {"separation": 4} }>
         { (data[0] if data[0] != null else []).map(func(item):
             return V.label({ "key": item, "text": str(item) })) }
@@ -28,10 +28,10 @@ component DataView() {
 export const SUSPENSE_SIGNAL = `@class_name AsyncView
 
 component AsyncView() {
-  var loader = use_ref(null)
+  var loader = useRef(null)
 
   // Build the loader once and expose a Godot Signal to await.
-  var load = use_memo(func():
+  var load = useMemo(func():
     var l := ResourceLoaderThreaded.new()   # your own loader emitting a "loaded" signal
     l.begin("res://big_scene.tscn")
     return l

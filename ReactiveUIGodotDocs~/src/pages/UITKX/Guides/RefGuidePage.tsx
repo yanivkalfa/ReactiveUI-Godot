@@ -37,7 +37,7 @@ export const RefGuidePage: FC = () => (
         Control refs
       </Typography>
       <Typography variant="body1" paragraph>
-        Call <code>use_ref(null)</code> to get a stable box{' '}
+        Call <code>useRef(null)</code> to get a stable box{' '}
         <code>{'{ "current": … }'}</code>, then attach it via the{' '}
         <code>ref</code> prop. After the first commit,{' '}
         <code>ref[&quot;current&quot;]</code> points to the underlying Godot{' '}
@@ -53,7 +53,7 @@ export const RefGuidePage: FC = () => (
         Mutable value refs
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>use_ref(initial)</code> returns a stable Dictionary box with a{' '}
+        <code>useRef(initial)</code> returns a stable Dictionary box with a{' '}
         <code>&quot;current&quot;</code> entry. Unlike state, mutating{' '}
         <code>ref[&quot;current&quot;]</code> does <strong>not</strong> trigger
         a re-render.
@@ -83,18 +83,18 @@ export const RefGuidePage: FC = () => (
         Imperative handles
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>use_imperative_handle(factory, deps)</code> lets a child component
+        <code>useImperativeHandle(factory, deps)</code> lets a child component
         expose a custom API object (e.g. a Dictionary of{' '}
         <code>focus</code> / <code>clear</code> Callables) to its parent instead
         of exposing the raw <code>Control</code>. Wire it to a parent&apos;s{' '}
-        <code>use_ref</code> box passed down as a prop.
+        <code>useRef</code> box passed down as a prop.
       </Typography>
       <CodeBlock language="jsx" code={REF_IMPERATIVE_EXAMPLE} />
     </Box>
 
     <Alert severity="info" sx={{ mt: 2 }}>
       Avoid using refs to read values that could be expressed as state. Refs
-      are an escape hatch — prefer <code>use_state</code> when you need the UI
+      are an escape hatch — prefer <code>useState</code> when you need the UI
       to react to changes.
     </Alert>
   </Box>

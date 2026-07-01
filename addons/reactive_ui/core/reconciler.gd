@@ -711,7 +711,7 @@ func _commit_deletion(old_fiber: RUIFiber) -> void:
 	_free_host_nodes(old_fiber)
 	_release(old_fiber)   # break cycles so the removed subtree + its buddies free [perf #1]
 
-## Reset any `ref` prop to null for deleted host fibers, so a use_ref box / callback ref
+## Reset any `ref` prop to null for deleted host fibers, so a useRef box / callback ref
 ## doesn't dangle to a freed node (React nulls refs on unmount). [audit C2]
 func _null_refs_recursive(fiber: RUIFiber) -> void:
 	if fiber.props is Dictionary and fiber.props.has("ref"):
@@ -793,7 +793,7 @@ func _dispose_fiber_state(fiber: RUIFiber) -> void:
 	if fiber.state == null:
 		return
 	var st: RUIComponentState = fiber.state
-	for slot in st.hooks:   # release external subscriptions (use_signal) before dropping slots
+	for slot in st.hooks:   # release external subscriptions (useSignal) before dropping slots
 		if slot is Dictionary and slot.get("unsub") is Callable and slot["unsub"].is_valid():
 			slot["unsub"].call()
 	st.on_state_updated = Callable()

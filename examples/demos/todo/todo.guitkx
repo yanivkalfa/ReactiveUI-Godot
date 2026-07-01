@@ -1,9 +1,9 @@
 @class_name DemoTodo
 
 component DemoTodo() {
-	var items = use_state([])
-	var text = use_state("")
-	var next_id = use_ref(1)
+	var items = useState([])
+	var text = useState("")
+	var next_id = useRef(1)
 	var add = func():
 		if text[0].strip_edges() == "":
 			return

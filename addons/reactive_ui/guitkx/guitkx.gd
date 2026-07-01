@@ -40,7 +40,14 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		if source.substr(i, 11) == "@class_name":
 			var le := source.find("\n", i)
 			if le == -1: le = n
-			class_name_override = source.substr(i + 11, le - i - 11).strip_edges()
+			var cn_raw := source.substr(i + 11, le - i - 11)
+			var cn_hash := cn_raw.find("#")   # allow a trailing comment on the directive line
+			if cn_hash != -1:
+				cn_raw = cn_raw.substr(0, cn_hash)
+			class_name_override = cn_raw.strip_edges()
+			if not _is_valid_identifier(class_name_override):
+				diags.append("GUITKX0300: `@class_name` value must be a single valid identifier (got '%s')" % class_name_override)
+				return { "ok": false, "gd": "", "diagnostics": diags }
 			i = le
 			continue
 		break
@@ -54,7 +61,11 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		"module":
 			return _compile_module(source, decl["at"], class_name_override, basename, diags)
 		_:
-			diags.append("GUITKX0102: no `component`, `hook`, or `module` declaration found")
+			var near := _nearest_decl_keyword(source, i)
+			if near.has("word"):
+				diags.append("GUITKX0102: unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]])
+			else:
+				diags.append("GUITKX0102: no `component`, `hook`, or `module` declaration found")
 			return { "ok": false, "gd": "", "diagnostics": diags }
 
 ## Find the first top-level declaration keyword (skipping strings/comments).
@@ -75,6 +86,66 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 		i += 1
 	return { "kind": "", "at": -1 }
 
+## True if `s` is a single valid GDScript identifier ([A-Za-z_][A-Za-z0-9_]*), non-empty. [BUG-V2]
+static func _is_valid_identifier(s: String) -> bool:
+	if s.is_empty():
+		return false
+	for idx in s.length():
+		var c := s.unicode_at(idx)
+		var okc := (c == 95) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+		if idx > 0:
+			okc = okc or (c >= 48 and c <= 57)
+		if not okc:
+			return false
+	return true
+
+## The first top-level identifier + the declaration keyword it most resembles (edit distance <= 3),
+## for a "did you mean 'component'?" hint on a misspelled keyword. {} if none is close. [BUG-V1]
+static func _nearest_decl_keyword(source: String, from: int) -> Dictionary:
+	var i := from
+	var n := source.length()
+	while i < n:
+		var k := L.skip_noncode(source, i)
+		if k != i:
+			i = k
+			continue
+		if L._is_ident(source[i]):
+			var s := i
+			while i < n and L._is_ident(source[i]):
+				i += 1
+			var word := source.substr(s, i - s)
+			var best := ""
+			var best_d := 99
+			for kw in ["component", "hook", "module"]:
+				var d := _edit_distance(word.to_lower(), kw)
+				if d < best_d:
+					best_d = d
+					best = kw
+			if best != "" and best_d <= 3:
+				return { "word": word, "kw": best }
+			return {}
+		i += 1
+	return {}
+
+## Bounded Levenshtein edit distance (two-row DP).
+static func _edit_distance(a: String, b: String) -> int:
+	var la := a.length()
+	var lb := b.length()
+	if la == 0:
+		return lb
+	if lb == 0:
+		return la
+	var prev: Array = range(lb + 1)
+	var curr: Array = []
+	curr.resize(lb + 1)
+	for x in range(1, la + 1):
+		curr[0] = x
+		for y in range(1, lb + 1):
+			var cost := 0 if a[x - 1] == b[y - 1] else 1
+			curr[y] = mini(mini(prev[y] + 1, curr[y - 1] + 1), prev[y - 1] + cost)
+		prev = curr.duplicate()
+	return prev[lb]
+
 static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
 	var pc := _parse_component_at(source, ci, diags)
 	if not pc["ok"]:
@@ -82,6 +153,11 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if class_name_override == "" and pc["name"] != basename:
 		diags.append("GUITKX0103 (warning): component `%s` differs from file name `%s`" % [pc["name"], basename])
 	_validate(pc["setup"], pc["root"], diags)
+	# A hard-error diagnostic from validation (e.g. GUITKX0108 in a loop body) fails the compile —
+	# warnings (containing "(warning)") do not.
+	for d in diags:
+		if not (d as String).contains("(warning)"):
+			return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
 	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags)
 	return { "ok": true, "gd": gd, "diagnostics": diags }
@@ -121,6 +197,9 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if split.has("error"):
 		diags.append(split["error"])
 		return { "ok": false }
+	# BUG-V5: any real code after the markup return is unreachable (the compiler drops it).
+	if _has_unreachable_after(body, split["m_end"]):
+		diags.append("GUITKX0114 (warning): unreachable code after the component's markup return -- a component has a single return; later statements are ignored")
 	var parser := Markup.new()
 	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
@@ -158,8 +237,7 @@ static func _validate_hooks(setup: String, diags: Array) -> void:
 			return
 
 static func _line_calls_hook(s: String) -> bool:
-	for h in ["use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
-		"use_layout_effect", "use_context", "use_signal", "use_tween_value", "use_tween"]:
+	for h in HOOK_NAMES:   # single source of truth (all 23 hooks), camelCase
 		if (h + "(") in s:
 			return true
 	return false
@@ -191,9 +269,14 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool) -> voi
 	if pr["error"] != "":
 		return
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
-	if is_loop and nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
-		if not _has_key(nodes[0]):
-			diags.append("GUITKX0106 (warning): element in @for/@while has no `key` -- add key= so reordered children reconcile correctly")
+	if is_loop:
+		if nodes.size() > 1:
+			# A loop body must have a single root (like a component) so each iteration yields one keyed
+			# child. Wrap siblings in a fragment <>...</> with distinct keys. (Parity: Unity UITKX0108.)
+			diags.append("GUITKX0108: a @for/@while body must contain exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size())
+		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
+			if not _has_key(nodes[0]):
+				diags.append("GUITKX0106 (warning): element in @for/@while has no `key` -- add key= so reordered children reconcile correctly")
 	for nx in nodes:
 		_validate_node(nx, diags)
 
@@ -206,7 +289,7 @@ static func _check_dup_keys(children: Array, diags: Array) -> void:
 		if k == "":
 			continue
 		if seen.has(k):
-			diags.append("GUITKX0104 (warning): duplicate key '%s' among sibling elements" % k)
+			diags.append("GUITKX0104 (warning): duplicate key '%s' among sibling elements" % k.substr(2))
 		seen[k] = true
 
 static func _has_key(el: Dictionary) -> bool:
@@ -215,10 +298,17 @@ static func _has_key(el: Dictionary) -> bool:
 			return true
 	return false
 
+## A comparable signature for an element's `key`, so sibling duplicates are caught for BOTH literal
+## (key="x") and expression (key={ str(i) }) keys — two siblings with the SAME key expression collide
+## every iteration, while genuinely-different expressions are left alone. Prefixed "s:"/"e:" so a
+## string key never false-collides with an expr key. "" = no key.
 static func _literal_key(el: Dictionary) -> String:
 	for a in el.get("attrs", []):
-		if a["name"] == "key" and a["kind"] == "str":
-			return a["value"]
+		if a["name"] == "key":
+			if a["kind"] == "str":
+				return "s:" + str(a["value"])
+			if a["kind"] == "expr":
+				return "e:" + str(a["value"]).strip_edges()
 	return ""
 
 ## hook file: `hook name(params) [-> (...)] { body }` -> a class with one static function. The
@@ -409,6 +499,92 @@ static func _split_return(body: String) -> Dictionary:
 				continue
 		i += 1
 	return { "error": "GUITKX0102: component has no `return ( ... )` (only `return null`?)" }
+
+## True if there is real (non-whitespace, non-comment) code after `from` (the markup return's `)`), which
+## the compiler silently drops as unreachable. [BUG-V5]
+static func _has_unreachable_after(body: String, from: int) -> bool:
+	return _first_real(body, from + 1, body.length()) != -1
+
+## First / last offset of real (non-ws, non-comment) code in [from, to), or -1.
+static func _first_real(s: String, from: int, to: int) -> int:
+	var i := from
+	while i < to:
+		var k := L.skip_noncode(s, i)
+		if k != i:
+			i = k
+			continue
+		var c := s[i]
+		if not (c == " " or c == "\t" or c == "\n" or c == "\r"):
+			return i
+		i += 1
+	return -1
+
+static func _last_real(s: String, from: int, to: int) -> int:
+	var i := from
+	var last := -1
+	while i < to:
+		var k := L.skip_noncode(s, i)
+		if k != i:
+			i = k
+			continue
+		var c := s[i]
+		if not (c == " " or c == "\t" or c == "\n" or c == "\r"):
+			last = i
+		i += 1
+	return last
+
+static func _line_at(s: String, offset: int) -> int:
+	var line := 0
+	var lim := mini(offset, s.length())
+	for idx in lim:
+		if s[idx] == "\n":
+			line += 1
+	return line
+
+## Line ranges [start_line, end_line] (0-based, inclusive) of real unreachable code after each
+## component's markup return, for the editor to dim/flag. Reuses _split_return. [BUG-V5/V6]
+static func unreachable_line_ranges(source: String) -> Array:
+	var ranges: Array = []
+	var n := source.length()
+	var i := 0
+	while i < n:
+		var k := L.skip_noncode(source, i)
+		if k != i:
+			i = k
+			continue
+		if L.keyword_at(source, i, "component"):
+			# skip name + optional (params) to reach the body `{`
+			var j := i + 9
+			while j < n and (source[j] == " " or source[j] == "\t"):
+				j += 1
+			while j < n and L._is_ident(source[j]):
+				j += 1
+			while j < n and (source[j] == " " or source[j] == "\t"):
+				j += 1
+			if j < n and source[j] == "(":
+				var pcl := L.find_matching(source, j)
+				if pcl == -1:
+					break
+				j = pcl + 1
+			while j < n and (source[j] == " " or source[j] == "\t" or source[j] == "\n" or source[j] == "\r"):
+				j += 1
+			if j >= n or source[j] != "{":
+				i += 9
+				continue
+			var bclose := L.find_matching(source, j)
+			if bclose == -1:
+				break
+			var body := source.substr(j + 1, bclose - j - 1)
+			var split := _split_return(body)
+			if not split.has("error"):
+				var f := _first_real(body, split["m_end"] + 1, body.length())
+				if f != -1:
+					var lst := _last_real(body, split["m_end"] + 1, body.length())
+					ranges.append([_line_at(source, j + 1 + f), _line_at(source, j + 1 + lst)])
+			i = bclose + 1
+			continue
+		i += 1
+	return ranges
 
 # --- emit ---
 # Control flow is hoisted into pre-statements (an if/for/while block before the return) that
@@ -913,13 +1089,15 @@ static func _find_top(s: String, ch: String) -> int:
 		i += 1
 	return -1
 
-const HOOK_NAMES := ["use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
-	"use_layout_effect", "use_context", "use_signal", "use_tween_value", "use_tween"]
+const HOOK_NAMES := ["useState", "useReducer", "useRef", "useMemo", "useCallback", "useImperativeHandle",
+	"useEffect", "useLayoutEffect", "createContext", "useContext", "provideContext", "useDeferredValue",
+	"useTransition", "useStableCallback", "useStableFunc", "useStableAction", "useSafeArea", "useSignal",
+	"useSignalKey", "useTween", "useTweenValue", "useAnimate", "useSfx"]
 
-## Auto-prefix bare hook CALLS to Hooks.* (use_state(...) -> Hooks.use_state(...)). Single
+## Auto-prefix bare hook CALLS to Hooks.* (useState(...) -> Hooks.useState(...)). Single
 ## token-boundary pass that skips strings/comments (via skip_noncode), only matches a hook name at
 ## a real token start that is immediately CALLED (followed by `(`), and leaves already-qualified
-## `Hooks.use_*` and look-alike identifiers/strings (my_use_state, "use_state()") untouched.
+## `Hooks.use_*` and look-alike identifiers/strings (my_use_state, "useState()") untouched.
 ## `skip` lists names to NOT prefix (module-local hooks, see _compile_module).
 static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 	var out := ""
@@ -931,7 +1109,7 @@ static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 			out += setup.substr(i, j - i)   # copy string/comment verbatim
 			i = j
 			continue
-		# Only auto-prefix a FREE hook identifier — never a member call like `counter.use_state(...)`
+		# Only auto-prefix a FREE hook identifier — never a member call like `counter.useState(...)`
 		# (a preceding `.` is a non-identifier boundary, so guard against it explicitly). [audit]
 		if i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != "."):
 			var matched := ""

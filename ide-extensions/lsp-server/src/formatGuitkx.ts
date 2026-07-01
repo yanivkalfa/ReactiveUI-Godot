@@ -441,6 +441,59 @@ function parseHookAt(src: string, at: number): HookParse {
 
 // The markup (return-window) spans of every component in the document (top-level or module member) —
 // the regions where semantic-token scanning is valid; everything else is GDScript (setup/params/conds).
+// BUG-V5/V6: per-component, the span of real code AFTER the markup return `)` and before the body `}`
+// — unreachable (the compiler drops it). Used to fade + flag it live. Mirrors guitkx.gd _has_unreachable_after.
+export function unreachableRegions(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const pc = parseComponentAt(src, d.at);
+        if (pc.ok) {
+          const r = realSpan(src, pc.markupEnd + 1, pc.next - 1); // (markupEnd = `)`, next-1 = body `}`)
+          if (r) out.push(r);
+          i = pc.next;
+        } else i = d.at + 9;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        i = ph.ok ? ph.next : d.at + 4;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 6;
+      } else i = d.at + 1;
+    }
+  };
+  collect(0, src.length);
+  return out;
+}
+
+// The [first, last+1) span of real (non-whitespace, non-comment) code in [from, to), or null.
+function realSpan(src: string, from: number, to: number): { start: number; end: number } | null {
+  let i = from;
+  let first = -1;
+  let last = -1;
+  while (i < to) {
+    const k = skipNoncode(src, i);
+    if (k !== i) {
+      i = k;
+      continue;
+    }
+    const c = src[i];
+    if (!(c === " " || c === "\t" || c === "\n" || c === "\r")) {
+      if (first === -1) first = i;
+      last = i;
+    }
+    i++;
+  }
+  return first === -1 ? null : { start: first, end: last + 1 };
+}
+
 export function markupWindows(src: string): { start: number; end: number }[] {
   const wins: { start: number; end: number }[] = [];
   const collect = (from: number, to: number): void => {

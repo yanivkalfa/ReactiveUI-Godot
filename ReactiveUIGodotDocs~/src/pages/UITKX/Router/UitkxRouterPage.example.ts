@@ -1,8 +1,8 @@
 export const UITKX_ROUTER_EXAMPLE = `@class_name RouterDemo
 
 component RouterDemo() {
-  var navigate = RUIRouter.use_navigate()
-  var search = RUIRouter.use_search_params()   // [query, setter]
+  var navigate = RUIRouter.useNavigate()
+  var search = RUIRouter.useSearchParams()   // [query, setter]
 
   var ACTIVE := { "font_color": Color(1.0, 0.85, 0.3) }
   var IDLE := { "font_color": Color(0.7, 0.7, 0.8) }
@@ -56,8 +56,8 @@ component UsersLayout() {
 export const UITKX_ROUTER_DETAILS_EXAMPLE = `@class_name UserDetails
 
 component UserDetails() {
-  var params = RUIRouter.use_params()       // { "id": "42", ... }
-  var matches = RUIRouter.use_matches()     // breadcrumb chain (root -> current)
+  var params = RUIRouter.useParams()       // { "id": "42", ... }
+  var matches = RUIRouter.useMatches()     // breadcrumb chain (root -> current)
   return (
     <Label text={ "User id: %s" % str(params.get("id")) } />
   )

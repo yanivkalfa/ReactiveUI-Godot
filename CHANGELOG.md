@@ -4,6 +4,53 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-07-01
+
+Hooks go camelCase (full React parity) plus a round of compiler validation fixes.
+
+### Breaking
+- **Hooks are now camelCase, with no snake_case aliases.** `use_state`→`useState`, `use_effect`→`useEffect`,
+  `use_ref`→`useRef`, `use_memo`→`useMemo`, `use_callback`→`useCallback`, `use_reducer`→`useReducer`,
+  `use_context`→`useContext`, `create_context`→`createContext`, `provide_context`→`provideContext`,
+  `use_layout_effect`→`useLayoutEffect`, `use_imperative_handle`→`useImperativeHandle`,
+  `use_deferred_value`→`useDeferredValue`, `use_transition`→`useTransition`,
+  `use_stable_callback`/`use_stable_func`/`use_stable_action`→`useStableCallback`/`useStableFunc`/`useStableAction`,
+  `use_safe_area`→`useSafeArea`, `use_signal`→`useSignal`, `use_signal_key`→`useSignalKey`,
+  `use_tween`→`useTween`, `use_tween_value`→`useTweenValue`, `use_animate`→`useAnimate`, `use_sfx`→`useSfx`.
+
+- **Router hooks are camelCase too** (they were missed in the first pass) — **17 hooks on `RUIRouter`**:
+  `use_navigate`→`useNavigate`, `use_location`→`useLocation`, `use_params`→`useParams`,
+  `use_search_params`→`useSearchParams`, `use_blocker`→`useBlocker`, `use_query`→`useQuery`,
+  `use_matches`→`useMatches`, `use_router`→`useRouter`, `use_go`/`use_can_go`→`useGo`/`useCanGo`,
+  `use_navigation_state`/`use_navigation_base`→`useNavigationState`/`useNavigationBase`,
+  `use_route_match`→`useRouteMatch`, `use_outlet_context`→`useOutletContext`,
+  `use_resolved_path`→`useResolvedPath`, `use_location_info`→`useLocationInfo`, `use_prompt`→`usePrompt`.
+
+  **Migration:** rename the **23 core hook tokens** and the **17 `RUIRouter.*` router hooks** (snake→camel)
+  across your `.guitkx` and `.gd` files. The compiler auto-prefixes bare calls for **all 23** core hooks
+  (previously only 11 auto-prefixed to `Hooks.*`); router hooks stay explicitly qualified as `RUIRouter.*`.
+
+### Compiler
+- **`@for`/`@while` bodies must contain a single root element** (`GUITKX0108`) — wrap siblings in a
+  fragment `<>…</>`, matching the top-level render-root rule.
+- **Duplicate keys are detected for expression keys** (`key={ str(i) }`), not only literal `key="x"`
+  (`GUITKX0104`).
+- **`@class_name` is validated** as a single identifier (`GUITKX0300`) instead of flowing into a broken
+  generated `.gd`.
+- **Misspelled declaration keywords** get a "did you mean 'component'?" hint (`GUITKX0102`).
+- **`<` followed by whitespace** (e.g. `<  a>`) is reported as an invalid tag name, not silently parsed as
+  a fragment.
+- **Unreachable code after the markup return** is flagged (`GUITKX0114`), with line ranges so editors can
+  dim it.
+
+### Examples
+- New **prop spread** and **context handle** demos in the gallery (previously feature-complete but undemoed).
+
+### Docs
+- **README refreshed** to match the library — examples and the hooks/router tables now use the camelCase
+  hooks + React-style events, the pinned version is dropped, and the counts are corrected
+  (**23 core hooks · 17 router hooks · ~60 `V.*` factories**).
+
 ## [0.3.0] — 2026-07-01
 
 React-parity event handlers, prop spread, and context handles — the markup gets meaningfully closer to React.

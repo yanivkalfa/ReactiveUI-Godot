@@ -1,8 +1,8 @@
 @class_name DemoSlicing
 
 component DemoSlicing() {
-	var sliced = use_state(RUIConfig.time_slicing)
-	var rev = use_state(0)
+	var sliced = useState(RUIConfig.time_slicing)
+	var rev = useState(0)
 	var toggle = func():
 		RUIConfig.time_slicing = not sliced[0]
 		sliced[1].call(not sliced[0])

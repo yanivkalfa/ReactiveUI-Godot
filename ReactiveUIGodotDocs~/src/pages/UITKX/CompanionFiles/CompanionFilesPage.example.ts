@@ -33,10 +33,10 @@ export const EXAMPLE_DIRECTORY = `res://ui/PlayerCard/
 export const EXAMPLE_HOOKS = `# PlayerCard.hooks.guitkx
 module PlayerCardHooks {
   hook use_player_animation(player: PlayerInfo) -> Dictionary {
-    var opacity = Hooks.use_state(1.0)
-    var flashing = Hooks.use_state(false)
+    var opacity = Hooks.useState(1.0)
+    var flashing = Hooks.useState(false)
 
-    Hooks.use_effect(func():
+    Hooks.useEffect(func():
       if player.health <= 0:
         flashing[1].call(true)
         opacity[1].call(0.5)

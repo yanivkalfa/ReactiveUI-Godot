@@ -18,7 +18,7 @@ extends RefCounted
 ##                     • Native escape hatch: on_<signal> binds verbatim to "<signal>" (e.g.
 ##                       on_gui_input, on_id_pressed, on_mouse_entered) — reaches ANY Godot signal.
 ##   "draw_fn"      -> a Callable(canvas_item) for custom drawing (invoked via the node's `draw` signal)
-##   "redraw_key"   -> bump to repaint `draw_fn` without changing the callback (pair with use_stable_callback)
+##   "redraw_key"   -> bump to repaint `draw_fn` without changing the callback (pair with useStableCallback)
 ##   "key"          -> reconciliation key (consumed by V; never applied)
 ##   anything else  -> set directly as a node property (text, editable, disabled, ...)
 

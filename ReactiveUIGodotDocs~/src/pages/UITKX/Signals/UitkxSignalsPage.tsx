@@ -15,7 +15,7 @@ export const UitkxSignalsPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       A <code>RUISignal</code> is a lightweight reactive value store that lives <em>outside</em> the
-      component tree. Components subscribe to it with <code>use_signal(...)</code> and re-render
+      component tree. Components subscribe to it with <code>useSignal(...)</code> and re-render
       when the value — or a selected slice of it — changes. It is the ideal tool whenever you want a
       single source of truth shared across components without prop-drilling (selection, filters,
       global preferences, player stats).
@@ -42,7 +42,7 @@ export const UitkxSignalsPage: FC = () => (
           <ListItemText primary={<>Update with <code>signal.update(func(old): return next)</code> or <code>signal.set_value(next)</code>. Both notify subscribers only when the value actually changes.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Read outside components with <code>signal.get_value()</code> and <code>signal.subscribe(cb)</code> (which returns an unsubscribe <code>Callable</code>); inside components use <code>use_signal(...)</code>.</>} />
+          <ListItemText primary={<>Read outside components with <code>signal.get_value()</code> and <code>signal.subscribe(cb)</code> (which returns an unsubscribe <code>Callable</code>); inside components use <code>useSignal(...)</code>.</>} />
         </ListItem>
       </List>
     </Box>
@@ -65,22 +65,22 @@ export const UitkxSignalsPage: FC = () => (
         Using signals in components
       </Typography>
       <Typography variant="body1" paragraph>
-        Use <code>use_signal(...)</code> to read a signal and re-render when it changes. You can
+        Use <code>useSignal(...)</code> to read a signal and re-render when it changes. You can
         project a slice of a larger value with the selector argument, and supply a custom equality{' '}
         <code>comparer</code> to control when a change counts.
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>use_signal(sig)</code> — subscribe and re-render on change.</>} />
+          <ListItemText primary={<><code>useSignal(sig)</code> — subscribe and re-render on change.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>use_signal(sig, selector)</code> — project a slice with <code>selector(value)</code>; re-render only when the selected slice changes.</>} />
+          <ListItemText primary={<><code>useSignal(sig, selector)</code> — project a slice with <code>selector(value)</code>; re-render only when the selected slice changes.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>use_signal(sig, selector, comparer)</code> — custom equality via <code>comparer(old, new) -&gt; bool</code>.</>} />
+          <ListItemText primary={<><code>useSignal(sig, selector, comparer)</code> — custom equality via <code>comparer(old, new) -&gt; bool</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>use_signal_key(key, initial, selector, comparer)</code> — the same, but resolves the shared signal from the registry by key.</>} />
+          <ListItemText primary={<><code>useSignalKey(key, initial, selector, comparer)</code> — the same, but resolves the shared signal from the registry by key.</>} />
         </ListItem>
       </List>
       <CodeBlock language="gdscript" code={UITKX_SIGNALS_COMPONENT_EXAMPLE} />
@@ -103,7 +103,7 @@ export const UitkxSignalsPage: FC = () => (
         <strong>identity</strong>. So replacing a collection with a freshly-built equal one{' '}
         <em>does</em> notify (a new reference), but mutating the same dictionary in place and
         setting it back does <em>not</em>. Build a new collection to signal a change — or pass a
-        custom <code>comparer</code> to <code>use_signal</code> if you must detect in-place
+        custom <code>comparer</code> to <code>useSignal</code> if you must detect in-place
         mutation.
       </Typography>
     </Box>

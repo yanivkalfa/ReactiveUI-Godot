@@ -2,7 +2,7 @@
 // SCOPE-AWARE (Phase 4 §2): models Unity's VirtualDocumentGenerator — emit the REAL control-flow
 // structure (`for x in xs:`, `if cond:`, `match subj:`) so loop/branch variables are in scope, with
 // each embedded `{expr}` (attribute or child) as a `var _eN = (expr)` check INSIDE its block,
-// recursively nested. Hook names are pre-declared as in-scope stubs so `use_state(...)` resolves.
+// recursively nested. Hook names are pre-declared as in-scope stubs so `useState(...)` resolves.
 // Markup/glue is never copied, so Godot only ever parses real GDScript. Embedded code is spliced
 // VERBATIM (length-preserving), so the offset SourceMap round-trips 1:1 and survives future rewrites.
 
@@ -15,8 +15,10 @@ export interface VirtualDoc {
 }
 
 const HOOK_STUBS = [
-  "use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
-  "use_layout_effect", "use_context", "use_signal", "use_tween_value", "use_tween",
+  "useState", "useReducer", "useRef", "useMemo", "useCallback", "useImperativeHandle",
+  "useEffect", "useLayoutEffect", "createContext", "useContext", "provideContext",
+  "useDeferredValue", "useTransition", "useStableCallback", "useStableFunc", "useStableAction",
+  "useSafeArea", "useSignal", "useSignalKey", "useTween", "useTweenValue", "useAnimate", "useSfx",
 ];
 
 interface Ctx {

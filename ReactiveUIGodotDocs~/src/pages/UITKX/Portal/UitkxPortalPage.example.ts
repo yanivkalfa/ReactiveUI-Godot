@@ -1,13 +1,13 @@
 export const PORTAL_BASIC = `@class_name ModalDemo
 
 component ModalDemo() {
-  var show = use_state(false)
-  var mounted = use_state(false)
-  var target = use_ref(null)   // the host subtree we portal INTO
+  var show = useState(false)
+  var mounted = useState(false)
+  var target = useRef(null)   // the host subtree we portal INTO
 
   // The target node only exists after the first commit, so flip a flag from a
   // mount effect and render the portal on the next pass.
-  use_effect(func():
+  useEffect(func():
     mounted[1].call(true)
     return Callable()
   , [])
@@ -37,7 +37,7 @@ component ModalDemo() {
 export const PORTAL_TARGET = `# V.portal takes a live Godot Node as its target. The two common ways to get one:
 
 # 1. Capture a node rendered elsewhere in the SAME tree, with a ref:
-var target = use_ref(null)
+var target = useRef(null)
 # <Panel ref={ target } />           # in markup
 V.portal(target["current"], [ ...children ])
 

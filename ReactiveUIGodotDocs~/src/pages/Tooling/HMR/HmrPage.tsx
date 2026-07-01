@@ -103,35 +103,35 @@ export const HmrPage: FC = () => (
           </TableHead>
           <TableBody>
             <TableRow>
-              <TableCell><code>use_state</code> / <code>use_reducer</code></TableCell>
+              <TableCell><code>useState</code> / <code>useReducer</code></TableCell>
               <TableCell>Current values are retained in the slot; the setter / dispatch identity is stable.</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_ref</code></TableCell>
+              <TableCell><code>useRef</code></TableCell>
               <TableCell>The <code>{'{ "current": … }'}</code> box is preserved; <code>current</code> is unchanged.</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_effect</code> / <code>use_layout_effect</code></TableCell>
+              <TableCell><code>useEffect</code> / <code>useLayoutEffect</code></TableCell>
               <TableCell>The factory is refreshed with the new closure; it re-runs (after cleanup) when its deps change.</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_memo</code> / <code>use_callback</code></TableCell>
+              <TableCell><code>useMemo</code> / <code>useCallback</code></TableCell>
               <TableCell>Recomputed with the new function body when deps change; the cached value survives otherwise.</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_context</code></TableCell>
+              <TableCell><code>useContext</code></TableCell>
               <TableCell>Stateless — reads the current provider value without occupying a slot; always reflects the latest value.</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_stable_callback</code> / <code>use_stable_action</code></TableCell>
+              <TableCell><code>useStableCallback</code> / <code>useStableAction</code></TableCell>
               <TableCell>Wrapper identity preserved; the inner closure is silently replaced with the new body.</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_signal</code> / <code>use_signal_key</code></TableCell>
+              <TableCell><code>useSignal</code> / <code>useSignalKey</code></TableCell>
               <TableCell>Re-bound each render; the subscription persists (or re-subscribes if the signal instance changed).</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell><code>use_deferred_value</code></TableCell>
+              <TableCell><code>useDeferredValue</code></TableCell>
               <TableCell>Recalculated from the new upstream value on the next render.</TableCell>
             </TableRow>
           </TableBody>

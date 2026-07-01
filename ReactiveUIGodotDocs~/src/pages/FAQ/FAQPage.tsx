@@ -49,8 +49,8 @@ export const FAQPage: FC = () => (
     </Typography>
     <Typography variant="body2" paragraph>
       You describe <em>what</em> the UI should look like for the current state and let the
-      reconciler figure out the node operations. State lives in hooks (<code>use_state</code>,{' '}
-      <code>use_reducer</code>, <code>use_signal</code>) instead of being scattered across node
+      reconciler figure out the node operations. State lives in hooks (<code>useState</code>,{' '}
+      <code>useReducer</code>, <code>useSignal</code>) instead of being scattered across node
       references and manual <code>show()</code>/<code>hide()</code>/<code>queue_free()</code> calls.
       Under the hood it is still ordinary Godot <code>Control</code> nodes — nothing exotic.
     </Typography>
@@ -115,7 +115,7 @@ export const FAQPage: FC = () => (
       Why must hooks be called at the top level?
     </Typography>
     <Typography variant="body2" paragraph>
-      Hooks (<code>use_state</code>, <code>use_effect</code>, <code>use_signal</code>, …) are
+      Hooks (<code>useState</code>, <code>useEffect</code>, <code>useSignal</code>, …) are
       matched to storage slots by call order. They must be called unconditionally at the top of
       the component — never inside <code>@if</code>, <code>@for</code>, or an event handler — so
       the order is identical on every render. In debug builds{' '}
@@ -126,10 +126,10 @@ export const FAQPage: FC = () => (
       How do I share state across components?
     </Typography>
     <Typography variant="body2" paragraph>
-      For local state use <code>use_state</code> / <code>use_reducer</code>. For app-wide state
+      For local state use <code>useState</code> / <code>useReducer</code>. For app-wide state
       use <strong>signals</strong>: create a <code>RUISignal</code> store, then read it in any
-      component with the <code>use_signal</code> hook — every subscriber re-renders when the value
-      changes, with no prop-drilling. Context (<code>use_context</code>) is available for
+      component with the <code>useSignal</code> hook — every subscriber re-renders when the value
+      changes, with no prop-drilling. Context (<code>useContext</code>) is available for
       scoped-tree sharing.
     </Typography>
 
@@ -206,7 +206,7 @@ export const FAQPage: FC = () => (
     </Typography>
     <Typography variant="body2" paragraph>
       Re-render is triggered by calling a state setter, not by mutating a value in place. Use the
-      setter returned from <code>use_state</code> (<code>state[1].call(new_value)</code>) rather
+      setter returned from <code>useState</code> (<code>state[1].call(new_value)</code>) rather
       than reassigning the underlying variable, and set signal values through the store so
       subscribers are notified.
     </Typography>
@@ -227,7 +227,7 @@ export const FAQPage: FC = () => (
     <Typography variant="body2" paragraph>
       A component updated its own state unconditionally during setup, creating an infinite
       render loop. The reconciler caps re-render restarts (25) and stops the runaway. Move the
-      state update into an event handler or a <code>use_effect</code> instead of running it every
+      state update into an event handler or a <code>useEffect</code> instead of running it every
       render.
     </Typography>
 

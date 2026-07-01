@@ -110,6 +110,7 @@ func _refresh_diagnostics() -> void:
 		return
 	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_DIAGNOSTICS):
 		GuitkxDiagnosticsRenderer.clear(_code_edit, _code_edit.diag_gutter)
+		_code_edit.set_dim_lines({})
 		if _problems != null:
 			_problems.clear()
 		return
@@ -118,6 +119,7 @@ func _refresh_diagnostics() -> void:
 		# Too large to compile on every keystroke — clear stale decorations so nothing mis-anchors as
 		# the text shifts, and rely on the Save-time compile instead.
 		GuitkxDiagnosticsRenderer.clear(_code_edit, _code_edit.diag_gutter)
+		_code_edit.set_dim_lines({})
 		if _problems != null:
 			_problems.clear()
 		return
@@ -127,6 +129,15 @@ func _refresh_diagnostics() -> void:
 		_code_edit, _code_edit.diag_gutter, diags, _err_icon, _warn_icon)
 	if _problems != null:
 		_problems.set_records(records)
+	_apply_unreachable_dim(text)
+
+## Fade the lines after each component's markup return (unreachable code). [BUG-V6]
+func _apply_unreachable_dim(text: String) -> void:
+	var lines := {}
+	for r in RUIGuitkx.unreachable_line_ranges(text):
+		for ln in range(int(r[0]), int(r[1]) + 1):
+			lines[ln] = true
+	_code_edit.set_dim_lines(lines)
 
 func _basename() -> String:
 	if _current_path.is_empty():

@@ -7,9 +7,9 @@ component DemoReducer() {
 			"dec": return state - 1
 			"reset": return 0
 		return state
-	var r = use_reducer(reducer, 0)
+	var r = useReducer(reducer, 0)
 	return (
-		<DemoBox title="use_reducer — actions instead of raw setters">
+		<DemoBox title="useReducer — actions instead of raw setters">
 			<Label text={ "State: %d" % r[0] } style={ {"font_size": 28} } />
 			<HBox style={ {"separation": 8} }>
 				<Button text="dec" onClick={ func(): r[1].call("dec") } />

@@ -41,7 +41,7 @@ module {
 export const CUSTOM_RENDERING_PAINTER_EXAMPLE = `@class_name PolygonCanvas
 
 component PolygonCanvas() {
-  var sides = use_state(3)
+  var sides = useState(3)
 
   return (
     <VBox style={ {"separation": 8} }>
@@ -57,7 +57,7 @@ component PolygonCanvas() {
 export const CUSTOM_RENDERING_RAW_MESH_EXAMPLE = `@class_name QuadCanvas
 
 component QuadCanvas() {
-  var blue = use_state(true)
+  var blue = useState(true)
 
   return (
     <VBox style={ {"separation": 8} }>
@@ -72,11 +72,11 @@ component QuadCanvas() {
 export const CUSTOM_RENDERING_REDRAW_KEY_EXAMPLE = `@class_name ScatterCanvas
 
 component ScatterCanvas() {
-  var tick = use_state(0)
+  var tick = useState(0)
 
   // A stable callable: its identity never changes between renders, so the node
   // does NOT repaint every render. Bumping redraw_key forces the repaint.
-  var draw = use_stable_action(func(canvas): DrawHelpers.scatter(canvas))
+  var draw = useStableAction(func(canvas): DrawHelpers.scatter(canvas))
 
   return (
     <VBox style={ {"separation": 8} }>
@@ -95,8 +95,8 @@ export const CUSTOM_RENDERING_SIGNATURE_EXAMPLE = `# draw_fn is a Callable(canva
 draw_fn={ func(canvas): pass }   # issue canvas.draw_* calls here
 
 # redraw_key is any value. Changing it queues a redraw WITHOUT changing the
-# callback reference — pair it with a stable callback (use_stable_callback /
-# use_stable_action):
+# callback reference — pair it with a stable callback (useStableCallback /
+# useStableAction):
 redraw_key={ some_int_state }
 
 # draw_fn is ignored (with a push_warning) on nodes that are not CanvasItems.`

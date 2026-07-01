@@ -20,7 +20,7 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Fiber reconciler — synchronous render with atomic two-phase commit, keyed reconciliation, and bailout</>} />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Full hook set — use_state, use_reducer, use_effect, use_memo, use_ref, use_context, use_signal, use_tween</>} />
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Full hook set — useState, useReducer, useEffect, useMemo, useRef, useContext, useSignal, useTween</>} />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />~60 host elements mapping to Godot Controls (containers, buttons, inputs, item-model controls, media)</>} />
@@ -38,7 +38,7 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />React-parity event handlers — onClick, onChange, onSubmit, onFocus/onBlur, onPointer*, onResize map to Godot signals, with on_&lt;signal&gt; as an escape hatch</>} />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Prop spread <code>{'{...obj}'}</code> in .guitkx and context handles via Hooks.create_context (React createContext parity)</>} />
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Prop spread <code>{'{...obj}'}</code> in .guitkx and context handles via Hooks.createContext (React createContext parity)</>} />
       </ListItem>
     </List>
 

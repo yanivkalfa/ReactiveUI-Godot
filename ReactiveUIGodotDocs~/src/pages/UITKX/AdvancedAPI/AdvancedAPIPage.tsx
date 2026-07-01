@@ -42,7 +42,7 @@ type PropRow = { prop: string; type: string; desc: string }
 const drawProps: PropRow[] = [
   { prop: 'draw_fn', type: 'Callable(canvas_item)', desc: "Issues the node's draw_* calls, invoked via the node's 'draw' signal" },
   { prop: 'redraw_key', type: 'any', desc: 'Bump to repaint (queue_redraw) the same callback without re-subscribing' },
-  { prop: 'ref', type: 'use_ref box', desc: 'After commit, ref["current"] is the underlying Godot Control' },
+  { prop: 'ref', type: 'useRef box', desc: 'After commit, ref["current"] is the underlying Godot Control' },
   { prop: '__memo_eq', type: 'Callable(old, new) -> bool', desc: 'Custom props equality; return true to skip the re-render' },
 ]
 
@@ -54,7 +54,7 @@ type PriorityRow = { name: string; when: string; desc: string }
 
 const priorities: PriorityRow[] = [
   { name: 'Batched (default)', when: 'Setters in a handler', desc: 'Coalesced into one commit on the next process_frame' },
-  { name: 'Deferred', when: 'use_deferred_value', desc: 'Low-priority follow-up frame — urgent update paints first' },
+  { name: 'Deferred', when: 'useDeferredValue', desc: 'Low-priority follow-up frame — urgent update paints first' },
   { name: 'Sliced', when: 'Large subtree re-renders', desc: 'Work can continue across a parked process_frame tick' },
 ]
 
@@ -100,7 +100,7 @@ export const AdvancedAPIPage: FC = () => (
         unchanged (shallow <code>==</code>). For a custom comparison, pass a{' '}
         <code>__memo_eq</code> Callable in props — the reconciler consults it to
         decide whether to skip the child. Inside a component, use{' '}
-        <code>use_memo</code> to cache derived values and <code>use_callback</code>{' '}
+        <code>useMemo</code> to cache derived values and <code>useCallback</code>{' '}
         to stabilise a Callable&apos;s identity.
       </Typography>
       <CodeBlock language="jsx" code={PROPTYPES_EXAMPLE} />
@@ -112,11 +112,11 @@ export const AdvancedAPIPage: FC = () => (
         Refs into Godot nodes
       </Typography>
       <Typography variant="body1" paragraph>
-        A <code>use_ref(null)</code> box wired to the <code>ref</code> prop
+        A <code>useRef(null)</code> box wired to the <code>ref</code> prop
         captures the underlying Godot <code>Control</code> after commit. Read{' '}
         <code>ref[&quot;current&quot;]</code> to call any node method imperatively
         (scroll position, focus, animation targets). Do this from{' '}
-        <code>use_layout_effect</code> when you need it before the frame paints.
+        <code>useLayoutEffect</code> when you need it before the frame paints.
       </Typography>
       <CodeBlock language="jsx" code={HOSTCONTEXT_EXAMPLE} />
 
@@ -172,7 +172,7 @@ export const AdvancedAPIPage: FC = () => (
         Stable callbacks
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>use_stable_callback</code> (0-arg) and <code>use_stable_action</code>{' '}
+        <code>useStableCallback</code> (0-arg) and <code>useStableAction</code>{' '}
         (1-arg) return a wrapper whose identity <strong>never</strong> changes
         across renders but that always calls the latest closure. Use them for
         handlers wired once to a Godot signal or handed to a child, so a fresh
@@ -181,8 +181,8 @@ export const AdvancedAPIPage: FC = () => (
       <CodeBlock language="jsx" code={FLUSHSYNC_EXAMPLE} />
 
       <Alert severity="info" sx={{ mt: 1 }}>
-        <code>use_callback</code> changes identity when deps change;{' '}
-        <code>use_stable_callback</code> never does. Reach for the stable
+        <code>useCallback</code> changes identity when deps change;{' '}
+        <code>useStableCallback</code> never does. Reach for the stable
         variants when you truly need a constant identity.
       </Alert>
     </Box>

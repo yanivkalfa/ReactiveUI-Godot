@@ -1,7 +1,7 @@
 @class_name DemoKeyed
 
 component DemoKeyed() {
-	var items = use_state(["A", "B", "C", "D", "E"])
+	var items = useState(["A", "B", "C", "D", "E"])
 	var shuffle = func():
 		var arr: Array = items[0].duplicate()
 		arr.shuffle()

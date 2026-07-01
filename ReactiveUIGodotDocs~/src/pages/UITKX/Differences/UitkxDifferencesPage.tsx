@@ -21,10 +21,10 @@ export const UitkxDifferencesPage: FC = () => (
         Hooks are snake_case
       </Typography>
       <Typography variant="body1" paragraph>
-        Hooks follow GDScript naming: <code>use_state</code>, <code>use_effect</code>,{' '}
-        <code>use_memo</code>, <code>use_ref</code>, and so on — never React's{' '}
+        Hooks follow GDScript naming: <code>useState</code>, <code>useEffect</code>,{' '}
+        <code>useMemo</code>, <code>useRef</code>, and so on — never React's{' '}
         <code>useState</code> camelCase. In plain <code>.gd</code> you call them as{' '}
-        <code>Hooks.use_state(…)</code>; inside <code>.guitkx</code> the bare <code>use_*</code> form
+        <code>Hooks.useState(…)</code>; inside <code>.guitkx</code> the bare <code>use_*</code> form
         is auto-prefixed to <code>Hooks.*</code> by the compiler.
       </Typography>
     </Box>
@@ -34,7 +34,7 @@ export const UitkxDifferencesPage: FC = () => (
         State updates
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>use_state</code> keeps React's mental model but returns a two-element{' '}
+        <code>useState</code> keeps React's mental model but returns a two-element{' '}
         <code>Array</code> — <code>[value, setter]</code> — because GDScript has no tuple
         destructuring. You call the setter with either a value or an updater function.
       </Typography>
@@ -57,7 +57,7 @@ export const UitkxDifferencesPage: FC = () => (
         Refs are dictionaries
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>use_ref(initial)</code> returns a stable <code>{'{ "current": initial }'}</code>{' '}
+        <code>useRef(initial)</code> returns a stable <code>{'{ "current": initial }'}</code>{' '}
         dictionary (never re-created). Read and write it with{' '}
         <code>{'my_ref["current"]'}</code>. The <code>ref</code> attribute on a host element accepts
         either such a box or a <code>Callable(node)</code> that receives the live Godot node.
@@ -90,7 +90,7 @@ export const UitkxDifferencesPage: FC = () => (
           <ListItemText primary={<><strong>Prop spread</strong> is supported in <code>.guitkx</code>: <code>{'<Button {...cfg} onClick={ f } />'}</code> merges a <code>Dictionary</code> of props onto a host element or component, left-to-right with later winning — just like <code>{'{...obj}'}</code> in JSX.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Context handles</strong> are supported: <code>Hooks.create_context(default)</code> returns an <code>RUIContext</code> you pass to <code>provide_context</code> / <code>use_context</code> — the parity of React&apos;s <code>createContext</code>, with a built-in default and no string-key collisions. (Bare String keys still work for back-compat.)</>} />
+          <ListItemText primary={<><strong>Context handles</strong> are supported: <code>Hooks.createContext(default)</code> returns an <code>RUIContext</code> you pass to <code>provideContext</code> / <code>useContext</code> — the parity of React&apos;s <code>createContext</code>, with a built-in default and no string-key collisions. (Bare String keys still work for back-compat.)</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<><strong>Event handlers</strong> use React-parity camelCase — <code>onClick</code>, <code>onChange</code>, <code>onSubmit</code>, <code>onFocus</code>/<code>onBlur</code>, and so on — mapped to Godot signals. The native <code>on_&lt;signal&gt;</code> spelling remains as an escape hatch to any signal.</>} />
@@ -122,7 +122,7 @@ export const UitkxDifferencesPage: FC = () => (
           <ListItemText primary="All updates scheduled in a frame are processed together; there is no preemption between high- and low-priority updates." />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="use_transition and use_deferred_value exist for API parity but are synchronous — they don't provide true concurrency." />
+          <ListItemText primary="useTransition and useDeferredValue exist for API parity but are synchronous — they don't provide true concurrency." />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary="Optional cooperative render slicing can be enabled via RUIConfig.time_slicing / RUIConfig.frame_budget_ms, within Godot's runtime constraints." />

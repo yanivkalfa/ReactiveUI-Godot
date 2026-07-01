@@ -1,7 +1,7 @@
 @class_name DemoControls
 
 component DemoControls() {
-	var v = use_state(40.0)
+	var v = useState(40.0)
 	return (
 		<DemoBox title="Controls — a slice of the 60-control set">
 			<CheckButton text="CheckButton" />

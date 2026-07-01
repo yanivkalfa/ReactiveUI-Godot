@@ -50,12 +50,12 @@ export const HooksGuidePage: FC = () => (
       positional-slot model relies on a stable call order.
     </Alert>
 
-    {/* ── use_state ────────────────────────────────────────────── */}
+    {/* ── useState ────────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_state
+        useState
       </Typography>
-      <CodeBlock language="jsx" code={`use_state(initial = null) -> [value, set]`} />
+      <CodeBlock language="jsx" code={`useState(initial = null) -> [value, set]`} />
       <Typography variant="body1" paragraph>
         Returns a two-element Array: the current value and a stable setter{' '}
         <code>Callable</code>. The setter accepts either a direct value or a
@@ -66,15 +66,15 @@ export const HooksGuidePage: FC = () => (
       <CodeBlock language="jsx" code={HOOKS_USESTATE_EXAMPLE} />
     </Box>
 
-    {/* ── use_reducer ──────────────────────────────────────────── */}
+    {/* ── useReducer ──────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_reducer
+        useReducer
       </Typography>
-      <CodeBlock language="jsx" code={`use_reducer(reducer: Callable, initial = null) -> [state, dispatch]
+      <CodeBlock language="jsx" code={`useReducer(reducer: Callable, initial = null) -> [state, dispatch]
 # reducer(state, action) -> new_state`} />
       <Typography variant="body1" paragraph>
-        Preferred over <code>use_state</code> when state transitions depend on
+        Preferred over <code>useState</code> when state transitions depend on
         the previous state and an action. The reducer is a pure function:{' '}
         <code>func(state, action) -&gt; new_state</code>. The returned{' '}
         <code>dispatch</code> identity is stable across renders.
@@ -82,12 +82,12 @@ export const HooksGuidePage: FC = () => (
       <CodeBlock language="jsx" code={HOOKS_USEREDUCER_EXAMPLE} />
     </Box>
 
-    {/* ── use_effect ───────────────────────────────────────────── */}
+    {/* ── useEffect ───────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_effect
+        useEffect
       </Typography>
-      <CodeBlock language="jsx" code={`use_effect(effect: Callable, deps = null) -> void`} />
+      <CodeBlock language="jsx" code={`useEffect(effect: Callable, deps = null) -> void`} />
       <Typography variant="body1" paragraph>
         Runs a passive effect <strong>after</strong> commit (two-pass: all
         cleanups, then all setups). The effect body may return a cleanup{' '}
@@ -102,28 +102,28 @@ export const HooksGuidePage: FC = () => (
       <CodeBlock language="jsx" code={HOOKS_USEEFFECT_EXAMPLE} />
     </Box>
 
-    {/* ── use_layout_effect ────────────────────────────────────── */}
+    {/* ── useLayoutEffect ────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_layout_effect
+        useLayoutEffect
       </Typography>
-      <CodeBlock language="jsx" code={`use_layout_effect(effect: Callable, deps = null) -> void`} />
+      <CodeBlock language="jsx" code={`useLayoutEffect(effect: Callable, deps = null) -> void`} />
       <Typography variant="body1" paragraph>
-        Identical to <code>use_effect</code> but fires <strong>synchronously</strong>{' '}
+        Identical to <code>useEffect</code> but fires <strong>synchronously</strong>{' '}
         during commit, before the frame paints (cleanup-then-setup per fiber).
         Use it when you need to read a Control&apos;s layout (its{' '}
         <code>size</code>) or mutate a node before the user sees the frame. Same
-        dependency semantics as <code>use_effect</code>.
+        dependency semantics as <code>useEffect</code>.
       </Typography>
       <CodeBlock language="jsx" code={HOOKS_USELAYOUTEFFECT_EXAMPLE} />
     </Box>
 
-    {/* ── use_memo ─────────────────────────────────────────────── */}
+    {/* ── useMemo ─────────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_memo
+        useMemo
       </Typography>
-      <CodeBlock language="jsx" code={`use_memo(factory: Callable, deps: Array = []) -> value`} />
+      <CodeBlock language="jsx" code={`useMemo(factory: Callable, deps: Array = []) -> value`} />
       <Typography variant="body1" paragraph>
         Returns a cached value. The factory re-runs only when a dependency
         changes (shallow, per-element comparison). Use it to avoid recomputing
@@ -132,18 +132,18 @@ export const HooksGuidePage: FC = () => (
       <CodeBlock language="jsx" code={HOOKS_USEMEMO_EXAMPLE} />
     </Box>
 
-    {/* ── use_callback ─────────────────────────────────────────── */}
+    {/* ── useCallback ─────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_callback
+        useCallback
       </Typography>
-      <CodeBlock language="jsx" code={`use_callback(cb: Callable, deps: Array = []) -> Callable`} />
+      <CodeBlock language="jsx" code={`useCallback(cb: Callable, deps: Array = []) -> Callable`} />
       <Alert severity="warning" sx={{ mb: 1 }}>
-        <code>use_callback(cb, deps)</code> is <code>use_memo(func(): return cb, deps)</code>:
+        <code>useCallback(cb, deps)</code> is <code>useMemo(func(): return cb, deps)</code>:
         it returns the same <code>Callable</code> instance while deps are
         unchanged. If you need a callback whose identity <em>never</em> changes
         but that always calls the latest closure, use{' '}
-        <code>use_stable_callback</code> / <code>use_stable_action</code> instead.
+        <code>useStableCallback</code> / <code>useStableAction</code> instead.
       </Alert>
       <Typography variant="body1" paragraph>
         Returns a stable <code>Callable</code> whose identity only changes when a
@@ -153,18 +153,18 @@ export const HooksGuidePage: FC = () => (
       <CodeBlock language="jsx" code={HOOKS_USECALLBACK_EXAMPLE} />
     </Box>
 
-    {/* ── use_ref ──────────────────────────────────────────────── */}
+    {/* ── useRef ──────────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_ref &amp; Control refs
+        useRef &amp; Control refs
       </Typography>
-      <CodeBlock language="jsx" code={`use_ref(initial = null) -> { "current": initial }`} />
+      <CodeBlock language="jsx" code={`useRef(initial = null) -> { "current": initial }`} />
       <List sx={styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>use_ref(value)</code> returns a stable Dictionary box with a <code>&quot;current&quot;</code> entry. It is never re-created. Changing <code>ref[&quot;current&quot;]</code> does <strong>not</strong> trigger a re-render.</>} />
+          <ListItemText primary={<><code>useRef(value)</code> returns a stable Dictionary box with a <code>&quot;current&quot;</code> entry. It is never re-created. Changing <code>ref[&quot;current&quot;]</code> does <strong>not</strong> trigger a re-render.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Pass a <code>use_ref(null)</code> box to the <code>ref</code> prop of a host element. After commit, <code>ref[&quot;current&quot;]</code> is the underlying Godot <code>Control</code> node.</>} />
+          <ListItemText primary={<>Pass a <code>useRef(null)</code> box to the <code>ref</code> prop of a host element. After commit, <code>ref[&quot;current&quot;]</code> is the underlying Godot <code>Control</code> node.</>} />
         </ListItem>
       </List>
       <CodeBlock language="jsx" code={HOOKS_USEREF_EXAMPLE} />
@@ -173,14 +173,14 @@ export const HooksGuidePage: FC = () => (
     {/* ── Context ──────────────────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_context &amp; provide_context
+        useContext &amp; provideContext
       </Typography>
-      <CodeBlock language="jsx" code={`use_context(key: String)   # nearest provided value, or null
-Hooks.provide_context(key: String, value) -> void`} />
+      <CodeBlock language="jsx" code={`useContext(key: String)   # nearest provided value, or null
+Hooks.provideContext(key: String, value) -> void`} />
       <Typography variant="body1" paragraph>
         Context lets you pass data down the component tree without threading
-        props through every level. <code>provide_context</code> makes a value
-        available to the current fiber&apos;s subtree; <code>use_context</code>{' '}
+        props through every level. <code>provideContext</code> makes a value
+        available to the current fiber&apos;s subtree; <code>useContext</code>{' '}
         reads it.
       </Typography>
       <List sx={styles.list}>
@@ -194,7 +194,7 @@ Hooks.provide_context(key: String, value) -> void`} />
           <ListItemText primary="When a provided value changes, all consumers in the subtree are marked dirty and automatically re-render." />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="use_context does not consume a hook slot (context reads are kept out of the positional slot array)." />
+          <ListItemText primary="useContext does not consume a hook slot (context reads are kept out of the positional slot array)." />
         </ListItem>
       </List>
       <CodeBlock language="jsx" code={HOOKS_CONTEXT_EXAMPLE} />
@@ -204,12 +204,12 @@ Hooks.provide_context(key: String, value) -> void`} />
       </Alert>
     </Box>
 
-    {/* ── use_deferred_value ───────────────────────────────────── */}
+    {/* ── useDeferredValue ───────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_deferred_value
+        useDeferredValue
       </Typography>
-      <CodeBlock language="jsx" code={`use_deferred_value(value, deps = null) -> deferred_value`} />
+      <CodeBlock language="jsx" code={`useDeferredValue(value, deps = null) -> deferred_value`} />
       <Typography variant="body1" paragraph>
         Returns a copy of <code>value</code> that may lag one frame behind. On
         the render where <code>value</code> changes it returns the{' '}
@@ -223,18 +223,18 @@ Hooks.provide_context(key: String, value) -> void`} />
       <CodeBlock language="jsx" code={HOOKS_DEFERRED_EXAMPLE} />
     </Box>
 
-    {/* ── use_imperative_handle ────────────────────────────────── */}
+    {/* ── useImperativeHandle ────────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        use_imperative_handle
+        useImperativeHandle
       </Typography>
-      <CodeBlock language="jsx" code={`use_imperative_handle(factory: Callable, deps: Array = []) -> handle`} />
+      <CodeBlock language="jsx" code={`useImperativeHandle(factory: Callable, deps: Array = []) -> handle`} />
       <Typography variant="body1" paragraph>
         Builds an imperative API object (typically a Dictionary of{' '}
         <code>Callable</code>s) that a child exposes to its parent. It is{' '}
-        <code>use_memo(factory, deps)</code> under the hood — the handle is
+        <code>useMemo(factory, deps)</code> under the hood — the handle is
         recomputed only when dependencies change. Publish it to a parent&apos;s{' '}
-        <code>use_ref</code> box (passed down as a prop) from a layout effect.
+        <code>useRef</code> box (passed down as a prop) from a layout effect.
       </Typography>
       <CodeBlock language="jsx" code={HOOKS_IMPERATIVE_EXAMPLE} />
     </Box>
@@ -244,9 +244,9 @@ Hooks.provide_context(key: String, value) -> void`} />
       <Typography variant="h5" component="h2" gutterBottom>
         Stable function helpers
       </Typography>
-      <CodeBlock language="jsx" code={`use_stable_callback(cb: Callable) -> Callable   # 0-arg
-use_stable_func(cb: Callable) -> Callable        # alias of use_stable_callback
-use_stable_action(cb: Callable) -> Callable      # 1-arg`} />
+      <CodeBlock language="jsx" code={`useStableCallback(cb: Callable) -> Callable   # 0-arg
+useStableFunc(cb: Callable) -> Callable        # alias of useStableCallback
+useStableAction(cb: Callable) -> Callable      # 1-arg`} />
       <Typography variant="body1" paragraph>
         These hooks return a wrapper whose identity <strong>never changes</strong>{' '}
         across renders. The wrapper always calls through to the latest closure

@@ -62,7 +62,7 @@ func _lib(n: int) -> float:
 	var setb := { "fn": null }
 	var sz := Vector2(8, 8)
 	var comp := func(_p, _ch):
-		var s = Hooks.use_state(sim["boxes"])
+		var s = Hooks.useState(sim["boxes"])
 		setb["fn"] = s[1]
 		var nodes: Array = []
 		for b in s[0]:
