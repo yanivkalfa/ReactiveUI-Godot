@@ -326,9 +326,11 @@ func _test_decl_validation() -> void:
 	# a valid @class_name is accepted, and a trailing comment on the directive line is tolerated
 	var okcn := RUIGuitkx.compile("@class_name MyThing  # ok\ncomponent X() { return ( <Label /> ) }\n", "X")
 	_check_true(okcn["ok"], "valid @class_name accepted (got %s)" % str(okcn["diagnostics"]))
-	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint
+	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint.
+	# NOTE: join the diagnostics rather than str() the Array -- Godot 4.7's Array-to-string escapes
+	# inner single quotes (did you mean \'component\'), which would never match a plain-quote needle.
 	var typo := RUIGuitkx.compile("componeent X() { return ( <Label /> ) }\n", "X")
-	_check_true(not typo["ok"] and str(typo["diagnostics"]).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
+	_check_true(not typo["ok"] and "\n".join(typo["diagnostics"]).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
 	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
 	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
 	_check_true(not badtag["ok"] and str(badtag["diagnostics"]).contains("GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
