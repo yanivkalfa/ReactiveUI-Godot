@@ -25,6 +25,54 @@ concurrency:
 
 jobs:
   # ════════════════════════════════════════════════════════════════════════════
+  # Documentation site — build ReactiveUIGodotDocs~ and push dist/ to the `documentations`
+  # branch (GitHub Pages serves that branch, root). Runs every dispatch (not version-gated), so a
+  # docs-only change redeploys. One-time setup: Settings > Pages > Deploy from branch > documentations / root.
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: ReactiveUIGodotDocs~
+        run: npm ci
+
+      - name: Build
+        working-directory: ReactiveUIGodotDocs~
+        run: npm run build
+
+      - name: Deploy to documentations branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git worktree add --force _docs_branch documentations 2>/dev/null || {
+            git branch documentations
+            git worktree add _docs_branch documentations
+          }
+
+          find _docs_branch -mindepth 1 -not -path '*/.git/*' -not -name '.git' -delete
+          cp -r ReactiveUIGodotDocs~/dist/* _docs_branch/
+          touch _docs_branch/.nojekyll   # serve Vite's _-prefixed/asset files verbatim (no Jekyll)
+
+          cd _docs_branch
+          git add -A
+          git diff --cached --quiet && echo "No docs changes to deploy" && exit 0
+          git commit -m "docs update"
+          git push origin documentations
+
+          cd ..
+          git worktree remove _docs_branch
+
+  # ════════════════════════════════════════════════════════════════════════════
   # Godot addon — zip addons/reactive_ui + GitHub release, publishes only if version changed
   # ════════════════════════════════════════════════════════════════════════════
   release-addon:
