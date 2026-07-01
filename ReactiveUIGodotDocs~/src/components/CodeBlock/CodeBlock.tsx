@@ -1,5 +1,7 @@
 import { Highlight, themes } from 'prism-react-renderer'
 import type { Language } from 'prism-react-renderer'
+// Registers the GDScript grammar on the shared Prism instance (side-effect) and re-exports it.
+import { Prism } from '../../codeLanguages'
 import { Box, IconButton, Tooltip, Typography } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import type { FC } from 'react'
@@ -68,7 +70,7 @@ export const CodeBlock: FC<Props> = ({ code, codeRuntime, codeEditor, language =
         </Tooltip>
       </Box>
       <Box sx={Styles.body}>
-        <Highlight theme={themes.oneDark} code={activeCode} language={language}>
+        <Highlight prism={Prism} theme={themes.oneDark} code={activeCode} language={language}>
           {({ className, style, tokens, getLineProps, getTokenProps }) => (
             <pre className={className} style={{...style, ...Styles.preCustom}}>
               {tokens.map((line, i) => (

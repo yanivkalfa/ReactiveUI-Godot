@@ -96,8 +96,8 @@ export const UitkxSignalsPage: FC = () => (
         Change detection — build a new collection to notify
       </Typography>
       <Typography variant="body1" paragraph>
-        Change-detection is reference-aware (<code>Object.is</code> semantics, matching the Unity
-        reference&apos;s <code>Signal</code>): value types (<code>int</code>, <code>float</code>,{' '}
+        Change-detection is reference-aware (identity comparison, like GDScript reference
+        equality): value types (<code>int</code>, <code>float</code>,{' '}
         <code>String</code>, <code>Vector2</code>, …) compare by value, while reference types
         (<code>Array</code>, <code>Dictionary</code>, <code>Object</code>) compare by{' '}
         <strong>identity</strong>. So replacing a collection with a freshly-built equal one{' '}

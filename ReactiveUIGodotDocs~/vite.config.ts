@@ -21,7 +21,7 @@ const repoRoot = path.resolve(process.cwd(), '..')
 const readJson = (rel: string) =>
   JSON.parse(fs.readFileSync(path.join(repoRoot, rel), 'utf-8').replace(/^﻿/, ''))
 
-// ── addon version (plugin.cfg: version="0.2.2") ──────────────────────────────
+// ── addon version (plugin.cfg: version="0.3.0") ──────────────────────────────
 function readAddonVersion(): string {
   try {
     const cfg = fs.readFileSync(path.join(repoRoot, 'addons', 'reactive_ui', 'plugin.cfg'), 'utf-8')
