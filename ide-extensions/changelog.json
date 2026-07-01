@@ -3,6 +3,20 @@
     {
       "date": "2026-07-01",
       "versions": {
+        "vscode": "0.5.0",
+        "vs2022": "0.5.0"
+      },
+      "shared": [
+        "Hooks are now camelCase (React parity): completion, hover, go-to-definition, and the embedded-GDScript virtual document all use the camelCase names — `useState`, `useEffect`, `useRef`, `useMemo`, `useContext`, `createContext`, … (23 hooks). Existing snake_case hook code must be migrated (a snake→camel rename over the 23 hook names).",
+        "Hovering a hook now shows its signature — e.g. `useState(initial) → [value, setter]` — instead of a bare `Callable`. Host-element hover drops the internal `V.*` factory detail and keeps the Godot class reference.",
+        "Unreachable code after a component's `return (...)` is now dimmed (faded) live, the same way dead code is shown for GDScript — via an `Unnecessary`-tagged diagnostic.",
+        "Duplicate-`key` detection now covers expression keys (`key={ str(i) }`), not only literal `key=\"x\"` — two siblings sharing the same key expression collide on every iteration.",
+        "The markup parser now reports a `<` followed by whitespace (e.g. `<  a>`) as an invalid tag name, instead of silently treating it as a fragment plus an attribute."
+      ]
+    },
+    {
+      "date": "2026-07-01",
+      "versions": {
         "vscode": "0.4.0",
         "vs2022": "0.4.0"
       },
