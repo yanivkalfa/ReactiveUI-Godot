@@ -1,4 +1,0 @@
-// Registers the GUITKX TextMate grammar with Visual Studio. VS sources colorization from TextMate
-// (never from LSP), so this is required even though the language server provides everything else.
-[$RootKey$\TextMate\Repositories]
-"ReactiveUIGuitkx"="$PackageFolder$\Syntaxes"
