@@ -1,0 +1,8 @@
+@class_name DemoContextHandleSwatch
+
+component DemoContextHandleSwatch() {
+	var c = Hooks.useContext(AccentContext.HANDLE)
+	return (
+		<Label text="   ● this label reads the accent straight from the context handle" style={ {"font_color": c} } />
+	)
+}

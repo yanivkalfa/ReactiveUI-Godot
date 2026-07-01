@@ -13,6 +13,8 @@ module DemoGalleryTable {
 			{ "title": "useTween", "fn": DemoTween.render },
 			{ "title": "Signals", "fn": DemoSignals.render },
 			{ "title": "Context", "fn": DemoContext.render },
+			{ "title": "Context handle", "fn": DemoContextHandle.render },
+			{ "title": "Prop spread", "fn": DemoSpread.render },
 			{ "title": "Bailout", "fn": DemoBailout.render },
 			{ "title": "Fragment", "fn": DemoFragment.render },
 			{ "title": "Todo (keyed)", "fn": DemoTodo.render },
