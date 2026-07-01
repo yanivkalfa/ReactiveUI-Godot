@@ -1,3 +1,25 @@
+## [0.4.1] - 2026-07-02
+
+### Indentation stops being a landmine
+
+Mixing tabs and spaces in a component's setup used to break the whole component -- and the worst part is you couldn't *see* it: a tab followed by two spaces renders identically to two tabs, but the compiler compared indentation character-by-character, emitted GDScript with a phantom "unindent doesn't match", and even threw a bogus "hook called in a block" warning. One invisible stray space, whole component dead. The compiler now measures indentation by **depth** (a tab and the inferred space width each count as one level), so tabs and spaces mix freely and still produce valid GDScript. A real hook-in-a-block still warns.
+
+Also fixed: generated `.gd` now regenerate when the **compiler** changes, not just when the `.guitkx` is newer. Before, updating the library left your old generated `.gd` in place (they were newer than their source), so compiler fixes silently never reached you. Now the toolchain fingerprints itself and regenerates everything when it moves.
+
+Update to **Reactive UI 0.4.1** (copy `addons/reactive_ui/` into your project).
+
+---
+
+## [IDE 0.5.1] - 2026-07-02
+
+### The editor stops choking on invisible whitespace
+
+Same fix, editor side: a `.guitkx` that mixes tabs and spaces in its setup no longer lights up VS Code / VS 2022 with a `Mixed use of tabs and spaces` + `expected a declaration` cascade. The embedded-GDScript virtual document the analyzer reads now normalizes setup indentation by depth, matching the compiler -- so the difference you can't see no longer breaks analysis.
+
+Reinstall **GUITKX 0.5.1** (VS Code + VS 2022).
+
+---
+
 ## [0.4.0] - 2026-07-01
 
 ### Hooks go camelCase -- full React parity (breaking)

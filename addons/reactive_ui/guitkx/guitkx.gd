@@ -220,19 +220,23 @@ static func _validate(setup: String, root: Dictionary, diags: Array) -> void:
 ## inside an if/for/while/match block, i.e. called conditionally. [GUITKX0013]
 static func _validate_hooks(setup: String, diags: Array) -> void:
 	var lines := setup.split("\n")
+	# Compare indentation by DEPTH (levels), not raw character count, so a tab+spaces mix -- which
+	# renders identically to tabs and is thus invisible to the author -- doesn't produce a spurious
+	# "hook in a block" warning.
+	var unit := _indent_unit(lines)
 	var base := -1
 	for l in lines:
 		if (l as String).strip_edges() == "":
 			continue
-		var w := _leading_ws(l).length()
-		if base == -1 or w < base:
-			base = w
+		var d := _indent_depth(l as String, unit)
+		if base == -1 or d < base:
+			base = d
 	if base == -1:
 		return
 	for l in lines:
 		if (l as String).strip_edges() == "":
 			continue
-		if _line_calls_hook(l as String) and _leading_ws(l).length() > base:
+		if _line_calls_hook(l as String) and _indent_depth(l as String, unit) > base:
 			diags.append("GUITKX0013 (warning): hook called conditionally/in a block -- hooks must run unconditionally at the top of setup")
 			return
 
@@ -882,6 +886,10 @@ static func _expr_ctrl_unsupported(ctx: Dictionary, what: String) -> String:
 
 # Dedent a setup block to its common leading-whitespace prefix, then re-indent every line one tab
 # (so source indentation inside render's body becomes a single render-body indent level).
+## Re-indent a setup block into the generated func body. DEPTH-based (not raw-character-based): a tab
+## counts as one indent unit and the space-unit is inferred, so a source that MIXES tabs and spaces --
+## invisible in most editors, since `\t  ` renders like `\t\t` -- still yields consistent, valid
+## GDScript instead of a downstream "unindent doesn't match". The shallowest setup line maps to one tab.
 static func _reindent_setup(code: String) -> String:
 	var lines: Array = Array(code.split("\n"))
 	while not lines.is_empty() and (lines[0] as String).strip_edges() == "":
@@ -890,23 +898,24 @@ static func _reindent_setup(code: String) -> String:
 		lines.pop_back()
 	if lines.is_empty():
 		return ""
-	var prefix := ""
-	var have := false
+	var unit := _indent_unit(lines)
+	var base := 0x7fffffff
+	var depths: Array = []
 	for l in lines:
 		if (l as String).strip_edges() == "":
+			depths.append(-1)
 			continue
-		var lead := _leading_ws(l)
-		if not have:
-			prefix = lead
-			have = true
-		else:
-			prefix = _common_prefix(prefix, lead)
+		var d := _indent_depth(l as String, unit)
+		depths.append(d)
+		if d < base:
+			base = d
 	var out_lines: Array = []
-	for l in lines:
-		if (l as String).strip_edges() == "":
+	for i in lines.size():
+		if int(depths[i]) == -1:
 			out_lines.append("")
 		else:
-			out_lines.append("\t" + (l as String).substr(prefix.length()))
+			var level: int = maxi(1, 1 + int(depths[i]) - base)
+			out_lines.append("\t".repeat(level) + _strip_leading_ws(lines[i] as String))
 	return "\n".join(out_lines)
 
 static func _leading_ws(s: String) -> String:
@@ -915,12 +924,40 @@ static func _leading_ws(s: String) -> String:
 		i += 1
 	return s.substr(0, i)
 
-static func _common_prefix(a: String, b: String) -> String:
-	var i := 0
-	var m: int = min(a.length(), b.length())
-	while i < m and a[i] == b[i]:
-		i += 1
-	return a.substr(0, i)
+static func _strip_leading_ws(s: String) -> String:
+	return s.substr(_leading_ws(s).length())
+
+## Inferred space-indent width: the smallest positive run of leading spaces seen across `lines` (1 if
+## the source uses only tabs). Lets a tab weigh the same as one such space-run in _indent_depth.
+static func _indent_unit(lines: Array) -> int:
+	var unit := 0
+	for l in lines:
+		var s := l as String
+		var sp := 0
+		for i in s.length():
+			var c := s[i]
+			if c == " ":
+				sp += 1
+			elif c == "\t":
+				continue
+			else:
+				break
+		if sp > 0 and (unit == 0 or sp < unit):
+			unit = sp
+	return unit if unit > 0 else 1
+
+## Indentation depth of a line in whole levels: a tab = `unit` columns, a space = 1 column, rounded.
+static func _indent_depth(s: String, unit: int) -> int:
+	var cols := 0
+	for i in s.length():
+		var c := s[i]
+		if c == "\t":
+			cols += unit
+		elif c == " ":
+			cols += 1
+		else:
+			break
+	return int(round(float(cols) / float(unit)))
 
 static func _line(ctx: Dictionary, s: String) -> void:
 	ctx["lines"].append("\t".repeat(ctx["indent"]) + s)

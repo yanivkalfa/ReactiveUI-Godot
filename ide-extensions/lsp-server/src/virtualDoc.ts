@@ -287,27 +287,34 @@ function mapInline(ctx: Ctx, srcStart: number, text: string): string {
 // from both the generated text and the mapped length, so CRLF .guitkx files round-trip exactly.
 function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number): void {
   const text = ctx.src.slice(start, end);
-  const pad = "\t".repeat(indent);
   const rawLines = text.split("\n");
-  // common leading whitespace across non-blank lines (CR-stripped) — the dedent amount
-  let prefix: string | null = null;
+  // Depth-based reindent (mirror guitkx.gd _reindent_setup): normalise mixed tabs/spaces so the
+  // virtual .gd is valid GDScript. A line indented `\t  ` (tab + 2 spaces) renders like `\t\t` but is
+  // byte-different; a naive common-prefix strip leaves that mismatch and the analyser reports a
+  // phantom "unindent doesn't match". A tab counts as one unit, the space-unit is the smallest
+  // leading-space run, and depth = round(cols / unit); the shallowest line maps to `indent` tabs. Each
+  // line's own leading whitespace is glue — only the code after it is mapped, at its depth-tab level.
+  const unit = indentUnit(rawLines);
+  let base = Infinity;
+  const depths: number[] = [];
   for (const raw of rawLines) {
     const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    if (l.trim() === "") continue;
-    const lead = l.match(/^[\t ]*/)![0];
-    prefix = prefix === null ? lead : commonPrefix(prefix, lead);
+    if (l.trim() === "") { depths.push(-1); continue; }
+    const d = indentDepth(l, unit);
+    depths.push(d);
+    if (d < base) base = d;
   }
-  const dedent = (prefix ?? "").length;
   let srcOff = start; // absolute source offset of the current line's first char
   for (let k = 0; k < rawLines.length; k++) {
     const raw = rawLines[k];
     const code = raw.endsWith("\r") ? raw.slice(0, -1) : raw; // strip CR for gen + mapping
     if (code.trim() !== "") {
-      // leading whitespace (through `dedent`) is glue; map only the code that follows it
-      ctx.gen += pad;
+      const leadLen = code.match(/^[\t ]*/)![0].length;
+      const level = Math.max(1, indent + depths[k] - base);
+      ctx.gen += "\t".repeat(level);
       const genCodeStart = ctx.gen.length;
-      ctx.gen += code.slice(dedent);
-      ctx.map.addSpan(srcOff + dedent, genCodeStart, code.length - dedent);
+      ctx.gen += code.slice(leadLen);
+      ctx.map.addSpan(srcOff + leadLen, genCodeStart, code.length - leadLen);
     }
     if (k < rawLines.length - 1) ctx.gen += "\n";
     srcOff += raw.length + 1; // + the "\n" consumed by split
@@ -315,15 +322,32 @@ function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number)
   if (!ctx.gen.endsWith("\n")) ctx.gen += "\n";
 }
 
+// Inferred space-indent width: the smallest positive run of leading spaces across `rawLines` (1 if
+// the source uses only tabs), so a tab weighs the same as one such run in indentDepth. Mirrors
+// guitkx.gd _indent_unit.
+function indentUnit(rawLines: string[]): number {
+  let unit = 0;
+  for (const raw of rawLines) {
+    const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const lead = l.match(/^[\t ]*/)![0];
+    let sp = 0;
+    for (const c of lead) if (c === " ") sp++;
+    if (sp > 0 && (unit === 0 || sp < unit)) unit = sp;
+  }
+  return unit > 0 ? unit : 1;
+}
+
+// Indentation depth of a line in whole levels: tab = `unit` columns, space = 1 column, rounded.
+function indentDepth(l: string, unit: number): number {
+  const lead = l.match(/^[\t ]*/)![0];
+  let cols = 0;
+  for (const c of lead) cols += c === "\t" ? unit : 1;
+  return Math.round(cols / unit);
+}
+
 function declareHookStubs(ctx: Ctx, indent: number): void {
   const pad = "\t".repeat(indent);
   for (const h of HOOK_STUBS) ctx.gen += `${pad}var ${h} = Hooks.${h}\n`;
-}
-
-function commonPrefix(a: string, b: string): string {
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i++;
-  return a.slice(0, i);
 }
 
 // --- declaration / window helpers (mirror guitkx.gd) ----------------------------------------
