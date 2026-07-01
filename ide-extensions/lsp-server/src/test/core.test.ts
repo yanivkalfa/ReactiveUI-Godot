@@ -7,6 +7,7 @@ import { SourceMap, offsetToPosition, positionToOffset } from "../sourceMap";
 import { buildVirtualDoc } from "../virtualDoc";
 import { scanDeclarations, WorkspaceIndex, componentTagAt } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
+import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
 import { formatGuitkx } from "../formatGuitkx";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
@@ -449,4 +450,89 @@ test("BUG-4 (review): a bare `@class_name` grabs no override (not the following 
   const d = scanDeclarations("@class_name\ncomponent Card() { return (<Label />) }")[0];
   assert.equal(d.binding, "Card", "binding falls back to the decl name, NOT 'component'");
   assert.equal(d.classNameStart, undefined, "no override token, so a rename can't rewrite the keyword");
+});
+
+// ── React-parity event names (events.ts, mirroring host_config.gd) ──────────────────────────────
+
+test("isEventAttr recognizes React camelCase + native on_<signal>, rejects non-events", () => {
+  for (const yes of ["onClick", "onChange", "onPointerEnter", "on_pressed", "on_gui_input"])
+    assert.ok(isEventAttr(yes), `${yes} is an event handler`);
+  for (const no of ["onclick", "on", "onward", "text", "disabled", "one_line"])
+    assert.ok(!isEventAttr(no), `${no} is NOT an event handler`);
+});
+
+test("resolveSignalName: onClick->pressed, native escape hatch verbatim, generic camel->snake", () => {
+  const btn = classSignals("Button");
+  const has = (list: { name: string }[]) => (s: string) => list.some((x) => x.name === s);
+  assert.equal(resolveSignalName("onClick", has(btn)), "pressed");
+  assert.equal(resolveSignalName("on_gui_input", has(btn)), "gui_input"); // native: verbatim
+  assert.equal(resolveSignalName("onValueChanged", has(btn)), "value_changed"); // generic camel->snake
+  assert.equal(resolveSignalName("onFocus", has(btn)), "focus_entered");
+  assert.equal(resolveSignalName("onBlur", has(btn)), "focus_exited");
+});
+
+test("onChange is polymorphic — binds to the value/selection signal each control actually has", () => {
+  const has = (cls: string) => (s: string) => classSignals(cls).some((x) => x.name === s);
+  assert.equal(resolveSignalName("onChange", has("LineEdit")), "text_changed");
+  assert.equal(resolveSignalName("onChange", has("HSlider")), "value_changed");
+  assert.equal(resolveSignalName("onChange", has("SpinBox")), "value_changed");
+  assert.equal(resolveSignalName("onChange", has("CheckBox")), "toggled");
+  assert.equal(resolveSignalName("onChange", has("TabBar")), "tab_changed");
+  // OptionButton is a Button (so it ALSO carries `toggled`) — ordering must still pick item_selected.
+  assert.equal(resolveSignalName("onChange", has("OptionButton")), "item_selected");
+  assert.equal(resolveSignalName("onSubmit", has("LineEdit")), "text_submitted");
+});
+
+test("eventCompletionsFor(Button) offers React aliases mapped to the right signals; no private signals", () => {
+  const evs = eventCompletionsFor(classSignals("Button"));
+  const byLabel = new Map(evs.map((e) => [e.label, e.signal]));
+  assert.equal(byLabel.get("onClick"), "pressed");
+  assert.equal(byLabel.get("onChange"), "toggled");
+  assert.equal(byLabel.get("onPointerDown"), "button_down");
+  assert.equal(byLabel.get("onPointerEnter"), "mouse_entered");
+  assert.equal(byLabel.get("onFocus"), "focus_entered");
+  assert.equal(byLabel.get("onResize"), "resized");
+  assert.ok(!evs.some((e) => e.label.startsWith("on_")), "completions are React canonical, not native");
+  assert.ok(!evs.some((e) => e.signal.startsWith("_")), "private `_`-prefixed signals are filtered out");
+});
+
+test("validEventAttrs accepts BOTH the React name and the native on_<signal> for did-you-mean", () => {
+  const valid = new Set(validEventAttrs(classSignals("Button")));
+  assert.ok(valid.has("onClick"), "React canonical accepted");
+  assert.ok(valid.has("on_pressed"), "native escape hatch still accepted (non-breaking)");
+});
+
+test("semantic tokens tag a React event attribute (onClick) as an `event`, not a property", () => {
+  const src = 'component X() {\n\treturn (\n\t\t<Button text="hi" onClick={_f} />\n\t)\n}\n';
+  const data = buildSemanticTokens(src, () => false);
+  // decode [dLine,dChar,len,type,mods] quintuples and collect the token TYPES emitted
+  const types: number[] = [];
+  for (let i = 0; i < data.length; i += 5) types.push(data[i + 3]);
+  assert.ok(types.includes(TOKEN_TYPES.indexOf("event")), "onClick emitted with the `event` token type");
+});
+
+// ── prop spread `{...obj}` (parser + formatter mirror of the GDScript compiler) ──────────────────
+
+test("parseMarkup parses `{...spread}` into a spread-kind attr (name empty, value = inner expr)", () => {
+  const src = "<Card {...base} title={ t } />";
+  const r = parseMarkup(src, 0, src.length);
+  assert.equal(r.error, "");
+  const el = r.nodes[0] as Extract<(typeof r.nodes)[number], { t: "el" }>;
+  assert.equal(el.attrs.length, 2);
+  assert.deepStrictEqual(el.attrs[0], { name: "", kind: "spread", value: "base" });
+  assert.equal(el.attrs[1].name, "title");
+  assert.equal(el.attrs[1].kind, "expr");
+});
+
+test("parseMarkup: a `{` attribute without `...` is an error (only spread is allowed there)", () => {
+  assert.ok(parseMarkup("<Card { base } />", 0, 17).error.startsWith("GUITKX0300"));
+  assert.equal(parseMarkup("<Card {...a.b.c} />", 0, 19).error, ""); // dotted member spread is fine
+});
+
+test("formatGuitkx preserves `{...spread}` attributes and stays idempotent", () => {
+  const src = "component C() {\n\treturn (\n\t\t<Card {...base} title={ t } />\n\t)\n}\n";
+  const out = formatGuitkx(src).text;
+  assert.ok(out.includes("{...base}"), "spread attribute preserved");
+  assert.ok(out.includes("title={ t }"), "explicit attr still formatted");
+  assert.equal(formatGuitkx(out).text, out, "formatting is idempotent over a spread");
 });

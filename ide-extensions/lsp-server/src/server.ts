@@ -37,6 +37,7 @@ import { dirname, join, relative } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
+import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations } from "./workspaceIndex";
 import { scanTagRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
@@ -212,13 +213,10 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
         // HOST element: every Control property of its godotClass, from the ClassDB dump
         for (const p of classProperties(tag.godotClass))
           items.push({ label: p.name, kind: CompletionItemKind.Property, detail: `${p.type} (${tag.godotClass})` });
-        // on_<signal> event handlers (signal -> on_<name>)
-        for (const s of classSignals(tag.godotClass))
-          items.push({
-            label: `on_${s.name}`,
-            kind: CompletionItemKind.Event,
-            detail: `signal ${s.name}(${s.args.map((a) => `${a.name}: ${a.type}`).join(", ")})`,
-          });
+        // React-style event handlers (onClick / onChange / onPointer* / …) resolved from the class's
+        // signals; `onChange` is polymorphic. The native on_<signal> spelling stays valid too. (events.ts)
+        for (const ev of eventCompletionsFor(classSignals(tag.godotClass)))
+          items.push({ label: ev.label, kind: CompletionItemKind.Event, detail: ev.detail });
       } else if (tag) {
         // dump not available: fall back to the static common-attrs + schema events
         for (const a of COMMON_ATTRS)
@@ -391,8 +389,12 @@ function markupHover(src: string, offset: number, ctx: CursorContext): Hover | n
   // attrName — resolve against the enclosing host tag's ClassDB props/signals, then structural/common.
   const host = ctx.tag ? findTag(ctx.tag) : undefined;
   if (host && hasDump()) {
-    if (word.startsWith("on_")) {
-      const sig = classSignals(host.godotClass).find((s) => `on_${s.name}` === word);
+    // Event handler? Resolve either spelling (React onClick/onChange/… or native on_<signal>) to its
+    // underlying Godot signal on this control's class. (events.ts)
+    const sigs = classSignals(host.godotClass);
+    const signalName = resolveSignalName(word, (s) => sigs.some((x) => x.name === s));
+    if (signalName !== undefined) {
+      const sig = sigs.find((s) => s.name === signalName);
       if (sig) return md(`**${word}** — Godot signal \`${sig.name}(${sig.args.map((a) => `${a.name}: ${a.type}`).join(", ")})\` on \`${host.godotClass}\`.`);
     }
     const prop = classProperties(host.godotClass).find((p) => p.name === word);
@@ -1145,8 +1147,7 @@ function signatureHelpAt(src: string, offset: number): any {
   let ne = j + 1;
   while (j >= 0 && /[A-Za-z0-9_.\-]/.test(src[j])) j--;
   const attrName = src.slice(j + 1, ne);
-  if (!attrName.startsWith("on_")) return null;
-  const signal = attrName.slice(3);
+  if (!isEventAttr(attrName)) return null; // event handler (React onClick/onChange/… or native on_<signal>)
   // 4. find the enclosing opening tag's name — back-scan skipping ={...} exprs + quoted values so a
   //    `<`/`>` operator inside an earlier attribute doesn't halt the lookup.
   let t = j;
@@ -1178,7 +1179,10 @@ function signatureHelpAt(src: string, offset: number): any {
   while (te < src.length && /[A-Za-z0-9_]/.test(src[te])) te++;
   const td = findTag(src.slice(tn, te));
   if (!td) return null; // host elements only
-  const sig = classSignals(td.godotClass).find((s) => s.name === signal);
+  const sigs = classSignals(td.godotClass);
+  const signal = resolveSignalName(attrName, (s) => sigs.some((x) => x.name === s)); // React name -> signal
+  if (!signal) return null;
+  const sig = sigs.find((s) => s.name === signal);
   if (!sig) return null;
   // 5. activeParameter = top-level comma count between '(' and the cursor (depth-aware, string-safe)
   let active = 0;
@@ -1335,6 +1339,11 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
     if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (i >= end) break;
+    if (src[i] === "{") { // a `{...spread}` attribute — skip it whole (not an unknown attribute)
+      const close = findMatching(src, i);
+      i = close === -1 ? end : close + 1;
+      continue;
+    }
     const an = i;
     while (i < end && /[A-Za-z0-9_.\-]/.test(src[i])) i++;
     const name = src.slice(an, i);
@@ -1365,12 +1374,13 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
 }
 
 // Valid attribute names for a HOST element: the structural attrs (key/ref/style) + every settable
-// Control property of its godotClass + its `on_<signal>` events, from the bundled ClassDB dump.
+// Control property of its godotClass + its events in BOTH spellings — React canonical (onClick /
+// onChange / …) and the native on_<signal> escape hatch — from the bundled ClassDB dump. (events.ts)
 function validHostAttrs(godotClass: string): Set<string> {
   const s = new Set<string>();
   for (const a of STRUCTURAL_ATTRS) s.add(a.name);
   for (const p of classProperties(godotClass)) s.add(p.name);
-  for (const sig of classSignals(godotClass)) s.add("on_" + sig.name);
+  for (const ev of validEventAttrs(classSignals(godotClass))) s.add(ev);
   return s;
 }
 

@@ -6,6 +6,7 @@
 import { skipNoncode, skipString, findMatching, isIdent } from "./scanner";
 import { findTag } from "./schema";
 import { markupWindows } from "./formatGuitkx";
+import { isEventAttr } from "./events";
 
 // A UNIFIED semantic-tokens legend covering BOTH the markup tokens (this file) and the embedded /
 // plain-`.gd` GDScript tokens (analyzer-backed, in server.ts). The first 15 mirror
@@ -167,10 +168,15 @@ function scanAttrs(src: string, i: number, n: number, emit: (off: number, len: n
     if (i >= n) return n;
     if (src[i] === "/" && src[i + 1] === ">") return i + 2;
     if (src[i] === ">") return i + 1;
+    if (src[i] === "{") { // a `{...spread}` attribute — skip whole (not a property-name token)
+      const cl = findMatching(src, i);
+      i = cl === -1 ? n : cl + 1;
+      continue;
+    }
     const as = i;
     while (i < n && /[A-Za-z0-9_.\-]/.test(src[i])) i++;
     const name = src.slice(as, i);
-    if (name) emit(as, i - as, name.startsWith("on_") ? T.event : T.property);
+    if (name) emit(as, i - as, isEventAttr(name) ? T.event : T.property);
     else {
       i++; // not an attr-name char and not a terminator — advance to avoid stalling
       continue;
