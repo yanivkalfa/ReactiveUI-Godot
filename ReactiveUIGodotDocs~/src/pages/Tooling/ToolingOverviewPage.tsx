@@ -8,7 +8,7 @@ export const ToolingOverviewPage: FC = () => (
       Tooling
     </Typography>
     <Typography variant="body1">
-      Utilities that ship with ReactiveUITK: <code>HMR</code> for instant live editing,{' '}
+      Utilities that ship with Reactive UI: <code>HMR</code> for instant live editing,{' '}
       <code>Router</code> for navigation, and <code>Signals</code> for shared state.
     </Typography>
   </Box>

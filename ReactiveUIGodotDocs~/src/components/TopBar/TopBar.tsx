@@ -20,12 +20,12 @@ export const TopBar: FC<TopBarProps> = ({ onOpenSearch }) => {
           <Link component={RouterLink} to="/" underline="none" sx={Styles.titleLink}>
             <Box
               component="img"
-              src="/logo.png"
-              alt="ReactiveUIToolKit logo"
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="ReactiveUI for Godot logo"
               sx={Styles.logo}
             />
             <Typography variant="h6" sx={Styles.title}>
-              ReactiveUIToolKit
+              ReactiveUI for Godot
             </Typography>
           </Link>
           <Chip label={`v${PACKAGE_VERSION}`} size="small" />
@@ -49,7 +49,7 @@ export const TopBar: FC<TopBarProps> = ({ onOpenSearch }) => {
               </MenuItem>
             ))}
           </Select>
-          <IconButton component={Link} href="https://github.com/yanivkalfa/ReactiveUIToolKit.git" target="_blank" rel="noreferrer">
+          <IconButton component={Link} href="https://github.com/yanivkalfa/ReactiveUI-Godot" target="_blank" rel="noreferrer">
             <GitHubIcon />
           </IconButton>
           <IconButton component={Link} href="https://discord.gg/QyydtqM3p9" target="_blank" rel="noreferrer" aria-label="Join our Discord">

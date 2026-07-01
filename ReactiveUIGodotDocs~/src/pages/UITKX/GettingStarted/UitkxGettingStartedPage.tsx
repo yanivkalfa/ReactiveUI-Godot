@@ -17,8 +17,8 @@ export const UitkxGettingStartedPage: FC = () => (
     <Typography variant="body1" paragraph>
       You write function-style <code>.guitkx</code> components and the editor plugin compiles each
       one to a sibling <code>.gd</code> class automatically — no boilerplate needed. Supported Godot
-      versions: <strong>Godot 4.1+</strong> (verified on 4.7). Works in the <strong>standard</strong>{' '}
-      build — no C# or .NET required.
+      versions: <strong>Godot 4.2+</strong> (tested through 4.5). It&apos;s pure GDScript — no
+      GDExtension or build step, and it works in the <strong>standard</strong> Godot editor.
     </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>
