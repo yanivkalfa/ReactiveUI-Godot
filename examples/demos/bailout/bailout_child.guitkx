@@ -1,7 +1,7 @@
 @class_name DemoBailoutChild
 
 component DemoBailoutChild() {
-	var renders = use_ref(0)
+	var renders = useRef(0)
 	renders["current"] += 1
 	return (
 		<Panel style={ {"bg_color": Color(0.2, 0.2, 0.26), "corner_radius": 6, "pad": 10} }>

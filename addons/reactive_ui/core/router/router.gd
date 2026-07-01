@@ -70,8 +70,8 @@ static func _root_entry() -> RouteContextEntry:
 static func provider(props: Dictionary, children: Array):
 	# Nested-Router guard (decision #2: push_error + degrade, don't hard-crash). A re-render of
 	# the SAME router is legal because the owner stamp == our own component state.
-	var nest_warned: Dictionary = Hooks.use_ref(false)
-	var existing_owner = Hooks.use_context(ROUTER_OWNER)
+	var nest_warned: Dictionary = Hooks.useRef(false)
+	var existing_owner = Hooks.useContext(ROUTER_OWNER)
 	if existing_owner != null and existing_owner != Hooks._cur and not nest_warned["current"]:
 		nest_warned["current"] = true
 		var nmsg := "[Router] <Router> cannot be nested inside another <Router>. Use a single root <Router> and compose <Route>s underneath it; for a sub-section use <Routes>. (Degrading: the inner router will shadow the outer for its subtree.)"
@@ -83,15 +83,15 @@ static func provider(props: Dictionary, children: Array):
 	var basename_in = props.get("basename", "/")
 	var basename := "/" if (basename_in == null or str(basename_in) == "") else str(basename_in)
 
-	var resolved_history = Hooks.use_memo(func():
+	var resolved_history = Hooks.useMemo(func():
 		return provided_history if provided_history != null else RUIHistory.new(initial_path)
 	, [provided_history, initial_path])
 
-	var loc_state := Hooks.use_state(resolved_history.location_obj() if resolved_history != null else RUIRouterLocation.parse("/"))
+	var loc_state := Hooks.useState(resolved_history.location_obj() if resolved_history != null else RUIRouterLocation.parse("/"))
 	var location = loc_state[0]
 	var set_location: Callable = loc_state[1]
 
-	Hooks.use_effect(func():
+	Hooks.useEffect(func():
 		if resolved_history == null:
 			return null
 		var unsub = resolved_history.listen(func(loc): set_location.call(loc))
@@ -101,26 +101,26 @@ static func provider(props: Dictionary, children: Array):
 	, [resolved_history])
 
 	# STABLE nav context — memoized on [history, basename] so its identity survives navigations.
-	var nav_ctx := Hooks.use_memo(func(): return _build_nav_ctx(resolved_history, basename), [resolved_history, basename])
+	var nav_ctx := Hooks.useMemo(func(): return _build_nav_ctx(resolved_history, basename), [resolved_history, basename])
 
-	Hooks.provide_context(NAV_CTX, nav_ctx)
-	Hooks.provide_context(ROUTER_OWNER, Hooks._cur)
+	Hooks.provideContext(NAV_CTX, nav_ctx)
+	Hooks.provideContext(ROUTER_OWNER, Hooks._cur)
 
 	# Consumers see the location with the basename stripped (RR semantics: use_location() is
 	# app-relative); navigation re-attaches it. Memoized so LOC_CTX identity is stable between navs.
-	var visible_location = Hooks.use_memo(func():
+	var visible_location = Hooks.useMemo(func():
 		if location == null:
 			return RUIRouterLocation.parse("/")
 		return RUIRouterLocation.new(RUIRouterPath.strip_basename(location.path, basename), location.query, location.state)
 	, [location, basename])
-	Hooks.provide_context(LOC_CTX, visible_location)
+	Hooks.provideContext(LOC_CTX, visible_location)
 
 	var root_match := RUIRouteMatch.create_root(visible_location.path)
-	Hooks.provide_context(ROUTE_MATCH, root_match)
-	Hooks.provide_context(ROUTE_PATTERN, "/")
-	Hooks.provide_context(NAV_BASE_CTX, "/")
-	Hooks.provide_context(ROUTE_ENTRY, RouteContextEntry.new(root_match, "/", null, Hooks._cur))
-	Hooks.provide_context(MATCH_CHAIN, [root_match])
+	Hooks.provideContext(ROUTE_MATCH, root_match)
+	Hooks.provideContext(ROUTE_PATTERN, "/")
+	Hooks.provideContext(NAV_BASE_CTX, "/")
+	Hooks.provideContext(ROUTE_ENTRY, RouteContextEntry.new(root_match, "/", null, Hooks._cur))
+	Hooks.provideContext(MATCH_CHAIN, [root_match])
 
 	return _fragment(children)
 
@@ -199,7 +199,7 @@ static func route_fn(props: Dictionary, children: Array):
 	# nested <Route> children rendered via <Outlet/>) or carries a trailing splat in its pattern.
 	var effective_exact: bool = exact or is_index or not _has_route_children(children)
 	var loc_path: String = router["location"].path
-	var m = Hooks.use_memo(func():
+	var m = Hooks.useMemo(func():
 		return RUIRouteMatcher.match(loc_path, resolved_path, effective_exact, parent_match, case_sensitive)
 	, [loc_path, resolved_path, effective_exact, parent_match, case_sensitive])
 
@@ -210,27 +210,27 @@ static func route_fn(props: Dictionary, children: Array):
 	var provided_pattern: String = resolved_path if (resolved_path != null and resolved_path != "") else (m.pattern if m != null else parent_pattern)
 	var base_seed: String = resolved_path if (resolved_path != null and resolved_path != "") else parent_navigation_base
 	var navigation_base := RUIRouterPath.combine(base_seed if base_seed != null else "/", "")
-	var route_entry = Hooks.use_memo(func():
+	var route_entry = Hooks.useMemo(func():
 		return RouteContextEntry.new(m, navigation_base, parent_entry, Hooks._cur)
 	, [m, navigation_base, parent_entry, Hooks._cur])
-	var parent_chain = Hooks.use_context(MATCH_CHAIN)
-	var our_chain = Hooks.use_memo(func(): return _append_chain(parent_chain, m), [parent_chain, m])
+	var parent_chain = Hooks.useContext(MATCH_CHAIN)
+	var our_chain = Hooks.useMemo(func(): return _append_chain(parent_chain, m), [parent_chain, m])
 
 	if m == null:
 		return null
 
-	Hooks.provide_context(ROUTE_MATCH, m)
-	Hooks.provide_context(ROUTE_PATTERN, provided_pattern)
-	Hooks.provide_context(NAV_BASE_CTX, navigation_base)
-	Hooks.provide_context(ROUTE_ENTRY, route_entry)
-	Hooks.provide_context(MATCH_CHAIN, our_chain)
+	Hooks.provideContext(ROUTE_MATCH, m)
+	Hooks.provideContext(ROUTE_PATTERN, provided_pattern)
+	Hooks.provideContext(NAV_BASE_CTX, navigation_base)
+	Hooks.provideContext(ROUTE_ENTRY, route_entry)
+	Hooks.provideContext(MATCH_CHAIN, our_chain)
 
 	# Layout-route co-existence: publish the best nested <Route> for a descendant <Outlet/> to
 	# render. ALWAYS publish (even null) — provided_context persists across renders (the reused
 	# fiber duplicates it), so a stale match from a previous navigation would otherwise linger and
 	# suppress the outlet's fallback when the nested route stops matching. [audit]
 	var nested = _select_nested_route_for_outlet(children, loc_path, m, resolved_path)
-	Hooks.provide_context(OUTLET_ELEMENT, nested)
+	Hooks.provideContext(OUTLET_ELEMENT, nested)
 
 	if render_func is Callable:
 		return render_func.call(m)
@@ -248,8 +248,8 @@ static func outlet_fn(props: Dictionary, children: Array):
 		return null
 	var ctx = props.get("context", null)
 	if ctx != null:
-		Hooks.provide_context(OUTLET_CONTEXT, ctx)
-	var slot = Hooks.use_context(OUTLET_ELEMENT)
+		Hooks.provideContext(OUTLET_CONTEXT, ctx)
+	var slot = Hooks.useContext(OUTLET_ELEMENT)
 	if slot != null:
 		return slot
 	return _fragment(children)
@@ -273,7 +273,7 @@ static func _routes_table(props: Dictionary, _children: Array):
 	var params: Dictionary = matched["params"]
 	var pattern := str(route.get("path", "/"))
 	# Publish a RouteMatch so use_params() works uniformly (legacy + spine).
-	Hooks.provide_context(ROUTE_MATCH, RUIRouteMatch.new(location, pattern, params))
+	Hooks.provideContext(ROUTE_MATCH, RUIRouteMatch.new(location, pattern, params))
 	var comp = route.get("component")
 	if comp is Callable:
 		return V.fc(comp, { "params": params })
@@ -296,7 +296,7 @@ static func _routes_switch(_props: Dictionary, children: Array):
 	if candidates.is_empty():
 		return null
 	var loc_path: String = router["location"].path
-	var picked = Hooks.use_memo(func():
+	var picked = Hooks.useMemo(func():
 		return RUIRouteRanker.pick(candidates, loc_path, parent_match)
 	, [loc_path, parent_match, candidates.size()])
 	if picked == null:
@@ -312,7 +312,7 @@ static func navigate_fn(props: Dictionary, _children: Array):
 	var state = props.get("state", null)
 	var navigate := use_navigate(replace)
 	# Effect runs after commit so we never navigate from inside render.
-	Hooks.use_effect(func():
+	Hooks.useEffect(func():
 		navigate.call(to, state)
 		return null
 	, [to, replace, state])
@@ -325,10 +325,10 @@ static func nav_link_fn(props: Dictionary, _children: Array):
 	var router = use_router()
 	if router == null:
 		return null
-	var route_match = Hooks.use_context(ROUTE_MATCH)
+	var route_match = Hooks.useContext(ROUTE_MATCH)
 	if route_match == null:
 		route_match = RUIRouteMatch.create_root(router["location"].path)
-	var base = Hooks.use_context(NAV_BASE_CTX)
+	var base = Hooks.useContext(NAV_BASE_CTX)
 	var navigation_base: String = base if base != null else (route_match.pattern if route_match != null else "/")
 
 	var to := str(props.get("to", "/"))
@@ -358,7 +358,7 @@ static func nav_link_fn(props: Dictionary, _children: Array):
 # =============================================================================
 static func link(props: Dictionary, _children: Array):
 	var router = use_router()
-	var base = Hooks.use_context(NAV_BASE_CTX)
+	var base = Hooks.useContext(NAV_BASE_CTX)
 	var navigation_base: String = base if base != null else "/"
 	var to := str(props.get("to", "/"))
 	var replace: bool = bool(props.get("replace", false))
@@ -384,10 +384,10 @@ static func link(props: Dictionary, _children: Array):
 ## Combined RouterState (location + handlers). Reads NAV + LOC, so consumers re-render on
 ## navigation. Returns null when not inside a <Router>.
 static func use_router():
-	var nav = Hooks.use_context(NAV_CTX)
+	var nav = Hooks.useContext(NAV_CTX)
 	if nav == null:
 		return null
-	var loc = Hooks.use_context(LOC_CTX)
+	var loc = Hooks.useContext(LOC_CTX)
 	return {
 		"location": loc if loc is RUIRouterLocation else RUIRouterLocation.parse("/"),
 		"navigate": nav["navigate"],
@@ -400,12 +400,12 @@ static func use_router():
 
 ## The current location object (or null outside a Router).
 static func use_location_info():
-	var loc = Hooks.use_context(LOC_CTX)
+	var loc = Hooks.useContext(LOC_CTX)
 	return loc if loc is RUIRouterLocation else null
 
 ## The current location path String. Reads only LOC_CTX (re-renders on navigation).
 static func use_location() -> String:
-	var loc = Hooks.use_context(LOC_CTX)
+	var loc = Hooks.useContext(LOC_CTX)
 	if loc is RUIRouterLocation:
 		return loc.path
 	return str(loc) if loc != null else "/"
@@ -413,31 +413,31 @@ static func use_location() -> String:
 ## The decoded query dictionary of the current location. Returns a defensive copy — the location's
 ## own dict is part of an immutable-identity object used for context change-detection. [audit]
 static func use_query() -> Dictionary:
-	var loc = Hooks.use_context(LOC_CTX)
+	var loc = Hooks.useContext(LOC_CTX)
 	return loc.query.duplicate() if loc is RUIRouterLocation else {}
 
 ## The opaque navigation state of the current location.
 static func use_navigation_state():
-	var loc = Hooks.use_context(LOC_CTX)
+	var loc = Hooks.useContext(LOC_CTX)
 	return loc.state if loc is RUIRouterLocation else null
 
 ## Captured :params of the matched route (merged down the parent chain). Returns a defensive copy
 ## (the RouteMatch is an immutable-identity object used for context change-detection). [audit]
 static func use_params() -> Dictionary:
-	var m = Hooks.use_context(ROUTE_MATCH)
+	var m = Hooks.useContext(ROUTE_MATCH)
 	return m.params.duplicate() if m is RUIRouteMatch else {}
 
 ## The matched RUIRouteMatch for the nearest route (or null).
 static func use_route_match():
-	var m = Hooks.use_context(ROUTE_MATCH)
+	var m = Hooks.useContext(ROUTE_MATCH)
 	return m if m is RUIRouteMatch else null
 
 ## A navigator: func(path, state := null) -> bool. Resolves relative paths against the current
 ## route's navigation base. Reads only the STABLE nav contexts, so navigate-only widgets do NOT
 ## re-render on navigation.
 static func use_navigate(replace := false) -> Callable:
-	var nav = Hooks.use_context(NAV_CTX)
-	var base = Hooks.use_context(NAV_BASE_CTX)
+	var nav = Hooks.useContext(NAV_CTX)
+	var base = Hooks.useContext(NAV_BASE_CTX)
 	if nav == null:
 		return func(_p, _s = null): return false
 	var navigation_base: String = base if base != null else "/"
@@ -447,12 +447,12 @@ static func use_navigate(replace := false) -> Callable:
 
 ## The navigation base (resolved pattern) of the current route.
 static func use_navigation_base() -> String:
-	var base = Hooks.use_context(NAV_BASE_CTX)
+	var base = Hooks.useContext(NAV_BASE_CTX)
 	return base if base != null else "/"
 
 ## A relative-history navigator: func(delta) -> bool.
 static func use_go() -> Callable:
-	var nav = Hooks.use_context(NAV_CTX)
+	var nav = Hooks.useContext(NAV_CTX)
 	if nav == null:
 		return func(_d): return false
 	return nav["go"]
@@ -460,24 +460,24 @@ static func use_go() -> Callable:
 ## Whether history can move `delta` entries from the current position. Subscribes to LOC_CTX so the
 ## consumer re-renders on navigation (the history index moved) — NAV_CTX alone is stable. [audit]
 static func use_can_go(delta: int) -> bool:
-	var nav = Hooks.use_context(NAV_CTX)
-	Hooks.use_context(LOC_CTX)   # subscribe to location changes so can-go state stays fresh
+	var nav = Hooks.useContext(NAV_CTX)
+	Hooks.useContext(LOC_CTX)   # subscribe to location changes so can-go state stays fresh
 	if nav == null:
 		return false
 	return nav["can_go"].call(delta)
 
 ## The ordered chain of RouteMatch entries root -> current (for breadcrumbs / analytics).
 static func use_matches() -> Array:
-	var chain = Hooks.use_context(MATCH_CHAIN)
+	var chain = Hooks.useContext(MATCH_CHAIN)
 	return chain if chain is Array else []
 
 ## The value handed down by the closest enclosing <Outlet context=...>.
 static func use_outlet_context():
-	return Hooks.use_context(OUTLET_CONTEXT)
+	return Hooks.useContext(OUTLET_CONTEXT)
 
 ## Resolve `to` against the current navigation base — the absolute path use_navigate would dispatch.
 static func use_resolved_path(to: String) -> String:
-	var base = Hooks.use_context(NAV_BASE_CTX)
+	var base = Hooks.useContext(NAV_BASE_CTX)
 	return _resolve_target(to, base if base != null else "/")
 
 ## [query, setter]. setter(next_query: Dictionary, replace := false) replaces only the query string.
@@ -500,8 +500,8 @@ static func use_search_params() -> Array:
 ## Register a navigation blocker for the lifetime of this component (while `enabled`).
 ## blocker: func(from: RUIRouterLocation, to: RUIRouterLocation) -> bool, returns TRUE to block.
 static func use_blocker(blocker: Callable, enabled := true) -> void:
-	var nav = Hooks.use_context(NAV_CTX)   # stable — register once, not every render
-	Hooks.use_effect(func():
+	var nav = Hooks.useContext(NAV_CTX)   # stable — register once, not every render
+	Hooks.useEffect(func():
 		if not enabled or nav == null or not (blocker is Callable):
 			return null
 		var unsub = nav["register_blocker"].call(blocker)
@@ -591,7 +591,7 @@ static func _select_nested_route_for_outlet(children: Array, current_location: S
 # Resolve the entry of the PARENT route (owner-unwraps our own previously-published entry, which
 # context reads see because provided_context persists on the fiber across renders).
 static func _resolve_current_entry() -> RouteContextEntry:
-	var entry = Hooks.use_context(ROUTE_ENTRY)
+	var entry = Hooks.useContext(ROUTE_ENTRY)
 	if entry == null:
 		return _root_entry()
 	if entry.owner == Hooks._cur:

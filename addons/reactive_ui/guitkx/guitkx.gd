@@ -158,8 +158,7 @@ static func _validate_hooks(setup: String, diags: Array) -> void:
 			return
 
 static func _line_calls_hook(s: String) -> bool:
-	for h in ["use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
-		"use_layout_effect", "use_context", "use_signal", "use_tween_value", "use_tween"]:
+	for h in HOOK_NAMES:   # single source of truth (all 23 hooks), camelCase
 		if (h + "(") in s:
 			return true
 	return false
@@ -913,13 +912,15 @@ static func _find_top(s: String, ch: String) -> int:
 		i += 1
 	return -1
 
-const HOOK_NAMES := ["use_state", "use_reducer", "use_ref", "use_memo", "use_callback", "use_effect",
-	"use_layout_effect", "use_context", "use_signal", "use_tween_value", "use_tween"]
+const HOOK_NAMES := ["useState", "useReducer", "useRef", "useMemo", "useCallback", "useImperativeHandle",
+	"useEffect", "useLayoutEffect", "createContext", "useContext", "provideContext", "useDeferredValue",
+	"useTransition", "useStableCallback", "useStableFunc", "useStableAction", "useSafeArea", "useSignal",
+	"useSignalKey", "useTween", "useTweenValue", "useAnimate", "useSfx"]
 
-## Auto-prefix bare hook CALLS to Hooks.* (use_state(...) -> Hooks.use_state(...)). Single
+## Auto-prefix bare hook CALLS to Hooks.* (useState(...) -> Hooks.useState(...)). Single
 ## token-boundary pass that skips strings/comments (via skip_noncode), only matches a hook name at
 ## a real token start that is immediately CALLED (followed by `(`), and leaves already-qualified
-## `Hooks.use_*` and look-alike identifiers/strings (my_use_state, "use_state()") untouched.
+## `Hooks.use_*` and look-alike identifiers/strings (my_use_state, "useState()") untouched.
 ## `skip` lists names to NOT prefix (module-local hooks, see _compile_module).
 static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 	var out := ""
@@ -931,7 +932,7 @@ static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 			out += setup.substr(i, j - i)   # copy string/comment verbatim
 			i = j
 			continue
-		# Only auto-prefix a FREE hook identifier — never a member call like `counter.use_state(...)`
+		# Only auto-prefix a FREE hook identifier — never a member call like `counter.useState(...)`
 		# (a preceding `.` is a non-identifier boundary, so guard against it explicitly). [audit]
 		if i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != "."):
 			var matched := ""

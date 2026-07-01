@@ -1,8 +1,11 @@
 @class_name DemoEffectOrder
 
 component DemoEffectOrder {
-	var n = use_state(3)
-	var log = use_state([])
+	var n = useState(3)
+	var maxiP = useState('aaaaa')
+	var log = useState([])
+	return <s><  a>
+	return <><  a>
 	var append = func(msg): log[1]. call(func(arr): return arr + [msg])
 	return (
 		<DemoBox title="Effect cleanup order — mount / unmount">
@@ -13,6 +16,7 @@ component DemoEffectOrder {
 			</HBox>
 			<VBox style={ {"separation": 2} }>
 				@for (i in n[0]) {
+					<DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
 					<DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
 				}
 			</VBox>

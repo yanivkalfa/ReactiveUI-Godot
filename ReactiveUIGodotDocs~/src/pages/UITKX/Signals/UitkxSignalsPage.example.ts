@@ -2,9 +2,9 @@ export const UITKX_SIGNALS_COMPONENT_EXAMPLE = `@class_name SignalCounterDemo
 
 component SignalCounterDemo() {
   // Read the PROCESS-WIDE signal registered under "demo.counter".
-  // use_signal_key lazily creates one shared RUISignal per key, so every
+  // useSignalKey lazily creates one shared RUISignal per key, so every
   // component that reads the same key sees the same store.
-  var count = use_signal_key("demo.counter", 0)
+  var count = useSignalKey("demo.counter", 0)
 
   return (
     <VBox style={ {"separation": 8} }>
@@ -32,7 +32,7 @@ module {
 component PlayerHud() {
   // Subscribe with a SELECTOR: re-render only when the selected slice changes.
   // Editing name won't re-render this component; changing hp will.
-  var hp = use_signal(PlayerHud.player, func(s): return s["hp"])
+  var hp = useSignal(PlayerHud.player, func(s): return s["hp"])
 
   return (
     <Label text={ "HP: %d" % hp } />

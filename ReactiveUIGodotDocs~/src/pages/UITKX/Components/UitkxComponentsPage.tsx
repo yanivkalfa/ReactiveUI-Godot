@@ -20,7 +20,7 @@ import Styles from '../../Components/ComponentPage.style'
 const COMPONENT_SAMPLE = `@class_name ButtonShowcase
 
 component ButtonShowcase() {
-  var s = use_state(true)
+  var s = useState(true)
   return (
     <VBox style={ {"separation": 8} }>
       <Label text={ "Enabled: %s" % s[0] } />

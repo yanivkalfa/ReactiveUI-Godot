@@ -1,7 +1,7 @@
 class_name RUISignal
 extends RefCounted
 ## A reactive value store that lives OUTSIDE the component tree — the analogue of
-## ReactiveUIToolKit's `Signal`. Components subscribe via `Hooks.use_signal(...)` and
+## ReactiveUIToolKit's `Signal`. Components subscribe via `Hooks.useSignal(...)` and
 ## re-render when the value (or a selected slice of it) changes.
 ##
 ## NOTE: named RUISignal (not `Signal`) because Godot already uses "signal" for its own

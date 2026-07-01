@@ -1,7 +1,7 @@
 export const EVENTS_CLICK_EXAMPLE = `@class_name ClickDemo
 
 component ClickDemo() {
-  var msg = use_state("Click the button")
+  var msg = useState("Click the button")
 
   return (
     <VBox style={ {"separation": 8} }>
@@ -15,7 +15,7 @@ component ClickDemo() {
 export const EVENTS_POINTER_EXAMPLE = `@class_name PointerTracker
 
 component PointerTracker() {
-  var inside = use_state(false)
+  var inside = useState(false)
 
   return (
     // onPointerEnter -> mouse_entered, onPointerLeave -> mouse_exited.
@@ -31,7 +31,7 @@ component PointerTracker() {
 export const EVENTS_KEYBOARD_EXAMPLE = `@class_name KeyboardDemo
 
 component KeyboardDemo() {
-  var last = use_state("None")
+  var last = useState("None")
 
   // Godot has no per-Control key signals; use the native gui_input escape
   // hatch (on_gui_input -> "gui_input") and inspect the InputEvent yourself.
@@ -50,7 +50,7 @@ component KeyboardDemo() {
 export const EVENTS_FOCUS_EXAMPLE = `@class_name FocusDemo
 
 component FocusDemo() {
-  var focused = use_state(false)
+  var focused = useState(false)
 
   // onFocus -> focus_entered, onBlur -> focus_exited.
   return (
@@ -64,8 +64,8 @@ component FocusDemo() {
 export const EVENTS_GEOMETRY_EXAMPLE = `@class_name ResizeWatcher
 
 component ResizeWatcher() {
-  var size = use_state(Vector2.ZERO)
-  var box = use_ref(null)
+  var size = useState(Vector2.ZERO)
+  var box = useRef(null)
 
   // onResize -> resized. The signal carries no argument, so read the size
   // off the node via a ref.
@@ -105,8 +105,8 @@ export const EVENTS_CHANGE_EXAMPLE = `// onChange is POLYMORPHIC — it binds to
 export const EVENTS_SUBMIT_EXAMPLE = `@class_name SearchBox
 
 component SearchBox() {
-  var query = use_state("")
-  var submitted = use_state("")
+  var query = useState("")
+  var submitted = useState("")
 
   return (
     <VBox style={ {"separation": 8} }>

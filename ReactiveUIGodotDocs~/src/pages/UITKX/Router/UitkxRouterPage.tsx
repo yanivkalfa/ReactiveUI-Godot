@@ -155,7 +155,7 @@ export const UitkxRouterPage: FC = () => (
       </Typography>
       <Typography variant="body1" paragraph>
         <code>{'V.navigate({ "to": "/welcome" })'}</code> performs a redirect. It runs from a{' '}
-        <code>use_effect</code> after commit (never from inside render) and defaults to{' '}
+        <code>useEffect</code> after commit (never from inside render) and defaults to{' '}
         <code>replace = true</code> so redirects don&apos;t grow the history stack — perfect for a{' '}
         <code>{'V.route({ "path": "/", "element": V.navigate({ "to": "/dashboard" }) })'}</code>{' '}
         pattern. Pass <code>state</code> to forward navigation state along.

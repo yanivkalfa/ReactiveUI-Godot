@@ -1,8 +1,8 @@
 @class_name DemoContext
 
 component DemoContext() {
-	var accent = use_state(Color(0.3, 0.6, 1.0))
-	Hooks.provide_context("accent", accent[0])
+	var accent = useState(Color(0.3, 0.6, 1.0))
+	Hooks.provideContext("accent", accent[0])
 	return (
 		<DemoBox title="Context — provide / use">
 			<HBox style={ {"separation": 8} }>

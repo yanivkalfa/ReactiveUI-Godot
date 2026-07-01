@@ -1,7 +1,7 @@
 export const UITKX_STATE_COUNTER_EXAMPLE = `@class_name StateCounterExample
 
 component StateCounterExample() {
-  var s = use_state(0)
+  var s = useState(0)
   var count = s[0]
   var set_count = s[1]
   return (

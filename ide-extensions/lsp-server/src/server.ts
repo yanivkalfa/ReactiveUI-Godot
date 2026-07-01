@@ -84,7 +84,7 @@ connection.onInitialize((params: InitializeParams) => {
   scanWorkspace(index, projectPath);
   // Load the project's addon `.gd` libraries (e.g. ReactiveUI's `core/hooks.gd` with `class_name
   // Hooks`) into the analyzer so embedded code resolves cross-file — enabling go-to-definition into
-  // the real library files (`use_ref` -> hooks.gd, `V.create` -> v.gd). Best-effort, once.
+  // the real library files (`useRef` -> hooks.gd, `V.create` -> v.gd). Best-effort, once.
   loadLibraries();
   return {
     capabilities: {
@@ -427,7 +427,7 @@ documents.onDidChangeContent((change) => {
 
 // Embedded-GDScript type/parse diagnostics from @gdscript-analyzer/core, mapped back into the .guitkx
 // source. Safe to surface: the analyzer's seam design resolves an unknown cross-file symbol (a library
-// call like `use_state`, a `V.*`/`Hooks.*` reference whose .gd we haven't loaded) to the Unknown seam,
+// call like `useState`, a `V.*`/`Hooks.*` reference whose .gd we haven't loaded) to the Unknown seam,
 // which NEVER warns — so this adds real diagnostics (INTEGER_DIVISION, TYPE_MISMATCH, syntax errors)
 // with no false positives. Diagnostics that land in generated glue (toSource === null) are dropped.
 function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
@@ -511,7 +511,7 @@ connection.onDefinition(async (params) => {
       });
   }
   // Otherwise an embedded-GDScript symbol -> resolve via @gdscript-analyzer/core; return cross-file (library)
-  // locations (e.g. `use_ref` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
+  // locations (e.g. `useRef` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
   return forwardDefinition(params.textDocument.uri, src, offset);
 });
 
@@ -542,7 +542,7 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
       out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
       continue;
     }
-    // (3) A target in generated glue — most usefully a hook stub `var use_ref = Hooks.use_ref`. Chain
+    // (3) A target in generated glue — most usefully a hook stub `var useRef = Hooks.useRef`. Chain
     // ONCE through the `Hooks.<name>` on its RHS to the real library definition (`core/hooks.gd`).
     const rhs = hookStubRhsOffset(text, d.range.start);
     if (rhs === null) continue;

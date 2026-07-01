@@ -42,34 +42,34 @@ export const ContextPage: FC = () => (
         API
       </Typography>
       <Typography variant="body1" paragraph>
-        Both <code>provide_context</code> and <code>use_context</code> accept either a{' '}
-        <strong>context handle</strong> (from <code>Hooks.create_context(...)</code> — the
+        Both <code>provideContext</code> and <code>useContext</code> accept either a{' '}
+        <strong>context handle</strong> (from <code>Hooks.createContext(...)</code> — the
         recommended, collision-free form) or a bare <code>String</code> key (back-compat).
       </Typography>
       <CodeBlock language="jsx" code={CONTEXT_HANDLE_API} />
       <List sx={styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<>A <strong>handle</strong> from <code>create_context</code> is keyed by <strong>object identity</strong>, so distinct handles never collide — even if two unrelated features both think of their value as &quot;theme&quot;.</>} />
+          <ListItemText primary={<>A <strong>handle</strong> from <code>createContext</code> is keyed by <strong>object identity</strong>, so distinct handles never collide — even if two unrelated features both think of their value as &quot;theme&quot;.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>provide_context</code> attaches the value to the current component&apos;s fiber node, exposing it to that fiber&apos;s whole subtree.</>} />
+          <ListItemText primary={<><code>provideContext</code> attaches the value to the current component&apos;s fiber node, exposing it to that fiber&apos;s whole subtree.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>use_context</code> walks up the fiber tree to find the nearest provider for that key. It does <strong>not</strong> consume a hook slot.</>} />
+          <ListItemText primary={<><code>useContext</code> walks up the fiber tree to find the nearest provider for that key. It does <strong>not</strong> consume a hook slot.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>With a handle, <code>use_context</code> returns the handle&apos;s <code>default</code> when no ancestor provides it; with a bare <code>String</code> key it returns <code>null</code>.</>} />
+          <ListItemText primary={<>With a handle, <code>useContext</code> returns the handle&apos;s <code>default</code> when no ancestor provides it; with a bare <code>String</code> key it returns <code>null</code>.</>} />
         </ListItem>
       </List>
     </Box>
 
-    {/* ── Context handles (create_context) ─────────────────────── */}
+    {/* ── Context handles (createContext) ─────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        Context handles (<code>create_context</code>) — recommended
+        Context handles (<code>createContext</code>) — recommended
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>Hooks.create_context(default_value = null, name = "")</code> returns a{' '}
+        <code>Hooks.createContext(default_value = null, name = "")</code> returns a{' '}
         <code>RUIContext</code> handle — the Godot parity of React&apos;s{' '}
         <code>createContext</code>. Declare the handle <strong>once</strong> (typically at module
         scope) and share the <em>same object</em> between the provider and every consumer. Because the
@@ -81,7 +81,7 @@ export const ContextPage: FC = () => (
           <ListItemText primary={<><strong>No string-key collisions.</strong> Two independent handles are distinct even if both are conceptually a &quot;theme&quot; — object identity, not the string, is what matches.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Built-in default.</strong> <code>use_context(handle)</code> returns the handle&apos;s <code>default_value</code> when no provider exists above it, so consumers never have to null-check.</>} />
+          <ListItemText primary={<><strong>Built-in default.</strong> <code>useContext(handle)</code> returns the handle&apos;s <code>default_value</code> when no provider exists above it, so consumers never have to null-check.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<><strong>Same everywhere.</strong> Provider shadowing, dynamic re-render on value change, and portals all behave identically whether you key on a handle or a String.</>} />
@@ -143,7 +143,7 @@ export const ContextPage: FC = () => (
         If you use the back-compat <strong>String</strong> form instead of a handle, define your
         keys as <code>const</code> string values in a small companion <code>.gd</code> script. This
         prevents typos and makes keys discoverable via autocomplete — but note that a{' '}
-        <code>create_context</code> handle avoids key collisions entirely and gives you a default
+        <code>createContext</code> handle avoids key collisions entirely and gives you a default
         value for free.
       </Typography>
       <CodeBlock language="jsx" code={CONTEXT_TYPED_EXAMPLE} />
@@ -172,12 +172,12 @@ export const ContextPage: FC = () => (
         The Godot port has no predefined keys — <code>V.portal(target, …)</code>{' '}
         takes the target <code>Control</code> directly — so define your own
         string keys and provide the node captured from a{' '}
-        <code>use_ref</code> (wired with the <code>ref</code> prop):
+        <code>useRef</code> (wired with the <code>ref</code> prop):
       </Typography>
       <CodeBlock language="jsx" code={`# A layout component publishes its overlay root for descendants to portal into.
 component AppLayout() {
-  var overlay_root = use_ref(null)
-  Hooks.provide_context("overlay_root", overlay_root)   # provide the ref box
+  var overlay_root = useRef(null)
+  Hooks.provideContext("overlay_root", overlay_root)   # provide the ref box
 
   return (
     <VBox>
@@ -190,7 +190,7 @@ component AppLayout() {
 
 # A deep descendant reads the ref and portals into it.
 component Tooltip() {
-  var overlay_root = use_context("overlay_root")
+  var overlay_root = useContext("overlay_root")
   if overlay_root == null or overlay_root["current"] == null:
     return null
   return V.portal(overlay_root["current"], [
@@ -200,7 +200,7 @@ component Tooltip() {
     </Box>
 
     <Alert severity="info" sx={{ mt: 2 }}>
-      <code>use_context</code> does not consume a hook slot — it can technically
+      <code>useContext</code> does not consume a hook slot — it can technically
       be called conditionally. However, for consistency and readability, keep it
       in the setup code section alongside other hooks.
     </Alert>

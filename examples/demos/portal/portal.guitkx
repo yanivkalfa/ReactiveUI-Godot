@@ -1,13 +1,13 @@
 @class_name DemoPortal
 
 component DemoPortal() {
-	var show = use_state(true)
-	var mounted = use_state(false)
-	var target = use_ref(null)
+	var show = useState(true)
+	var mounted = useState(false)
+	var target = useRef(null)
 	var mount_eff = func():
 		mounted[1].call(true)
 		return Callable()
-	use_effect(mount_eff, [])
+	useEffect(mount_eff, [])
 	var content = null
 	if show[0] and mounted[0] and target["current"] != null:
 		content = V.portal(target["current"], [

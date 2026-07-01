@@ -16,7 +16,7 @@ func _run() -> void:
 	var out := {}
 
 	var comp := func(props, _children):
-		var s = Hooks.use_state(0)
+		var s = Hooks.useState(0)
 		renders["n"] += 1
 		props["out"]["set"] = s[1]      # expose the setter to the test
 		return V.label({ "text": "v=%d" % int(s[0]) })

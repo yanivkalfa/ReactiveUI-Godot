@@ -9,7 +9,7 @@ extends RefCounted
 ##
 ## Ported from ReactiveUIToolKit's Hooks. Storage model: a positional array of slots
 ## plus separate cursors for state-hooks, passive effects, and layout effects; context
-## reads are kept OUT of the slot array (so use_context can't perturb hook order).
+## reads are kept OUT of the slot array (so useContext can't perturb hook order).
 
 static var _cur: RUIComponentState = null
 
@@ -83,10 +83,10 @@ static func _warn_once(state: RUIComponentState, key: String, msg: String) -> vo
 # State
 # --------------------------------------------------------------------------
 
-## use_state(initial) -> [value, setter]. `setter` accepts a value OR an updater
+## useState(initial) -> [value, setter]. `setter` accepts a value OR an updater
 ## Callable `(old) -> new`. Setter identity is stable across renders; setting an equal
 ## value bails out (no re-render).
-static func use_state(initial = null) -> Array:
+static func useState(initial = null) -> Array:
 	var s := _cur
 	_record(s, "state")
 	var i := s.hook_index
@@ -111,9 +111,9 @@ static func _make_setter(state: RUIComponentState, i: int) -> Callable:
 		if state.on_state_updated.is_valid():
 			state.on_state_updated.call()
 
-## use_reducer(reducer, initial) -> [state, dispatch]. `reducer(state, action)->state`.
+## useReducer(reducer, initial) -> [state, dispatch]. `reducer(state, action)->state`.
 ## `dispatch` identity is stable; the reducer closure is refreshed every render.
-static func use_reducer(reducer: Callable, initial = null) -> Array:
+static func useReducer(reducer: Callable, initial = null) -> Array:
 	var s := _cur
 	_record(s, "reducer")
 	var i := s.hook_index
@@ -146,9 +146,9 @@ static func _make_dispatch(state: RUIComponentState, i: int) -> Callable:
 # Refs / memo / callbacks
 # --------------------------------------------------------------------------
 
-## use_ref(initial) -> { "current": initial }  (stable box; never re-created; mutating
+## useRef(initial) -> { "current": initial }  (stable box; never re-created; mutating
 ## `.current` does NOT trigger a re-render).
-static func use_ref(initial = null) -> Dictionary:
+static func useRef(initial = null) -> Dictionary:
 	var s := _cur
 	_record(s, "ref")
 	var i := s.hook_index
@@ -157,8 +157,8 @@ static func use_ref(initial = null) -> Dictionary:
 		s.hooks.append({ "kind": "ref", "box": { "current": initial } })
 	return s.hooks[i]["box"]
 
-## use_memo(factory, deps) -> cached value, recomputed only when deps change (shallow).
-static func use_memo(factory: Callable, deps: Array = []) -> Variant:
+## useMemo(factory, deps) -> cached value, recomputed only when deps change (shallow).
+static func useMemo(factory: Callable, deps: Array = []) -> Variant:
 	var s := _cur
 	_record(s, "memo")
 	var i := s.hook_index
@@ -173,22 +173,22 @@ static func use_memo(factory: Callable, deps: Array = []) -> Variant:
 		slot["deps"] = deps.duplicate()
 	return slot["value"]
 
-## use_callback(cb, deps) -> a stable Callable while deps are unchanged.
-static func use_callback(cb: Callable, deps: Array = []) -> Callable:
-	return use_memo(func(): return cb, deps)
+## useCallback(cb, deps) -> a stable Callable while deps are unchanged.
+static func useCallback(cb: Callable, deps: Array = []) -> Callable:
+	return useMemo(func(): return cb, deps)
 
-## use_imperative_handle(factory, deps) -> handle, recomputed only when deps change.
-static func use_imperative_handle(factory: Callable, deps: Array = []) -> Variant:
-	return use_memo(factory, deps)
+## useImperativeHandle(factory, deps) -> handle, recomputed only when deps change.
+static func useImperativeHandle(factory: Callable, deps: Array = []) -> Variant:
+	return useMemo(factory, deps)
 
 # --------------------------------------------------------------------------
 # Effects (recorded during render, run during commit)
 # --------------------------------------------------------------------------
 
-## use_effect(effect, deps): passive effect, runs AFTER commit (two-pass: all cleanups
+## useEffect(effect, deps): passive effect, runs AFTER commit (two-pass: all cleanups
 ## then all setups). `deps == null` => every commit; `[]` => once on mount; `[a,b]` =>
 ## when a dep changes. `effect()` may return a Callable cleanup.
-static func use_effect(effect: Callable, deps = null) -> void:
+static func useEffect(effect: Callable, deps = null) -> void:
 	var s := _cur
 	_record(s, "effect")
 	var i := s.effect_index
@@ -199,9 +199,9 @@ static func use_effect(effect: Callable, deps = null) -> void:
 		s.effects[i]["factory"] = effect
 		s.effects[i]["deps"] = deps
 
-## use_layout_effect(effect, deps): runs SYNCHRONOUSLY during commit (pre-paint),
-## cleanup-then-setup per fiber. Same dep semantics as use_effect.
-static func use_layout_effect(effect: Callable, deps = null) -> void:
+## useLayoutEffect(effect, deps): runs SYNCHRONOUSLY during commit (pre-paint),
+## cleanup-then-setup per fiber. Same dep semantics as useEffect.
+static func useLayoutEffect(effect: Callable, deps = null) -> void:
 	var s := _cur
 	_record(s, "layout_effect")
 	var i := s.layout_index
@@ -217,16 +217,16 @@ static func use_layout_effect(effect: Callable, deps = null) -> void:
 # --------------------------------------------------------------------------
 
 ## Create a context handle — React parity for `createContext(default)`. Pass the handle to
-## provide_context/use_context instead of a string key to avoid cross-feature key collisions and to
+## provideContext/useContext instead of a string key to avoid cross-feature key collisions and to
 ## get a default value when no provider exists. See [RUIContext].
-static func create_context(default_value = null, ctx_name: String = "") -> RUIContext:
+static func createContext(default_value = null, ctx_name: String = "") -> RUIContext:
 	return RUIContext.new(default_value, ctx_name)
 
-## use_context(key) -> nearest provided value walking up the fiber tree. `key` is a [RUIContext]
+## useContext(key) -> nearest provided value walking up the fiber tree. `key` is a [RUIContext]
 ## handle (recommended, collision-free) OR a String (back-compat). Returns the handle's `default`
 ## when no ancestor provides it (String keys return null). Does NOT consume a hook slot; records the
 ## read so context changes re-render.
-static func use_context(key):
+static func useContext(key):
 	var s := _cur
 	var fiber: RUIFiber = s.fiber
 	fiber.reads_context = true
@@ -244,11 +244,11 @@ static func _resolve_context(fiber: RUIFiber, key):  # key: RUIContext handle or
 		f = f.parent
 	return null
 
-## provide_context(key, value): expose `value` under `key` to this fiber's subtree. `key` is a
+## provideContext(key, value): expose `value` under `key` to this fiber's subtree. `key` is a
 ## [RUIContext] handle (recommended) or a String (back-compat); a handle's object identity keys the
 ## map so distinct contexts never collide. On change, marks consuming descendants dirty so they
 ## re-render even through bailouts.
-static func provide_context(key, value) -> void:
+static func provideContext(key, value) -> void:
 	var fiber: RUIFiber = _cur.fiber
 	if fiber.provided_context == null:
 		fiber.provided_context = {}
@@ -291,14 +291,14 @@ static func _propagate_context_change(key, first: RUIFiber) -> bool:  # key: RUI
 # Concurrency
 # --------------------------------------------------------------------------
 
-## use_deferred_value(value, deps?) -> a deferred copy of `value`. On the render where `value`
+## useDeferredValue(value, deps?) -> a deferred copy of `value`. On the render where `value`
 ## changes it returns the PREVIOUS value, then commits the new value on a low-priority next-frame
 ## tick (re-rendering once) — so an urgent update paints first with the stale value and the
 ## expensive consumer catches up a frame later. Mirrors ReactiveUIToolKit's scheduler-backed
 ## UseDeferredValue (which defers via EnqueueBatchedEffect). Pass `deps` to gate on a key instead
 ## of the value itself. The deferral routes through the normal schedule (process_frame ->
 ## on_state_updated -> schedule_update_on_fiber), so it never re-enters the render's restart guard.
-static func use_deferred_value(value, deps = null):
+static func useDeferredValue(value, deps = null):
 	var s := _cur
 	_record(s, "deferred")
 	var i := s.hook_index
@@ -339,10 +339,10 @@ static func _schedule_deferred_commit(state: RUIComponentState, i: int) -> void:
 				state.on_state_updated.call()
 	(loop as SceneTree).process_frame.connect(cb, CONNECT_ONE_SHOT)
 
-## use_transition() -> [is_pending(false), start_transition]. Faithful to ReactiveUIToolKit's
+## useTransition() -> [is_pending(false), start_transition]. Faithful to ReactiveUIToolKit's
 ## UseTransition, which is a no-op in the synchronous renderer: is_pending is always false and
 ## start_transition runs the action immediately.
-static func use_transition() -> Array:
+static func useTransition() -> Array:
 	var s := _cur
 	_record(s, "transition")
 	var i := s.hook_index
@@ -358,8 +358,8 @@ static func use_transition() -> Array:
 # Stable callbacks (stable identity, always invoke the latest closure body)
 # --------------------------------------------------------------------------
 
-## use_stable_callback(cb) / use_stable_func(cb): 0-arg, stable identity.
-static func use_stable_callback(cb: Callable) -> Callable:
+## useStableCallback(cb) / useStableFunc(cb): 0-arg, stable identity.
+static func useStableCallback(cb: Callable) -> Callable:
 	var s := _cur
 	_record(s, "stable")
 	var i := s.hook_index
@@ -374,11 +374,11 @@ static func use_stable_callback(cb: Callable) -> Callable:
 	s.hooks[i]["cb"] = cb
 	return s.hooks[i]["wrapper"]
 
-static func use_stable_func(cb: Callable) -> Callable:
-	return use_stable_callback(cb)
+static func useStableFunc(cb: Callable) -> Callable:
+	return useStableCallback(cb)
 
-## use_stable_action(cb): 1-arg, stable identity.
-static func use_stable_action(cb: Callable) -> Callable:
+## useStableAction(cb): 1-arg, stable identity.
+static func useStableAction(cb: Callable) -> Callable:
 	var s := _cur
 	_record(s, "stable")
 	var i := s.hook_index
@@ -397,8 +397,8 @@ static func use_stable_action(cb: Callable) -> Callable:
 # Platform
 # --------------------------------------------------------------------------
 
-## use_safe_area() -> { left, top, right, bottom } device safe-area insets (pixels).
-static func use_safe_area() -> Dictionary:
+## useSafeArea() -> { left, top, right, bottom } device safe-area insets (pixels).
+static func useSafeArea() -> Dictionary:
 	var s := _cur
 	_record(s, "safe_area")
 	var i := s.hook_index
@@ -414,9 +414,9 @@ static func use_safe_area() -> Dictionary:
 		"bottom": maxi(0, screen.y - (rect.position.y + rect.size.y)),
 	}
 
-## use_signal(signal, selector?, comparer?) -> selected value. Subscribes to a RUISignal
+## useSignal(signal, selector?, comparer?) -> selected value. Subscribes to a RUISignal
 ## and re-renders when the (optionally selected) value changes. Unsubscribes on unmount.
-static func use_signal(sig: RUISignal, selector = null, comparer = null):
+static func useSignal(sig: RUISignal, selector = null, comparer = null):
 	var s := _cur
 	_record(s, "signal")
 	var i := s.hook_index
@@ -445,11 +445,11 @@ static func _select_signal(sig: RUISignal, selector):
 		return null
 	return selector.call(sig.get_value()) if (selector is Callable) else sig.get_value()
 
-## use_signal_key(key, initial, selector?, comparer?) -> selected value of the PROCESS-WIDE signal
-## registered under `key` (created lazily via RUISignals). Subscribes + re-renders like use_signal;
+## useSignalKey(key, initial, selector?, comparer?) -> selected value of the PROCESS-WIDE signal
+## registered under `key` (created lazily via RUISignals). Subscribes + re-renders like useSignal;
 ## the registry entry outlives the component, so any component reading the same key shares one store.
-static func use_signal_key(key: String, initial = null, selector = null, comparer = null):
-	return use_signal(RUISignals.get_or_create(key, initial), selector, comparer)
+static func useSignalKey(key: String, initial = null, selector = null, comparer = null):
+	return useSignal(RUISignals.get_or_create(key, initial), selector, comparer)
 
 static func _make_signal_sub(state: RUIComponentState, i: int) -> Callable:
 	# Reads sig/selector/comparer from the SLOT (not captured args) so the latest ones are used after
@@ -466,10 +466,10 @@ static func _make_signal_sub(state: RUIComponentState, i: int) -> Callable:
 			if state.on_state_updated.is_valid():
 				state.on_state_updated.call()
 
-## use_tween(ref, property, to, duration, deps): smoothly tweens a mounted node's
-## property via Godot's Tween when deps change. `ref` is a use_ref box whose `current`
+## useTween(ref, property, to, duration, deps): smoothly tweens a mounted node's
+## property via Godot's Tween when deps change. `ref` is a useRef box whose `current`
 ## is the target node (wire it with the "ref" prop). Kills the tween on change/unmount.
-static func use_tween(ref: Dictionary, property: String, to, duration: float, deps: Array = []) -> void:
+static func useTween(ref: Dictionary, property: String, to, duration: float, deps: Array = []) -> void:
 	var eff := func():
 		var node = ref.get("current")
 		if node == null or not is_instance_valid(node) or not node.is_inside_tree():
@@ -479,12 +479,12 @@ static func use_tween(ref: Dictionary, property: String, to, duration: float, de
 		return func():
 			if is_instance_valid(tw):
 				tw.kill()
-	use_effect(eff, deps)
+	useEffect(eff, deps)
 
-## use_tween_value(from, to, duration, on_update, deps): drives on_update(value) each
+## useTweenValue(from, to, duration, on_update, deps): drives on_update(value) each
 ## frame as a value interpolates (Tween.tween_method). Animate without re-rendering by
 ## setting a node property inside on_update.
-static func use_tween_value(from, to, duration: float, on_update: Callable, deps: Array = []) -> void:
+static func useTweenValue(from, to, duration: float, on_update: Callable, deps: Array = []) -> void:
 	var eff := func():
 		var loop = Engine.get_main_loop()
 		if not (loop is SceneTree):
@@ -494,15 +494,15 @@ static func use_tween_value(from, to, duration: float, on_update: Callable, deps
 		return func():
 			if is_instance_valid(tw):
 				tw.kill()
-	use_effect(eff, deps)
+	useEffect(eff, deps)
 
-## use_animate(ref, tracks, autoplay, deps): play a list of property tracks on a mounted node via a
-## Godot Tween (the engine-native analog of ReactiveUIToolKit's UseAnimate). `ref` is a use_ref box
+## useAnimate(ref, tracks, autoplay, deps): play a list of property tracks on a mounted node via a
+## Godot Tween (the engine-native analog of ReactiveUIToolKit's UseAnimate). `ref` is a useRef box
 ## whose `.current` is the target node. Each track is a Dictionary:
 ##   { "property": "modulate:a", "to": <value>, "from"?: <value>, "duration"?: 0.3, "delay"?: 0.0,
 ##     "trans"?: Tween.TransitionType, "ease"?: Tween.EaseType, "parallel"?: false }
 ## A fresh tween is built on mount / when `deps` change; the previous one is killed (cleanup).
-static func use_animate(ref: Dictionary, tracks: Array, autoplay := true, deps: Array = []) -> void:
+static func useAnimate(ref: Dictionary, tracks: Array, autoplay := true, deps: Array = []) -> void:
 	var eff := func():
 		var node = ref.get("current")
 		if node == null or not is_instance_valid(node) or not node.is_inside_tree():
@@ -531,12 +531,12 @@ static func use_animate(ref: Dictionary, tracks: Array, autoplay := true, deps: 
 		return func():
 			if is_instance_valid(tw):
 				tw.kill()
-	use_effect(eff, deps)
+	useEffect(eff, deps)
 
-## use_sfx(bus) -> a stable func(stream: AudioStream, volume_db := 0.0, pitch_scale := 1.0) that plays
+## useSfx(bus) -> a stable func(stream: AudioStream, volume_db := 0.0, pitch_scale := 1.0) that plays
 ## a one-shot sound on a transient, self-freeing AudioStreamPlayer (RUIMedia). Call it from event
 ## handlers; identity is stable across renders unless `bus` changes. Mirrors ReactiveUIToolKit's UseSfx.
-static func use_sfx(bus := "Master") -> Callable:
+static func useSfx(bus := "Master") -> Callable:
 	var s := _cur
 	_record(s, "sfx")
 	var i := s.hook_index

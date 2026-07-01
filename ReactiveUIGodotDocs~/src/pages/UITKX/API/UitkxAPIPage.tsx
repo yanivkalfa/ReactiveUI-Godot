@@ -24,7 +24,7 @@ export const UitkxAPIPage: FC = () => (
           <ListItemText primary={<><code>V</code> — factory for building the virtual node tree. Function components: <code>V.fc(render_fn, props, children, key)</code> and <code>V.memo(...)</code>. Host elements: <code>V.button</code>, <code>V.label</code>, <code>V.vbox</code>, <code>V.hbox</code>, <code>V.line_edit</code>, <code>V.panel</code>, … plus the generic <code>V.h(&quot;GodotClassName&quot;, props, children, key)</code> that reaches any Control. Structural: <code>V.fragment</code>, <code>V.portal</code>, <code>V.suspense</code>, <code>V.error_boundary</code>. (GDScript reserves <code>func</code>, so the component factory is <code>V.fc</code>, not <code>V.func</code>.)</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>Hooks</code> — hook functions: <code>use_state</code>, <code>use_reducer</code>, <code>use_effect</code>, <code>use_layout_effect</code>, <code>use_memo</code>, <code>use_callback</code>, <code>use_ref</code>, <code>use_context</code>, <code>provide_context</code>, <code>use_deferred_value</code>, <code>use_transition</code>, <code>use_imperative_handle</code>, <code>use_stable_callback</code>, <code>use_stable_func</code>, <code>use_stable_action</code>, <code>use_signal</code>, <code>use_signal_key</code>, <code>use_animate</code>, <code>use_tween</code>, <code>use_tween_value</code>, <code>use_sfx</code>, <code>use_safe_area</code>. Config: <code>RUIConfig.enable_hook_validation</code>, <code>RUIConfig.enable_strict_diagnostics</code>.</>} />
+          <ListItemText primary={<><code>Hooks</code> — hook functions: <code>useState</code>, <code>useReducer</code>, <code>useEffect</code>, <code>useLayoutEffect</code>, <code>useMemo</code>, <code>useCallback</code>, <code>useRef</code>, <code>useContext</code>, <code>provideContext</code>, <code>useDeferredValue</code>, <code>useTransition</code>, <code>useImperativeHandle</code>, <code>useStableCallback</code>, <code>useStableFunc</code>, <code>useStableAction</code>, <code>useSignal</code>, <code>useSignalKey</code>, <code>useAnimate</code>, <code>useTween</code>, <code>useTweenValue</code>, <code>useSfx</code>, <code>useSafeArea</code>. Config: <code>RUIConfig.enable_hook_validation</code>, <code>RUIConfig.enable_strict_diagnostics</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<><code>ReactiveRoot</code> — mounts a virtual tree under a container Node. <code>ReactiveRoot.create(container, V.fc(render))</code> does the initial render; keep the returned instance referenced. <code>set_root(vnode)</code> re-renders with a new top-level vnode; <code>unmount()</code> runs cleanups and frees mounted nodes.</>} />
@@ -90,7 +90,7 @@ export const UitkxAPIPage: FC = () => (
           <ListItemText primary={<><code>RUISignals</code> — the process-wide keyed registry. <code>RUISignals.get_or_create(key, initial)</code> returns one shared <code>RUISignal</code> per key; <code>try_get</code>, <code>has</code>, and <code>clear()</code> (drop keyed state on a full session reset).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Read signals inside components with <code>use_signal(sig, selector?, comparer?)</code> or <code>use_signal_key(key, initial?, selector?, comparer?)</code>.</>} />
+          <ListItemText primary={<>Read signals inside components with <code>useSignal(sig, selector?, comparer?)</code> or <code>useSignalKey(key, initial?, selector?, comparer?)</code>.</>} />
         </ListItem>
       </List>
     </Box>
@@ -101,13 +101,13 @@ export const UitkxAPIPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>Hooks.use_animate(ref, tracks, autoplay, deps)</code> — plays a list of property tracks on a mounted node via a Godot <code>Tween</code>. A fresh tween is built on mount / when deps change; the previous one is killed on cleanup.</>} />
+          <ListItemText primary={<><code>Hooks.useAnimate(ref, tracks, autoplay, deps)</code> — plays a list of property tracks on a mounted node via a Godot <code>Tween</code>. A fresh tween is built on mount / when deps change; the previous one is killed on cleanup.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>Hooks.use_tween(ref, property, to, duration, deps)</code> — smoothly tweens a mounted node&apos;s property when deps change. <code>Hooks.use_tween_value(from, to, duration, on_update, deps)</code> drives <code>on_update(value)</code> each frame (animate without re-rendering).</>} />
+          <ListItemText primary={<><code>Hooks.useTween(ref, property, to, duration, deps)</code> — smoothly tweens a mounted node&apos;s property when deps change. <code>Hooks.useTweenValue(from, to, duration, on_update, deps)</code> drives <code>on_update(value)</code> each frame (animate without re-rendering).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIMedia</code> — transient one-shot audio via a self-freeing <code>AudioStreamPlayer</code>. <code>Hooks.use_sfx(bus)</code> returns a stable <code>func(stream, volume_db, pitch_scale)</code> for event handlers.</>} />
+          <ListItemText primary={<><code>RUIMedia</code> — transient one-shot audio via a self-freeing <code>AudioStreamPlayer</code>. <code>Hooks.useSfx(bus)</code> returns a stable <code>func(stream, volume_db, pitch_scale)</code> for event handlers.</>} />
         </ListItem>
       </List>
     </Box>
@@ -118,7 +118,7 @@ export const UitkxAPIPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>Hooks.use_safe_area()</code> — returns a Dictionary of pixel insets (<code>left</code>, <code>top</code>, <code>right</code>, <code>bottom</code>) from <code>DisplayServer.get_display_safe_area()</code>. Apply them as padding on a container.</>} />
+          <ListItemText primary={<><code>Hooks.useSafeArea()</code> — returns a Dictionary of pixel insets (<code>left</code>, <code>top</code>, <code>right</code>, <code>bottom</code>) from <code>DisplayServer.get_display_safe_area()</code>. Apply them as padding on a container.</>} />
         </ListItem>
       </List>
     </Box>

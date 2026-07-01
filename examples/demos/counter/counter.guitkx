@@ -1,9 +1,9 @@
 @class_name DemoCounter
 
 component DemoCounter() {
-	var s = use_state(0)
+	var s = useState(0)
 	return (
-		<DemoBox title="Counter — use_state">
+		<DemoBox title="Counter — useState">
 			<Label text={ "Count: %d" % s[0] } style={ {"font_size": 28} } />
 			<HBox style={ {"separation": 8} }>
 				<Button text="  −1  " onClick={ func(): s[1].call(s[0] - 1) } />

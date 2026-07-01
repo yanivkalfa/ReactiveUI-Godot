@@ -1,6 +1,6 @@
 class_name RUIMedia
 extends RefCounted
-## Fire-and-forget audio for the `use_sfx` hook — the Godot analog of ReactiveUIToolKit's
+## Fire-and-forget audio for the `useSfx` hook — the Godot analog of ReactiveUIToolKit's
 ## MediaHost.SfxSource. Godot's AudioStreamPlayer is a scene node, so persistent audio/video is
 ## just a host element (V.audio / V.video); only one-shot SFX needs a managed, self-freeing
 ## player. (No pool: one-shots are infrequent and a self-freeing player is simpler and leak-free.)

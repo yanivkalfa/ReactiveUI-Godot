@@ -18,7 +18,7 @@ export const KnownIssuesPage: FC = () => (
         <ListItemText primary="Hooks must be called unconditionally at the top of a component. Calling a hook inside @if, @for, @match, or an event handler breaks the call-order-to-slot mapping and causes state to desync. In debug builds RUIConfig.enable_hook_validation detects this and pushes a warning." />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary="Hooks are not thread-safe. Call them only on the main thread during the render cycle. Signal values may be read and written from any thread, but use_signal() itself is a hook and follows the hook rules." />
+        <ListItemText primary="Hooks are not thread-safe. Call them only on the main thread during the render cycle. Signal values may be read and written from any thread, but useSignal() itself is a hook and follows the hook rules." />
       </ListItem>
     </List>
 
@@ -30,7 +30,7 @@ export const KnownIssuesPage: FC = () => (
       The reconciler caps re-render restarts at <strong>25</strong> per commit. If a component
       updates its own state unconditionally during setup (an infinite render loop), the guard
       stops it and logs an error rather than hanging the editor. This is not configurable —
-      restructure so state updates happen in event handlers or <code>use_effect</code>, not on
+      restructure so state updates happen in event handlers or <code>useEffect</code>, not on
       every render.
     </Typography>
 
