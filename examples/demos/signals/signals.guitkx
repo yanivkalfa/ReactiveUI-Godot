@@ -6,7 +6,7 @@ component DemoSignals() {
 			<Label text="Two independent components read the SAME RUISignal:" style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
 			<DemoSignalsDisplay />
 			<DemoSignalsDisplay />
-			<Button text="Increment shared signal" on_pressed={ func(): DemoSignalsStore.shared.update(func(v): return v + 1) } />
+			<Button text="Increment shared signal" onClick={ func(): DemoSignalsStore.shared.update(func(v): return v + 1) } />
 		</DemoBox>
 	)
 }

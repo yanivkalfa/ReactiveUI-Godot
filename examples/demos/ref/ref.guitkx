@@ -8,7 +8,7 @@ component DemoRef() {
 	return (
 		<DemoBox title="use_ref — imperative node access">
 			<LineEdit placeholder_text="focus me with the button →" ref={ input_ref } style={ {"min_width": 280} } />
-			<Button text="Focus the field" on_pressed={ focus } />
+			<Button text="Focus the field" onClick={ focus } />
 		</DemoBox>
 	)
 }

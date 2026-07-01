@@ -14,6 +14,7 @@ func _run() -> void:
 	await _test_effects()
 	await _test_bailout()
 	await _test_context()
+	await _test_context_handles()
 	await _test_fragment()
 	await _test_keyed_reorder()
 	await _test_reducer_and_memo()
@@ -37,12 +38,56 @@ func _run() -> void:
 	await _test_deferred_value()
 	await _test_media_and_animate()
 	await _test_item_model_adapters()
+	await _test_react_events()
 	await _test_classes_stylesheet()
 	await _test_classes_lean_path()
 	await _test_reference_equality()
 	await _test_signal_rebind()
 	await _test_custom_draw()
 	print("\n[core_test] %d passed, %d failed" % [_passes, _fails])
+
+func _test_react_events() -> void:
+	# React-parity event names (host_config._resolve_signal): canonical camelCase binds to the right
+	# Godot signal, onChange is polymorphic, and the native on_<signal> escape hatch still works.
+	var hit := { "n": 0 }
+	var cb := func(): hit["n"] += 1
+	var btn := Button.new()
+	RUIHost.apply_props(btn, {}, { "onClick": cb })
+	_ok(btn.is_connected("pressed", cb), "onClick binds the `pressed` signal")
+	btn.emit_signal("pressed")
+	_ok(hit["n"] == 1, "onClick handler fires on `pressed`")
+	var m: Dictionary = btn.get_meta("__rui_events", {})
+	_ok(m.has("onClick") and m["onClick"]["sig"] == "pressed", "meta records the RESOLVED signal `pressed`")
+	RUIHost.apply_props(btn, { "onClick": cb }, {})   # removing the prop disconnects + clears meta
+	_ok(not btn.is_connected("pressed", cb), "removing onClick disconnects `pressed`")
+	_ok(not btn.get_meta("__rui_events", {}).has("onClick"), "removing onClick clears its meta record")
+	btn.free()
+
+	# onChange is polymorphic — it binds whichever value/selection signal the control actually has.
+	var le := LineEdit.new()
+	var lecb := func(_t): pass
+	RUIHost.apply_props(le, {}, { "onChange": lecb })
+	_ok(le.is_connected("text_changed", lecb), "onChange on LineEdit -> text_changed")
+	le.free()
+	# OptionButton is a Button (so it ALSO carries `toggled`) — ordering must still pick item_selected.
+	var ob := OptionButton.new()
+	var obcb := func(_i): pass
+	RUIHost.apply_props(ob, {}, { "onChange": obcb })
+	_ok(ob.is_connected("item_selected", obcb), "onChange on OptionButton -> item_selected (not toggled)")
+	_ok(not ob.is_connected("toggled", obcb), "onChange did NOT mis-bind `toggled` on OptionButton")
+	ob.free()
+
+	# Native on_<signal> escape hatch: back-compat AND reaches arbitrary signals with no React alias.
+	var btn2 := Button.new()
+	var oldcb := func(): pass
+	RUIHost.apply_props(btn2, {}, { "on_pressed": oldcb })
+	_ok(btn2.is_connected("pressed", oldcb), "native on_pressed still binds `pressed` (non-breaking)")
+	btn2.free()
+	var ctl := Control.new()
+	var gicb := func(_e): pass
+	RUIHost.apply_props(ctl, {}, { "on_gui_input": gicb })
+	_ok(ctl.is_connected("gui_input", gicb), "native on_gui_input reaches an arbitrary signal")
+	ctl.free()
 
 func _test_custom_draw() -> void:
 	var drawn := { "node": null }
@@ -341,6 +386,43 @@ func _test_context() -> void:
 	_ok(renders["consumer"] == 2, "consumer re-rendered on context change: %d" % renders["consumer"])
 	m[1].unmount()
 	m[0].queue_free()
+
+func _test_context_handles() -> void:
+	# Context HANDLES (create_context): object identity keys the map (no string collision) + a default.
+	var theme_ctx := Hooks.create_context("fallback", "Theme")
+	var seen := { "val": null }
+	var ctrl := { "set": null }
+	var consumer := func(_p, _ch):
+		seen["val"] = Hooks.use_context(theme_ctx)
+		return V.label({ "text": str(seen["val"]) })
+	var provider := func(_p, _ch):
+		var s = Hooks.use_state("dark")
+		ctrl["set"] = s[1]
+		Hooks.provide_context(theme_ctx, s[0])
+		return V.fc(consumer, {})
+	var m := _mount(provider)
+	_ok(seen["val"] == "dark", "handle consumer sees provided value: %s" % str(seen["val"]))
+	ctrl["set"].call("light")
+	await process_frame
+	await process_frame
+	_ok(seen["val"] == "light", "handle consumer re-renders on provider change: %s" % str(seen["val"]))
+	m[1].unmount()
+	m[0].queue_free()
+
+	# No provider up the tree -> the handle's default is returned.
+	var seen2 := { "val": "unset" }
+	var lone := func(_p, _ch):
+		seen2["val"] = Hooks.use_context(theme_ctx)
+		return V.label({ "text": str(seen2["val"]) })
+	var m2 := _mount(lone)
+	_ok(seen2["val"] == "fallback", "unprovided handle returns its default: %s" % str(seen2["val"]))
+	m2[1].unmount()
+	m2[0].queue_free()
+
+	# Distinct handles never collide even with an identical default.
+	var a := Hooks.create_context(1)
+	var b := Hooks.create_context(1)
+	_ok(a != b, "distinct create_context() handles have distinct identity")
 
 func _test_fragment() -> void:
 	var comp := func(_p, _ch):
