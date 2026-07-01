@@ -44,7 +44,7 @@ export const UitkxIntroductionPage: FC = () => (
         <ListItemText primary="Router and Signals utilities that work naturally inside .guitkx" />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary="Compiles to a sibling .gd file — no runtime codegen, no .NET, standard Godot build" />
+        <ListItemText primary="Compiles to a sibling .gd file — no runtime codegen, standard Godot build" />
       </ListItem>
     </List>
   </Box>
