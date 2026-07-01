@@ -1,0 +1,84 @@
+@tool
+class_name GuitkxCodeHighlighter
+extends SyntaxHighlighter
+## SyntaxHighlighter for a .guitkx CodeEdit. Overrides _get_line_syntax_highlighting(line) to paint
+## the line from GuitkxTokenizer spans, sourcing colours from the user's editor theme so it always
+## matches the GDScript editor. Colours are refreshed by the owning CodeEdit on `theme_changed`
+## (see guitkx_code_edit.gd) — this class holds no signal connections of its own, keeping its
+## lifetime trivial.
+##
+## A whole `{expr}` region is claimed as one default-coloured span on purpose: it stops the markup
+## rules from mis-painting a `<`, `{` or keyword INSIDE embedded GDScript as tag/markup. Full
+## embedded-GDScript highlighting is a later increment.
+
+var _tok := GuitkxTokenizer.new()
+
+# kind (String) -> Color. Seeded with dark-theme fallbacks; update_colors() overrides from the editor.
+var _palette := {
+	"comment": Color("707070"),
+	"string": Color("ffd166"),
+	"tag": Color("5cc6d0"),
+	"attr": Color("9cdcfe"),
+	"expr": Color("d4d4d4"),
+	"directive": Color("c586c0"),
+	"keyword": Color("ff7085"),
+	"number": Color("a3e635"),
+	"symbol": Color("abb2bf"),
+}
+var _c_default := Color("d4d4d4")
+
+func _init() -> void:
+	update_colors()
+
+## Re-read colours from the editor theme (EditorSettings text-editor highlighting palette).
+func update_colors() -> void:
+	var es := EditorInterface.get_editor_settings()
+	if es == null:
+		return
+	_c_default = _es_color(es, "text_color", _c_default)
+	_palette["comment"] = _es_color(es, "comment_color", _palette["comment"])
+	_palette["string"] = _es_color(es, "string_color", _palette["string"])
+	_palette["tag"] = _es_color(es, "base_type_color", _palette["tag"])
+	_palette["attr"] = _es_color(es, "member_variable_color", _palette["attr"])
+	_palette["expr"] = _c_default
+	_palette["directive"] = _es_color(es, "control_flow_keyword_color", _palette["directive"])
+	_palette["keyword"] = _es_color(es, "keyword_color", _palette["keyword"])
+	_palette["number"] = _es_color(es, "number_color", _palette["number"])
+	_palette["symbol"] = _es_color(es, "symbol_color", _palette["symbol"])
+
+func _es_color(es: EditorSettings, name: String, fallback: Color) -> Color:
+	var key := "text_editor/theme/highlighting/" + name
+	if es.has_setting(key):
+		return es.get_setting(key)
+	return fallback
+
+func _get_line_syntax_highlighting(line: int) -> Dictionary:
+	# Honoured live (cheap ProjectSettings lookup) so toggling KEY_HIGHLIGHTING needs no plugin reload.
+	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_HIGHLIGHTING):
+		return {}
+	var te := get_text_edit()
+	if te == null:
+		return {}
+	var text := te.get_line(line)
+	var n := text.length()
+	if n == 0:
+		return {}
+	var toks := _tok.tokenize_line(text)
+	if toks.is_empty():
+		return {}
+	# Fill a per-column colour array (default first, then each span overwrites its range), then collapse
+	# to the { column: { "color": Color } } boundary map Godot expects (keys strictly ascending).
+	var carr: Array = []
+	carr.resize(n)
+	carr.fill(_c_default)
+	for t in toks:
+		var col: Color = _palette.get(t["kind"], _c_default)
+		var s: int = t["start"]
+		var e: int = mini(int(t["end"]), n)
+		for x in range(s, e):
+			carr[x] = col
+	var out := {}
+	for x in n:
+		if x == 0 or carr[x] != carr[x - 1]:
+			out[x] = {"color": carr[x]}
+	return out
