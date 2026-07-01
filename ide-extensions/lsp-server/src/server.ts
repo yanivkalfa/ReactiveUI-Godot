@@ -338,6 +338,34 @@ function forwardCompletion(uri: string, src: string, offset: number): Completion
 
 // --- hover ---
 
+// BUG-V8: curated hover for the built-in hooks — the analyzer only sees the virtual-doc stub as
+// `Callable`, so hovering a hook name returned nothing useful. Signatures mirror core/hooks.gd.
+const HOOK_HOVER: Record<string, string> = {
+  useState: "**useState**(initial = null) → `[value, setter]`\n\nReactive state: read `s[0]`, set with `s[1].call(v)` (a value or an updater func).",
+  useReducer: "**useReducer**(reducer: Callable, initial = null) → `[state, dispatch]`",
+  useRef: "**useRef**(initial = null) → `{ current }`\n\nA mutable box that persists across renders (setting it does not re-render).",
+  useMemo: "**useMemo**(factory: Callable, deps = []) → value\n\nMemoized value; recomputes only when `deps` change.",
+  useCallback: "**useCallback**(cb: Callable, deps = []) → `Callable`",
+  useImperativeHandle: "**useImperativeHandle**(factory: Callable, deps = [])",
+  useEffect: "**useEffect**(effect: Callable, deps = null)\n\nRun a side effect after commit; return a Callable to clean up. `deps = []` runs once on mount.",
+  useLayoutEffect: "**useLayoutEffect**(effect: Callable, deps = null)\n\nLike `useEffect` but runs synchronously after layout.",
+  createContext: "**createContext**(default = null, name = \"\") → `RUIContext`\n\nA context handle for `provideContext` / `useContext` (object identity — no string-key collisions).",
+  useContext: "**useContext**(key) → value\n\nRead the nearest provided value for a context handle (or string key).",
+  provideContext: "**provideContext**(key, value)\n\nProvide a context value to the subtree below.",
+  useDeferredValue: "**useDeferredValue**(value, deps = null)",
+  useTransition: "**useTransition**() → `[is_pending, start]`",
+  useStableCallback: "**useStableCallback**(cb: Callable) → `Callable`\n\nA stable Callable identity that always invokes the latest `cb`.",
+  useStableFunc: "**useStableFunc**(cb: Callable) → `Callable`",
+  useStableAction: "**useStableAction**(cb: Callable) → `Callable`",
+  useSafeArea: "**useSafeArea**() → `Dictionary`",
+  useSignal: "**useSignal**(sig: RUISignal, selector = null, comparer = null)",
+  useSignalKey: "**useSignalKey**(key: String, initial = null, selector = null, comparer = null)",
+  useTween: "**useTween**(ref, property: String, to, duration: float, deps = [])",
+  useTweenValue: "**useTweenValue**(from, to, duration: float, on_update: Callable, deps = [])",
+  useAnimate: "**useAnimate**(ref, tracks: Array, autoplay = true, deps = [])",
+  useSfx: "**useSfx**(bus = \"Master\") → `Callable`",
+};
+
 connection.onHover(async (params): Promise<Hover | null> => {
   try {
     const doc = documents.get(params.textDocument.uri);
@@ -353,6 +381,10 @@ connection.onHover(async (params): Promise<Hover | null> => {
 
     if (ctx.kind === "tagName" || ctx.kind === "attrName") return markupHover(src, offset, ctx);
     if (ctx.kind === "embedded" && embeddedEnabled) {
+      // BUG-V8: a curated signature for a hook identifier beats the analyzer's bare `Callable`.
+      const hw = wordRangeAt(src, offset);
+      const hword = src.slice(hw.start, hw.end);
+      if (HOOK_HOVER[hword]) return md(HOOK_HOVER[hword]);
       const { text, map } = buildVirtualDoc(src);
       const genOffset = map.toGenerated(offset);
       if (genOffset === null) return null;
@@ -377,7 +409,7 @@ function markupHover(src: string, offset: number, ctx: CursorContext): Hover | n
   if (!word) return null;
   if (ctx.kind === "tagName") {
     const tag = findTag(word);
-    if (tag) return md(`**<${word}>** — host element, compiles to \`${tag.factory}\` (Godot \`${tag.godotClass}\`).`);
+    if (tag) return md(`**<${word}>** — host element · Godot \`${tag.godotClass}\`.`);
     if (index.has(word)) {
       const e = index.lookup(word)[0];
       const kind = e.kind === "member" ? "component" : e.kind;
