@@ -1304,17 +1304,20 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
     }
     if (c === "<" && /[A-Za-z_]/.test(src[i + 1] || "")) {
       const tag = readTag(src, i, end);
-      if (tag.keyLiteral !== null) {
+      // BUG-V3: dedup on a signature so BOTH literal (key="x") and expression (key={ str(i) }) keys
+      // are caught — two siblings with the same key expression collide every iteration.
+      const keySig = tag.keyLiteral !== null ? "s:" + tag.keyLiteral : tag.keyExpr !== null ? "e:" + tag.keyExpr : null;
+      if (keySig !== null) {
         const scope = scopes[scopes.length - 1];
-        if (scope.has(tag.keyLiteral)) {
+        if (scope.has(keySig)) {
           diags.push({
             severity: DiagnosticSeverity.Warning,
             range: { start: doc.positionAt(tag.keyStart), end: doc.positionAt(tag.keyEnd) },
-            message: `GUITKX0104: duplicate key '${tag.keyLiteral}' among sibling elements.`,
+            message: `GUITKX0104: duplicate key '${keySig.slice(2)}' among sibling elements.`,
             source: "guitkx",
           });
         }
-        scope.add(tag.keyLiteral);
+        scope.add(keySig);
       }
       // unknown-element did-you-mean: PascalCase tag that is neither a host element nor an indexed
       // component, but is a near-miss of one (lowercase tags are host factories — never flagged).
@@ -1362,6 +1365,7 @@ interface TagInfo2 {
   next: number;
   selfClosing: boolean;
   keyLiteral: string | null;
+  keyExpr: string | null;
   keyStart: number;
   keyEnd: number;
   tagName: string;
@@ -1377,13 +1381,14 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
   const nameEnd = i;
   const tagName = src.slice(nameStart, nameEnd);
   let keyLiteral: string | null = null;
+  let keyExpr: string | null = null;
   let keyStart = lt;
   let keyEnd = lt;
   const attrs: TagAttr2[] = [];
   while (i < end) {
     while (i < end && /\s/.test(src[i])) i++;
-    if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
-    if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+    if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyExpr, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+    if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyExpr, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (i >= end) break;
     if (src[i] === "{") { // a `{...spread}` attribute — skip it whole (not an unknown attribute)
       const close = findMatching(src, i);
@@ -1410,13 +1415,18 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
         i = ve;
       } else if (src[i] === "{") {
         const close = findMatching(src, i);
+        if (name === "key" && close !== -1) {
+          keyExpr = src.slice(i + 1, close).trim(); // BUG-V3: capture the key EXPRESSION for dup detection
+          keyStart = i;
+          keyEnd = close + 1;
+        }
         i = close === -1 ? end : close + 1;
       }
     } else if (an === i) {
       i++;
     }
   }
-  return { next: end, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
+  return { next: end, selfClosing: false, keyLiteral, keyExpr, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
 }
 
 // Valid attribute names for a HOST element: the structural attrs (key/ref/style) + every settable

@@ -492,6 +492,15 @@ and add a setup-region + no-declaration check — rather than relying on the sta
 addon compiles live via `RUIGuitkx.compile`, so it already surfaces the compiler diagnostics the sidecar
 can't — the two hosts should converge on the same catalog.)
 
+### Implementation status (round 2 — done + validated)
+All numbered bugs are fixed at the **compiler** level, so the **Godot native addon** (which renders
+`RUIGuitkx.compile()` diagnostics live) has FULL parity for V1–V5 today. Validated with the `gdscript`
+CLI (`check` clean) + LSP `tsc`/54 tests + docs build. VS Code **live-while-typing** now also covers:
+**V5/V6** unreachable (`DiagnosticTag.Unnecessary`, faded), **V3** duplicate keys incl. **expression**
+keys, and **V7/V8** hovers. A small live-scanner follow-up remains — surfaced in VS Code only **on save**
+(via the compiler sidecar) for now, but **fully live in the Godot addon**: **V1** keyword did-you-mean,
+**V2** `@class_name` validation, **V3** loop single-root (GUITKX0108), **V4** invalid-tag-name.
+
 ## BUG-V7 — Host-element hover shows the internal "compiles to `V.label`" *(low; polish)*
 `markupHover` (`server.ts:380`) renders `**<Label>** — host element, compiles to \`V.label\` (Godot \`Label\`).`
 The `compiles to V.label` is an internal codegen detail users don't need. **Fix**: drop it, keep the Godot
