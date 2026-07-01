@@ -236,7 +236,7 @@ static func use_context(key):
 	s.context_deps.append({ "key": key, "value": val })
 	return val
 
-static func _resolve_context(fiber: RUIFiber, key: String):
+static func _resolve_context(fiber: RUIFiber, key):  # key: RUIContext handle or String
 	var f := fiber
 	while f != null:
 		if f.provided_context != null and f.provided_context.has(key):
@@ -263,7 +263,7 @@ static func provide_context(key, value) -> void:
 ## DFS over the committed subtree marking consumers of `key` dirty. Returns whether
 ## anything was marked (so intermediate ancestors get subtree_has_updates). Stops at a
 ## nested provider that shadows the same key.
-static func _propagate_context_change(key: String, first: RUIFiber) -> bool:
+static func _propagate_context_change(key, first: RUIFiber) -> bool:  # key: RUIContext handle or String
 	var any := false
 	var f := first
 	while f != null:
