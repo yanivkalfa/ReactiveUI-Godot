@@ -73,6 +73,15 @@ const structuralRows: DiagRow[] = [
   { code: 'GUITKX0113', sev: 'Error', title: 'Statement used in an embedded expression', fix: <>A statement (e.g. a control-flow directive) cannot be lowered inside an embedded <code>{'{expr}'}</code> / JSX-value. Lift it to the top-level markup return, or use <code>.map()</code> for lists.</> },
 ]
 
+/* ── Language-server diagnostics (GUITKX0105, GUITKX0107) ────────────── */
+// Editor-only: emitted live by the language server (VS Code / VS 2022 extension).
+// They have no compile-time equivalent and are never written to the sibling
+// <file>.guitkx.diags.json — the compiler only knows about parser/structural codes.
+const languageServerRows: DiagRow[] = [
+  { code: 'GUITKX0105', sev: 'Error', title: 'Unknown element (did-you-mean)', fix: <>A PascalCase tag (<code>{'<Labl>'}</code>) matches no host element or project component, but is a near-miss of a known one. Rename it to the suggestion (<code>{'<Label>'}</code>), or define / import the component. Host tags come from the schema; component tags come from the project&apos;s <code>.guitkx</code> index.</> },
+  { code: 'GUITKX0107', sev: 'Error', title: 'Unknown attribute on host element', fix: <>An attribute is not a valid property, signal handler, or structural attr of the host element&apos;s Godot class (checked against the bundled ClassDB dump; a suggestion is offered on a near-miss). Fix the spelling, or move it onto a <em>component</em> tag — components accept arbitrary props. Native <code>on_&lt;signal&gt;</code> handlers and <code>style</code> / <code>classes</code> / <code>key</code> / <code>ref</code> are always allowed.</> },
+]
+
 /* ── Runtime hook validation (GUITKX0013) ────────────────────────────── */
 const runtimeRows: DiagRow[] = [
   { code: 'GUITKX0013', sev: 'Warning', title: 'Hook called conditionally / in a block', fix: <>Hooks must run unconditionally at the top of setup — never inside an <code>@if</code> / loop / nested lambda. The runtime hook-order validator (gated by <code>RUIConfig.enable_hook_validation</code>) also detects an order / count change across renders and reports it via <code>RUIDiagnostics</code> + <code>push_error</code>.</> },
@@ -109,6 +118,17 @@ export const UitkxDiagnosticsPage: FC = () => (
       structure and the reconciliation keys.
     </Typography>
     <DiagTable rows={structuralRows} />
+
+    {/* ── Language-Server Diagnostics ───────────────────────────────────── */}
+    <Typography variant="h5" component="h2" sx={Styles.section}>
+      Language-Server Diagnostics
+    </Typography>
+    <Typography variant="body2" paragraph>
+      Emitted live by the editor extension&apos;s language server (VS Code / Visual
+      Studio) as you type. These are editor-only — they have no compile-time
+      equivalent and are not written to <code>&lt;file&gt;.guitkx.diags.json</code>.
+    </Typography>
+    <DiagTable rows={languageServerRows} />
 
     {/* ── Runtime hook validation ───────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
