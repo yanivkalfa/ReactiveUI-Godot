@@ -25,6 +25,7 @@ func _run() -> void:
 	_test_jsx_value()
 	_test_diagnostics()
 	_test_loop_single_root()
+	_test_decl_validation()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
@@ -317,6 +318,17 @@ func _test_loop_single_root() -> void:
 		"\t\t\t@for (i in n) {\n\t\t\t\t<>\n\t\t\t\t\t<Label key={ \"a\" + str(i) } />\n\t\t\t\t\t<Label key={ \"b\" + str(i) } />\n\t\t\t\t</>\n\t\t\t}\n" + \
 		"\t\t</VBox>\n\t)\n}\n", "OK")
 	_check_true(okc["ok"], "loop with fragment-wrapped distinct-key siblings compiles (got %s)" % str(okc["diagnostics"]))
+
+func _test_decl_validation() -> void:
+	# BUG-V2: an invalid @class_name value (multiple tokens) is rejected with GUITKX0300
+	var badcn := RUIGuitkx.compile("@class_name Foo Bar\ncomponent X() { return ( <Label /> ) }\n", "X")
+	_check_true(not badcn["ok"] and str(badcn["diagnostics"]).contains("GUITKX0300"), "invalid @class_name rejected (got %s)" % str(badcn["diagnostics"]))
+	# a valid @class_name is accepted, and a trailing comment on the directive line is tolerated
+	var okcn := RUIGuitkx.compile("@class_name MyThing  # ok\ncomponent X() { return ( <Label /> ) }\n", "X")
+	_check_true(okcn["ok"], "valid @class_name accepted (got %s)" % str(okcn["diagnostics"]))
+	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint
+	var typo := RUIGuitkx.compile("componeent X() { return ( <Label /> ) }\n", "X")
+	_check_true(not typo["ok"] and str(typo["diagnostics"]).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \

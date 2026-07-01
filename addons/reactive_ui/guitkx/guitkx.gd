@@ -40,7 +40,14 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		if source.substr(i, 11) == "@class_name":
 			var le := source.find("\n", i)
 			if le == -1: le = n
-			class_name_override = source.substr(i + 11, le - i - 11).strip_edges()
+			var cn_raw := source.substr(i + 11, le - i - 11)
+			var cn_hash := cn_raw.find("#")   # allow a trailing comment on the directive line
+			if cn_hash != -1:
+				cn_raw = cn_raw.substr(0, cn_hash)
+			class_name_override = cn_raw.strip_edges()
+			if not _is_valid_identifier(class_name_override):
+				diags.append("GUITKX0300: `@class_name` value must be a single valid identifier (got '%s')" % class_name_override)
+				return { "ok": false, "gd": "", "diagnostics": diags }
 			i = le
 			continue
 		break
@@ -54,7 +61,11 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		"module":
 			return _compile_module(source, decl["at"], class_name_override, basename, diags)
 		_:
-			diags.append("GUITKX0102: no `component`, `hook`, or `module` declaration found")
+			var near := _nearest_decl_keyword(source, i)
+			if near.has("word"):
+				diags.append("GUITKX0102: unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]])
+			else:
+				diags.append("GUITKX0102: no `component`, `hook`, or `module` declaration found")
 			return { "ok": false, "gd": "", "diagnostics": diags }
 
 ## Find the first top-level declaration keyword (skipping strings/comments).
@@ -74,6 +85,66 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 			return { "kind": "module", "at": i }
 		i += 1
 	return { "kind": "", "at": -1 }
+
+## True if `s` is a single valid GDScript identifier ([A-Za-z_][A-Za-z0-9_]*), non-empty. [BUG-V2]
+static func _is_valid_identifier(s: String) -> bool:
+	if s.is_empty():
+		return false
+	for idx in s.length():
+		var c := s.unicode_at(idx)
+		var okc := (c == 95) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+		if idx > 0:
+			okc = okc or (c >= 48 and c <= 57)
+		if not okc:
+			return false
+	return true
+
+## The first top-level identifier + the declaration keyword it most resembles (edit distance <= 3),
+## for a "did you mean 'component'?" hint on a misspelled keyword. {} if none is close. [BUG-V1]
+static func _nearest_decl_keyword(source: String, from: int) -> Dictionary:
+	var i := from
+	var n := source.length()
+	while i < n:
+		var k := L.skip_noncode(source, i)
+		if k != i:
+			i = k
+			continue
+		if L._is_ident(source[i]):
+			var s := i
+			while i < n and L._is_ident(source[i]):
+				i += 1
+			var word := source.substr(s, i - s)
+			var best := ""
+			var best_d := 99
+			for kw in ["component", "hook", "module"]:
+				var d := _edit_distance(word.to_lower(), kw)
+				if d < best_d:
+					best_d = d
+					best = kw
+			if best != "" and best_d <= 3:
+				return { "word": word, "kw": best }
+			return {}
+		i += 1
+	return {}
+
+## Bounded Levenshtein edit distance (two-row DP).
+static func _edit_distance(a: String, b: String) -> int:
+	var la := a.length()
+	var lb := b.length()
+	if la == 0:
+		return lb
+	if lb == 0:
+		return la
+	var prev: Array = range(lb + 1)
+	var curr: Array = []
+	curr.resize(lb + 1)
+	for x in range(1, la + 1):
+		curr[0] = x
+		for y in range(1, lb + 1):
+			var cost := 0 if a[x - 1] == b[y - 1] else 1
+			curr[y] = mini(mini(prev[y] + 1, curr[y - 1] + 1), prev[y - 1] + cost)
+		prev = curr.duplicate()
+	return prev[lb]
 
 static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
 	var pc := _parse_component_at(source, ci, diags)
