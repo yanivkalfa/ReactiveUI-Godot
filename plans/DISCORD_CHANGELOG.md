@@ -2,7 +2,7 @@
 
 ### Hooks go camelCase -- full React parity (breaking)
 
-Hooks now read exactly like React: `useState`, `useEffect`, `useRef`, `useMemo`, `useCallback`, `useReducer`, `useContext`, `createContext`, `provideContext`, and the rest -- 23 in all. This is the one deliberate **breaking** change: there are no snake_case aliases, so do a `use_state` -> `useState` sweep across your `.guitkx` / `.gd`. As a bonus the compiler now auto-prefixes bare calls for *all* 23 hooks -- before, only 11 were auto-wired to `Hooks.*`.
+Hooks now read exactly like React: `useState`, `useEffect`, `useRef`, `useMemo`, `useCallback`, `useReducer`, `useContext`, `createContext`, `provideContext`, and the rest -- 23 in all. This is the one deliberate **breaking** change: there are no snake_case aliases, so do a `use_state` -> `useState` sweep across your `.guitkx` / `.gd`. As a bonus the compiler now auto-prefixes bare calls for *all* 23 hooks -- before, only 11 were auto-wired to `Hooks.*`. The **router hooks came along too** -- all 17 on `RUIRouter` (`useNavigate`, `useLocation`, `useParams`, `useSearchParams`, `useBlocker`, ...) are camelCase now, so the entire hook surface is consistent.
 
 Alongside the rename, a round of **compiler validation** fixes -- mistakes that used to compile silently and blow up at runtime now get a clear diagnostic:
 - A `@for` / `@while` body must return a **single root** (wrap siblings in a fragment `<>...</>`).

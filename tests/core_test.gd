@@ -550,11 +550,11 @@ func _test_router() -> void:
 	var home := func(_p, _c):
 		return V.label({ "text": "home" })
 	var user := func(_p, _c):
-		var params = RUIRouter.use_params()
+		var params = RUIRouter.useParams()
 		seen["id"] = params.get("id")
 		return V.label({ "text": "user " + str(params.get("id")) })
 	var app := func(_p, _c):
-		nav["go"] = RUIRouter.use_navigate()
+		nav["go"] = RUIRouter.useNavigate()
 		return V.routes({ "routes": [
 			{ "path": "/", "component": home },
 			{ "path": "/users/:id", "component": user },
@@ -756,10 +756,10 @@ func _test_router_context_split() -> void:
 	var nav := { "go": null }
 	var nav_only := func(_p, _c):
 		nav_renders["n"] += 1
-		nav["go"] = RUIRouter.use_navigate()
+		nav["go"] = RUIRouter.useNavigate()
 		return V.button({ "text": "nav" })
 	var loc_view := func(_p, _c):
-		return V.label({ "text": RUIRouter.use_location() })
+		return V.label({ "text": RUIRouter.useLocation() })
 	var app := func(_p, _c):
 		return V.vbox({}, [V.fc(nav_only), V.fc(loc_view)])
 	var root_comp := func(_p, _c):

@@ -18,8 +18,17 @@ Hooks go camelCase (full React parity) plus a round of compiler validation fixes
   `use_safe_area`→`useSafeArea`, `use_signal`→`useSignal`, `use_signal_key`→`useSignalKey`,
   `use_tween`→`useTween`, `use_tween_value`→`useTweenValue`, `use_animate`→`useAnimate`, `use_sfx`→`useSfx`.
 
-  **Migration:** rename those 23 tokens (snake→camel) across your `.guitkx` and `.gd` files. The compiler
-  now auto-prefixes bare calls for **all 23** hooks (previously only 11 auto-prefixed to `Hooks.*`).
+- **Router hooks are camelCase too** (they were missed in the first pass) — **17 hooks on `RUIRouter`**:
+  `use_navigate`→`useNavigate`, `use_location`→`useLocation`, `use_params`→`useParams`,
+  `use_search_params`→`useSearchParams`, `use_blocker`→`useBlocker`, `use_query`→`useQuery`,
+  `use_matches`→`useMatches`, `use_router`→`useRouter`, `use_go`/`use_can_go`→`useGo`/`useCanGo`,
+  `use_navigation_state`/`use_navigation_base`→`useNavigationState`/`useNavigationBase`,
+  `use_route_match`→`useRouteMatch`, `use_outlet_context`→`useOutletContext`,
+  `use_resolved_path`→`useResolvedPath`, `use_location_info`→`useLocationInfo`, `use_prompt`→`usePrompt`.
+
+  **Migration:** rename the **23 core hook tokens** and the **17 `RUIRouter.*` router hooks** (snake→camel)
+  across your `.guitkx` and `.gd` files. The compiler auto-prefixes bare calls for **all 23** core hooks
+  (previously only 11 auto-prefixed to `Hooks.*`); router hooks stay explicitly qualified as `RUIRouter.*`.
 
 ### Compiler
 - **`@for`/`@while` bodies must contain a single root element** (`GUITKX0108`) — wrap siblings in a
@@ -36,6 +45,11 @@ Hooks go camelCase (full React parity) plus a round of compiler validation fixes
 
 ### Examples
 - New **prop spread** and **context handle** demos in the gallery (previously feature-complete but undemoed).
+
+### Docs
+- **README refreshed** to match the library — examples and the hooks/router tables now use the camelCase
+  hooks + React-style events, the pinned version is dropped, and the counts are corrected
+  (**23 core hooks · 17 router hooks · ~60 `V.*` factories**).
 
 ## [0.3.0] — 2026-07-01
 

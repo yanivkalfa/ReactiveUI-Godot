@@ -21,13 +21,13 @@ extends RefCounted
 ## Legacy table routing (kept working): V.routes({ "routes": [ { "path", "component" }, ... ] }).
 ##
 ## Hooks (call from any descendant component):
-##   RUIRouter.use_navigate(replace := false) -> func(path, state := null) -> bool
-##   RUIRouter.use_location()    -> current path String
-##   RUIRouter.use_query()       -> { ... } decoded query
-##   RUIRouter.use_params()      -> { "id": "1", ... } for the matched route
-##   RUIRouter.use_matches()     -> [RUIRouteMatch ...] root -> current
-##   RUIRouter.use_go() / use_can_go(delta) / use_resolved_path(to) / use_search_params()
-##   RUIRouter.use_blocker(blocker, enabled) / use_prompt(when, message)
+##   RUIRouter.useNavigate(replace := false) -> func(path, state := null) -> bool
+##   RUIRouter.useLocation()    -> current path String
+##   RUIRouter.useQuery()       -> { ... } decoded query
+##   RUIRouter.useParams()      -> { "id": "1", ... } for the matched route
+##   RUIRouter.useMatches()     -> [RUIRouteMatch ...] root -> current
+##   RUIRouter.useGo() / useCanGo(delta) / useResolvedPath(to) / useSearchParams()
+##   RUIRouter.useBlocker(blocker, enabled) / usePrompt(when, message)
 
 # --- context keys ------------------------------------------------------------
 # Split nav/loc (M4): NAV_CTX is memoized (stable identity) so navigate-only consumers don't
@@ -106,7 +106,7 @@ static func provider(props: Dictionary, children: Array):
 	Hooks.provideContext(NAV_CTX, nav_ctx)
 	Hooks.provideContext(ROUTER_OWNER, Hooks._cur)
 
-	# Consumers see the location with the basename stripped (RR semantics: use_location() is
+	# Consumers see the location with the basename stripped (RR semantics: useLocation() is
 	# app-relative); navigation re-attaches it. Memoized so LOC_CTX identity is stable between navs.
 	var visible_location = Hooks.useMemo(func():
 		if location == null:
@@ -164,7 +164,7 @@ static func _build_nav_ctx(history, basename: String) -> Dictionary:
 # Route — V.route
 # =============================================================================
 static func route_fn(props: Dictionary, children: Array):
-	var router = use_router()
+	var router = useRouter()
 	if router == null:
 		return null
 
@@ -242,7 +242,7 @@ static func route_fn(props: Dictionary, children: Array):
 # Outlet — V.outlet
 # =============================================================================
 static func outlet_fn(props: Dictionary, children: Array):
-	if use_router() == null:
+	if useRouter() == null:
 		if RUIConfig.enable_strict_diagnostics:
 			push_warning("[Router] <Outlet/> rendered outside any <Router>. The outlet will render nothing.")
 		return null
@@ -265,14 +265,14 @@ static func routes(props: Dictionary, children: Array):
 # Legacy table API (kept working for examples/demos/router + core_test).
 static func _routes_table(props: Dictionary, _children: Array):
 	var route_list: Array = props.get("routes", [])
-	var location := use_location()
+	var location := useLocation()
 	var matched = RUIRouteMatcher.match_routes(route_list, location)
 	if matched == null:
 		return []
 	var route = matched["route"]
 	var params: Dictionary = matched["params"]
 	var pattern := str(route.get("path", "/"))
-	# Publish a RouteMatch so use_params() works uniformly (legacy + spine).
+	# Publish a RouteMatch so useParams() works uniformly (legacy + spine).
 	Hooks.provideContext(ROUTE_MATCH, RUIRouteMatch.new(location, pattern, params))
 	var comp = route.get("component")
 	if comp is Callable:
@@ -283,7 +283,7 @@ static func _routes_table(props: Dictionary, _children: Array):
 
 # New ranked switch over <Route> children (first/most-specific match wins).
 static func _routes_switch(_props: Dictionary, children: Array):
-	var router = use_router()
+	var router = useRouter()
 	if router == null:
 		return null
 	var parent_entry = _resolve_current_entry()
@@ -310,7 +310,7 @@ static func navigate_fn(props: Dictionary, _children: Array):
 	var to := str(props.get("to", "/"))
 	var replace: bool = bool(props.get("replace", true))   # <Navigate> defaults to replace
 	var state = props.get("state", null)
-	var navigate := use_navigate(replace)
+	var navigate := useNavigate(replace)
 	# Effect runs after commit so we never navigate from inside render.
 	Hooks.useEffect(func():
 		navigate.call(to, state)
@@ -322,7 +322,7 @@ static func navigate_fn(props: Dictionary, _children: Array):
 # NavLink — V.nav_link (active-aware navigation button)
 # =============================================================================
 static func nav_link_fn(props: Dictionary, _children: Array):
-	var router = use_router()
+	var router = useRouter()
 	if router == null:
 		return null
 	var route_match = Hooks.useContext(ROUTE_MATCH)
@@ -357,7 +357,7 @@ static func nav_link_fn(props: Dictionary, _children: Array):
 # Link — V.link (plain navigation button; base-relative `to`)
 # =============================================================================
 static func link(props: Dictionary, _children: Array):
-	var router = use_router()
+	var router = useRouter()
 	var base = Hooks.useContext(NAV_BASE_CTX)
 	var navigation_base: String = base if base != null else "/"
 	var to := str(props.get("to", "/"))
@@ -383,7 +383,7 @@ static func link(props: Dictionary, _children: Array):
 
 ## Combined RouterState (location + handlers). Reads NAV + LOC, so consumers re-render on
 ## navigation. Returns null when not inside a <Router>.
-static func use_router():
+static func useRouter():
 	var nav = Hooks.useContext(NAV_CTX)
 	if nav == null:
 		return null
@@ -399,12 +399,12 @@ static func use_router():
 	}
 
 ## The current location object (or null outside a Router).
-static func use_location_info():
+static func useLocationInfo():
 	var loc = Hooks.useContext(LOC_CTX)
 	return loc if loc is RUIRouterLocation else null
 
 ## The current location path String. Reads only LOC_CTX (re-renders on navigation).
-static func use_location() -> String:
+static func useLocation() -> String:
 	var loc = Hooks.useContext(LOC_CTX)
 	if loc is RUIRouterLocation:
 		return loc.path
@@ -412,30 +412,30 @@ static func use_location() -> String:
 
 ## The decoded query dictionary of the current location. Returns a defensive copy — the location's
 ## own dict is part of an immutable-identity object used for context change-detection. [audit]
-static func use_query() -> Dictionary:
+static func useQuery() -> Dictionary:
 	var loc = Hooks.useContext(LOC_CTX)
 	return loc.query.duplicate() if loc is RUIRouterLocation else {}
 
 ## The opaque navigation state of the current location.
-static func use_navigation_state():
+static func useNavigationState():
 	var loc = Hooks.useContext(LOC_CTX)
 	return loc.state if loc is RUIRouterLocation else null
 
 ## Captured :params of the matched route (merged down the parent chain). Returns a defensive copy
 ## (the RouteMatch is an immutable-identity object used for context change-detection). [audit]
-static func use_params() -> Dictionary:
+static func useParams() -> Dictionary:
 	var m = Hooks.useContext(ROUTE_MATCH)
 	return m.params.duplicate() if m is RUIRouteMatch else {}
 
 ## The matched RUIRouteMatch for the nearest route (or null).
-static func use_route_match():
+static func useRouteMatch():
 	var m = Hooks.useContext(ROUTE_MATCH)
 	return m if m is RUIRouteMatch else null
 
 ## A navigator: func(path, state := null) -> bool. Resolves relative paths against the current
 ## route's navigation base. Reads only the STABLE nav contexts, so navigate-only widgets do NOT
 ## re-render on navigation.
-static func use_navigate(replace := false) -> Callable:
+static func useNavigate(replace := false) -> Callable:
 	var nav = Hooks.useContext(NAV_CTX)
 	var base = Hooks.useContext(NAV_BASE_CTX)
 	if nav == null:
@@ -446,12 +446,12 @@ static func use_navigate(replace := false) -> Callable:
 		return handler.call(_resolve_target(str(path) if path != null else "", navigation_base), state)
 
 ## The navigation base (resolved pattern) of the current route.
-static func use_navigation_base() -> String:
+static func useNavigationBase() -> String:
 	var base = Hooks.useContext(NAV_BASE_CTX)
 	return base if base != null else "/"
 
 ## A relative-history navigator: func(delta) -> bool.
-static func use_go() -> Callable:
+static func useGo() -> Callable:
 	var nav = Hooks.useContext(NAV_CTX)
 	if nav == null:
 		return func(_d): return false
@@ -459,7 +459,7 @@ static func use_go() -> Callable:
 
 ## Whether history can move `delta` entries from the current position. Subscribes to LOC_CTX so the
 ## consumer re-renders on navigation (the history index moved) — NAV_CTX alone is stable. [audit]
-static func use_can_go(delta: int) -> bool:
+static func useCanGo(delta: int) -> bool:
 	var nav = Hooks.useContext(NAV_CTX)
 	Hooks.useContext(LOC_CTX)   # subscribe to location changes so can-go state stays fresh
 	if nav == null:
@@ -467,22 +467,22 @@ static func use_can_go(delta: int) -> bool:
 	return nav["can_go"].call(delta)
 
 ## The ordered chain of RouteMatch entries root -> current (for breadcrumbs / analytics).
-static func use_matches() -> Array:
+static func useMatches() -> Array:
 	var chain = Hooks.useContext(MATCH_CHAIN)
 	return chain if chain is Array else []
 
 ## The value handed down by the closest enclosing <Outlet context=...>.
-static func use_outlet_context():
+static func useOutletContext():
 	return Hooks.useContext(OUTLET_CONTEXT)
 
-## Resolve `to` against the current navigation base — the absolute path use_navigate would dispatch.
-static func use_resolved_path(to: String) -> String:
+## Resolve `to` against the current navigation base — the absolute path useNavigate would dispatch.
+static func useResolvedPath(to: String) -> String:
 	var base = Hooks.useContext(NAV_BASE_CTX)
 	return _resolve_target(to, base if base != null else "/")
 
 ## [query, setter]. setter(next_query: Dictionary, replace := false) replaces only the query string.
-static func use_search_params() -> Array:
-	var router = use_router()
+static func useSearchParams() -> Array:
+	var router = useRouter()
 	var current: Dictionary = router["location"].query if router != null else {}
 	var current_path: String = router["location"].path if router != null else "/"
 	var current_state = router["location"].state if router != null else null
@@ -499,7 +499,7 @@ static func use_search_params() -> Array:
 
 ## Register a navigation blocker for the lifetime of this component (while `enabled`).
 ## blocker: func(from: RUIRouterLocation, to: RUIRouterLocation) -> bool, returns TRUE to block.
-static func use_blocker(blocker: Callable, enabled := true) -> void:
+static func useBlocker(blocker: Callable, enabled := true) -> void:
 	var nav = Hooks.useContext(NAV_CTX)   # stable — register once, not every render
 	Hooks.useEffect(func():
 		if not enabled or nav == null or not (blocker is Callable):
@@ -512,8 +512,8 @@ static func use_blocker(blocker: Callable, enabled := true) -> void:
 
 ## Convenience: block navigation whenever `when` is true (e.g. an unsaved-changes prompt). The
 ## message is logged in strict-diagnostics mode (the host has no dialog surface).
-static func use_prompt(when: bool, message := "") -> void:
-	use_blocker(func(_from, _to):
+static func usePrompt(when: bool, message := "") -> void:
+	useBlocker(func(_from, _to):
 		if when and message != "" and RUIConfig.enable_strict_diagnostics:
 			push_warning("[Router prompt] " + message)
 		return when   # true == block

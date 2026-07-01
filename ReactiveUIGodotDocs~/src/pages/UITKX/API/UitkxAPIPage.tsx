@@ -64,7 +64,7 @@ export const UitkxAPIPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>RUIRouter</code> — router hooks and primitives. Hooks: <code>use_router()</code>, <code>use_location()</code>, <code>use_location_info()</code>, <code>use_params()</code>, <code>use_query()</code>, <code>use_search_params()</code>, <code>use_navigation_state()</code>, <code>use_navigate(replace?)</code>, <code>use_go()</code>, <code>use_can_go(delta)</code>, <code>use_matches()</code>, <code>use_route_match()</code>, <code>use_navigation_base()</code>, <code>use_resolved_path(to)</code>, <code>use_outlet_context()</code>, <code>use_blocker(...)</code>, <code>use_prompt(...)</code>.</>} />
+          <ListItemText primary={<><code>RUIRouter</code> — router hooks and primitives. Hooks: <code>useRouter()</code>, <code>useLocation()</code>, <code>useLocationInfo()</code>, <code>useParams()</code>, <code>useQuery()</code>, <code>useSearchParams()</code>, <code>useNavigationState()</code>, <code>useNavigate(replace?)</code>, <code>useGo()</code>, <code>useCanGo(delta)</code>, <code>useMatches()</code>, <code>useRouteMatch()</code>, <code>useNavigationBase()</code>, <code>useResolvedPath(to)</code>, <code>useOutletContext()</code>, <code>useBlocker(...)</code>, <code>usePrompt(...)</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<>Router primitives (factories on <code>V</code>, intrinsic tags in <code>.guitkx</code>): <code>V.router</code>, <code>V.routes</code>, <code>V.route</code>, <code>V.outlet</code>, <code>V.navigate</code>, <code>V.nav_link</code>, <code>V.link</code>.</>} />

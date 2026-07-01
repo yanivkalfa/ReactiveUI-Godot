@@ -11,21 +11,21 @@ node tree. State lives in **hooks**.
 
 ```gdscript
 func _counter(props, children):
-    var s = Hooks.use_state(0)
+    var s = Hooks.useState(0)
     var count = s[0]
     var set_count = s[1]
     return V.hbox({ "style": { "separation": 8 } }, [
-        V.button({ "text": "-", "on_pressed": func(): set_count.call(count - 1) }),
+        V.button({ "text": "-", "onClick": func(): set_count.call(count - 1) }),
         V.label({ "text": "Count: %d" % count }),
-        V.button({ "text": "+", "on_pressed": func(): set_count.call(func(c): return c + 1) }),
+        V.button({ "text": "+", "onClick": func(): set_count.call(func(c): return c + 1) }),
     ])
 ```
 
-> **Status: 0.2.x — runtime feature-complete, at ~parity with the Unity library.**
-> A fiber reconciler with bailout + keyed reconciliation, **21 hooks** plus a full
-> React-Router-style **router** (with its own ~14 hooks), **signals**, **Suspense**,
+> **Status: runtime feature-complete — at ~parity with the Unity library.**
+> A fiber reconciler with bailout + keyed reconciliation, **23 hooks** plus a full
+> React-Router-style **router** (with its own **17 hooks**), **signals**, **Suspense**,
 > a three-layer **style** system, declarative **item-model** controls, media/animation,
-> a custom-drawing hatch, and **63 `V.*` factories**. Verified on Godot 4.7 with a green
+> a custom-drawing hatch, and **~60 `V.*` factories**. Verified on Godot 4.7 with a green
 > test suite. There is also an optional **`.guitkx` markup** authoring format + VS Code /
 > VS 2022 extensions (see [IDE tooling](#ide-tooling)).
 
@@ -85,7 +85,7 @@ reconciler. Call `_app.unmount()` to tear down and run cleanups. (A `Control`-ba
 | `V.fc(render_fn, props := {}, children := [], key = null)` | A function component. `render_fn` is `func(props, children) -> RUIVNode \| Array \| String`. |
 | `V.h(type, props, children, key)` | A host element by Godot class name — the escape hatch for **any** `Control`. |
 
-**~63 host factories** cover Godot's control surface, including:
+**~60 host factories** cover Godot's control surface, including:
 
 - **Containers** — `V.control` · `V.vbox` · `V.hbox` · `V.grid` · `V.margin` · `V.panel` ·
   `V.center` · `V.scroll` · `V.flow_h`/`V.flow_v` · `V.tabs` · `V.split_h`/`V.split_v` ·
@@ -105,8 +105,12 @@ Anything not covered is one `V.h("SomeControl", props)` away.
 **Props** on a host element:
 - Any Godot property of the node — `"text"`, `"editable"`, `"disabled"`, etc. — is set directly.
 - `"style"` / `"classes"` — a [style dictionary](#style) and/or stylesheet class names.
-- `"on_<signal>"` — an event: a `Callable` connected to the node's `<signal>`
-  (e.g. `"on_pressed"` → `pressed`, `"on_text_changed"` → `text_changed(new_text)`).
+- `"onClick"` / `"onChange"` / `"onInput"` / `"onSubmit"` / `"onFocus"` / `"onBlur"` /
+  `"onPointerDown"`… — **React-style events**: a `Callable` mapped to the node's matching Godot
+  signal (`onClick` → `pressed`; `onChange` → `toggled` / `value_changed` / `item_selected` / …;
+  `onInput` → `text_changed`). Any other `onXxx` auto-converts to the snake-case signal `xxx`.
+  For a signal with no React alias, the verbatim escape hatch `"on_<signal>"` → `<signal>` still
+  works (e.g. `"on_gui_input"` → `gui_input`).
 - `"ref"` — a `Callable(node)` or a `{ "current": ... }` box that receives the live node.
 - `"items"` — declarative data for [item-model controls](#item-models).
 - `"draw_fn"` / `"redraw_key"` — a [custom-drawing](#custom-drawing) callback.
@@ -119,21 +123,21 @@ The core set:
 
 | Hook | Returns / does |
 |---|---|
-| `Hooks.use_state(initial)` | `[value, setter]`. `setter.call(v)` or `setter.call(func(old): return new)`. |
-| `Hooks.use_reducer(reducer, initial)` | `[state, dispatch]`. |
-| `Hooks.use_ref(initial)` | A stable `{ "current": initial }` box (never re-created). |
-| `Hooks.use_memo(factory, deps)` | Cached value; recomputed only when `deps` change. |
-| `Hooks.use_callback(cb, deps)` / `use_stable_callback(cb, deps)` | A stable `Callable` while `deps` are unchanged. |
-| `Hooks.use_effect(effect, deps = null)` | Runs after commit when `deps` change (`[]` = once; `null` = every render). `effect` may return a `Callable` cleanup. |
-| `Hooks.use_layout_effect(effect, deps)` | Like `use_effect` but synchronous, before paint. |
-| `Hooks.use_context(ctx)` | The nearest provider value; re-renders on change. |
-| `Hooks.use_signal(selector)` / `use_signal_key(key)` | Subscribe to a [signal](#signals) store. |
-| `Hooks.use_deferred_value(v)` / `use_transition()` | Defer/triage non-urgent updates. |
-| `Hooks.use_tween(...)` / `use_tween_value(...)` / `use_animate(...)` / `use_sfx(...)` | Animation + audio helpers. |
+| `Hooks.useState(initial)` | `[value, setter]`. `setter.call(v)` or `setter.call(func(old): return new)`. |
+| `Hooks.useReducer(reducer, initial)` | `[state, dispatch]`. |
+| `Hooks.useRef(initial)` | A stable `{ "current": initial }` box (never re-created). |
+| `Hooks.useMemo(factory, deps)` | Cached value; recomputed only when `deps` change. |
+| `Hooks.useCallback(cb, deps)` / `useStableCallback(cb)` | A stable `Callable` while `deps` are unchanged. |
+| `Hooks.useEffect(effect, deps = null)` | Runs after commit when `deps` change (`[]` = once; `null` = every render). `effect` may return a `Callable` cleanup. |
+| `Hooks.useLayoutEffect(effect, deps)` | Like `useEffect` but synchronous, before paint. |
+| `Hooks.useContext(ctx)` | The nearest provider value; re-renders on change. |
+| `Hooks.useSignal(sig, selector)` / `useSignalKey(key)` | Subscribe to a [signal](#signals) store. |
+| `Hooks.useDeferredValue(v)` / `useTransition()` | Defer/triage non-urgent updates. |
+| `Hooks.useTween(...)` / `useTweenValue(...)` / `useAnimate(...)` / `useSfx(...)` | Animation + audio helpers. |
 
-…plus `use_imperative_handle`, `use_safe_area`, and the stable-`func`/`action` family — **21 hooks** in all.
-The [router](#router) adds ~14 more (`use_navigate`, `use_location`, `use_params`, `use_search_params`,
-`use_blocker`, …).
+…plus `useImperativeHandle`, `useSafeArea`, `createContext` / `provideContext`, and the
+stable-`func`/`action` family — **23 hooks** in all. The [router](#router) adds **17 more**, all on
+`RUIRouter` (`RUIRouter.useNavigate`, `useLocation`, `useParams`, `useSearchParams`, `useBlocker`, …).
 
 ### <a id="style"></a>Style
 
@@ -153,12 +157,12 @@ Godot has no CSS/USS — styling is `Control` properties + `Theme` overrides, an
 A faithful **React-Router-v6-style** component-tree router: nested / layout routes via
 `V.outlet()`, ranked first-match, merged `:params`, splat `*`, `basename`, query strings,
 `V.nav_link` active styling, `V.navigate`, and navigation blockers. Drive it with the router
-hooks (`use_navigate`, `use_location`, `use_params`, `use_search_params`, `use_blocker`, …).
+hooks on `RUIRouter` (`RUIRouter.useNavigate`, `useLocation`, `useParams`, `useSearchParams`, `useBlocker`, …).
 
 ### <a id="signals"></a>Signals
 
 A reference-aware `RUISignal` store plus a process-wide, string-keyed `RUISignals` registry —
-share state across components without prop-drilling. Read it with `use_signal` / `use_signal_key`.
+share state across components without prop-drilling. Read it with `useSignal` / `useSignalKey`.
 
 ### <a id="items"></a>Item models
 
@@ -183,8 +187,8 @@ V.control({
 `draw_fn` is a `Callable(canvas_item)` that issues the node's `draw_*` calls. A register-once
 trampoline reads the latest callback, so a fresh closure each render never re-subscribes — it
 repaints only when the callback identity **or** `redraw_key` changes. Pair `redraw_key` with
-`use_stable_callback` to repaint on a counter alone. (Per-frame repaint without re-rendering: use
-a `ref` + `queue_redraw()`, or `use_animate`.)
+`useStableCallback` to repaint on a counter alone. (Per-frame repaint without re-rendering: use
+a `ref` + `queue_redraw()`, or `useAnimate`.)
 
 ### <a id="keys"></a>Keys
 
@@ -206,15 +210,15 @@ Mirrors ReactiveUIToolKit; the design (algorithms) is ported, the code is GDScri
 
 ```
 addons/reactive_ui/core/
-  vnode.gd / v.gd            RUIVNode / V     — UI description + the ~63 factories
+  vnode.gd / v.gd            RUIVNode / V     — UI description + the ~60 factories
   fiber.gd                   RUIFiber         — persistent tree node; current/WIP alternates; hook store
-  hooks.gd                   Hooks            — the 21 hooks
+  hooks.gd                   Hooks            — the 23 hooks
   reconciler.gd              RUIReconciler    — render (diff) + two-phase commit; bailout; scheduling
   host_config.gd             RUIHost          — the Godot adapter: nodes, props, signals, items, custom draw
   style.gd / style_sheet.gd  RUIStyle / RUIStyleSheet — declarative style -> Control props / Theme
   signal_store.gd / signal_registry.gd  RUISignal / RUISignals
   suspense.gd                                  — V.suspense boundary
-  media.gd                                     — use_sfx / use_animate / V.audio / V.video
+  media.gd                                     — useSfx / useAnimate / V.audio / V.video
   router/                    RUIRouter…       — router spine, matcher, ranker, history, location
   reactive_root.gd / reactive_root_node.gd     — mount surfaces
 ```
@@ -249,10 +253,10 @@ above works fully without it.
   custom draw *do* reset). Keep props consistent or set explicit defaults.
 - **Error boundaries are structural** — GDScript has no `try`/`catch`, so a boundary can't
   auto-catch a child render crash; it shows its fallback on an imperative toggle / `reset_key`.
-- **`use_transition` / `use_deferred_value` are synchronous** (no concurrent renderer) — faithful
+- **`useTransition` / `useDeferredValue` are synchronous** (no concurrent renderer) — faithful
   to the Unity reference, but not "true" concurrency.
 - Event handler lambdas are re-created each render (events re-wire on change — fine functionally;
-  use `use_callback` to stabilize). Custom `draw_fn` uses the register-once trampoline so it does
+  use `useCallback` to stabilize). Custom `draw_fn` uses the register-once trampoline so it does
   **not** re-subscribe.
 
 ## Roadmap
