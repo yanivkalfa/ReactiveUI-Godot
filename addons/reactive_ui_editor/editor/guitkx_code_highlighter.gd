@@ -26,6 +26,8 @@ var _palette := {
 	"symbol": Color("abb2bf"),
 }
 var _c_default := Color("d4d4d4")
+var _c_dim := Color("707070")   # muted colour for unreachable code (BUG-V6); recomputed in update_colors
+var _dim_lines: Dictionary = {}   # line -> true for unreachable lines to fade
 
 func _init() -> void:
 	update_colors()
@@ -45,6 +47,12 @@ func update_colors() -> void:
 	_palette["keyword"] = _es_color(es, "keyword_color", _palette["keyword"])
 	_palette["number"] = _es_color(es, "number_color", _palette["number"])
 	_palette["symbol"] = _es_color(es, "symbol_color", _palette["symbol"])
+	# Dim = the text colour lerped toward the editor background, for faded unreachable code.
+	_c_dim = _c_default.lerp(_es_color(es, "background_color", Color("181c26")), 0.55)
+
+## Lines (a set: line -> true) to render dimmed as unreachable code. [BUG-V6]
+func set_dim_lines(lines: Dictionary) -> void:
+	_dim_lines = lines
 
 func _es_color(es: EditorSettings, name: String, fallback: Color) -> Color:
 	var key := "text_editor/theme/highlighting/" + name
@@ -56,6 +64,8 @@ func _get_line_syntax_highlighting(line: int) -> Dictionary:
 	# Honoured live (cheap ProjectSettings lookup) so toggling KEY_HIGHLIGHTING needs no plugin reload.
 	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_HIGHLIGHTING):
 		return {}
+	if _dim_lines.has(line):
+		return { 0: { "color": _c_dim } }
 	var te := get_text_edit()
 	if te == null:
 		return {}

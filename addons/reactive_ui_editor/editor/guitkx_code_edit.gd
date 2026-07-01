@@ -64,6 +64,12 @@ func _on_theme_changed() -> void:
 		_highlighter.update_colors()
 		queue_redraw()
 
+## Fade the given lines (a set: line -> true) as unreachable code. [BUG-V6]
+func set_dim_lines(lines: Dictionary) -> void:
+	if _highlighter != null:
+		_highlighter.set_dim_lines(lines)
+		queue_redraw()
+
 func _on_gutter_clicked(line: int, gutter: int) -> void:
 	if gutter == diag_gutter:
 		gutter_diagnostic_clicked.emit(line, get_line_gutter_metadata(line, diag_gutter))

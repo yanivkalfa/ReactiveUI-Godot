@@ -17,6 +17,7 @@ import {
   MarkupKind,
   Diagnostic,
   DiagnosticSeverity,
+  DiagnosticTag,
   Location,
   DocumentSymbol,
   SymbolKind,
@@ -32,7 +33,7 @@ import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, loadFormatterConfig } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, loadFormatterConfig } from "./formatGuitkx";
 import { dirname, join, relative } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
@@ -452,6 +453,7 @@ documents.onDidChangeContent((change) => {
   const live = [
     ...structuralDiagnostics(change.document),
     ...markupDiagnostics(change.document),
+    ...unreachableDiagnostics(change.document),
     ...embeddedDiagnostics(change.document),
   ];
   connection.sendDiagnostics({ uri: change.document.uri, diagnostics: mergeCompilerSidecar(change.document, live) });
@@ -1238,6 +1240,18 @@ function signatureHelpAt(src: string, offset: number): any {
 // in-editor tier): duplicate literal `key="…"` among siblings [GUITKX0104] + unknown-element [0105].
 // Scoped to the markup windows (the return(...) of each component) so a `<`/`>` in setup GDScript,
 // directive conditions, or child {expr} is never misread as a tag.
+// BUG-V5/V6: one Hint + Unnecessary diagnostic per component over the unreachable code after its return.
+// VS Code renders Unnecessary-tagged ranges FADED (like dead code) — the requested "dim".
+function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
+  return unreachableRegions(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Hint,
+    tags: [DiagnosticTag.Unnecessary],
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message: "Unreachable code after the component's return — the compiler drops it.",
+    source: "guitkx",
+  }));
+}
+
 function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   const src = doc.getText();
   const diags: Diagnostic[] = [];

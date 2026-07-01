@@ -503,19 +503,88 @@ static func _split_return(body: String) -> Dictionary:
 ## True if there is real (non-whitespace, non-comment) code after `from` (the markup return's `)`), which
 ## the compiler silently drops as unreachable. [BUG-V5]
 static func _has_unreachable_after(body: String, from: int) -> bool:
-	var n := body.length()
-	var i := from + 1
-	while i < n:
-		var k := L.skip_noncode(body, i)
+	return _first_real(body, from + 1, body.length()) != -1
+
+## First / last offset of real (non-ws, non-comment) code in [from, to), or -1.
+static func _first_real(s: String, from: int, to: int) -> int:
+	var i := from
+	while i < to:
+		var k := L.skip_noncode(s, i)
 		if k != i:
 			i = k
 			continue
-		var c := body[i]
-		if c == " " or c == "\t" or c == "\n" or c == "\r":
-			i += 1
+		var c := s[i]
+		if not (c == " " or c == "\t" or c == "\n" or c == "\r"):
+			return i
+		i += 1
+	return -1
+
+static func _last_real(s: String, from: int, to: int) -> int:
+	var i := from
+	var last := -1
+	while i < to:
+		var k := L.skip_noncode(s, i)
+		if k != i:
+			i = k
 			continue
-		return true
-	return false
+		var c := s[i]
+		if not (c == " " or c == "\t" or c == "\n" or c == "\r"):
+			last = i
+		i += 1
+	return last
+
+static func _line_at(s: String, offset: int) -> int:
+	var line := 0
+	var lim := mini(offset, s.length())
+	for idx in lim:
+		if s[idx] == "\n":
+			line += 1
+	return line
+
+## Line ranges [start_line, end_line] (0-based, inclusive) of real unreachable code after each
+## component's markup return, for the editor to dim/flag. Reuses _split_return. [BUG-V5/V6]
+static func unreachable_line_ranges(source: String) -> Array:
+	var ranges: Array = []
+	var n := source.length()
+	var i := 0
+	while i < n:
+		var k := L.skip_noncode(source, i)
+		if k != i:
+			i = k
+			continue
+		if L.keyword_at(source, i, "component"):
+			# skip name + optional (params) to reach the body `{`
+			var j := i + 9
+			while j < n and (source[j] == " " or source[j] == "\t"):
+				j += 1
+			while j < n and L._is_ident(source[j]):
+				j += 1
+			while j < n and (source[j] == " " or source[j] == "\t"):
+				j += 1
+			if j < n and source[j] == "(":
+				var pcl := L.find_matching(source, j)
+				if pcl == -1:
+					break
+				j = pcl + 1
+			while j < n and (source[j] == " " or source[j] == "\t" or source[j] == "\n" or source[j] == "\r"):
+				j += 1
+			if j >= n or source[j] != "{":
+				i += 9
+				continue
+			var bclose := L.find_matching(source, j)
+			if bclose == -1:
+				break
+			var body := source.substr(j + 1, bclose - j - 1)
+			var split := _split_return(body)
+			if not split.has("error"):
+				var f := _first_real(body, split["m_end"] + 1, body.length())
+				if f != -1:
+					var lst := _last_real(body, split["m_end"] + 1, body.length())
+					ranges.append([_line_at(source, j + 1 + f), _line_at(source, j + 1 + lst)])
+			i = bclose + 1
+			continue
+		i += 1
+	return ranges
 
 # --- emit ---
 # Control flow is hoisted into pre-statements (an if/for/while block before the return) that
