@@ -1,6 +1,16 @@
 {
   "entries": [
     {
+      "date": "2026-07-02",
+      "versions": {
+        "vscode": "0.5.1",
+        "vs2022": "0.5.1"
+      },
+      "shared": [
+        "`.guitkx` files that mix tabs and spaces in a component's setup — a tab followed by spaces renders identically to tabs, so the difference is invisible in the editor — no longer trigger a spurious `Mixed use of tabs and spaces` / `expected a declaration` error cascade. The embedded-GDScript virtual document now normalizes setup indentation by depth (a tab and the inferred space-unit each count as one level), matching the compiler."
+      ]
+    },
+    {
       "date": "2026-07-01",
       "versions": {
         "vscode": "0.5.0",

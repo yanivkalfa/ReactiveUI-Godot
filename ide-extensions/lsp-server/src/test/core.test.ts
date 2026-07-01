@@ -198,6 +198,18 @@ test("virtualDoc splices setup + {expr} with a correct round-trip mapping", () =
   assert.equal(map.toSource(genIdx!), exprIdx, "generated maps back to source");
 });
 
+test("virtualDoc normalises mixed tab/space setup indentation to pure tabs (no phantom unindent)", () => {
+  // `\t  ` (tab + 2 spaces) renders like `\t\t` but is byte-different; a naive dedent carries that
+  // mismatch into the analyser as a phantom "unindent doesn't match". The virtual .gd must be tab-only.
+  const src = "component X {\n\t\tvar a = useState(0)\n\t  var b = useState(0)\n\treturn ( <Label /> )\n}\n";
+  const { text } = buildVirtualDoc(src);
+  for (const line of text.split("\n")) {
+    const lead = line.match(/^[\t ]*/)![0];
+    assert.ok(!lead.includes(" "), `virtual doc must indent with tabs only, got ${JSON.stringify(line)}`);
+  }
+  assert.ok(text.includes("var b = useState(0)"), "the mixed-indent setup line is still present");
+});
+
 test("virtualDoc extracts @if/@for conditions", () => {
   const src = [
     "component L(items: Array = []) {",

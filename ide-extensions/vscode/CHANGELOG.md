@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.1] - 2026-07-02
+- `.guitkx` files that mix tabs and spaces in a component's setup — a tab followed by spaces renders identically to tabs, so the difference is invisible in the editor — no longer trigger a spurious `Mixed use of tabs and spaces` / `expected a declaration` error cascade. The embedded-GDScript virtual document now normalizes setup indentation by depth (a tab and the inferred space-unit each count as one level), matching the compiler.
+
 ## [0.5.0] - 2026-07-01
 - Hooks are now camelCase (React parity): completion, hover, go-to-definition, and the embedded-GDScript virtual document all use the camelCase names — `useState`, `useEffect`, `useRef`, `useMemo`, `useContext`, `createContext`, … (23 hooks). Existing snake_case hook code must be migrated (a snake→camel rename over the 23 hook names).
 - Hovering a hook now shows its signature — e.g. `useState(initial) → [value, setter]` — instead of a bare `Callable`. Host-element hover drops the internal `V.*` factory detail and keeps the Godot class reference.
