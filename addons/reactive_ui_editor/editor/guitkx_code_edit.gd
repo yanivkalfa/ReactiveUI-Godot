@@ -27,11 +27,9 @@ func _ready() -> void:
 		add_string_delimiter("\"", "\"")
 	if not has_string_delimiter("'"):
 		add_string_delimiter("'", "'")
+	# CodeEdit already ships the default { } ( ) [ ] " " ' ' auto-close pairs; re-adding them throws
+	# "auto brace completion open key '...' already exists", so we just enable the feature.
 	auto_brace_completion_enabled = true
-	add_auto_brace_completion_pair("{", "}")
-	add_auto_brace_completion_pair("(", ")")
-	add_auto_brace_completion_pair("[", "]")
-	add_auto_brace_completion_pair("\"", "\"")
 
 	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
 	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload.
