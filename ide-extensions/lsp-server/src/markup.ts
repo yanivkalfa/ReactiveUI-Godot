@@ -18,7 +18,7 @@ import { skipString, findMatching, keywordAt } from "./scanner";
 
 export interface Attr {
   name: string;
-  kind: "str" | "expr" | "bool";
+  kind: "str" | "expr" | "bool" | "spread";
   value: string;
 }
 export type MarkupNode =
@@ -147,6 +147,20 @@ class MarkupParser {
 
   private parseAttribute(start: number, end: number): { attr: Attr | null; next: number } {
     let i = start;
+    // spread attribute `{...expr}` (React `{...obj}`): merged into props at codegen. kind "spread".
+    if (this.src[i] === "{") {
+      const sclose = findMatching(this.src, i);
+      if (sclose === -1 || sclose >= end) {
+        this.err = "GUITKX0304: unclosed `{` in spread attribute";
+        return { attr: null, next: end };
+      }
+      const inner = this.src.slice(i + 1, sclose).trim();
+      if (!inner.startsWith("...")) {
+        this.err = "GUITKX0300: expected `...spread` or an attribute name";
+        return { attr: null, next: end };
+      }
+      return { attr: { name: "", kind: "spread", value: inner.slice(3).trim() }, next: sclose + 1 };
+    }
     const ns = i;
     while (i < end && isAttrNameChar(this.src[i])) i++;
     const name = this.src.slice(ns, i);

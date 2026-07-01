@@ -81,9 +81,9 @@ function fail(m) {
   const has = (n) => attrItems.some((i) => i.label === n);
   if (!has("text")) fail("attr completion missing ClassDB prop 'text': " + JSON.stringify(attrItems.slice(0, 8).map((i) => i.label)));
   if (!has("disabled")) fail("attr completion missing inherited ClassDB prop 'disabled'");
-  if (!has("on_pressed")) fail("attr completion missing Button signal handler on_pressed");
+  if (!has("onClick")) fail("attr completion missing Button React event handler onClick: " + JSON.stringify(attrItems.filter((i) => /^on/.test(i.label)).map((i) => i.label)));
   if (!has("key")) fail("attr completion missing structural 'key'");
-  console.log(`attr completion OK (${attrItems.length} items, ClassDB props text/disabled + on_pressed + key)`);
+  console.log(`attr completion OK (${attrItems.length} items, ClassDB props text/disabled + React event onClick + key)`);
 
   // duplicate-key diagnostic (markupDiagnostics)
   const uri3 = "file:///tmp/Dup.guitkx";

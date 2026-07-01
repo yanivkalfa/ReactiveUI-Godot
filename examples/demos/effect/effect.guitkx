@@ -10,7 +10,7 @@ component DemoEffect() {
 	use_effect(eff, [on[0]])
 	return (
 		<DemoBox title="use_effect — lifecycle + cleanup">
-			<Button text={ "Toggle dependency (now %s)" % on[0] } on_pressed={ func(): on[1].call(not on[0]) } />
+			<Button text={ "Toggle dependency (now %s)" % on[0] } onClick={ func(): on[1].call(not on[0]) } />
 			<Label text="Effect log (cleanup runs before the next setup):" style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
 			<Label text={ "\n".join(log["current"]) } />
 		</DemoBox>

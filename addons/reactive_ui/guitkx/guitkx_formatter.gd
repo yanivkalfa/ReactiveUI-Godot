@@ -216,6 +216,8 @@ static func _fmt_attr(a: Dictionary) -> String:
 			return "%s=\"%s\"" % [a["name"], a["value"]]
 		"expr":
 			return "%s={ %s }" % [a["name"], (a["value"] as String).strip_edges()]
+		"spread":
+			return "{...%s}" % (a["value"] as String).strip_edges()
 		"bool":
 			return a["name"]
 	return a["name"]

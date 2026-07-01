@@ -31,6 +31,7 @@ func _run() -> void:
 	_test_formatter_corpus()
 	_test_formatter_options()
 	_test_codegen()
+	_test_spread()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -437,13 +438,33 @@ func _count_class(node: Node, cls: String) -> int:
 		total += _count_class(ch, cls)
 	return total
 
+func _test_spread() -> void:
+	# `{...spread}` merges into props left-to-right (later wins), order-preserving, via V._spread_all.
+	# Component tag:
+	var c := RUIGuitkx.compile("component C(base, t) {\n\treturn ( <Card {...base} title={ t } /> )\n}\n", "C")
+	if not c["ok"]:
+		_fail("spread: component compile failed: " + str(c["diagnostics"]))
+	else:
+		_check(c["gd"], "V.fc(Card.render, V._spread_all([(base), { \"title\": t }]))", "spread on a component")
+	# Host tag with explicit props both BEFORE and AFTER a spread (order + last-wins preserved):
+	var h := RUIGuitkx.compile("component H(cfg) {\n\treturn ( <Button text=\"Hi\" {...cfg} onClick={ f } /> )\n}\n", "H")
+	if not h["ok"]:
+		_fail("spread: host compile failed: " + str(h["diagnostics"]))
+	else:
+		_check(h["gd"], "V.button(V._spread_all([{ \"text\": \"Hi\" }, (cfg), { \"onClick\": f }]))", "spread on a host, order preserved")
+	# Regression: a plain element (no spread) still emits a bare dict literal (unchanged hot path).
+	var p := RUIGuitkx.compile("component P() {\n\treturn ( <Button text=\"Hi\" /> )\n}\n", "P")
+	if p["ok"]:
+		_check(p["gd"], "V.button({ \"text\": \"Hi\" })", "no-spread element keeps the plain dict literal")
+		_check_true(not (p["gd"] as String).contains("_spread_all"), "no-spread element does NOT call _spread_all")
+
 func _test_emit() -> void:
 	var src := "@class_name Greeting\n\ncomponent Greeting(name: String = \"World\") {\n" + \
 		"\tvar s = use_state(0)\n" + \
 		"\treturn (\n" + \
 		"\t\t<VBox style={ {\"separation\": 8} }>\n" + \
 		"\t\t\t<Label text={ \"Hello, %s (%d)\" % [name, s[0]] } />\n" + \
-		"\t\t\t<Button text=\"+1\" on_pressed={ inc } />\n" + \
+		"\t\t\t<Button text=\"+1\" onClick={ inc } />\n" + \
 		"\t\t</VBox>\n" + \
 		"\t)\n}\n"
 	var r := RUIGuitkx.compile(src, "Greeting")
@@ -457,7 +478,7 @@ func _test_emit() -> void:
 	_check(gd, "V.vbox(", "VBox -> V.vbox")
 	_check(gd, "V.label(", "Label -> V.label")
 	_check(gd, "V.button(", "Button -> V.button")
-	_check(gd, "\"on_pressed\": inc", "event prop")
+	_check(gd, "\"onClick\": inc", "event prop (React-canonical name flows through the compiler verbatim)")
 	_check(gd, "\"style\":", "style prop")
 
 func _test_runtime() -> void:

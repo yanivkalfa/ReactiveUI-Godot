@@ -10,7 +10,7 @@ component DemoTween() {
 		n[1].call(n[0] + 1)
 	return (
 		<DemoBox title="use_tween — animate a node via Godot's Tween">
-			<Button text="Pulse (fade in)" on_pressed={ pulse } />
+			<Button text="Pulse (fade in)" onClick={ pulse } />
 			<Panel ref={ box_ref } style={ {"bg_color": Color(0.3, 0.6, 0.9), "corner_radius": 8, "min_size": Vector2(220, 90), "pad": 12} }>
 				<Label text="I fade in on every pulse" style={ {"font_color": Color.WHITE} } />
 			</Panel>

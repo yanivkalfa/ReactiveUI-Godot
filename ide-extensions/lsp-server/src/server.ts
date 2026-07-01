@@ -37,6 +37,7 @@ import { dirname, join, relative } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
+import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations } from "./workspaceIndex";
 import { scanTagRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
@@ -212,13 +213,10 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
         // HOST element: every Control property of its godotClass, from the ClassDB dump
         for (const p of classProperties(tag.godotClass))
           items.push({ label: p.name, kind: CompletionItemKind.Property, detail: `${p.type} (${tag.godotClass})` });
-        // on_<signal> event handlers (signal -> on_<name>)
-        for (const s of classSignals(tag.godotClass))
-          items.push({
-            label: `on_${s.name}`,
-            kind: CompletionItemKind.Event,
-            detail: `signal ${s.name}(${s.args.map((a) => `${a.name}: ${a.type}`).join(", ")})`,
-          });
+        // React-style event handlers (onClick / onChange / onPointer* / …) resolved from the class's
+        // signals; `onChange` is polymorphic. The native on_<signal> spelling stays valid too. (events.ts)
+        for (const ev of eventCompletionsFor(classSignals(tag.godotClass)))
+          items.push({ label: ev.label, kind: CompletionItemKind.Event, detail: ev.detail });
       } else if (tag) {
         // dump not available: fall back to the static common-attrs + schema events
         for (const a of COMMON_ATTRS)
@@ -382,15 +380,21 @@ function markupHover(src: string, offset: number, ctx: CursorContext): Hover | n
     if (tag) return md(`**<${word}>** — host element, compiles to \`${tag.factory}\` (Godot \`${tag.godotClass}\`).`);
     if (index.has(word)) {
       const e = index.lookup(word)[0];
-      return md(`**<${word}>** — user ${e.kind === "member" ? "component" : e.kind}.`);
+      const kind = e.kind === "member" ? "component" : e.kind;
+      const sig = componentSignature(e);
+      return md(`**<${word}>** — user ${kind} \`${word}${sig}\`. Press F12 / ctrl+click to open its declaration.`);
     }
     return null;
   }
   // attrName — resolve against the enclosing host tag's ClassDB props/signals, then structural/common.
   const host = ctx.tag ? findTag(ctx.tag) : undefined;
   if (host && hasDump()) {
-    if (word.startsWith("on_")) {
-      const sig = classSignals(host.godotClass).find((s) => `on_${s.name}` === word);
+    // Event handler? Resolve either spelling (React onClick/onChange/… or native on_<signal>) to its
+    // underlying Godot signal on this control's class. (events.ts)
+    const sigs = classSignals(host.godotClass);
+    const signalName = resolveSignalName(word, (s) => sigs.some((x) => x.name === s));
+    if (signalName !== undefined) {
+      const sig = sigs.find((s) => s.name === signalName);
       if (sig) return md(`**${word}** — Godot signal \`${sig.name}(${sig.args.map((a) => `${a.name}: ${a.type}`).join(", ")})\` on \`${host.godotClass}\`.`);
     }
     const prop = classProperties(host.godotClass).find((p) => p.name === word);
@@ -493,8 +497,11 @@ connection.onDefinition(async (params) => {
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
   if (isGd(params.textDocument.uri)) return gdDefinition(params.textDocument.uri, src, offset);
-  // A <Component/> tag -> its declaration, from the workspace index.
-  const name = componentTagAt(src, offset);
+  // A <Component/> tag, the `component`/member decl name, or its `@class_name` token -> the declaration,
+  // from the workspace index. Using bindingUnderCursor (not just componentTagAt) means F12 / ctrl+click
+  // works from a usage AND from the declaration itself / the @class_name directive, instead of falling
+  // through to the analyzer and surfacing VS Code's "no definition found".
+  const name = bindingUnderCursor(params.textDocument.uri, src, offset);
   if (name) {
     const entries = index.lookup(name);
     if (entries.length)
@@ -612,12 +619,29 @@ function textForUri(uri: string): string {
   return documents.get(uri)?.getText() ?? readTextForUri(uri);
 }
 
-// The component binding under the cursor — a <Foo/> tag OR a component/member declaration name.
+// The `(params)` signature of a component declaration (read from its file), e.g. "(idx, append)" — or
+// "" when it takes none. Shown in hover so a <Tag>'s props read like a function signature.
+function componentSignature(e: { uri: string; nameEnd: number }): string {
+  const text = textForUri(e.uri);
+  let i = e.nameEnd;
+  while (i < text.length && /\s/.test(text[i])) i++;
+  if (text[i] !== "(") return "";
+  const close = findMatching(text, i);
+  if (close === -1) return "";
+  return text.slice(i, close + 1).replace(/\s+/g, " ");
+}
+
+// The component binding under the cursor — a <Foo/> tag, a component/member declaration name, OR its
+// `@class_name` override token (so navigation / find-references / rename all work from the declaration
+// AND the @class_name directive, not just from a usage).
 function bindingUnderCursor(uri: string, src: string, offset: number): string | null {
   const tag = componentTagAt(src, offset);
   if (tag) return tag;
   for (const e of index.entriesFor(uri)) {
-    if (offset >= e.nameStart && offset <= e.nameEnd && e.kind !== "hook") return e.binding;
+    if (e.kind === "hook") continue;
+    const onName = offset >= e.nameStart && offset <= e.nameEnd;
+    const onOverride = e.classNameStart != null && e.classNameEnd != null && offset >= e.classNameStart && offset <= e.classNameEnd;
+    if (onName || onOverride) return e.binding;
   }
   return null;
 }
@@ -1123,8 +1147,7 @@ function signatureHelpAt(src: string, offset: number): any {
   let ne = j + 1;
   while (j >= 0 && /[A-Za-z0-9_.\-]/.test(src[j])) j--;
   const attrName = src.slice(j + 1, ne);
-  if (!attrName.startsWith("on_")) return null;
-  const signal = attrName.slice(3);
+  if (!isEventAttr(attrName)) return null; // event handler (React onClick/onChange/… or native on_<signal>)
   // 4. find the enclosing opening tag's name — back-scan skipping ={...} exprs + quoted values so a
   //    `<`/`>` operator inside an earlier attribute doesn't halt the lookup.
   let t = j;
@@ -1156,7 +1179,10 @@ function signatureHelpAt(src: string, offset: number): any {
   while (te < src.length && /[A-Za-z0-9_]/.test(src[te])) te++;
   const td = findTag(src.slice(tn, te));
   if (!td) return null; // host elements only
-  const sig = classSignals(td.godotClass).find((s) => s.name === signal);
+  const sigs = classSignals(td.godotClass);
+  const signal = resolveSignalName(attrName, (s) => sigs.some((x) => x.name === s)); // React name -> signal
+  if (!signal) return null;
+  const sig = sigs.find((s) => s.name === signal);
   if (!sig) return null;
   // 5. activeParameter = top-level comma count between '(' and the cursor (depth-aware, string-safe)
   let active = 0;
@@ -1313,6 +1339,11 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
     if (src[i] === "/" && src[i + 1] === ">") return { next: i + 2, selfClosing: true, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (src[i] === ">") return { next: i + 1, selfClosing: false, keyLiteral, keyStart, keyEnd, tagName, nameStart, nameEnd, attrs };
     if (i >= end) break;
+    if (src[i] === "{") { // a `{...spread}` attribute — skip it whole (not an unknown attribute)
+      const close = findMatching(src, i);
+      i = close === -1 ? end : close + 1;
+      continue;
+    }
     const an = i;
     while (i < end && /[A-Za-z0-9_.\-]/.test(src[i])) i++;
     const name = src.slice(an, i);
@@ -1343,12 +1374,13 @@ function readTag(src: string, lt: number, end: number): TagInfo2 {
 }
 
 // Valid attribute names for a HOST element: the structural attrs (key/ref/style) + every settable
-// Control property of its godotClass + its `on_<signal>` events, from the bundled ClassDB dump.
+// Control property of its godotClass + its events in BOTH spellings — React canonical (onClick /
+// onChange / …) and the native on_<signal> escape hatch — from the bundled ClassDB dump. (events.ts)
 function validHostAttrs(godotClass: string): Set<string> {
   const s = new Set<string>();
   for (const a of STRUCTURAL_ATTRS) s.add(a.name);
   for (const p of classProperties(godotClass)) s.add(p.name);
-  for (const sig of classSignals(godotClass)) s.add("on_" + sig.name);
+  for (const ev of validEventAttrs(classSignals(godotClass))) s.add(ev);
   return s;
 }
 

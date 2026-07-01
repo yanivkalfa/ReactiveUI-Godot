@@ -223,6 +223,8 @@ function fmtAttr(a: Attr): string {
       return `${a.name}="${a.value}"`;
     case "expr":
       return `${a.name}={ ${a.value.trim()} }`;
+    case "spread":
+      return `{...${a.value.trim()}}`;
     case "bool":
       return a.name;
   }

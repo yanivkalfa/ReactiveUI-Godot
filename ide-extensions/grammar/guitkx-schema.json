@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "GUITKX element and directive schema for IDE tooling. Per-property completion is resolved from a bundled ClassDB dump against each element's godotClass; this file catalogs the structural attributes, the host-element tag map, and common signals.",
+  "description": "GUITKX element and directive schema for IDE tooling. Per-property completion is resolved from a bundled ClassDB dump against each element's godotClass; this file catalogs the structural attributes, the host-element tag map, and common events. Event handlers use React-style camelCase names (onClick, onChange, onSubmit, onFocus, onBlur, onPointerDown/Up/Enter/Leave, onResize; onChange is polymorphic per control) that bind to the underlying Godot signal; the native on_<signal> spelling is also accepted as an escape hatch to any signal. See addons/reactive_ui/core/host_config.gd.",
   "preambleDirectives": [
     { "name": "@class_name", "description": "Override the generated class name (defaults to the component/file name)." },
     { "name": "@uss", "description": "Associate a Godot Theme/StyleBox resource path for styling (reserved)." }
@@ -50,22 +50,22 @@
     { "tag": "TextureRect", "godotClass": "TextureRect", "factory": "V.texture_rect" },
     { "tag": "HSeparator", "godotClass": "HSeparator", "factory": "V.h_separator" },
     { "tag": "VSeparator", "godotClass": "VSeparator", "factory": "V.v_separator" },
-    { "tag": "Button", "godotClass": "Button", "factory": "V.button", "events": ["on_pressed", "on_button_down", "on_button_up", "on_toggled"] },
-    { "tag": "CheckBox", "godotClass": "CheckBox", "factory": "V.check_box", "events": ["on_pressed", "on_toggled"] },
-    { "tag": "CheckButton", "godotClass": "CheckButton", "factory": "V.check_button", "events": ["on_toggled"] },
-    { "tag": "OptionButton", "godotClass": "OptionButton", "factory": "V.option_button", "events": ["on_item_selected"] },
+    { "tag": "Button", "godotClass": "Button", "factory": "V.button", "events": ["onClick", "onChange", "onPointerDown", "onPointerUp"] },
+    { "tag": "CheckBox", "godotClass": "CheckBox", "factory": "V.check_box", "events": ["onChange", "onClick"] },
+    { "tag": "CheckButton", "godotClass": "CheckButton", "factory": "V.check_button", "events": ["onChange"] },
+    { "tag": "OptionButton", "godotClass": "OptionButton", "factory": "V.option_button", "events": ["onChange"] },
     { "tag": "MenuButton", "godotClass": "MenuButton", "factory": "V.menu_button" },
-    { "tag": "LinkButton", "godotClass": "LinkButton", "factory": "V.link_button", "events": ["on_pressed"] },
-    { "tag": "TextureButton", "godotClass": "TextureButton", "factory": "V.texture_button", "events": ["on_pressed"] },
-    { "tag": "LineEdit", "godotClass": "LineEdit", "factory": "V.line_edit", "events": ["on_text_changed", "on_text_submitted"] },
-    { "tag": "TextEdit", "godotClass": "TextEdit", "factory": "V.text_edit", "events": ["on_text_changed"] },
+    { "tag": "LinkButton", "godotClass": "LinkButton", "factory": "V.link_button", "events": ["onClick"] },
+    { "tag": "TextureButton", "godotClass": "TextureButton", "factory": "V.texture_button", "events": ["onClick"] },
+    { "tag": "LineEdit", "godotClass": "LineEdit", "factory": "V.line_edit", "events": ["onChange", "onSubmit"] },
+    { "tag": "TextEdit", "godotClass": "TextEdit", "factory": "V.text_edit", "events": ["onChange"] },
     { "tag": "CodeEdit", "godotClass": "CodeEdit", "factory": "V.code_edit" },
-    { "tag": "SpinBox", "godotClass": "SpinBox", "factory": "V.spin_box", "events": ["on_value_changed"] },
-    { "tag": "HSlider", "godotClass": "HSlider", "factory": "V.h_slider", "events": ["on_value_changed"] },
-    { "tag": "VSlider", "godotClass": "VSlider", "factory": "V.v_slider", "events": ["on_value_changed"] },
+    { "tag": "SpinBox", "godotClass": "SpinBox", "factory": "V.spin_box", "events": ["onChange"] },
+    { "tag": "HSlider", "godotClass": "HSlider", "factory": "V.h_slider", "events": ["onChange"] },
+    { "tag": "VSlider", "godotClass": "VSlider", "factory": "V.v_slider", "events": ["onChange"] },
     { "tag": "ProgressBar", "godotClass": "ProgressBar", "factory": "V.progress_bar" },
-    { "tag": "ItemList", "godotClass": "ItemList", "factory": "V.item_list", "events": ["on_item_selected"] },
-    { "tag": "Tree", "godotClass": "Tree", "factory": "V.tree", "events": ["on_item_selected"] },
-    { "tag": "TabBar", "godotClass": "TabBar", "factory": "V.tab_bar", "events": ["on_tab_changed"] }
+    { "tag": "ItemList", "godotClass": "ItemList", "factory": "V.item_list", "events": ["onChange"] },
+    { "tag": "Tree", "godotClass": "Tree", "factory": "V.tree", "events": ["onChange"] },
+    { "tag": "TabBar", "godotClass": "TabBar", "factory": "V.tab_bar", "events": ["onChange"] }
   ]
 }
