@@ -329,6 +329,12 @@ func _test_decl_validation() -> void:
 	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint
 	var typo := RUIGuitkx.compile("componeent X() { return ( <Label /> ) }\n", "X")
 	_check_true(not typo["ok"] and str(typo["diagnostics"]).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
+	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
+	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
+	_check_true(not badtag["ok"] and str(badtag["diagnostics"]).contains("GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
+	# BUG-V5: code after the markup return is flagged unreachable (GUITKX0114 warning)
+	var unreach := RUIGuitkx.compile("component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n", "U")
+	_check_true(unreach["ok"] and str(unreach["diagnostics"]).contains("GUITKX0114"), "unreachable code after return warned (got %s)" % str(unreach["diagnostics"]))
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \

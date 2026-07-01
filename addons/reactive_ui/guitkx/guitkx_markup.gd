@@ -76,6 +76,11 @@ func _parse_element(open_i: int, end: int) -> Dictionary:
 	while i < end and _is_tag_char(_src[i]):
 		i += 1
 	var tag := _src.substr(name_start, i - name_start)
+	# A `<` must be directly followed by a tag name, or `>` for a fragment. Whitespace/other after `<`
+	# is an invalid/empty tag name (not a silent fragment). [BUG-V4]
+	if tag == "" and (i >= end or _src[i] != ">"):
+		_err = "GUITKX0300: invalid tag name -- `<` must be followed by a tag name, or `<>` for a fragment"
+		return { "node": null, "next": end }
 	# attributes up to ">" or "/>"
 	var attrs: Array = []
 	while i < end:

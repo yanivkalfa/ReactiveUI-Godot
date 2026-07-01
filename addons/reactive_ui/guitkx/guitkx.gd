@@ -197,6 +197,9 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if split.has("error"):
 		diags.append(split["error"])
 		return { "ok": false }
+	# BUG-V5: any real code after the markup return is unreachable (the compiler drops it).
+	if _has_unreachable_after(body, split["m_end"]):
+		diags.append("GUITKX0114 (warning): unreachable code after the component's markup return -- a component has a single return; later statements are ignored")
 	var parser := Markup.new()
 	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
@@ -496,6 +499,23 @@ static func _split_return(body: String) -> Dictionary:
 				continue
 		i += 1
 	return { "error": "GUITKX0102: component has no `return ( ... )` (only `return null`?)" }
+
+## True if there is real (non-whitespace, non-comment) code after `from` (the markup return's `)`), which
+## the compiler silently drops as unreachable. [BUG-V5]
+static func _has_unreachable_after(body: String, from: int) -> bool:
+	var n := body.length()
+	var i := from + 1
+	while i < n:
+		var k := L.skip_noncode(body, i)
+		if k != i:
+			i = k
+			continue
+		var c := body[i]
+		if c == " " or c == "\t" or c == "\n" or c == "\r":
+			i += 1
+			continue
+		return true
+	return false
 
 # --- emit ---
 # Control flow is hoisted into pre-statements (an if/for/while block before the return) that

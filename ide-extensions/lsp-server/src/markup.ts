@@ -98,6 +98,12 @@ class MarkupParser {
     const nameStart = i;
     while (i < end && isTagChar(this.src[i])) i++;
     const tag = this.src.slice(nameStart, i);
+    // A `<` must be directly followed by a tag name, or `>` for a fragment. Whitespace/other after `<`
+    // is an invalid/empty tag name (not a silent fragment). [BUG-V4] (mirror of guitkx_markup.gd)
+    if (tag === "" && (i >= end || this.src[i] !== ">")) {
+      this.err = "GUITKX0300: invalid tag name -- `<` must be followed by a tag name, or `<>` for a fragment";
+      return { node: null, next: end };
+    }
     const attrs: Attr[] = [];
     while (i < end) {
       i = this.skipWs(i, end);
