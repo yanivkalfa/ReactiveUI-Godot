@@ -112,7 +112,7 @@ becomes sound). See the full design in `GA/TECH_DEBT.md`.
 
 ---
 
-## 2. ReactiveUI-Godot bugs — **leave for now (documented, not fixed)**
+## 2. ReactiveUI-Godot bugs — **DONE — shipped as library 0.4.3 / IDE 0.5.4** (see [`BUG_SPLIT.md`](BUG_SPLIT.md) for the shipped status table; entries below kept as the root-cause record)
 
 ### G1 — virtual-doc setup reindent anchors to MIN depth → "expected an expression" + the whole @for cascade  ·  effort: **medium**
 **Root cause.** `RG/ide-extensions/lsp-server/src/virtualDoc.ts` `emitVerbatimBlock` anchors the setup
@@ -178,3 +178,79 @@ Callables (mitigated only if A2 lands first), dynamic dispatch, and any missing 
 table. Shipping A1 before A2 or without a strict "project graph loaded" gate would false-flag the very
 `useState` aliases the guitkx workflow depends on — worse than the current silent gap. Prove it against
 the broad regression corpus (the one used to drive TYPE_MISMATCH false-positives 55→1) before default-on.
+
+---
+
+## 4. New intake — 2026-07-03 (repro'd in-editor on IDE 0.5.4; **not yet root-caused**)
+
+Found hand-editing `examples/demos/slicing/slicing.guitkx` in VS Code (extension 0.5.4, which bundles
+analyzer core **0.5.3** — the 0.5.5/core-0.5.4 branch was not yet installed when these were seen).
+Entries here are repro + expected vs observed + an initial suspicion only; root-cause each against the
+real virtual doc (`buildVirtualDoc` dump + `gdscript check`) before fixing, same as sections 1–2.
+The language-level companion — the full `.uitkx`↔`.guitkx` divergence matrix these bugs sit inside,
+with the prioritized alignment plan — is [`UITKX_GUITKX_SYNTAX_PARITY.md`](UITKX_GUITKX_SYNTAX_PARITY.md).
+
+### G5 — unknown tag + mismatched close pair produce **zero** diagnostics  ·  status: **to do**
+**Repro.** `return <s></a>` inside a component body. `s` is not a built-in element, not a custom
+component; `</a>` doesn't even match `<s>`. **Observed:** no live diagnostic, no compile error.
+**Expected:** an unknown-tag error (the Unity `.uitkx` side errors via PropsResolver) AND a
+mismatched-open/close error. **Suspicion:** unknown tags are treated as maybe-custom-components and
+never validated against the schema + workspace component index; tag-pair matching is either not
+enforced or its failure is swallowed by markup-window recovery (F3's structural windows). Note the
+repro is also an *early* return followed by more setup statements — the grammar may not even parse it
+as the component return (see G6), in which case the markup dodges markup validation entirely.
+
+### G6 — statements after an early `return` are not flagged/dimmed as unreachable  ·  status: **to do**
+**Repro.** Same file: `return <s></a>` on line 7, followed by more setup statements (`var toggle = …`).
+**Observed:** the lines after the return render at full brightness, no unreachable-code report.
+**Expected:** Godot itself reports/dims unreachable code after `return`; VS Code dims any range whose
+diagnostic carries `DiagnosticTag.Unnecessary`. **Suspicion:** two candidate owners — (a) the analyzer
+has no `UNREACHABLE_CODE` warning at all (check `warnings.rs`), or (b) it exists but the virtual-doc
+setup emission re-orders/wraps statements so the analyzer never sees a return-then-statement sequence.
+Also decide the *language* question first: is an early markup return even legal `.guitkx`? If not, the
+right fix is a GUITKX diagnostic on the early return itself, plus unreachable dimming for plain-GDScript
+early returns in setup.
+
+### G7 — typo'd `func` keyword (`fsunc():`) accepted; the whole lambda body escapes checking  ·  status: **to do**
+**Repro.**
+```gdscript
+var toggle = fsunc():
+    RUIConfig.time_slicing = not sliced[0]
+    sliced[1].caall(not sliaced[0])
+```
+**Observed:** zero diagnostics — not on `fsunc` (not a keyword, not a declared function), not on
+`sliaced` (undefined identifier; A1 shipped in core 0.5.3 and should fire regardless of the 0.5.4
+narrowing), not on `caall` (needs core 0.5.4's UNDEFINED_METHOD — pending install — but silent even
+then if the body never reaches the analyzer). In plain `.gd`, Godot hard-errors on `fsunc():`.
+**Expected:** at minimum the analyzer's syntax error on `fsunc():` relayed with a mapped range;
+ideally a GUITKX did-you-mean (`fsunc` → `func`, same class as F4's `@clasaas_name`).
+**Suspicion:** the virtual-doc setup emission or the analyzer's resilient recovery swallows the
+malformed line *and* its indented block wholesale (check `emitVerbatimBlock` interaction with a
+trailing-`:` line that isn't a recognized block opener) — or setup-window syntax diagnostics are
+filtered before publish. Whichever it is, a syntax-broken setup line must not silence its whole block.
+
+### G8 — false `UNDEFINED_IDENTIFIER` on `{ toggle }` when the declaring line is the broken G7 lambda  ·  status: **to do**
+**Repro.** With G7's `var toggle = fsunc():` in setup, `onClick={ toggle }` reports
+`UNDEFINED_IDENTIFIER: The identifier "toggle" is not declared in the current scope…` — but `toggle`
+IS declared (the broken lambda). **Observed:** this is the *only* analyzer diagnostic in the file —
+the real error (G7) is silent while its cascade false-positive is loud, the worst possible pairing.
+**Suspicion:** the virtual doc loses/mangles the `var toggle` declaration when its initializer fails
+to parse, while attribute-expression windows are still checked against that broken scope.
+**Fix direction:** whatever G7's fix is must also guarantee the declaration *name* survives emission
+(bind `toggle` to an error-typed seam rather than dropping the statement), and/or suppress
+`UNDEFINED_IDENTIFIER` for names whose declaring setup line carries a syntax error.
+
+### G9 — component with `@for` markup but no `return (` is not flagged missing-return  ·  status: **to do**
+**Repro.** A component whose body is only:
+```
+@for (i in 25) {
+    <Label key={ str(i) } text={ "row %d" % i } />
+}
+```
+**Observed:** no `GUITKX0102`, live or on save. **Expected:** `return (…)` is mandatory; G3 shipped
+`missingReturnComponents()` precisely for this, so this is a **hole in the shipped G3**, not a new
+rule. **Suspicion:** the loose-`@for`-markup block makes `markupWindows`/`splitReturn` believe the
+component has a return-ish markup body (or the recovering walk classifies the `@for` block as the
+return window), so the missing-return walk skips it. Add this exact shape to the fixture corpus;
+also decide what a bare top-level `@for` outside `return (` should be (its own GUITKX error?) —
+today it's silently meaningless.

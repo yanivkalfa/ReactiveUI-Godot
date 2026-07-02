@@ -42,11 +42,10 @@ class-level **wrapper funcs** with hooks.gd-byte-identical signatures (drift tri
 `s := useState(0)` types `s[1]` as `Callable` end-to-end (verified against the real analyzer in
 `core.test.ts`). Remaining, tracked follow-ups:
 
-- **Untyped `var s = useState(0)`** stays `Variant` (GDScript semantics — only `:=` infers); needs
-  the analyzer's assignment-carried flow narrowing (tracked in GA/TECH_DEBT.md).
-- **`.casll()` severity**: a method miss on a typed `Callable` is `UNSAFE_METHOD_ACCESS` (opt-in via
-  project warning settings / `--strict`); the closed-builtin-receiver severity study is queued in
-  GA/TECH_DEBT.md before it can default on.
+- ~~**Untyped `var s = useState(0)`** stays `Variant`~~ — **FIXED in analyzer 0.5.4** (initializer
+  narrowing, GA ADR-0007); bundled by IDE **0.5.5** (`chore/bundle-analyzer-0.5.4`).
+- ~~**`.casll()` severity** opt-in only~~ — **FIXED in analyzer 0.5.4**: `UNDEFINED_METHOD` /
+  `UNDEFINED_PROPERTY` are ERROR-by-default on built-in receivers (GA ADR-0008); bundled by IDE 0.5.5.
 - **Block-structure-aware reindent** (levels derived from `:` openers, bracket continuations,
   multi-line strings) would also normalize a deep-outlier FIRST line — today that (already-invalid)
   input errors at the anomalous line, Godot-parity. Design sketched in the review notes.
@@ -55,3 +54,15 @@ class-level **wrapper funcs** with hooks.gd-byte-identical signatures (drift tri
 - **`.guitkx` vdoc library shims**: feeding never-compiled `.guitkx` declarations into the analyzer
   as virtual libraries would give full member resolution (arg-checking on `DemoHooks.use_x(...)`);
   today `vetoGuitkxDeclared` guarantees no false UNDEFINED_* but adds no member table.
+
+## New intake — 2026-07-03 (repro'd on IDE 0.5.4; not yet root-caused) — ReactiveUI-Godot
+
+Full entries in [`BUG_AUDIT.md`](BUG_AUDIT.md) §4. All found hand-editing `slicing.guitkx`.
+
+| ID | Priority | Effort | Status | One-liner | Deps |
+|----|----------|--------|--------|-----------|------|
+| **G5** | High | ? | to do | `return <s></a>` — unknown tag + mismatched close pair → **zero** diagnostics (uitkx errors on both) | — |
+| **G6** | Medium | ? | to do | statements after an early `return` not flagged/dimmed as unreachable (no `Unnecessary`-tagged diag) | G5 (grammar Q) |
+| **G7** | **Critical** | ? | to do | `var toggle = fsunc():` — typo'd `func` accepted; the whole lambda body escapes checking (`sliaced` silent despite A1) | — |
+| **G8** | High | ? | to do | false `UNDEFINED_IDENTIFIER` on `{ toggle }` whose declaration is G7's broken lambda — the cascade is loud while the real error is silent | G7 |
+| **G9** | High | ? | to do | component with only `@for` markup and no `return (` → no `GUITKX0102` — a hole in shipped G3 | — |
