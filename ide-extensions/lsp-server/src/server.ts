@@ -25,6 +25,8 @@ import {
   SignatureHelp,
   InlayHint,
   CodeAction,
+  DidChangeWatchedFilesNotification,
+  FileChangeType,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 
@@ -34,13 +36,14 @@ import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, loadFormatterConfig } from "./formatGuitkx";
-import { dirname, join, relative } from "path";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig } from "./formatGuitkx";
+import { parseMarkup } from "./markup";
+import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
-import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations } from "./workspaceIndex";
+import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, vetoGuitkxDeclared as vetoDeclared } from "./workspaceIndex";
 import { scanTagRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
@@ -64,8 +67,10 @@ const analyzer = new AnalyzerAdapter();
 let projectPath = "";
 let embeddedReflow = true;
 let embeddedEnabled = true;
+let canWatchFiles = false;
 
 connection.onInitialize((params: InitializeParams) => {
+  canWatchFiles = !!params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration;
   const opts = (params.initializationOptions as any) || {};
   // `embeddedReflow` runs embedded GDScript through the analyzer's formatter (so it matches a real .gd
   // file); `useGdformat` is the legacy name for the same toggle.
@@ -91,6 +96,7 @@ connection.onInitialize((params: InitializeParams) => {
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
+      // (workspace-completeness is armed in onInitialized, after the .gd watcher registers)
       completionProvider: { triggerCharacters: ["<", "@", ".", " ", "_"] },
       hoverProvider: true,
       documentFormattingProvider: true,
@@ -109,6 +115,94 @@ connection.onInitialize((params: InitializeParams) => {
     },
   };
 });
+
+// Arm the analyzer's absence-based UNDEFINED_FUNCTION / UNDEFINED_IDENTIFIER diagnostics (core
+// 0.5.3+). They only fire when the analyzer PROVABLY holds the whole project — a partial view can
+// never prove a typo'd name is defined nowhere — so the claim is made strictly after (a) the client
+// accepted a file watcher, (b) a fresh loadLibraries() pass ran AFTER the watcher went live (a `.gd`
+// created between the init-time load and watcher activation would otherwise be invisible forever),
+// and (c) that pass read every file it found (an unreadable file = a name we cannot prove absent).
+// A client without dynamic watcher registration keeps the pre-0.5.3 behavior: UNDEFINED_* stay silent.
+connection.onInitialized(() => {
+  if (!projectPath || !canWatchFiles) return;
+  connection.client
+    .register(DidChangeWatchedFilesNotification.type, {
+      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/project.godot" }],
+    })
+    .then(() => {
+      if (!loadLibraries()) return; // incomplete scan — never over-claim
+      analyzer.setWorkspaceComplete(true);
+      // Diagnostics published before arming were computed with UNDEFINED_* disarmed — re-publish
+      // every open document so files opened at startup get the armed pass too.
+      for (const doc of documents.all()) publishDiagnosticsFor(doc);
+    })
+    .catch(() => {
+      /* client refused the watcher — leave the workspace partial (UNDEFINED_* disarmed) */
+    });
+});
+
+// Keep the analyzer's project view — and therefore the workspace-completeness claim — true while the
+// server runs: a `.gd` created/edited/deleted outside an open editor tab is re-fed (or dropped), a
+// folder-level event (VS Code coalesces bulk deletes/renames into one event for the directory) evicts
+// or rescans the whole subtree, and a ROOT project.godot edit re-feeds the [autoload] table (nested
+// project.godot files — demo projects inside the workspace — must not clobber the root config). URIs
+// are re-derived from the filesystem path so they hit the same keys loadLibraries() used, regardless
+// of client URI normalization.
+connection.onDidChangeWatchedFiles((params) => {
+  for (const ev of params.changes) {
+    const fsPath = uriToProjectPath(ev.uri);
+    if (fsPath.endsWith("project.godot")) {
+      if (resolve(fsPath) !== resolve(join(projectPath, "project.godot"))) continue;
+      try {
+        analyzer.setProjectConfig(readFileSync(fsPath, "utf8"));
+      } catch {
+        /* deleted or unreadable — keep the last-known config */
+      }
+      continue;
+    }
+    if (!fsPath.endsWith(".gd")) {
+      // Possibly a directory event: a deleted folder must evict every tracked .gd underneath it
+      // (no per-file events arrive), a created/renamed-in folder must load them.
+      if (ev.type === FileChangeType.Deleted) {
+        analyzer.closeUnder(pathToFileURL(fsPath).toString() + "/");
+      } else {
+        let isDir = false;
+        try {
+          isDir = statSync(fsPath).isDirectory();
+        } catch {
+          continue;
+        }
+        if (isDir) for (const f of gdFilesUnder(fsPath)) upsertLibraryFile(f);
+      }
+      continue;
+    }
+    if (ev.type === FileChangeType.Deleted) {
+      analyzer.close(pathToFileURL(fsPath).toString());
+      continue;
+    }
+    upsertLibraryFile(fsPath);
+  }
+});
+
+// Feed one on-disk `.gd` into the analyzer (create or update), keyed identically to loadLibraries().
+function upsertLibraryFile(fsPath: string): void {
+  const resPath = resPathFor(fsPath);
+  if (resPath === null) return;
+  try {
+    analyzer.upsertLibrary(pathToFileURL(fsPath).toString(), readFileSync(fsPath, "utf8"), resPath);
+  } catch {
+    /* unreadable mid-write — the next change event retries */
+  }
+}
+
+// The res:// path for an absolute file path, or null when the file is not project content: outside
+// the project root (other drive, UNC, `..`) or under a hidden dir (res://.godot/** etc.).
+function resPathFor(fsPath: string): string | null {
+  const rel = relative(projectPath, fsPath).replace(/\\/g, "/");
+  if (rel.startsWith("..") || isAbsolute(rel)) return null;
+  const res = "res://" + rel;
+  return res.startsWith("res://.") ? null : res;
+}
 
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
 
@@ -445,21 +539,25 @@ function md(value: string): Hover {
 
 // --- diagnostics (light structural pass) ---
 
-documents.onDidChangeContent((change) => {
-  if (isGd(change.document.uri)) {
-    connection.sendDiagnostics({ uri: change.document.uri, diagnostics: gdDiagnostics(change.document.uri, change.document.getText()) });
+documents.onDidChangeContent((change) => publishDiagnosticsFor(change.document));
+
+function publishDiagnosticsFor(doc: TextDocument): void {
+  if (isGd(doc.uri)) {
+    connection.sendDiagnostics({ uri: doc.uri, diagnostics: gdDiagnostics(doc.uri, doc.getText()) });
     return;
   }
-  index.reindex(change.document.uri, change.document.getText());
+  index.reindex(doc.uri, doc.getText());
   const live = [
-    ...declarationDiagnostics(change.document),
-    ...structuralDiagnostics(change.document),
-    ...markupDiagnostics(change.document),
-    ...unreachableDiagnostics(change.document),
-    ...embeddedDiagnostics(change.document),
+    ...declarationDiagnostics(doc),
+    ...structuralDiagnostics(doc),
+    ...markupDiagnostics(doc),
+    ...missingReturnDiagnostics(doc),
+    ...unreachableDiagnostics(doc),
+    ...embeddedDiagnostics(doc),
   ];
-  connection.sendDiagnostics({ uri: change.document.uri, diagnostics: mergeCompilerSidecar(change.document, live) });
-});
+  connection.sendDiagnostics({ uri: doc.uri, diagnostics: mergeCompilerSidecar(doc, live) });
+}
+
 
 // Embedded-GDScript type/parse diagnostics from @gdscript-analyzer/core, mapped back into the .guitkx
 // source. Safe to surface: the analyzer's seam design resolves an unknown cross-file symbol (a library
@@ -473,7 +571,7 @@ function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
   const vUri = doc.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
   analyzer.sync(vUri, text);
   const out: Diagnostic[] = [];
-  for (const d of analyzer.diagnosticsAt(vUri, text)) {
+  for (const d of vetoDeclared(index, analyzer.diagnosticsAt(vUri, text), text)) {
     let s = map.toSource(d.range.start);
     let e = map.toSource(d.range.end);
     if (s === null || e === null) continue; // a diagnostic in generated glue, not user code
@@ -578,8 +676,9 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
       out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
       continue;
     }
-    // (3) A target in generated glue — most usefully a hook stub `var useRef = Hooks.useRef`. Chain
-    // ONCE through the `Hooks.<name>` on its RHS to the real library definition (`core/hooks.gd`).
+    // (3) A target in generated glue — most usefully a hook wrapper stub
+    // `static func useRef(...): return Hooks.useRef(...)`. Chain ONCE through the `Hooks.<name>`
+    // in its body to the real library definition (`core/hooks.gd`).
     const rhs = hookStubRhsOffset(text, d.range.start);
     if (rhs === null) continue;
     for (const cd of analyzer.definitionsAt(vUri, text, rhs)) {
@@ -589,8 +688,9 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
   return out.length ? out : null;
 }
 
-// The char offset of `<name>` in a `Hooks.<name>` reference on the same line as `lhsOffset` — the RHS
-// of a generated hook stub `var <name> = Hooks.<name>`. `null` if that line carries no `Hooks.` ref.
+// The char offset of `<name>` in a `Hooks.<name>` reference on the same line as `lhsOffset` — the
+// forwarding body of a generated hook wrapper stub (`static func <name>(...): return Hooks.<name>(...)`).
+// `null` if that line carries no `Hooks.` ref.
 function hookStubRhsOffset(vText: string, lhsOffset: number): number | null {
   const lineStart = vText.lastIndexOf("\n", lhsOffset) + 1;
   let lineEnd = vText.indexOf("\n", lhsOffset);
@@ -599,12 +699,14 @@ function hookStubRhsOffset(vText: string, lhsOffset: number): number | null {
   return m ? lineStart + m.index + "Hooks.".length : null;
 }
 
-// Every `.gd` file under `dir` (recursive); a missing/unreadable dir or entry yields nothing.
-function gdFilesUnder(dir: string, out: string[] = []): string[] {
+// Every `.gd` file under `dir` (recursive); a missing/unreadable dir or entry yields nothing but is
+// recorded in `err` — the completeness claim needs to know the scan was partial.
+function gdFilesUnder(dir: string, out: string[] = [], err?: { failed: boolean }): string[] {
   let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
+    if (err) err.failed = true;
     return out;
   }
   for (const name of entries) {
@@ -613,9 +715,10 @@ function gdFilesUnder(dir: string, out: string[] = []): string[] {
     try {
       isDir = statSync(p).isDirectory();
     } catch {
+      if (err) err.failed = true;
       continue;
     }
-    if (isDir) gdFilesUnder(p, out);
+    if (isDir) gdFilesUnder(p, out, err);
     else if (name.endsWith(".gd")) out.push(p);
   }
   return out;
@@ -623,18 +726,22 @@ function gdFilesUnder(dir: string, out: string[] = []): string[] {
 
 // Load the project's `.gd` files into the analyzer (with `res://` paths) so both embedded `.guitkx`
 // code AND plain `.gd` editing resolve `class_name`s / `preload`s / autoloads cross-file. Walks the
-// whole project (skipping the `.godot` cache + hidden dirs), not just `addons/`. Best-effort.
-function loadLibraries(): void {
-  if (!projectPath) return;
-  for (const file of gdFilesUnder(projectPath)) {
-    const resPath = "res://" + relative(projectPath, file).replace(/\\/g, "/");
-    if (resPath.startsWith("res://.")) continue; // skip res://.godot/** and other hidden dirs
+// whole project (skipping the `.godot` cache + hidden dirs), not just `addons/`. Returns false when
+// ANY file or directory could not be read — the workspace-completeness claim (which arms the
+// absence-based UNDEFINED_* diagnostics) must never be made over a partial scan.
+function loadLibraries(): boolean {
+  if (!projectPath) return false;
+  const err = { failed: false };
+  for (const file of gdFilesUnder(projectPath, [], err)) {
+    const resPath = resPathFor(file);
+    if (resPath === null) continue; // hidden dirs (res://.godot/** etc.) are intentionally skipped
     try {
-      analyzer.loadLibrary(pathToFileURL(file).toString(), readFileSync(file, "utf8"), resPath);
+      analyzer.upsertLibrary(pathToFileURL(file).toString(), readFileSync(file, "utf8"), resPath);
     } catch {
-      /* unreadable .gd — skip */
+      err.failed = true; // unreadable .gd — a name we cannot prove absent
     }
   }
+  return !err.failed;
 }
 
 // The analyzer may report `res://` URIs (preload / res-path resolution); VS Code needs a real file:// URI.
@@ -713,7 +820,7 @@ function gdLoc(uri: string, r: { start: number; end: number }): Location {
 
 function gdDiagnostics(uri: string, src: string): Diagnostic[] {
   analyzer.sync(uri, src);
-  return analyzer.diagnosticsAt(uri, src).map((d) => ({
+  return vetoDeclared(index, analyzer.diagnosticsAt(uri, src), src).map((d) => ({
     severity: d.severity,
     range: { start: offsetToPosition(src, d.range.start), end: offsetToPosition(src, d.range.end) },
     message: d.code ? `${d.code}: ${d.message}` : d.message,
@@ -1273,6 +1380,35 @@ function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   return diags;
 }
 
+// Live missing-markup-return check [GUITKX0102]: a component whose closed body has no `return ( ... )`
+// used to be SILENT while typing — no markup window means every window-scoped tier skips it, and
+// buildVirtualDoc just emits `pass` — so the error only appeared post-save via the compiler sidecar
+// (pinned to line 0). Message text mirrors guitkx.gd _split_return so the sidecar copy dedupes away.
+function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
+  return missingReturnComponents(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message: "GUITKX0102: component has no `return ( ... )` (only `return null`?)",
+    source: "guitkx",
+  }));
+}
+
+// Locate a directive's body braces: `@for (header) { body }` → the `{`/`}` offsets. Null when the
+// directive is malformed or runs past the window (the markup parser reports those itself).
+function directiveBody(src: string, from: number, end: number): { open: number; close: number } | null {
+  let p = from;
+  while (p < end && /[ \t\r\n]/.test(src[p])) p++;
+  if (src[p] !== "(") return null;
+  const hc = findMatching(src, p);
+  if (hc === -1 || hc >= end) return null;
+  p = hc + 1;
+  while (p < end && /[ \t\r\n]/.test(src[p])) p++;
+  if (src[p] !== "{") return null;
+  const bc = findMatching(src, p);
+  if (bc === -1 || bc >= end) return null;
+  return { open: p, close: bc };
+}
+
 function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, end: number, diags: Diagnostic[]): void {
   const scopes: Array<Set<string>> = [new Set()];
   let i = start;
@@ -1284,6 +1420,30 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
     }
     if (c === "#") {
       while (i < end && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "@") {
+      // Live @for/@while single-root rule [GUITKX0108]: each iteration must yield exactly one keyed
+      // child, like a component root. Roots are counted with the SAME parser the compiler uses
+      // (markup.ts is the parity-tested port of guitkx_markup.gd, shared golden corpus), so the live
+      // verdict cannot diverge from the on-save compile. Mirrors guitkx.gd _validate_body.
+      const w = (src.slice(i + 1, i + 8).match(/^[a-z_]+/) || [""])[0];
+      if (w === "for" || w === "while") {
+        const body = directiveBody(src, i + 1 + w.length, end);
+        if (body) {
+          const pr = parseMarkup(src, body.open + 1, body.close);
+          const roots = pr.nodes.filter((n) => n !== null).length;
+          if (pr.error === "" && roots > 1) {
+            diags.push({
+              severity: DiagnosticSeverity.Error,
+              range: { start: doc.positionAt(body.open), end: doc.positionAt(body.close + 1) },
+              message: `GUITKX0108: a @for/@while body must contain exactly one root element (got ${roots}) -- wrap siblings in a fragment <>...</>`,
+              source: "guitkx",
+            });
+          }
+        }
+      }
+      i += 1 + w.length;
       continue;
     }
     if (c === "(") {

@@ -223,6 +223,19 @@ export class WorkspaceIndex {
   }
 }
 
+// Never claim a name is undefined when it is declared in a sibling `.guitkx`: the analyzer only sees
+// `.gd` files, and the GENERATED sibling `.gd` of a `.guitkx` is git-ignored — on a fresh clone (or
+// before the Godot editor's first compile) a legal `DemoHooks.use_x(...)` would otherwise show a
+// permanent false UNDEFINED_* Error. The index KNOWS these bindings (component/module decl names and
+// `@class_name` overrides) — drop any UNDEFINED_* whose flagged identifier is one of them.
+export function vetoGuitkxDeclared<T extends { code: string; range: { start: number; end: number } }>(
+  index: WorkspaceIndex,
+  diags: T[],
+  text: string
+): T[] {
+  return diags.filter((d) => !(d.code.startsWith("UNDEFINED_") && index.has(text.slice(d.range.start, d.range.end))));
+}
+
 /** Recursively walk a project dir, indexing every .guitkx (skips dot-dirs like .godot/.git). */
 export function scanWorkspace(index: WorkspaceIndex, rootPath: string): void {
   if (rootPath) walk(rootPath, index);

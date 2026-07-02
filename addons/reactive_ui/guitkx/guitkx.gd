@@ -222,19 +222,29 @@ static func _validate_hooks(setup: String, diags: Array) -> void:
 	var lines := setup.split("\n")
 	# Compare indentation by DEPTH (levels), not raw character count, so a tab+spaces mix -- which
 	# renders identically to tabs and is thus invisible to the author -- doesn't produce a spurious
-	# "hook in a block" warning.
+	# "hook in a block" warning. The base is the FIRST non-blank non-comment line's depth (the same
+	# anchor rule as _reindent_setup, so validation agrees with emission): a min-depth base let one
+	# outlier-shallow line make every real top-level hook look "in a block". Comment lines are also
+	# skipped when SCANNING for hook calls -- a commented-out `useState(...)` is not a call.
 	var unit := _indent_unit(lines)
 	var base := -1
+	var base_any := -1
 	for l in lines:
-		if (l as String).strip_edges() == "":
+		var t := (l as String).strip_edges()
+		if t == "":
 			continue
 		var d := _indent_depth(l as String, unit)
-		if base == -1 or d < base:
+		if base_any == -1:
+			base_any = d
+		if base == -1 and not t.begins_with("#"):
 			base = d
+	if base == -1:
+		base = base_any
 	if base == -1:
 		return
 	for l in lines:
-		if (l as String).strip_edges() == "":
+		var t := (l as String).strip_edges()
+		if t == "" or t.begins_with("#"):
 			continue
 		if _line_calls_hook(l as String) and _indent_depth(l as String, unit) > base:
 			diags.append("GUITKX0013 (warning): hook called conditionally/in a block -- hooks must run unconditionally at the top of setup")
@@ -361,7 +371,10 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
 	out += "static func %s(%s)%s:\n" % [hook_name, params, _ret_suffix(ret_hint)]
 	var body_block := _reindent_setup(_apply_hook_aliases(body))
-	out += (body_block + "\n") if body_block != "" else "\tpass\n"
+	if body_block != "":
+		out += body_block + "\n"
+	if not _has_statement(body_block):
+		out += "\tpass\n"
 	return { "ok": true, "gd": out, "diagnostics": diags }
 
 ## Parse ONE hook declaration at `hi`. Returns { ok, name, params, body, next } or { ok:false }.
@@ -470,7 +483,10 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		out += "# hook %s\n" % h["name"]
 		out += "static func %s(%s)%s:\n" % [h["name"], h["params"], _ret_suffix(h.get("ret", ""))]
 		var hb := _reindent_setup(_apply_hook_aliases(h["body"], module_hooks))
-		out += (hb + "\n") if hb != "" else "\tpass\n"
+		if hb != "":
+			out += hb + "\n"
+		if not _has_statement(hb):
+			out += "\tpass\n"
 		out += "\n"
 	return { "ok": true, "gd": out, "diagnostics": diags }
 
@@ -884,12 +900,16 @@ static func _expr_ctrl_unsupported(ctx: Dictionary, what: String) -> String:
 	push_warning("[guitkx] " + msg)
 	return "null"
 
-# Dedent a setup block to its common leading-whitespace prefix, then re-indent every line one tab
-# (so source indentation inside render's body becomes a single render-body indent level).
 ## Re-indent a setup block into the generated func body. DEPTH-based (not raw-character-based): a tab
 ## counts as one indent unit and the space-unit is inferred, so a source that MIXES tabs and spaces --
 ## invisible in most editors, since `\t  ` renders like `\t\t` -- still yields consistent, valid
-## GDScript instead of a downstream "unindent doesn't match". The shallowest setup line maps to one tab.
+## GDScript instead of a downstream "unindent doesn't match". Anchored to the FIRST non-blank
+## NON-COMMENT line (which in valid GDScript is at the body's base level), NOT the shallowest: a
+## min-depth anchor let a single outlier-shallow line raise every other line one level (a statement
+## over-indented with no preceding `:` -- invalid generated GDScript). Comments are skipped when
+## PICKING the anchor -- GDScript allows a comment at any indentation, so anchoring on a stray
+## over-indented leading comment would mis-shift real code -- but they are emitted by depth like any
+## line. A line shallower than the anchor clamps to one tab.
 static func _reindent_setup(code: String) -> String:
 	var lines: Array = Array(code.split("\n"))
 	while not lines.is_empty() and (lines[0] as String).strip_edges() == "":
@@ -899,24 +919,39 @@ static func _reindent_setup(code: String) -> String:
 	if lines.is_empty():
 		return ""
 	var unit := _indent_unit(lines)
-	var base := 0x7fffffff
+	var anchor := -1
+	var anchor_any := -1
 	var depths: Array = []
 	for l in lines:
-		if (l as String).strip_edges() == "":
+		var t := (l as String).strip_edges()
+		if t == "":
 			depths.append(-1)
 			continue
 		var d := _indent_depth(l as String, unit)
 		depths.append(d)
-		if d < base:
-			base = d
+		if anchor_any == -1:
+			anchor_any = d
+		if anchor == -1 and not t.begins_with("#"):
+			anchor = d
+	if anchor == -1:
+		anchor = anchor_any  # comment-only block
 	var out_lines: Array = []
 	for i in lines.size():
 		if int(depths[i]) == -1:
 			out_lines.append("")
 		else:
-			var level: int = maxi(1, 1 + int(depths[i]) - base)
+			var level: int = 1 + maxi(0, int(depths[i]) - anchor)
 			out_lines.append("\t".repeat(level) + _strip_leading_ws(lines[i] as String))
 	return "\n".join(out_lines)
+
+## True when the block contains at least one real statement line (not blank, not a `#` comment) --
+## a generated func body of only comments/blanks needs a trailing `pass` to be valid GDScript.
+static func _has_statement(block: String) -> bool:
+	for l in block.split("\n"):
+		var t := (l as String).strip_edges()
+		if t != "" and not t.begins_with("#"):
+			return true
+	return false
 
 static func _leading_ws(s: String) -> String:
 	var i := 0

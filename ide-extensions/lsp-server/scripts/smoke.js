@@ -94,6 +94,23 @@ function fail(m) {
   if (!d.some((x) => x.message.includes("GUITKX0104"))) fail("dup-key diagnostic missing: " + JSON.stringify(d));
   console.log(`dup-key diagnostic OK (${d.length} diags, includes GUITKX0104)`);
 
+  // live loop single-root rule (GUITKX0108) — used to surface only post-save via the compiler sidecar
+  const uriLoop = "file:///tmp/Loop.guitkx";
+  const textLoop = 'component Loop(items: Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\t<Label text={ str(it) } key={ it } />\n\t\t\t\t<Label text="dup" />\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n';
+  notify("textDocument/didOpen", { textDocument: { uri: uriLoop, languageId: "guitkx", version: 1, text: textLoop } });
+  await new Promise((r) => setTimeout(r, 400));
+  const dLoop = diagnostics[uriLoop] || [];
+  if (!dLoop.some((x) => x.message.includes("GUITKX0108"))) fail("live loop single-root diagnostic missing: " + JSON.stringify(dLoop));
+  console.log("loop single-root diagnostic OK (live GUITKX0108)");
+
+  // live missing-return rule (GUITKX0102) — a component without `return ( ... )` used to be silent
+  const uriNr = "file:///tmp/NoRet.guitkx";
+  notify("textDocument/didOpen", { textDocument: { uri: uriNr, languageId: "guitkx", version: 1, text: "component NoRet() {\n\tvar a = useState(0)\n}\n" } });
+  await new Promise((r) => setTimeout(r, 400));
+  const dNr = diagnostics[uriNr] || [];
+  if (!dNr.some((x) => x.message.includes("GUITKX0102") && x.message.includes("return"))) fail("live missing-return diagnostic missing: " + JSON.stringify(dNr));
+  console.log("missing-return diagnostic OK (live GUITKX0102)");
+
   // go-to-definition: <A/> in module member B resolves to component A's declaration
   const uri4 = "file:///tmp/Mod.guitkx";
   const text4 = "module Mod {\n\tcomponent A() { return (<Label />) }\n\tcomponent B() { return (<A />) }\n}\n";

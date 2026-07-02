@@ -4,6 +4,41 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.3] — 2026-07-02
+
+Compiler indentation-anchor fixes and analyzer-ready hook typing.
+
+### Fixed
+- **One outlier setup line no longer breaks the whole generated `.gd`.** The depth-based reindenter
+  anchored the block to its *shallowest* line, so a single accidentally-shallow line (say, a statement
+  pasted at column 0) pushed every other line a level deeper — an over-indented statement with no
+  preceding `:`, i.e. "expected an expression" plus the whole cascade of bogus follow-on errors. The
+  reindenter (compiler + formatter, byte-identical with the IDE mirrors) now anchors to the **first
+  non-blank, non-comment line** and clamps shallower outliers up to the body level.
+- **An over-indented leading `#` comment no longer shifts real code.** Comments are legal at any
+  indentation in GDScript; anchoring on one could dedent an `if` body out of its block (invalid
+  generated `.gd`, and Format Document rewrote the source the same wrong way). Comments are skipped
+  when picking the anchor; `_validate_hooks` uses the same anchor rule, so a shallow outlier no longer
+  fakes a `GUITKX0013` "hook called conditionally" and commented-out hook calls no longer count.
+- **A comment-only hook body now compiles to valid GDScript.** Comments are not statements, so the
+  emitted function needed a trailing `pass`; both the top-level and module hook emitters add it.
+
+### Added
+- **`## @return-tuple(...)` doc tags on `useState`, `useReducer`, and `useTransition`.** Inert comments
+  to Godot; the gdscript-analyzer (0.5.3+) reads them as fixed-shape return types, so `s := useState(0)`
+  makes `s[1]` a typed, checkable `Callable` in the IDE extensions and the analyzer CLI.
+
+## [0.4.2] — 2026-07-02
+
+Editor-plugin reliability (shipped with IDE extensions 0.5.3).
+
+### Fixed
+- **External `.guitkx` edits recompile without restarting Godot.** The plugin recompiles on editor
+  focus-in (a `.guitkx`-only external edit doesn't reliably flip Godot's `filesystem_changed`), with an
+  mtime staleness guard keeping the pass cheap.
+- **Errors-dock spam.** Diagnostics are de-duplicated (Godot's Errors dock is append-only) and a
+  "resolved" line is printed when a previously-failing file compiles clean.
+
 ## [0.4.1] — 2026-07-02
 
 Compiler robustness: forgiving indentation and reliable regeneration.
