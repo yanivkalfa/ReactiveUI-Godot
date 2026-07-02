@@ -32,6 +32,7 @@ import { classifyContext, CursorContext } from "./context";
 import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
+import { declarationDiags } from "./declarations";
 import { uriToProjectPath } from "./guitkxFormat";
 import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, loadFormatterConfig } from "./formatGuitkx";
 import { dirname, join, relative } from "path";
@@ -451,6 +452,7 @@ documents.onDidChangeContent((change) => {
   }
   index.reindex(change.document.uri, change.document.getText());
   const live = [
+    ...declarationDiagnostics(change.document),
     ...structuralDiagnostics(change.document),
     ...markupDiagnostics(change.document),
     ...unreachableDiagnostics(change.document),
@@ -1252,6 +1254,18 @@ function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
   }));
 }
 
+// Live declaration validation (declarations.ts), wrapped into LSP Diagnostics. This is the floor the
+// LSP was missing: without a valid `component`/`hook`/`module` header there is no markup window, so a
+// single typo like `comssponent` used to make the LSP skip ALL analysis and report nothing.
+function declarationDiagnostics(doc: TextDocument): Diagnostic[] {
+  return declarationDiags(doc.getText()).map((d) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },
+    message: d.message,
+    source: "guitkx",
+  }));
+}
+
 function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   const src = doc.getText();
   const diags: Diagnostic[] = [];
@@ -1300,6 +1314,18 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
       if (scopes.length > 1) scopes.pop(); // close tag (incl. </>) -> leave child scope
       const gt = src.indexOf(">", i);
       i = gt === -1 ? end : gt + 1;
+      continue;
+    }
+    if (c === "<" && /[ \t\r\n]/.test(src[i + 1] || "")) {
+      // BUG-V4: `<` followed by whitespace is a malformed tag name. {expr} and (...) conditions are
+      // already skipped above, so at a markup position this is an invalid `< tag`, not a comparison.
+      diags.push({
+        severity: DiagnosticSeverity.Error,
+        range: { start: doc.positionAt(i), end: doc.positionAt(i + 1) },
+        message: "GUITKX0300: invalid tag name — `<` must be followed by a tag name, or `<>` for a fragment.",
+        source: "guitkx",
+      });
+      i++;
       continue;
     }
     if (c === "<" && /[A-Za-z_]/.test(src[i + 1] || "")) {
