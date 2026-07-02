@@ -212,6 +212,17 @@ test("virtualDoc normalises mixed tab/space setup indentation to pure tabs (no p
   assert.ok(text.includes("var b = useState(0)"), "the mixed-indent setup line is still present");
 });
 
+test("virtualDoc: one outlier-shallow setup line does not shift the rest (first-line anchor)", () => {
+  // A min-depth anchor let `var b` at column 0 push `var a`/`if` one level deeper — an over-indented
+  // statement with no preceding `:` = invalid virtual .gd and a whole diagnostic cascade. [BUG: G1]
+  const src = "component X {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn ( <Label /> )\n}\n";
+  const { text } = buildVirtualDoc(src);
+  assert.ok(text.includes("\n\tvar a = useState(0)"), `normal lines stay at body level, got ${JSON.stringify(text)}`);
+  assert.ok(text.includes("\n\tvar b = 1"), "outlier line clamps up to body level");
+  assert.ok(text.includes("\n\tif a[0]:"), "if header stays at body level");
+  assert.ok(text.includes("\n\t\tb += 1"), "nested depth is preserved");
+});
+
 // The LSP "floor": a misspelled declaration keyword used to make the whole file go dark (no markup
 // window -> no analysis, no diagnostics). declarationDiags reports it live instead of silence.
 test("declarationDiags flags a misspelled `component` keyword (GUITKX0102)", () => {

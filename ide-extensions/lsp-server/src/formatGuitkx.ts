@@ -301,14 +301,16 @@ function fmtSetup(setup: string, indent: number, o: FmtOptions): string {
 // (a tab then 4 spaces, which RENDERS like two tabs but is byte-different) — is normalized to real tabs
 // instead of emitted verbatim as `\t␠␠␠␠` (the "Format Document leaves 4 spaces in nested code" bug).
 // Mirrors the compiler's guitkx.gd `_reindent_setup` (identical `indentUnit`/`indentDepth`), so the
-// formatted source and the generated `.gd` indent the same; the shallowest line maps to `indent` levels.
+// formatted source and the generated `.gd` indent the same. Anchored to the FIRST non-blank line (in
+// valid GDScript the body's base level), NOT the shallowest: a min-depth anchor let one outlier-shallow
+// line push every other line a level deeper. A line shallower than the anchor clamps to `indent`.
 function reanchor(code: string, indent: number, o: FmtOptions): string {
   let lines = code.split("\n");
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
   if (lines.length === 0) return "";
   const unit = indentUnit(lines);
-  let base = Infinity;
+  let anchor = -1;
   const depths: number[] = [];
   for (const l of lines) {
     if (l.trim() === "") {
@@ -317,7 +319,7 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
     }
     const d = indentDepth(l, unit);
     depths.push(d);
-    if (d < base) base = d;
+    if (anchor === -1) anchor = d;
   }
   let out = "";
   for (let i = 0; i < lines.length; i++) {
@@ -325,7 +327,7 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
       out += "\n";
       continue;
     }
-    const level = Math.max(indent, indent + depths[i] - base);
+    const level = indent + Math.max(0, depths[i] - anchor);
     out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
   }
   return out;

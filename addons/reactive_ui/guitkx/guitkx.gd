@@ -884,12 +884,13 @@ static func _expr_ctrl_unsupported(ctx: Dictionary, what: String) -> String:
 	push_warning("[guitkx] " + msg)
 	return "null"
 
-# Dedent a setup block to its common leading-whitespace prefix, then re-indent every line one tab
-# (so source indentation inside render's body becomes a single render-body indent level).
 ## Re-indent a setup block into the generated func body. DEPTH-based (not raw-character-based): a tab
 ## counts as one indent unit and the space-unit is inferred, so a source that MIXES tabs and spaces --
 ## invisible in most editors, since `\t  ` renders like `\t\t` -- still yields consistent, valid
-## GDScript instead of a downstream "unindent doesn't match". The shallowest setup line maps to one tab.
+## GDScript instead of a downstream "unindent doesn't match". Anchored to the FIRST non-blank line
+## (which in valid GDScript is at the body's base level), NOT the shallowest: a min-depth anchor let a
+## single outlier-shallow line raise every other line one level (a statement over-indented with no
+## preceding `:` -- invalid generated GDScript). A line shallower than the anchor clamps to one tab.
 static func _reindent_setup(code: String) -> String:
 	var lines: Array = Array(code.split("\n"))
 	while not lines.is_empty() and (lines[0] as String).strip_edges() == "":
@@ -899,7 +900,7 @@ static func _reindent_setup(code: String) -> String:
 	if lines.is_empty():
 		return ""
 	var unit := _indent_unit(lines)
-	var base := 0x7fffffff
+	var anchor := -1
 	var depths: Array = []
 	for l in lines:
 		if (l as String).strip_edges() == "":
@@ -907,14 +908,14 @@ static func _reindent_setup(code: String) -> String:
 			continue
 		var d := _indent_depth(l as String, unit)
 		depths.append(d)
-		if d < base:
-			base = d
+		if anchor == -1:
+			anchor = d
 	var out_lines: Array = []
 	for i in lines.size():
 		if int(depths[i]) == -1:
 			out_lines.append("")
 		else:
-			var level: int = maxi(1, 1 + int(depths[i]) - base)
+			var level: int = 1 + maxi(0, int(depths[i]) - anchor)
 			out_lines.append("\t".repeat(level) + _strip_leading_ws(lines[i] as String))
 	return "\n".join(out_lines)
 

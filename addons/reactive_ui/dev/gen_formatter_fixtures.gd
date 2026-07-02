@@ -25,6 +25,10 @@ func _initialize() -> void:
 		# Mixed tab/space setup: the lambda body is `\t    ` (tab + 4 spaces). Depth-based reanchor must
 		# normalize it to real tabs (`\t\t`), NOT emit it verbatim as tab+spaces. [BUG: mixed-indent]
 		{ "name": "setup_mixed_indent", "input": "component Mix() {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t    a[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n" },
+		# One outlier-SHALLOW setup line (`var b` at column 0). A min-depth anchor pushed every OTHER
+		# line one level deeper (over-indented with no preceding `:` = invalid generated .gd); the
+		# first-line anchor keeps normal lines at body level and clamps the outlier up to it. [BUG: G1/G4]
+		{ "name": "setup_outlier_indent", "input": "component Out() {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (<Label text=\"x\" />)\n}\n" },
 	]
 	var out: Array = []
 	for c in cases:

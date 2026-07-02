@@ -28,6 +28,7 @@ func _run() -> void:
 	_test_decl_validation()
 	_test_codegen_staleness()
 	_test_indent_robustness()
+	_test_outlier_indent()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
@@ -386,6 +387,22 @@ func _test_indent_robustness() -> void:
 	_check_true(s2.reload() == OK, "pure-space setup also generates VALID GDScript")
 	var bad := RUIGuitkx.compile("component X {\n\tvar a = useState(0)\n\tif a[0]:\n\t\tvar b = useState(0)\n\treturn ( <Label /> )\n}\n", "X")
 	_check_true(str(bad["diagnostics"]).contains("GUITKX0013"), "a genuine hook-in-a-block still warns")
+
+# One outlier-SHALLOW setup line must not shift the rest of the block: with a min-depth anchor,
+# `var b` at column 0 made every OTHER line emit one level too deep (over-indented with no preceding
+# `:` = "expected an expression" + the class-level diagnostic cascade). The reindent anchors to the
+# FIRST non-blank line and clamps shallower lines up to body level. [BUG: G1]
+func _test_outlier_indent() -> void:
+	var src := "component X {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn ( <Label /> )\n}\n"
+	var r := RUIGuitkx.compile(src, "X")
+	_check_true(r["ok"], "outlier-shallow setup line still compiles (got %s)" % str(r["diagnostics"]))
+	var gd: String = r["gd"]
+	_check(gd, "\n\tvar a = Hooks.useState(0)", "normal setup lines stay at body level")
+	_check(gd, "\n\tvar b = 1", "outlier line clamps up to body level")
+	_check(gd, "\n\t\tb += 1", "nested depth is preserved")
+	var s := GDScript.new()
+	s.source_code = gd.replace("class_name X\n", "")
+	_check_true(s.reload() == OK, "outlier-shallow setup generates VALID GDScript")
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \

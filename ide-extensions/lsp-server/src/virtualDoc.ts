@@ -295,17 +295,20 @@ function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number)
   // virtual .gd is valid GDScript. A line indented `\t  ` (tab + 2 spaces) renders like `\t\t` but is
   // byte-different; a naive common-prefix strip leaves that mismatch and the analyser reports a
   // phantom "unindent doesn't match". A tab counts as one unit, the space-unit is the smallest
-  // leading-space run, and depth = round(cols / unit); the shallowest line maps to `indent` tabs. Each
-  // line's own leading whitespace is glue — only the code after it is mapped, at its depth-tab level.
+  // leading-space run, and depth = round(cols / unit). Anchored to the FIRST non-blank line (in valid
+  // GDScript the body's base level), NOT the shallowest: a min-depth anchor let one outlier-shallow
+  // line raise every other line a level (over-indented with no preceding `:` — invalid virtual .gd).
+  // A line shallower than the anchor clamps to `indent` tabs. Each line's own leading whitespace is
+  // glue — only the code after it is mapped, at its depth-tab level.
   const unit = indentUnit(rawLines);
-  let base = Infinity;
+  let anchor = -1;
   const depths: number[] = [];
   for (const raw of rawLines) {
     const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
     if (l.trim() === "") { depths.push(-1); continue; }
     const d = indentDepth(l, unit);
     depths.push(d);
-    if (d < base) base = d;
+    if (anchor === -1) anchor = d;
   }
   let srcOff = start; // absolute source offset of the current line's first char
   for (let k = 0; k < rawLines.length; k++) {
@@ -313,7 +316,7 @@ function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number)
     const code = raw.endsWith("\r") ? raw.slice(0, -1) : raw; // strip CR for gen + mapping
     if (code.trim() !== "") {
       const leadLen = code.match(/^[\t ]*/)![0].length;
-      const level = Math.max(1, indent + depths[k] - base);
+      const level = indent + Math.max(0, depths[k] - anchor);
       ctx.gen += "\t".repeat(level);
       const genCodeStart = ctx.gen.length;
       ctx.gen += code.slice(leadLen);

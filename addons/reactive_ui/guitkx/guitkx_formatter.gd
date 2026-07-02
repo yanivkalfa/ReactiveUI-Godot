@@ -299,7 +299,7 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 	if lines.is_empty():
 		return ""
 	var unit := Compiler._indent_unit(lines)
-	var base := 0x7fffffff
+	var anchor := -1
 	var depths: Array = []
 	for l in lines:
 		if (l as String).strip_edges() == "":
@@ -307,14 +307,14 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 			continue
 		var d := Compiler._indent_depth(l as String, unit)
 		depths.append(d)
-		if d < base:
-			base = d
+		if anchor == -1:
+			anchor = d
 	var out := ""
 	for i in lines.size():
 		if int(depths[i]) == -1:
 			out += "\n"
 		else:
-			var level: int = maxi(indent, indent + int(depths[i]) - base)
+			var level: int = indent + maxi(0, int(depths[i]) - anchor)
 			out += _pad(level, o) + _collapse_spaces(Compiler._strip_leading_ws(lines[i] as String)) + "\n"
 	return out
 
