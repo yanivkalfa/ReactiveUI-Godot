@@ -284,8 +284,12 @@ static func _fmt_setup(setup: String, indent: int, o: Dictionary) -> String:
 		return ""
 	return _reanchor(setup, indent, o)
 
-# Dedent to the common leading whitespace, then re-anchor to `indent`, preserving internal relative
-# indentation byte-for-byte. (Exactly _reindent_setup's contract — never restructures GDScript.)
+# Re-indent an embedded-GDScript block to clean, DEPTH-based indentation anchored at `indent`.
+# Depth-based, NOT character-preserving: a tab counts as one unit and the space-unit is inferred (reusing
+# the compiler's _indent_unit/_indent_depth for exact parity), so a body indented with mixed tabs+spaces
+# -- e.g. a lambda body written `\t    ` (tab + 4 spaces, which RENDERS like two tabs but is byte-
+# different) -- is normalized to real tabs instead of emitted verbatim as `\t    ` (the "Format leaves
+# 4 spaces in nested code" bug). Mirrors the compiler's _reindent_setup + formatGuitkx.ts reanchor.
 static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 	var lines: Array = Array(code.split("\n"))
 	while not lines.is_empty() and (lines[0] as String).strip_edges() == "":
@@ -294,23 +298,24 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 		lines.pop_back()
 	if lines.is_empty():
 		return ""
-	var prefix := ""
-	var have := false
+	var unit := Compiler._indent_unit(lines)
+	var base := 0x7fffffff
+	var depths: Array = []
 	for l in lines:
 		if (l as String).strip_edges() == "":
+			depths.append(-1)
 			continue
-		var lead := _leading_ws(l)
-		prefix = lead if not have else _common_prefix(prefix, lead)
-		have = true
-	var pad := _pad(indent, o)
+		var d := Compiler._indent_depth(l as String, unit)
+		depths.append(d)
+		if d < base:
+			base = d
 	var out := ""
-	for l in lines:
-		if (l as String).strip_edges() == "":
+	for i in lines.size():
+		if int(depths[i]) == -1:
 			out += "\n"
 		else:
-			var rest := (l as String).substr(prefix.length())
-			var lead := _leading_ws(rest)
-			out += pad + lead + _collapse_spaces(rest.substr(lead.length())) + "\n"
+			var level: int = maxi(indent, indent + int(depths[i]) - base)
+			out += _pad(level, o) + _collapse_spaces(Compiler._strip_leading_ws(lines[i] as String)) + "\n"
 	return out
 
 # --- helpers ---
@@ -330,19 +335,6 @@ static func _pad(indent: int, o: Dictionary) -> String:
 	if o["indentStyle"] == "space":
 		return " ".repeat(indent * int(o["indentSize"]))
 	return "\t".repeat(indent)
-
-static func _leading_ws(s: String) -> String:
-	var i := 0
-	while i < s.length() and (s[i] == "\t" or s[i] == " "):
-		i += 1
-	return s.substr(0, i)
-
-static func _common_prefix(a: String, b: String) -> String:
-	var i := 0
-	var m: int = min(a.length(), b.length())
-	while i < m and a[i] == b[i]:
-		i += 1
-	return a.substr(0, i)
 
 # An authored blank line at the start / end of an embedded block (mirrors formatGuitkx.ts). [audit #1]
 static func _has_leading_blank(s: String) -> bool:

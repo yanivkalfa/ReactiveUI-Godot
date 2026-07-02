@@ -1,7 +1,7 @@
 [
   {
-    "expected": "component Counter(start: int = 0) {\n\tvar s = use_state(start)\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ s[0] } />\n\t\t\t<Button text=\"+1\" on_pressed={ inc } />\n\t\t</VBox>\n\t)\n}\n",
-    "input": "component  Counter( start: int = 0 ){\n\tvar s = use_state(start)\n\treturn (\n<VBox>\n<Label text={s[0]}/>\n<Button text=\"+1\" on_pressed={inc}/>\n</VBox>\n)\n}\n",
+    "expected": "component Counter(start: int = 0) {\n\tvar s = useState(start)\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ s[0] } />\n\t\t\t<Button text=\"+1\" on_pressed={ inc } />\n\t\t</VBox>\n\t)\n}\n",
+    "input": "component  Counter( start: int = 0 ){\n\tvar s = useState(start)\n\treturn (\n<VBox>\n<Label text={s[0]}/>\n<Button text=\"+1\" on_pressed={inc}/>\n</VBox>\n)\n}\n",
     "name": "counter"
   },
   {
@@ -30,8 +30,8 @@
     "name": "fragment"
   },
   {
-    "expected": "hook use_counter(start:int) {\n\tvar s = use_state(start)\n\treturn s\n}\n",
-    "input": "hook use_counter( start:int ){\n\tvar s = use_state(start)\n\treturn s\n}\n",
+    "expected": "hook use_counter(start:int) {\n\tvar s = useState(start)\n\treturn s\n}\n",
+    "input": "hook use_counter( start:int ){\n\tvar s = useState(start)\n\treturn s\n}\n",
     "name": "hook"
   },
   {
@@ -45,13 +45,18 @@
     "name": "classname"
   },
   {
-    "expected": "hook use_thing(n: int) {\n\tvar s = use_state(n)\n\treturn s\n}\n",
-    "input": "hook use_thing( n: int ) -> Array {\n\tvar s = use_state(n)\n\treturn s\n}\n",
+    "expected": "hook use_thing(n: int) {\n\tvar s = useState(n)\n\treturn s\n}\n",
+    "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n",
     "name": "hook_return_hint"
   },
   {
     "expected": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
     "input": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "guard_return_null"
+  },
+  {
+    "expected": "component Mix {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t\ta[1].call(1)\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "input": "component Mix() {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t    a[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
+    "name": "setup_mixed_indent"
   }
 ]

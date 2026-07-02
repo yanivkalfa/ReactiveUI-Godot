@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.3] - 2026-07-02
+- Formatting a `.guitkx` file now normalizes embedded GDScript indentation to real tabs by depth. A nested setup line — most visibly a lambda body — could previously come out as a tab followed by spaces (`\t    `), which renders like two tabs but is a byte-level tab/space mix; the formatter now re-indents it to clean tabs, matching the compiler's `_reindent_setup`. Applies to component setup and hook bodies.
+- A misspelled declaration keyword no longer blacks out the rest of the file. The language server now recovers a near-miss `component`/`hook`/`module` header (e.g. `comssponent Foo {`) for analysis, so markup diagnostics, embedded-GDScript checks, tag highlighting, and completion keep working while you fix the typo — instead of every other error silently vanishing. Markup diagnostics are also resilient to a malformed tag now: one bad `<  a>` no longer collapses the whole component's markup window. And a misspelled `@class_name` directive (e.g. `@clasaas_name`) is flagged as `GUITKX0300` with a did-you-mean, instead of being silently ignored.
+
 ## [0.5.2] - 2026-07-02
 - A misspelled declaration keyword (e.g. `comssponent` instead of `component`) or an invalid `@class_name` value is now reported live — `GUITKX0102` / `GUITKX0300` — instead of silently blacking out the whole file. Previously the editor skipped ALL analysis whenever it could not find a valid `component`/`hook`/`module` header, so one typo in the header made every other error (and hover/completion) vanish with no indication why. A `<` followed by whitespace inside markup is also flagged live now as an invalid tag name.
 

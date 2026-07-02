@@ -6,6 +6,7 @@
 
 import { parseMarkup, MarkupNode, Attr } from "./markup";
 import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { findDecl } from "./declScan";
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 
@@ -114,7 +115,9 @@ function hasTrailingBlank(s: string): boolean {
 
 function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
   const n = src.length;
-  let j = skipWsOnly(src, mi + 6);
+  let j = mi;
+  while (j < n && isIdent(src[j])) j++; // skip the `module` keyword token
+  j = skipWsOnly(src, j);
   const ns = j;
   while (j < n && isIdent(src[j])) j++;
   const modName = src.slice(ns, j);
@@ -292,30 +295,72 @@ function fmtSetup(setup: string, indent: number, o: FmtOptions): string {
   return reanchor(setup, indent, o);
 }
 
+// Re-indent an embedded-GDScript block (component setup / hook body) to clean, DEPTH-based indentation
+// anchored at `indent`. Depth-based, NOT character-preserving: a tab counts as one unit and the
+// space-unit is inferred, so a body indented with mixed tabs+spaces — e.g. a lambda body written `\t␠␠␠␠`
+// (a tab then 4 spaces, which RENDERS like two tabs but is byte-different) — is normalized to real tabs
+// instead of emitted verbatim as `\t␠␠␠␠` (the "Format Document leaves 4 spaces in nested code" bug).
+// Mirrors the compiler's guitkx.gd `_reindent_setup` (identical `indentUnit`/`indentDepth`), so the
+// formatted source and the generated `.gd` indent the same; the shallowest line maps to `indent` levels.
 function reanchor(code: string, indent: number, o: FmtOptions): string {
   let lines = code.split("\n");
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
   if (lines.length === 0) return "";
-  let prefix: string | null = null;
-  for (const l of lines) {
-    if (l.trim() === "") continue;
-    const lead = leadingWs(l);
-    prefix = prefix === null ? lead : commonPrefix(prefix, lead);
-  }
-  const px = prefix ?? "";
-  const p = pad(indent, o);
-  let out = "";
+  const unit = indentUnit(lines);
+  let base = Infinity;
+  const depths: number[] = [];
   for (const l of lines) {
     if (l.trim() === "") {
-      out += "\n";
-    } else {
-      const rest = l.slice(px.length);
-      const lead = leadingWs(rest);
-      out += p + lead + collapseSpaces(rest.slice(lead.length)) + "\n";
+      depths.push(-1);
+      continue;
     }
+    const d = indentDepth(l, unit);
+    depths.push(d);
+    if (d < base) base = d;
+  }
+  let out = "";
+  for (let i = 0; i < lines.length; i++) {
+    if (depths[i] === -1) {
+      out += "\n";
+      continue;
+    }
+    const level = Math.max(indent, indent + depths[i] - base);
+    out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
   }
   return out;
+}
+
+// Inferred space-indent unit: the smallest positive run of leading spaces across `lines` (1 for
+// tab-only source), so a tab weighs the same as one such run. Mirrors guitkx.gd `_indent_unit`.
+function indentUnit(lines: string[]): number {
+  let unit = 0;
+  for (const l of lines) {
+    let sp = 0;
+    for (const c of l) {
+      if (c === " ") sp++;
+      else if (c === "\t") continue;
+      else break;
+    }
+    if (sp > 0 && (unit === 0 || sp < unit)) unit = sp;
+  }
+  return unit > 0 ? unit : 1;
+}
+
+// Indentation depth in whole levels: a tab = `unit` columns, a space = 1 column, rounded. Mirrors
+// guitkx.gd `_indent_depth`.
+function indentDepth(s: string, unit: number): number {
+  let cols = 0;
+  for (const c of s) {
+    if (c === "\t") cols += unit;
+    else if (c === " ") cols += 1;
+    else break;
+  }
+  return Math.round(cols / unit);
+}
+
+function stripLeadingWs(s: string): string {
+  return s.slice(leadingWs(s).length);
 }
 
 // Collapse runs of 2+ spaces to one in a line of embedded GDScript (e.g. `==␣␣␣null` -> `== null`),
@@ -344,23 +389,6 @@ function collapseSpaces(s: string): string {
 
 // --- decl parsing (mirrors guitkx_formatter.gd's use of the compiler) ---
 
-function findDecl(src: string, from: number): { kind: string; at: number } {
-  const n = src.length;
-  let i = from;
-  while (i < n) {
-    const k = skipNoncode(src, i);
-    if (k !== i) {
-      i = k;
-      continue;
-    }
-    if (keywordAt(src, i, "component")) return { kind: "component", at: i };
-    if (keywordAt(src, i, "hook")) return { kind: "hook", at: i };
-    if (keywordAt(src, i, "module")) return { kind: "module", at: i };
-    i++;
-  }
-  return { kind: "", at: -1 };
-}
-
 interface CompParse {
   ok: boolean;
   name: string;
@@ -376,7 +404,11 @@ interface CompParse {
 function parseComponentAt(src: string, at: number): CompParse {
   const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, root: { t: "text", value: "" }, next: at };
   const n = src.length;
-  let i = skipWsOnly(src, at + "component".length);
+  // Skip the declaration keyword TOKEN (not a fixed "component".length) so a recovered typo header
+  // (`comssponent Foo {`) parses from the right place. For an exact keyword this is identical.
+  let i = at;
+  while (i < n && isIdent(src[i])) i++;
+  i = skipWsOnly(src, i);
   const ns = i;
   while (i < n && isIdent(src[i])) i++;
   const name = src.slice(ns, i);
@@ -414,7 +446,10 @@ interface HookParse {
 function parseHookAt(src: string, at: number): HookParse {
   const fail: HookParse = { ok: false, name: "", params: "", body: "", bodyStart: at, bodyEnd: at, next: at };
   const n = src.length;
-  let i = skipWsOnly(src, at + "hook".length);
+  // Skip the keyword token (recovery-safe; identical for an exact `hook`).
+  let i = at;
+  while (i < n && isIdent(src[i])) i++;
+  i = skipWsOnly(src, i);
   const ns = i;
   while (i < n && isIdent(src[i])) i++;
   const name = src.slice(ns, i);
@@ -448,7 +483,7 @@ export function unreachableRegions(src: string): { start: number; end: number }[
   const collect = (from: number, to: number): void => {
     let i = from;
     while (i < to) {
-      const d = findDecl(src, i);
+      const d = findDecl(src, i, true); // recover from a typo'd header so analysis still runs
       if (d.kind === "" || d.at >= to) break;
       if (d.kind === "component") {
         const pc = parseComponentAt(src, d.at);
@@ -494,26 +529,36 @@ function realSpan(src: string, from: number, to: number): { start: number; end: 
   return first === -1 ? null : { start: first, end: last + 1 };
 }
 
+// The markup (return-window) spans of every component — the regions markup intelligence (live
+// diagnostics, semantic highlighting, completion-context) is valid over. STRUCTURAL: the span is the
+// `return ( ... )` located by declBody + splitReturn, NOT gated on a clean markup parse. The old
+// version required parseComponentAt to succeed, so a SINGLE malformed tag (`<  a>`) collapsed the whole
+// window — killing every markup diagnostic, all tag highlighting, and completion for that component
+// while you were mid-edit. Recovering a typo'd header + tolerating in-progress markup keeps the editor
+// responsive on broken input. (The formatter keeps its own strict parseComponentAt, unaffected.)
 export function markupWindows(src: string): { start: number; end: number }[] {
   const wins: { start: number; end: number }[] = [];
   const collect = (from: number, to: number): void => {
     let i = from;
     while (i < to) {
-      const d = findDecl(src, i);
+      const d = findDecl(src, i, true); // recover from a typo'd header so analysis still runs
       if (d.kind === "" || d.at >= to) break;
       if (d.kind === "component") {
-        const pc = parseComponentAt(src, d.at);
-        if (pc.ok) wins.push({ start: pc.markupStart, end: pc.markupEnd });
-        i = pc.ok ? pc.next : d.at + 9;
+        const b = declBody(src, d.at);
+        if (b) {
+          const split = splitReturn(src, b.start, b.close);
+          if (split && split.markupEnd > split.markupStart) wins.push({ start: split.markupStart, end: split.markupEnd });
+          i = b.close + 1;
+        } else i = d.at + 1;
       } else if (d.kind === "hook") {
         const ph = parseHookAt(src, d.at);
-        i = ph.ok ? ph.next : d.at + 4;
+        i = ph.ok ? ph.next : d.at + 1;
       } else if (d.kind === "module") {
         const body = moduleBodyAt(src, d.at);
         if (body) {
           collect(body.start, body.end);
           i = body.end + 1;
-        } else i = d.at + 6;
+        } else i = d.at + 1;
       } else break;
     }
   };
@@ -521,10 +566,32 @@ export function markupWindows(src: string): { start: number; end: number }[] {
   return wins;
 }
 
+// The `{`…matching-`}` body of a component/hook at `at` (keyword-token-agnostic, params-aware), for
+// locating the markup span WITHOUT a full parse.
+function declBody(src: string, at: number): { start: number; close: number } | null {
+  const n = src.length;
+  let i = at;
+  while (i < n && isIdent(src[i])) i++; // skip the (possibly-misspelled) keyword token
+  i = skipWsOnly(src, i);
+  while (i < n && isIdent(src[i])) i++; // skip the declaration name
+  i = skipWsOnly(src, i);
+  if (src[i] === "(") {
+    const pc = findMatching(src, i);
+    if (pc === -1) return null;
+    i = skipWsOnly(src, pc + 1);
+  }
+  if (src[i] !== "{") return null;
+  const close = findMatching(src, i);
+  if (close === -1) return null;
+  return { start: i + 1, close };
+}
+
 function moduleBodyAt(src: string, at: number): { start: number; end: number } | null {
   const n = src.length;
-  let i = skipWsOnly(src, at + 6);
-  while (i < n && isIdent(src[i])) i++;
+  let i = at;
+  while (i < n && isIdent(src[i])) i++; // skip the `module` keyword token (recovery-safe)
+  i = skipWsOnly(src, i);
+  while (i < n && isIdent(src[i])) i++; // skip the module name
   i = skipWsOnly(src, i);
   if (src[i] !== "{") return null;
   const close = findMatching(src, i);
@@ -603,11 +670,6 @@ function leadingWs(s: string): string {
   let i = 0;
   while (i < s.length && (s[i] === "\t" || s[i] === " ")) i++;
   return s.slice(0, i);
-}
-function commonPrefix(a: string, b: string): string {
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i++;
-  return a.slice(0, i);
 }
 function skipWsOnly(src: string, i: number): number {
   const n = src.length;
