@@ -62,28 +62,61 @@ export function buildVirtualDoc(src: string): VirtualDoc {
   // analyzed instead of emitting an empty class — the whole-file-goes-dark bug. [declScan]
   const decl = findDecl(src, 0, true);
   if (decl.kind === "") return { text: ctx.gen, map: ctx.map };
+  declareHookStubs(ctx);
+  if (decl.kind === "module") emitModuleMembers(ctx, decl.at);
+  else emitDeclFunc(ctx, decl.kind, decl.at, "");
+  return { text: ctx.gen, map: ctx.map };
+}
 
-  if (decl.kind === "hook") {
-    const body = readDeclBody(src, decl.at);
-    if (!body) return { text: ctx.gen, map: ctx.map };
-    declareHookStubs(ctx);
-    ctx.gen += "static func __hook(props, children):\n";
+// One module member = one static func. The module body used to be fed WHOLE through the component
+// path, so member headers (`component A() {`) landed in the generated .gd as "statements" — parse
+// noise, and (with UNDEFINED_* armed) false errors mapped onto user code. Suffixes keep sibling
+// names unique; a top-level component/hook keeps the bare `render`/`__hook` name.
+function emitModuleMembers(ctx: Ctx, moduleAt: number): void {
+  const body = readDeclBody(ctx.src, moduleAt);
+  if (!body) return;
+  const to = body.start + body.text.length;
+  let i = body.start;
+  while (i < to) {
+    const d = findDecl(ctx.src, i, true);
+    if (d.kind === "" || d.at >= to) break;
+    const b = readDeclBody(ctx.src, d.at);
+    if (d.kind === "module") emitModuleMembers(ctx, d.at);
+    else emitDeclFunc(ctx, d.kind, d.at, `_${ctx.counter++}`);
+    i = b ? b.start + b.text.length + 1 : d.at + 1;
+  }
+}
+
+function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: string): void {
+  const body = readDeclBody(ctx.src, at);
+
+  if (kind === "hook") {
+    if (!body) return;
+    // The hook's own params, VERBATIM and mapped — a hook body reads its params, so without them in
+    // scope every such read would be a false UNDEFINED_IDENTIFIER (and hover/goto on one, dead).
+    // Mirrors the compiler, which emits hook params verbatim (guitkx.gd _compile_hook).
+    const params = readParamsSpan(ctx.src, at);
+    ctx.gen += `static func __hook${suffix}(`;
+    if (params && params.text.trim() !== "") {
+      const gs = ctx.gen.length;
+      ctx.gen += params.text;
+      ctx.map.addSpan(params.start, gs, params.text.length);
+    }
+    ctx.gen += "):\n";
     // Map the hook body per line (see emitVerbatimBlock) so hover/completion/definition resolve
     // inside it regardless of re-indentation or CRLF line endings.
     emitVerbatimBlock(ctx, body.start, body.start + body.text.length, 1);
-    ctx.gen += "\tpass\n";
-    return { text: ctx.gen, map: ctx.map };
+    if (!hasStatement(body.text)) ctx.gen += "\tpass\n";
+    return;
   }
 
-  const body = readDeclBody(src, decl.at);
-  declareHookStubs(ctx);
-  ctx.gen += "static func render(props: Dictionary, children: Array) -> RUIVNode:\n";
+  ctx.gen += `static func render${suffix}(props: Dictionary, children: Array) -> RUIVNode:\n`;
   if (!body) {
     ctx.gen += "\tpass\n";
-    return { text: ctx.gen, map: ctx.map };
+    return;
   }
-  for (const name of paramNames(readParams(src, decl.at))) ctx.gen += `\tvar ${name} = props.get("${name}")\n`;
-  const split = splitReturn(src, body.start, body.start + body.text.length);
+  for (const name of paramNames(readParams(ctx.src, at))) ctx.gen += `\tvar ${name} = props.get("${name}")\n`;
+  const split = splitReturn(ctx.src, body.start, body.start + body.text.length);
 
   // setup verbatim (mapped, one line at a time so the per-line indent never shifts an expr offset)
   if (split && split.setupEnd > body.start) {
@@ -95,7 +128,16 @@ export function buildVirtualDoc(src: string): VirtualDoc {
     emitted = emitMarkup(ctx, split.markupStart, split.markupEnd, 1);
   }
   if (!emitted && (!split || split.setupEnd <= body.start)) ctx.gen += "\tpass\n";
-  return { text: ctx.gen, map: ctx.map };
+}
+
+// True when the block has at least one real statement line (not blank, not a `#` comment) — then the
+// wrapper func needs no trailing `pass`. An unconditional `pass` after a body ending in `return`
+// produced an UNREACHABLE_CODE warning that mapped onto the user's closing lines.
+function hasStatement(block: string): boolean {
+  return block.split("\n").some((l) => {
+    const t = l.trim();
+    return t !== "" && !t.startsWith("#");
+  });
 }
 
 // --- scope-aware markup emitter -------------------------------------------------------------
@@ -450,8 +492,9 @@ function readWord(src: string, i: number): string {
   return src.slice(i, j);
 }
 
-// The `(...)` parameter list of a component/hook declaration (between the name and the body `{`).
-function readParams(src: string, declAt: number): string {
+// The `(...)` parameter list of a component/hook declaration (between the name and the body `{`),
+// with its source offset so the text can be spliced into the virtual doc MAPPED (hook signatures).
+function readParamsSpan(src: string, declAt: number): { text: string; start: number } | null {
   const n = src.length;
   let j = declAt;
   while (j < n && src[j] !== "(" && src[j] !== "{") {
@@ -462,10 +505,14 @@ function readParams(src: string, declAt: number): string {
     }
     j++;
   }
-  if (src[j] !== "(") return "";
+  if (src[j] !== "(") return null;
   const pc = findMatching(src, j);
-  if (pc === -1) return "";
-  return src.slice(j + 1, pc);
+  if (pc === -1) return null;
+  return { text: src.slice(j + 1, pc), start: j + 1 };
+}
+
+function readParams(src: string, declAt: number): string {
+  return readParamsSpan(src, declAt)?.text ?? "";
 }
 
 // Parameter names from a params string ("a: int = 0, b: String") — split on top-level commas, take

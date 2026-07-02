@@ -458,6 +458,50 @@ test("analyzer e2e: workspace-complete arms UNDEFINED_FUNCTION for a typo'd hook
   assert.ok(setterHint!.label.includes("Callable"), `setter should project to Callable, got '${setterHint!.label}'`);
 });
 
+test("module virtual doc emits one static func per member — headers never leak as GDScript", () => {
+  const src =
+    'module Widgets {\n\tcomponent A() { return (<Label text="a" />) }\n\tcomponent B() {\n\t\tvar s := useState(0)\n\t\treturn (<A />)\n\t}\n\thook use_z(n: int) {\n\t\tvar s := useState(n)\n\t\treturn s\n\t}\n}\n';
+  const { text } = buildVirtualDoc(src);
+  assert.equal((text.match(/^static func render_\d+\(/gm) || []).length, 2, "one render func per member component");
+  assert.equal((text.match(/^static func __hook_\d+\(/gm) || []).length, 1, "one __hook func per member hook");
+  assert.ok(!text.includes("component A"), "member headers must not appear in the generated GDScript");
+});
+
+// The workspace-complete arming made two emission gaps VISIBLE as false errors: (1) a module body fed
+// whole through the component path turned member headers into "statements" (UNDEFINED_IDENTIFIER on
+// `component`, UNDEFINED_FUNCTION on `A()`); (2) the __hook scaffold dropped the hook's own params, so
+// every param read was "undefined". Both fixed at the emitter; this pins them against the real analyzer.
+test("analyzer e2e: module members and hook params never false-flag; a typo in a member still fires", () => {
+  const az = new AnalyzerAdapter();
+  const hooksGd = readFileSync(join(__dirname, "..", "..", "..", "..", "addons", "reactive_ui", "core", "hooks.gd"), "utf8");
+  az.loadLibrary("file:///proj/addons/reactive_ui/core/hooks.gd", hooksGd, "res://addons/reactive_ui/core/hooks.gd");
+  az.setWorkspaceComplete(true);
+
+  const mod = 'module Widgets {\n\tcomponent A() { return (<Label text="a" />) }\n\tcomponent B() {\n\t\tvar s := useState(0)\n\t\treturn (<A />)\n\t}\n}\n';
+  const vMod = buildVirtualDoc(mod);
+  az.sync("file:///proj/mod.__guitkx_virtual.gd", vMod.text);
+  const modBad = az
+    .diagnosticsAt("file:///proj/mod.__guitkx_virtual.gd", vMod.text)
+    .filter((d) => d.code.startsWith("UNDEFINED_") || d.code === "GDSCRIPT_SYNTAX");
+  assert.equal(modBad.length, 0, `module members must not false-flag, got ${JSON.stringify(modBad)}`);
+
+  const hk = "hook use_counter(start: int = 0) {\n\tvar s := useState(start)\n\treturn [s[0], s[1]]\n}\n";
+  const vHk = buildVirtualDoc(hk);
+  assert.ok(vHk.text.includes("static func __hook(start: int = 0):"), "hook params are spliced verbatim");
+  az.sync("file:///proj/hk.__guitkx_virtual.gd", vHk.text);
+  const hkDiags = az.diagnosticsAt("file:///proj/hk.__guitkx_virtual.gd", vHk.text);
+  assert.ok(!hkDiags.some((d) => d.code.startsWith("UNDEFINED_")), `hook params must be in scope, got ${JSON.stringify(hkDiags)}`);
+  assert.ok(!hkDiags.some((d) => d.code === "UNREACHABLE_CODE"), "no trailing-pass UNREACHABLE_CODE after a returning body");
+
+  const bad = "module M {\n\tcomponent C() {\n\t\tvar s = usseState(0)\n\t\treturn (<Label />)\n\t}\n}\n";
+  const vBad = buildVirtualDoc(bad);
+  az.sync("file:///proj/modbad.__guitkx_virtual.gd", vBad.text);
+  const undef = az.diagnosticsAt("file:///proj/modbad.__guitkx_virtual.gd", vBad.text).filter((d) => d.code === "UNDEFINED_FUNCTION");
+  assert.ok(undef.length >= 1, "a typo'd hook call inside a module member still fires");
+  const s = vBad.map.toSource(undef[0].range.start);
+  assert.equal(bad.slice(s!, s! + 9), "usseState", "…mapped onto the member's typo");
+});
+
 test("virtualDoc paramNames is noncode-aware (comma/colon inside a string default does not mis-split)", () => {
   // [audit #26] A default value containing a comma or colon inside a string must not break the split,
   // so EVERY param still gets an in-scope stub for completion/hover.
