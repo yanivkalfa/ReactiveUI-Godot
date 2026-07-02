@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.5] - 2026-07-02
+- Bundles gdscript-analyzer 0.5.4: a typo'd method on a built-in value — `sliced[1].casll(1)` on a `useState` pair, `s.upper()` on a `String` (a Godot-3 rename), `v.zzz` on a `Vector2` — is now an error with a precise squiggle, exactly where Godot itself errors. Works through plain untyped `var s = useState(0)` locals (the analyzer narrows single-assignment locals to their initializer's type), and Dictionary `d.key` sugar now types as the value and can never false-flag.
+
 ## [0.5.4] - 2026-07-02
 - A typo'd hook call (`usseState(0)`) is now flagged live as an error, mapped onto the typo. The bundled analyzer (0.5.3) proves a name is defined nowhere only when it holds the whole project: the server feeds every `.gd` at startup, keeps the view current through a file watcher (created/edited/deleted files and folders, plus `project.godot` autoload changes), and re-checks open files once armed. Names declared only in a sibling `.guitkx` (whose generated `.gd` isn't on disk yet) are never false-flagged.
 - `GUITKX0108` (a `@for`/`@while` body with more than one root element) and `GUITKX0102` (a component with no `return ( ... )`) now fire live while typing, precisely ranged — previously they appeared only after a save, pinned to line 1 via the compiler sidecar.

@@ -440,6 +440,19 @@ test("analyzer e2e: workspace-complete arms UNDEFINED_FUNCTION for a typo'd hook
   assert.notEqual(s, null, "the diagnostic maps back into the .guitkx source");
   assert.equal(bad.slice(s!, s! + "usseState".length), "usseState", "…and lands on the typo");
 
+  // The ORIGINAL bug, verbatim user shape (analyzer 0.5.4: initializer narrowing + builtin member
+  // misses as errors): an UNTYPED `var s = useState(0)` local projects `s[1]` as a Callable, and
+  // the typo'd setter method is an UNDEFINED_METHOD error mapped onto the typo. This also pins the
+  // bundled analyzer version — a lockfile downgrade below 0.5.4 fails here.
+  const casll = "component Z() {\n\tvar s = useState(0)\n\ts[1].casll(1)\n\treturn (<Label text={ str(s[0]) } />)\n}\n";
+  const vCasll = buildVirtualDoc(casll);
+  const casllUri = "file:///proj/casll.__guitkx_virtual.gd";
+  az.sync(casllUri, vCasll.text);
+  const um = az.diagnosticsAt(casllUri, vCasll.text).filter((d) => d.code === "UNDEFINED_METHOD");
+  assert.ok(um.length >= 1, "s[1].casll(1) through an untyped local must fire UNDEFINED_METHOD (core 0.5.4+)");
+  const us = vCasll.map.toSource(um[0].range.start);
+  assert.equal(casll.slice(us!, us! + "casll".length), "casll", "…mapped onto the typo'd setter method");
+
   const good = "component Y() {\n\tvar s := useState(0)\n\tvar setter := s[1]\n\treturn (<Label text={ str(s[0]) } />)\n}\n";
   const vGood = buildVirtualDoc(good);
   const goodUri = "file:///proj/good.__guitkx_virtual.gd";
