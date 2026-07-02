@@ -227,13 +227,18 @@ export class WorkspaceIndex {
 // `.gd` files, and the GENERATED sibling `.gd` of a `.guitkx` is git-ignored — on a fresh clone (or
 // before the Godot editor's first compile) a legal `DemoHooks.use_x(...)` would otherwise show a
 // permanent false UNDEFINED_* Error. The index KNOWS these bindings (component/module decl names and
-// `@class_name` overrides) — drop any UNDEFINED_* whose flagged identifier is one of them.
+// `@class_name` overrides) — drop those two codes when the flagged identifier is one of them.
+// ONLY the two name-resolution codes: UNDEFINED_METHOD / UNDEFINED_PROPERTY (analyzer 0.5.4+) are
+// receiver-scoped misses on CLOSED builtin tables — no `.guitkx` declaration can ever satisfy them,
+// so vetoing on an accidental name collision (a hook named like the typo'd method) would hide a
+// real error.
+const VETOABLE = new Set(["UNDEFINED_FUNCTION", "UNDEFINED_IDENTIFIER"]);
 export function vetoGuitkxDeclared<T extends { code: string; range: { start: number; end: number } }>(
   index: WorkspaceIndex,
   diags: T[],
   text: string
 ): T[] {
-  return diags.filter((d) => !(d.code.startsWith("UNDEFINED_") && index.has(text.slice(d.range.start, d.range.end))));
+  return diags.filter((d) => !(VETOABLE.has(d.code) && index.has(text.slice(d.range.start, d.range.end))));
 }
 
 /** Recursively walk a project dir, indexing every .guitkx (skips dot-dirs like .godot/.git). */
