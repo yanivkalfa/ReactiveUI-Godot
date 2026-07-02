@@ -25,6 +25,8 @@ import {
   SignatureHelp,
   InlayHint,
   CodeAction,
+  DidChangeWatchedFilesNotification,
+  FileChangeType,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 
@@ -65,8 +67,10 @@ const analyzer = new AnalyzerAdapter();
 let projectPath = "";
 let embeddedReflow = true;
 let embeddedEnabled = true;
+let canWatchFiles = false;
 
 connection.onInitialize((params: InitializeParams) => {
+  canWatchFiles = !!params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration;
   const opts = (params.initializationOptions as any) || {};
   // `embeddedReflow` runs embedded GDScript through the analyzer's formatter (so it matches a real .gd
   // file); `useGdformat` is the legacy name for the same toggle.
@@ -92,6 +96,7 @@ connection.onInitialize((params: InitializeParams) => {
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
+      // (workspace-completeness is armed in onInitialized, after the .gd watcher registers)
       completionProvider: { triggerCharacters: ["<", "@", ".", " ", "_"] },
       hoverProvider: true,
       documentFormattingProvider: true,
@@ -109,6 +114,55 @@ connection.onInitialize((params: InitializeParams) => {
       },
     },
   };
+});
+
+// Arm the analyzer's absence-based UNDEFINED_FUNCTION / UNDEFINED_IDENTIFIER diagnostics (core
+// 0.5.3+). They only fire when the analyzer PROVABLY holds the whole project — a partial view can
+// never prove a typo'd name is defined nowhere — so the claim is made strictly after (a)
+// loadLibraries() fed every `.gd` at init and (b) a client file watcher is registered to keep that
+// view current (a `.gd` created mid-session would otherwise false-flag as undefined). A client
+// without dynamic watcher registration simply keeps the pre-0.5.3 behavior: UNDEFINED_* stay silent.
+connection.onInitialized(() => {
+  if (!projectPath || !canWatchFiles) return;
+  connection.client
+    .register(DidChangeWatchedFilesNotification.type, {
+      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/project.godot" }],
+    })
+    .then(() => analyzer.setWorkspaceComplete(true))
+    .catch(() => {
+      /* client refused the watcher — leave the workspace partial (UNDEFINED_* disarmed) */
+    });
+});
+
+// Keep the analyzer's project view — and therefore the workspace-completeness claim — true while the
+// server runs: a `.gd` created/edited/deleted outside an open editor tab is re-fed (or dropped), and
+// a project.godot edit re-feeds the [autoload] table. URIs are re-derived from the filesystem path so
+// they hit the same keys loadLibraries() used, regardless of client URI normalization.
+connection.onDidChangeWatchedFiles((params) => {
+  for (const ev of params.changes) {
+    const fsPath = uriToProjectPath(ev.uri);
+    if (fsPath.endsWith("project.godot")) {
+      try {
+        analyzer.setProjectConfig(readFileSync(fsPath, "utf8"));
+      } catch {
+        /* deleted or unreadable — keep the last-known config */
+      }
+      continue;
+    }
+    if (!fsPath.endsWith(".gd")) continue;
+    const uri = pathToFileURL(fsPath).toString();
+    if (ev.type === FileChangeType.Deleted) {
+      analyzer.close(uri);
+      continue;
+    }
+    try {
+      const resPath = "res://" + relative(projectPath, fsPath).replace(/\\/g, "/");
+      if (resPath.startsWith("res://.")) continue; // hidden dirs (res://.godot/** etc.) stay ignored
+      analyzer.upsertLibrary(uri, readFileSync(fsPath, "utf8"), resPath);
+    } catch {
+      /* unreadable mid-write — the next change event retries */
+    }
+  }
 });
 
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
@@ -580,8 +634,9 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
       out.push({ uri, range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) } });
       continue;
     }
-    // (3) A target in generated glue — most usefully a hook stub `var useRef = Hooks.useRef`. Chain
-    // ONCE through the `Hooks.<name>` on its RHS to the real library definition (`core/hooks.gd`).
+    // (3) A target in generated glue — most usefully a hook wrapper stub
+    // `static func useRef(...): return Hooks.useRef(...)`. Chain ONCE through the `Hooks.<name>`
+    // in its body to the real library definition (`core/hooks.gd`).
     const rhs = hookStubRhsOffset(text, d.range.start);
     if (rhs === null) continue;
     for (const cd of analyzer.definitionsAt(vUri, text, rhs)) {
@@ -591,8 +646,9 @@ function forwardDefinition(uri: string, src: string, offset: number): Location[]
   return out.length ? out : null;
 }
 
-// The char offset of `<name>` in a `Hooks.<name>` reference on the same line as `lhsOffset` — the RHS
-// of a generated hook stub `var <name> = Hooks.<name>`. `null` if that line carries no `Hooks.` ref.
+// The char offset of `<name>` in a `Hooks.<name>` reference on the same line as `lhsOffset` — the
+// forwarding body of a generated hook wrapper stub (`static func <name>(...): return Hooks.<name>(...)`).
+// `null` if that line carries no `Hooks.` ref.
 function hookStubRhsOffset(vText: string, lhsOffset: number): number | null {
   const lineStart = vText.lastIndexOf("\n", lhsOffset) + 1;
   let lineEnd = vText.indexOf("\n", lhsOffset);

@@ -86,6 +86,7 @@ static func _warn_once(state: RUIComponentState, key: String, msg: String) -> vo
 ## useState(initial) -> [value, setter]. `setter` accepts a value OR an updater
 ## Callable `(old) -> new`. Setter identity is stable across renders; setting an equal
 ## value bails out (no re-render).
+## @return-tuple(Variant, Callable)
 static func useState(initial = null) -> Array:
 	var s := _cur
 	_record(s, "state")
@@ -113,6 +114,7 @@ static func _make_setter(state: RUIComponentState, i: int) -> Callable:
 
 ## useReducer(reducer, initial) -> [state, dispatch]. `reducer(state, action)->state`.
 ## `dispatch` identity is stable; the reducer closure is refreshed every render.
+## @return-tuple(Variant, Callable)
 static func useReducer(reducer: Callable, initial = null) -> Array:
 	var s := _cur
 	_record(s, "reducer")
@@ -342,6 +344,7 @@ static func _schedule_deferred_commit(state: RUIComponentState, i: int) -> void:
 ## useTransition() -> [is_pending(false), start_transition]. Faithful to ReactiveUIToolKit's
 ## UseTransition, which is a no-op in the synchronous renderer: is_pending is always false and
 ## start_transition runs the action immediately.
+## @return-tuple(bool, Callable)
 static func useTransition() -> Array:
 	var s := _cur
 	_record(s, "transition")

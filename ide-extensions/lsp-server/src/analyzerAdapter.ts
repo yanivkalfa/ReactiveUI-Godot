@@ -179,6 +179,29 @@ export class AnalyzerAdapter {
     this.docs.set(uri, text);
   }
 
+  /** Create-or-update a project library `.gd` (the file-watcher path): a new file opens with its
+   *  `res://` path, a known one gets its text replaced. Keeps the workspace-complete claim true. */
+  upsertLibrary(uri: string, text: string, resPath: string): void {
+    if (this.docs.has(uri)) this.az.changeDocument(uri, text);
+    else this.az.openDocument(uri, text, resPath);
+    this.docs.set(uri, text);
+  }
+
+  /** Drop a deleted file from the analyzer + the text mirror. No-op if untracked. */
+  close(uri: string): void {
+    if (!this.docs.has(uri)) return;
+    this.az.closeDocument(uri);
+    this.docs.delete(uri);
+  }
+
+  /** Declare whether the analyzer has been fed the WHOLE project (every `.gd` under the root). Arms
+   *  the absence-based UNDEFINED_FUNCTION / UNDEFINED_IDENTIFIER diagnostics (core 0.5.3+) — a
+   *  partial view can never prove a name is defined nowhere, so they stay silent until this is set.
+   *  Only claim it while a file watcher keeps the view current (see server.ts onInitialized). */
+  setWorkspaceComplete(complete: boolean): void {
+    this.az.setWorkspaceComplete(complete);
+  }
+
   /** The tracked text of `uri` (for offset->position mapping at the call site), or undefined. */
   textOf(uri: string): string | undefined {
     return this.docs.get(uri);

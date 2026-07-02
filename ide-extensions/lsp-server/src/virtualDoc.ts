@@ -15,11 +15,38 @@ export interface VirtualDoc {
   map: SourceMap;
 }
 
-const HOOK_STUBS = [
-  "useState", "useReducer", "useRef", "useMemo", "useCallback", "useImperativeHandle",
-  "useEffect", "useLayoutEffect", "createContext", "useContext", "provideContext",
-  "useDeferredValue", "useTransition", "useStableCallback", "useStableFunc", "useStableAction",
-  "useSafeArea", "useSignal", "useSignalKey", "useTween", "useTweenValue", "useAnimate", "useSfx",
+// One stub per public hook, emitted at CLASS level as a real static wrapper func — NOT a
+// `var useState = Hooks.useState` local. A local alias types as a bare Callable, so a call through it
+// erased the hook's whole signature: arity, param types, and above all the `## @return-tuple(...)`
+// shape (hooks.gd) that makes `useState(0)[1]` a checkable Callable for the analyzer. A wrapper func
+// carries all of it, resolves for bare calls inside render()/__hook() (own-class static), and keeps
+// go-to-definition chaining (`Hooks.<name>` appears on the stub line — see server.ts hookStubRhsOffset).
+// `params`/`ret` MUST stay byte-identical to the hooks.gd declarations — asserted by the
+// "hook stub signatures match hooks.gd" parity test in core.test.ts.
+const HOOK_STUBS: { name: string; params: string; args: string; ret: string; tuple?: string }[] = [
+  { name: "useState", params: "initial = null", args: "initial", ret: " -> Array", tuple: "Variant, Callable" },
+  { name: "useReducer", params: "reducer: Callable, initial = null", args: "reducer, initial", ret: " -> Array", tuple: "Variant, Callable" },
+  { name: "useRef", params: "initial = null", args: "initial", ret: " -> Dictionary" },
+  { name: "useMemo", params: "factory: Callable, deps: Array = []", args: "factory, deps", ret: " -> Variant" },
+  { name: "useCallback", params: "cb: Callable, deps: Array = []", args: "cb, deps", ret: " -> Callable" },
+  { name: "useImperativeHandle", params: "factory: Callable, deps: Array = []", args: "factory, deps", ret: " -> Variant" },
+  { name: "useEffect", params: "effect: Callable, deps = null", args: "effect, deps", ret: " -> void" },
+  { name: "useLayoutEffect", params: "effect: Callable, deps = null", args: "effect, deps", ret: " -> void" },
+  { name: "createContext", params: "default_value = null, ctx_name: String = \"\"", args: "default_value, ctx_name", ret: " -> RUIContext" },
+  { name: "useContext", params: "key", args: "key", ret: "" },
+  { name: "provideContext", params: "key, value", args: "key, value", ret: " -> void" },
+  { name: "useDeferredValue", params: "value, deps = null", args: "value, deps", ret: "" },
+  { name: "useTransition", params: "", args: "", ret: " -> Array", tuple: "bool, Callable" },
+  { name: "useStableCallback", params: "cb: Callable", args: "cb", ret: " -> Callable" },
+  { name: "useStableFunc", params: "cb: Callable", args: "cb", ret: " -> Callable" },
+  { name: "useStableAction", params: "cb: Callable", args: "cb", ret: " -> Callable" },
+  { name: "useSafeArea", params: "", args: "", ret: " -> Dictionary" },
+  { name: "useSignal", params: "sig: RUISignal, selector = null, comparer = null", args: "sig, selector, comparer", ret: "" },
+  { name: "useSignalKey", params: "key: String, initial = null, selector = null, comparer = null", args: "key, initial, selector, comparer", ret: "" },
+  { name: "useTween", params: "ref: Dictionary, property: String, to, duration: float, deps: Array = []", args: "ref, property, to, duration, deps", ret: " -> void" },
+  { name: "useTweenValue", params: "from, to, duration: float, on_update: Callable, deps: Array = []", args: "from, to, duration, on_update, deps", ret: " -> void" },
+  { name: "useAnimate", params: "ref: Dictionary, tracks: Array, autoplay := true, deps: Array = []", args: "ref, tracks, autoplay, deps", ret: " -> void" },
+  { name: "useSfx", params: "bus := \"Master\"", args: "bus", ret: " -> Callable" },
 ];
 
 interface Ctx {
@@ -39,8 +66,8 @@ export function buildVirtualDoc(src: string): VirtualDoc {
   if (decl.kind === "hook") {
     const body = readDeclBody(src, decl.at);
     if (!body) return { text: ctx.gen, map: ctx.map };
+    declareHookStubs(ctx);
     ctx.gen += "static func __hook(props, children):\n";
-    declareHookStubs(ctx, 1);
     // Map the hook body per line (see emitVerbatimBlock) so hover/completion/definition resolve
     // inside it regardless of re-indentation or CRLF line endings.
     emitVerbatimBlock(ctx, body.start, body.start + body.text.length, 1);
@@ -49,13 +76,13 @@ export function buildVirtualDoc(src: string): VirtualDoc {
   }
 
   const body = readDeclBody(src, decl.at);
+  declareHookStubs(ctx);
   ctx.gen += "static func render(props: Dictionary, children: Array) -> RUIVNode:\n";
   if (!body) {
     ctx.gen += "\tpass\n";
     return { text: ctx.gen, map: ctx.map };
   }
   for (const name of paramNames(readParams(src, decl.at))) ctx.gen += `\tvar ${name} = props.get("${name}")\n`;
-  declareHookStubs(ctx, 1);
   const split = splitReturn(src, body.start, body.start + body.text.length);
 
   // setup verbatim (mapped, one line at a time so the per-line indent never shifts an expr offset)
@@ -351,9 +378,16 @@ function indentDepth(l: string, unit: number): number {
   return Math.round(cols / unit);
 }
 
-function declareHookStubs(ctx: Ctx, indent: number): void {
-  const pad = "\t".repeat(indent);
-  for (const h of HOOK_STUBS) ctx.gen += `${pad}var ${h} = Hooks.${h}\n`;
+// Class-level static wrapper funcs (see HOOK_STUBS). All stub text is unmapped glue, so any analyzer
+// diagnostic inside a stub line is dropped by the toSource() null-filter — stubs can never squiggle
+// user code. Void hooks get a bare-call body (a `-> void` func can't `return` a value); everything
+// else forwards with `return` so the annotated return type has a returning path.
+function declareHookStubs(ctx: Ctx): void {
+  for (const h of HOOK_STUBS) {
+    if (h.tuple) ctx.gen += `## @return-tuple(${h.tuple})\n`;
+    const call = `Hooks.${h.name}(${h.args})`;
+    ctx.gen += `static func ${h.name}(${h.params})${h.ret}: ${h.ret === " -> void" ? call : `return ${call}`}\n`;
+  }
 }
 
 // --- declaration / window helpers (mirror guitkx.gd) ----------------------------------------
