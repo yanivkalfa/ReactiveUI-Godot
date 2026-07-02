@@ -9,7 +9,8 @@ import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx } from "../formatGuitkx";
+import { formatGuitkx, markupWindows } from "../formatGuitkx";
+import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
 import { buildSemanticTokens, encodeTokens, TOKEN_TYPES } from "../semanticTokens";
@@ -230,6 +231,37 @@ test("declarationDiags: a fully typo'd header still reports something, never sil
 
 test("declarationDiags stays silent for a valid header (no false positives)", () => {
   assert.equal(declarationDiags("@class_name X\ncomponent X {\n\treturn ( <Label /> )\n}\n").length, 0);
+});
+
+test("declarationDiags flags a misspelled @class_name DIRECTIVE (@clasaas_name -> GUITKX0300)", () => {
+  const d = declarationDiags("@clasaas_name X\ncomponent X {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(
+    d.some((x) => x.code === "GUITKX0300" && /did you mean '@class_name'/.test(x.message)),
+    `got ${JSON.stringify(d)}`,
+  );
+});
+
+// Error-recovery: a near-miss keyword at a real declaration position is treated as that declaration
+// (analysis-only) so a typo'd header no longer blacks out markup + embedded checks. [declScan]
+test("findDecl recovers a typo'd keyword only at a real declaration shape", () => {
+  assert.deepEqual(findDecl("comssponent Foo {\n}\n", 0, true), { kind: "component", at: 0 });
+  assert.deepEqual(findDecl("moduel Foo {\n}\n", 0, true), { kind: "module", at: 0 });
+  // a near-miss identifier WITHOUT the `<Name> {` decl shape is NOT recovered (no false positives)
+  assert.deepEqual(findDecl("var content = 5\n", 0, true), { kind: "", at: -1 });
+  // recovery is opt-in: the formatter path (recover=false) never treats a typo as a declaration
+  assert.deepEqual(findDecl("comssponent Foo {\n}\n", 0, false), { kind: "", at: -1 });
+});
+
+test("markupWindows survives a typo'd header AND a malformed tag (does not go dark)", () => {
+  // typo'd keyword + otherwise-parseable markup -> the markup window is still found
+  assert.equal(markupWindows("comssponent Card() {\n\treturn (\n\t\t<VBox />\n\t)\n}\n").length, 1);
+  // a malformed `<  a>` tag inside the markup no longer collapses the whole window (structural span)
+  assert.equal(markupWindows("component C() {\n\treturn (\n\t\t<VBox>\n\t\t\t<  a>\n\t\t</VBox>\n\t)\n}\n").length, 1);
+});
+
+test("buildVirtualDoc emits a render body for a typo'd header (embedded analysis survives)", () => {
+  const { text } = buildVirtualDoc("comssponent Card() {\n\tvar s = useState(0)\n\treturn ( <Label /> )\n}\n");
+  assert.ok(/static func render/.test(text) && text.includes("var s = useState(0)"), text);
 });
 
 test("virtualDoc extracts @if/@for conditions", () => {
