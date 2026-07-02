@@ -47,7 +47,7 @@ import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offs
 import { scanTagRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
-import { readFileSync, readdirSync, statSync } from "fs";
+import { readFileSync, readdirSync, statSync, existsSync, watch as fsWatch } from "fs";
 import { AnalyzerAdapter, AdapterSymbol } from "./analyzerAdapter";
 import {
   HOST_TAGS,
@@ -118,31 +118,64 @@ connection.onInitialize((params: InitializeParams) => {
 
 // Arm the analyzer's absence-based UNDEFINED_FUNCTION / UNDEFINED_IDENTIFIER diagnostics (core
 // 0.5.3+). They only fire when the analyzer PROVABLY holds the whole project — a partial view can
-// never prove a typo'd name is defined nowhere — so the claim is made strictly after (a) the client
-// accepted a file watcher, (b) a fresh loadLibraries() pass ran AFTER the watcher went live (a `.gd`
-// created between the init-time load and watcher activation would otherwise be invisible forever),
-// and (c) that pass read every file it found (an unreadable file = a name we cannot prove absent).
-// A client without dynamic watcher registration keeps the pre-0.5.3 behavior: UNDEFINED_* stay silent.
+// never prove a typo'd name is defined nowhere — so the claim is made strictly after (a) SOME file
+// watcher is live: the client's (dynamic registration — VS Code) or the in-process fs.watch fallback
+// (VS2022's client cannot register watchers; Node's recursive fs.watch exists exactly on the
+// platforms VS2022 runs on), (b) a fresh loadLibraries() pass ran AFTER the watcher went live (a
+// `.gd` created between the init-time load and watcher activation would otherwise be invisible
+// forever), and (c) that pass read every file it found (an unreadable file = a name we cannot prove
+// absent). With neither watcher available, UNDEFINED_* stay silent — the pre-0.5.3 behavior.
 connection.onInitialized(() => {
-  if (!projectPath || !canWatchFiles) return;
+  if (!projectPath) return;
+  if (!canWatchFiles) {
+    startNativeWatcher();
+    return;
+  }
   connection.client
     .register(DidChangeWatchedFilesNotification.type, {
-      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/project.godot" }],
+      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/*.guitkx" }, { globPattern: "**/project.godot" }],
     })
-    .then(() => {
-      if (!loadLibraries()) return; // incomplete scan — never over-claim
-      analyzer.setWorkspaceComplete(true);
-      // Diagnostics published before arming were computed with UNDEFINED_* disarmed — re-publish
-      // every open document so files opened at startup get the armed pass too.
-      for (const doc of documents.all()) publishDiagnosticsFor(doc);
-    })
-    .catch(() => {
-      /* client refused the watcher — leave the workspace partial (UNDEFINED_* disarmed) */
-    });
+    .then(() => armWorkspaceComplete())
+    .catch(() => startNativeWatcher()); // client refused — try the in-process fallback
 });
+
+function armWorkspaceComplete(): void {
+  if (!loadLibraries()) return; // incomplete scan — never over-claim
+  analyzer.setWorkspaceComplete(true);
+  // Diagnostics published before arming were computed with UNDEFINED_* disarmed — re-publish
+  // every open document so files opened at startup get the armed pass too.
+  for (const doc of documents.all()) publishDiagnosticsFor(doc);
+}
+
+// In-process watcher fallback for clients without dynamic watcher registration. fs.watch storms
+// during saves (multiple change/rename events per write), so events coalesce per path for 200 ms.
+// Recursive fs.watch is unavailable on Linux — there we stay disarmed rather than over-claim.
+let fsEventTimers = new Map<string, NodeJS.Timeout>();
+function startNativeWatcher(): void {
+  if (process.platform !== "win32" && process.platform !== "darwin") return;
+  try {
+    fsWatch(projectPath, { recursive: true }, (_ev, fname) => {
+      if (!fname) return;
+      const fsPath = join(projectPath, String(fname));
+      const prev = fsEventTimers.get(fsPath);
+      if (prev) clearTimeout(prev);
+      fsEventTimers.set(
+        fsPath,
+        setTimeout(() => {
+          fsEventTimers.delete(fsPath);
+          handleWatchedPath(fsPath, !existsSync(fsPath));
+        }, 200)
+      );
+    });
+  } catch {
+    return; // recursive watch unavailable — leave the workspace partial (UNDEFINED_* disarmed)
+  }
+  armWorkspaceComplete();
+}
 
 // Keep the analyzer's project view — and therefore the workspace-completeness claim — true while the
 // server runs: a `.gd` created/edited/deleted outside an open editor tab is re-fed (or dropped), a
+// `.guitkx` event keeps the workspace index (declared-name veto, tag completion) fresh, a
 // folder-level event (VS Code coalesces bulk deletes/renames into one event for the directory) evicts
 // or rescans the whole subtree, and a ROOT project.godot edit re-feeds the [autoload] table (nested
 // project.godot files — demo projects inside the workspace — must not clobber the root config). URIs
@@ -150,39 +183,66 @@ connection.onInitialized(() => {
 // of client URI normalization.
 connection.onDidChangeWatchedFiles((params) => {
   for (const ev of params.changes) {
-    const fsPath = uriToProjectPath(ev.uri);
-    if (fsPath.endsWith("project.godot")) {
-      if (resolve(fsPath) !== resolve(join(projectPath, "project.godot"))) continue;
-      try {
-        analyzer.setProjectConfig(readFileSync(fsPath, "utf8"));
-      } catch {
-        /* deleted or unreadable — keep the last-known config */
-      }
-      continue;
-    }
-    if (!fsPath.endsWith(".gd")) {
-      // Possibly a directory event: a deleted folder must evict every tracked .gd underneath it
-      // (no per-file events arrive), a created/renamed-in folder must load them.
-      if (ev.type === FileChangeType.Deleted) {
-        analyzer.closeUnder(pathToFileURL(fsPath).toString() + "/");
-      } else {
-        let isDir = false;
-        try {
-          isDir = statSync(fsPath).isDirectory();
-        } catch {
-          continue;
-        }
-        if (isDir) for (const f of gdFilesUnder(fsPath)) upsertLibraryFile(f);
-      }
-      continue;
-    }
-    if (ev.type === FileChangeType.Deleted) {
-      analyzer.close(pathToFileURL(fsPath).toString());
-      continue;
-    }
-    upsertLibraryFile(fsPath);
+    handleWatchedPath(uriToProjectPath(ev.uri), ev.type === FileChangeType.Deleted);
   }
 });
+
+function handleWatchedPath(fsPath: string, deleted: boolean): void {
+  if (fsPath.endsWith("project.godot")) {
+    if (resolve(fsPath) !== resolve(join(projectPath, "project.godot"))) return;
+    try {
+      analyzer.setProjectConfig(readFileSync(fsPath, "utf8"));
+    } catch {
+      /* deleted or unreadable — keep the last-known config */
+    }
+    return;
+  }
+  if (fsPath.endsWith(".guitkx")) {
+    reindexGuitkxFile(fsPath, deleted);
+    return;
+  }
+  if (!fsPath.endsWith(".gd")) {
+    // Possibly a directory event: a deleted folder must evict every tracked .gd underneath it
+    // (no per-file events arrive), a created/renamed-in folder must load its .gd + .guitkx files.
+    if (deleted) {
+      analyzer.closeUnder(pathToFileURL(fsPath).toString() + "/");
+      return;
+    }
+    let isDir = false;
+    try {
+      isDir = statSync(fsPath).isDirectory();
+    } catch {
+      return;
+    }
+    if (isDir) {
+      for (const f of gdFilesUnder(fsPath)) upsertLibraryFile(f);
+      scanWorkspace(index, fsPath);
+    }
+    return;
+  }
+  if (deleted) {
+    analyzer.close(pathToFileURL(fsPath).toString());
+    return;
+  }
+  upsertLibraryFile(fsPath);
+}
+
+// Keep the workspace index in step with on-disk `.guitkx` changes. An OPEN document's buffer is the
+// source of truth (onDidChangeContent reindexes it) — a stale disk event must not stomp it.
+function reindexGuitkxFile(fsPath: string, deleted: boolean): void {
+  if (resPathFor(fsPath) === null) return; // outside the project / hidden dirs
+  const uri = pathToFileURL(fsPath).toString();
+  if (documents.get(uri)) return;
+  if (deleted) {
+    index.evict(uri);
+    return;
+  }
+  try {
+    index.reindex(uri, readFileSync(fsPath, "utf8"));
+  } catch {
+    /* unreadable mid-write — the next event retries */
+  }
+}
 
 // Feed one on-disk `.gd` into the analyzer (create or update), keyed identically to loadLibraries().
 function upsertLibraryFile(fsPath: string): void {
