@@ -7,6 +7,7 @@
 // VERBATIM (length-preserving), so the offset SourceMap round-trips 1:1 and survives future rewrites.
 
 import { skipNoncode, skipString, findMatching, keywordAt } from "./scanner";
+import { findDecl } from "./declScan";
 import { SourceMap } from "./sourceMap";
 
 export interface VirtualDoc {
@@ -30,8 +31,10 @@ interface Ctx {
 
 export function buildVirtualDoc(src: string): VirtualDoc {
   const ctx: Ctx = { src, gen: "extends RefCounted\n", map: new SourceMap(), counter: 0 };
-  const decl = findDecl(src);
-  if (!decl) return { text: ctx.gen, map: ctx.map };
+  // Recover from a misspelled header keyword (`comssponent Foo {`) so embedded GDScript is still
+  // analyzed instead of emitting an empty class — the whole-file-goes-dark bug. [declScan]
+  const decl = findDecl(src, 0, true);
+  if (decl.kind === "") return { text: ctx.gen, map: ctx.map };
 
   if (decl.kind === "hook") {
     const body = readDeclBody(src, decl.at);
@@ -351,28 +354,6 @@ function declareHookStubs(ctx: Ctx, indent: number): void {
 }
 
 // --- declaration / window helpers (mirror guitkx.gd) ----------------------------------------
-
-interface Decl {
-  kind: "component" | "hook" | "module";
-  at: number;
-}
-
-function findDecl(src: string): Decl | null {
-  const n = src.length;
-  let i = 0;
-  while (i < n) {
-    const k = skipNoncode(src, i);
-    if (k !== i) {
-      i = k;
-      continue;
-    }
-    if (keywordAt(src, i, "component")) return { kind: "component", at: i };
-    if (keywordAt(src, i, "hook")) return { kind: "hook", at: i };
-    if (keywordAt(src, i, "module")) return { kind: "module", at: i };
-    i++;
-  }
-  return null;
-}
 
 function readDeclBody(src: string, declAt: number): { text: string; start: number } | null {
   const n = src.length;

@@ -22,6 +22,9 @@ func _initialize() -> void:
 		{ "name": "classname", "input": "@class_name Fancy\ncomponent Card(title:String){\nreturn (\n<Panel>\n<Label text={title}/>\n</Panel>\n)\n}\n" },
 		{ "name": "hook_return_hint", "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n" },
 		{ "name": "guard_return_null", "input": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (<Label text=\"x\" />)\n}\n" },
+		# Mixed tab/space setup: the lambda body is `\t    ` (tab + 4 spaces). Depth-based reanchor must
+		# normalize it to real tabs (`\t\t`), NOT emit it verbatim as tab+spaces. [BUG: mixed-indent]
+		{ "name": "setup_mixed_indent", "input": "component Mix() {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t    a[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n" },
 	]
 	var out: Array = []
 	for c in cases:

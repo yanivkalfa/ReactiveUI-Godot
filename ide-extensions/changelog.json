@@ -3,6 +3,17 @@
     {
       "date": "2026-07-02",
       "versions": {
+        "vscode": "0.5.3",
+        "vs2022": "0.5.3"
+      },
+      "shared": [
+        "Formatting a `.guitkx` file now normalizes embedded GDScript indentation to real tabs by depth. A nested setup line — most visibly a lambda body — could previously come out as a tab followed by spaces (`\\t    `), which renders like two tabs but is a byte-level tab/space mix; the formatter now re-indents it to clean tabs, matching the compiler's `_reindent_setup`. Applies to component setup and hook bodies.",
+        "A misspelled declaration keyword no longer blacks out the rest of the file. The language server now recovers a near-miss `component`/`hook`/`module` header (e.g. `comssponent Foo {`) for analysis, so markup diagnostics, embedded-GDScript checks, tag highlighting, and completion keep working while you fix the typo — instead of every other error silently vanishing. Markup diagnostics are also resilient to a malformed tag now: one bad `<  a>` no longer collapses the whole component's markup window. And a misspelled `@class_name` directive (e.g. `@clasaas_name`) is flagged as `GUITKX0300` with a did-you-mean, instead of being silently ignored."
+      ]
+    },
+    {
+      "date": "2026-07-02",
+      "versions": {
         "vscode": "0.5.2",
         "vs2022": "0.5.2"
       },

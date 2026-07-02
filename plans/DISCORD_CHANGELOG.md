@@ -1,3 +1,31 @@
+## [IDE 0.5.3] - 2026-07-02
+
+### A header typo no longer takes the whole file down with it
+
+0.5.2 *reported* a bad header, but everything downstream still went dark -- markup diagnostics, embedded-GDScript checks, tag highlighting, and completion all vanished the moment the keyword was misspelled. Now the language server **recovers** a near-miss header (`comssponent Foo {` is analyzed as a `component`) so the rest of the file keeps being checked while you fix the typo. Two more robustness wins: a single malformed tag like `<  a>` no longer collapses the whole component's markup analysis (so *other* markup errors still show), and a misspelled `@class_name` directive -- e.g. `@clasaas_name` -- is now flagged as `GUITKX0300` with a did-you-mean instead of being silently ignored.
+
+### Formatting stops leaving spaces in nested code
+
+Format Document now re-indents embedded GDScript to real **tabs by depth**. A nested setup line -- most visibly a lambda body -- used to come back as a tab followed by spaces (`\t    `), which looks like two tabs but is a byte-level tab/space mix; it now normalizes to clean tabs, matching the compiler.
+
+Reinstall **GUITKX 0.5.3** (VS Code + VS 2022).
+
+---
+
+## [0.4.2] - 2026-07-02
+
+### Edits recompile the moment you tab back to Godot
+
+`.guitkx` isn't a type Godot recognizes, so editing one in an external editor didn't reliably tell Godot anything changed -- you'd tab back and nothing recompiled until you closed and reopened the editor. The plugin now recompiles changed `.guitkx` on editor **focus-in**, so returning from VS Code just works. Compile errors are de-duplicated too: Godot's Errors dock is append-only (nothing can clear it mid-session), so the plugin reports each distinct error once -- no more the same error stacking up on every tab-back -- and prints a green "resolved" line when a file starts compiling clean again.
+
+### Formatter matches the compiler on nested indentation
+
+The `.guitkx` formatter re-indents component setup / hook bodies to depth-based tabs (same fix as the editor extension), so a lambda body or an `if`/`for` inside setup formats to clean tabs instead of a tab/space mix.
+
+Update to **Reactive UI 0.4.2** (copy `addons/reactive_ui/` into your project).
+
+---
+
 ## [IDE 0.5.2] - 2026-07-02
 
 ### One typo no longer blacks out the whole file

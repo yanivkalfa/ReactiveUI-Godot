@@ -9,6 +9,7 @@
 
 import { skipNoncode, isIdent } from "./scanner";
 import { scanDeclarations } from "./workspaceIndex";
+import { editDistance } from "./declScan";
 
 export interface DeclDiag {
   start: number;
@@ -18,23 +19,6 @@ export interface DeclDiag {
 }
 
 const DECL_KWS = ["component", "hook", "module"];
-
-// Bounded Levenshtein (two-row DP), mirroring guitkx.gd _edit_distance.
-function editDistance(a: string, b: string): number {
-  const la = a.length, lb = b.length;
-  if (!la) return lb;
-  if (!lb) return la;
-  let prev = Array.from({ length: lb + 1 }, (_, i) => i);
-  for (let x = 1; x <= la; x++) {
-    const curr = [x];
-    for (let y = 1; y <= lb; y++) {
-      const cost = a[x - 1] === b[y - 1] ? 0 : 1;
-      curr[y] = Math.min(prev[y] + 1, curr[y - 1] + 1, prev[y - 1] + cost);
-    }
-    prev = curr;
-  }
-  return prev[lb];
-}
 
 // The first top-level identifier and the declaration keyword it most resembles (edit distance <= 3),
 // for a "did you mean 'component'?" hint. null if none is close.
@@ -68,22 +52,36 @@ export function nearestDeclKeyword(src: string): { word: string; kw: string; sta
 export function declarationDiags(src: string): DeclDiag[] {
   const out: DeclDiag[] = [];
 
-  // @class_name preamble: the value must be a single valid identifier.
+  // Preamble directive `@class_name <Ident>`: validate the value. A near-miss directive like
+  // `@clasaas_name` is flagged as a typo (GUITKX0300) instead of being silently ignored — it would
+  // otherwise produce NO diagnostic at all, one of the mistakes that used to slip through.
   let p = 0;
   while (p < src.length && (src[p] === " " || src[p] === "\t" || src[p] === "\n" || src[p] === "\r")) p++;
-  if (src.startsWith("@class_name", p)) {
-    let le = src.indexOf("\n", p);
-    if (le === -1) le = src.length;
-    let raw = src.slice(p + "@class_name".length, le);
-    const hash = raw.indexOf("#");
-    if (hash !== -1) raw = raw.slice(0, hash);
-    const val = raw.trim();
-    if (val === "" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(val)) {
+  if (src[p] === "@") {
+    let w = p + 1;
+    while (w < src.length && /[A-Za-z0-9_]/.test(src[w])) w++;
+    const directive = src.slice(p + 1, w);
+    if (directive === "class_name") {
+      let le = src.indexOf("\n", p);
+      if (le === -1) le = src.length;
+      let raw = src.slice(w, le);
+      const hash = raw.indexOf("#");
+      if (hash !== -1) raw = raw.slice(0, hash);
+      const val = raw.trim();
+      if (val === "" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(val)) {
+        out.push({
+          start: p,
+          end: le,
+          code: "GUITKX0300",
+          message: `GUITKX0300: \`@class_name\` value must be a single valid identifier (got '${val}').`,
+        });
+      }
+    } else if (directive.length >= 4 && editDistance(directive.toLowerCase(), "class_name") <= 3) {
       out.push({
         start: p,
-        end: le,
+        end: w,
         code: "GUITKX0300",
-        message: `GUITKX0300: \`@class_name\` value must be a single valid identifier (got '${val}').`,
+        message: `GUITKX0300: unknown directive '@${directive}' — did you mean '@class_name'?`,
       });
     }
   }
