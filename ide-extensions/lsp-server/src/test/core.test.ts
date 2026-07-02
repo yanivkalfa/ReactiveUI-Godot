@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { findMatching, skipNoncode, keywordAt } from "../scanner";
 import { SourceMap, offsetToPosition, positionToOffset } from "../sourceMap";
 import { buildVirtualDoc } from "../virtualDoc";
+import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
@@ -208,6 +209,27 @@ test("virtualDoc normalises mixed tab/space setup indentation to pure tabs (no p
     assert.ok(!lead.includes(" "), `virtual doc must indent with tabs only, got ${JSON.stringify(line)}`);
   }
   assert.ok(text.includes("var b = useState(0)"), "the mixed-indent setup line is still present");
+});
+
+// The LSP "floor": a misspelled declaration keyword used to make the whole file go dark (no markup
+// window -> no analysis, no diagnostics). declarationDiags reports it live instead of silence.
+test("declarationDiags flags a misspelled `component` keyword (GUITKX0102)", () => {
+  const d = declarationDiags("@class_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.some((x) => x.code === "GUITKX0102" && /did you mean 'component'/.test(x.message)), `got ${JSON.stringify(d)}`);
+});
+
+test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
+  const d = declarationDiags("@class_name 9bad\ncomponent X {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.some((x) => x.code === "GUITKX0300"), `got ${JSON.stringify(d)}`);
+});
+
+test("declarationDiags: a fully typo'd header still reports something, never silence", () => {
+  const d = declarationDiags("@clasaas_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX0102"), `got ${JSON.stringify(d)}`);
+});
+
+test("declarationDiags stays silent for a valid header (no false positives)", () => {
+  assert.equal(declarationDiags("@class_name X\ncomponent X {\n\treturn ( <Label /> )\n}\n").length, 0);
 });
 
 test("virtualDoc extracts @if/@for conditions", () => {

@@ -1,3 +1,13 @@
+## [IDE 0.5.2] - 2026-07-02
+
+### One typo no longer blacks out the whole file
+
+The editor's analysis quietly keyed off a *perfect* `component` / `hook` / `module` header -- if it couldn't find one, it skipped everything and reported nothing. So a single slip like `comssponent` (or a mistyped `@class_name`) made every other error, plus hover and completion, silently vanish with no clue why. Now the header is validated **live**: a misspelled keyword gets `GUITKX0102: did you mean 'component'?`, an invalid `@class_name` gets `GUITKX0300`, and a `<` followed by whitespace is flagged as an invalid tag name -- all without a running Godot editor. Previously these only surfaced via the Godot-generated diagnostics sidecar (i.e. only when the Godot editor was open and recompiling).
+
+Reinstall **GUITKX 0.5.2** (VS Code + VS 2022).
+
+---
+
 ## [0.4.1] - 2026-07-02
 
 ### Indentation stops being a landmine

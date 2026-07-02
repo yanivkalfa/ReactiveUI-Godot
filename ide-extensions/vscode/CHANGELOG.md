@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.2] - 2026-07-02
+- A misspelled declaration keyword (e.g. `comssponent` instead of `component`) or an invalid `@class_name` value is now reported live — `GUITKX0102` / `GUITKX0300` — instead of silently blacking out the whole file. Previously the editor skipped ALL analysis whenever it could not find a valid `component`/`hook`/`module` header, so one typo in the header made every other error (and hover/completion) vanish with no indication why. A `<` followed by whitespace inside markup is also flagged live now as an invalid tag name.
+
 ## [0.5.1] - 2026-07-02
 - `.guitkx` files that mix tabs and spaces in a component's setup — a tab followed by spaces renders identically to tabs, so the difference is invisible in the editor — no longer trigger a spurious `Mixed use of tabs and spaces` / `expected a declaration` error cascade. The embedded-GDScript virtual document now normalizes setup indentation by depth (a tab and the inferred space-unit each count as one level), matching the compiler.
 

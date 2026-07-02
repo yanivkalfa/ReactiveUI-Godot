@@ -3,6 +3,16 @@
     {
       "date": "2026-07-02",
       "versions": {
+        "vscode": "0.5.2",
+        "vs2022": "0.5.2"
+      },
+      "shared": [
+        "A misspelled declaration keyword (e.g. `comssponent` instead of `component`) or an invalid `@class_name` value is now reported live — `GUITKX0102` / `GUITKX0300` — instead of silently blacking out the whole file. Previously the editor skipped ALL analysis whenever it could not find a valid `component`/`hook`/`module` header, so one typo in the header made every other error (and hover/completion) vanish with no indication why. A `<` followed by whitespace inside markup is also flagged live now as an invalid tag name."
+      ]
+    },
+    {
+      "date": "2026-07-02",
+      "versions": {
         "vscode": "0.5.1",
         "vs2022": "0.5.1"
       },
