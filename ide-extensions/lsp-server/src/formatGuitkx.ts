@@ -301,31 +301,40 @@ function fmtSetup(setup: string, indent: number, o: FmtOptions): string {
 // (a tab then 4 spaces, which RENDERS like two tabs but is byte-different) — is normalized to real tabs
 // instead of emitted verbatim as `\t␠␠␠␠` (the "Format Document leaves 4 spaces in nested code" bug).
 // Mirrors the compiler's guitkx.gd `_reindent_setup` (identical `indentUnit`/`indentDepth`), so the
-// formatted source and the generated `.gd` indent the same; the shallowest line maps to `indent` levels.
+// formatted source and the generated `.gd` indent the same. Anchored to the FIRST non-blank
+// NON-COMMENT line (in valid GDScript the body's base level), NOT the shallowest: a min-depth anchor
+// let one outlier-shallow line push every other line a level deeper. Comments are skipped when
+// PICKING the anchor (GDScript allows a comment at any indentation, so a stray over-indented leading
+// comment must not shift real code) but re-emitted by depth like any line. A line shallower than the
+// anchor clamps to `indent`.
 function reanchor(code: string, indent: number, o: FmtOptions): string {
   let lines = code.split("\n");
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
   if (lines.length === 0) return "";
   const unit = indentUnit(lines);
-  let base = Infinity;
+  let anchor = -1;
+  let anchorAny = -1;
   const depths: number[] = [];
   for (const l of lines) {
-    if (l.trim() === "") {
+    const t = l.trim();
+    if (t === "") {
       depths.push(-1);
       continue;
     }
     const d = indentDepth(l, unit);
     depths.push(d);
-    if (d < base) base = d;
+    if (anchorAny === -1) anchorAny = d;
+    if (anchor === -1 && !t.startsWith("#")) anchor = d;
   }
+  if (anchor === -1) anchor = anchorAny; // comment-only block
   let out = "";
   for (let i = 0; i < lines.length; i++) {
     if (depths[i] === -1) {
       out += "\n";
       continue;
     }
-    const level = Math.max(indent, indent + depths[i] - base);
+    const level = indent + Math.max(0, depths[i] - anchor);
     out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
   }
   return out;
@@ -427,7 +436,7 @@ function parseComponentAt(src: string, at: number): CompParse {
   if (bclose === -1) return fail;
   const bodyStart = i + 1;
   const split = splitReturn(src, bodyStart, bclose);
-  if (!split) return fail;
+  if (!split || split === "unclosed") return fail;
   const setup = src.slice(bodyStart, split.setupEnd);
   const mr = parseMarkup(src, split.markupStart, split.markupEnd);
   if (mr.error !== "" || mr.nodes.length !== 1) return fail;
@@ -547,7 +556,7 @@ export function markupWindows(src: string): { start: number; end: number }[] {
         const b = declBody(src, d.at);
         if (b) {
           const split = splitReturn(src, b.start, b.close);
-          if (split && split.markupEnd > split.markupStart) wins.push({ start: split.markupStart, end: split.markupEnd });
+          if (split && split !== "unclosed" && split.markupEnd > split.markupStart) wins.push({ start: split.markupStart, end: split.markupEnd });
           i = b.close + 1;
         } else i = d.at + 1;
       } else if (d.kind === "hook") {
@@ -564,6 +573,55 @@ export function markupWindows(src: string): { start: number; end: number }[] {
   };
   collect(0, src.length);
   return wins;
+}
+
+// Components whose CLOSED body contains no markup return at all — `splitReturn` found neither
+// `return (` nor `return <` (a lone `return null` guard doesn't count). The compiler fails these with
+// GUITKX0102 on save (guitkx.gd _split_return); this is the live mirror so the editor flags it while
+// typing instead of staying silent until the sidecar lands. The walk is the same recovering walk as
+// markupWindows (a typo'd header still gets its body checked); hooks never have markup returns and
+// modules recurse, so only real components report — never helper funcs. An UNCLOSED `return (` (the
+// half-typed case, the compiler's GUITKX0304) deliberately does not report. Span = the declaration
+// head (keyword through name), the natural squiggle anchor.
+export function missingReturnComponents(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          if (splitReturn(src, b.start, b.close) === null) out.push(declHead(src, d.at));
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
+}
+
+// The `component Name` head span at a declaration keyword offset (typo'd keywords included).
+function declHead(src: string, at: number): { start: number; end: number } {
+  const n = src.length;
+  let i = at;
+  while (i < n && isIdent(src[i])) i++; // the (possibly-misspelled) keyword
+  const kwEnd = i;
+  while (i < n && (src[i] === " " || src[i] === "\t")) i++;
+  const ns = i;
+  while (i < n && isIdent(src[i])) i++;
+  return { start: at, end: i > ns ? i : kwEnd };
 }
 
 // The `{`…matching-`}` body of a component/hook at `at` (keyword-token-agnostic, params-aware), for
@@ -618,7 +676,10 @@ interface ReturnSplit {
   markupStart: number;
   markupEnd: number;
 }
-function splitReturn(src: string, start: number, end: number): ReturnSplit | null {
+// `"unclosed"` = a markup return exists but its `(` never closes (the compiler's GUITKX0304, and the
+// half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX0102).
+// Distinguished so the live missing-return diagnostic can't fire on an in-progress paren.
+function splitReturn(src: string, start: number, end: number): ReturnSplit | "unclosed" | null {
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -631,7 +692,7 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | nul
       while (p < end && /\s/.test(src[p])) p++;
       if (src[p] === "(") {
         const close = findMatching(src, p);
-        if (close === -1) return null;
+        if (close === -1) return "unclosed";
         return { setupEnd: i, markupStart: p + 1, markupEnd: close };
       }
       if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
