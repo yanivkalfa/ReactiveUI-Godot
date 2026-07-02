@@ -194,6 +194,14 @@ export class AnalyzerAdapter {
     this.docs.delete(uri);
   }
 
+  /** Drop every tracked file whose uri starts with `uriPrefix` — a deleted FOLDER arrives as one
+   *  watcher event for the directory, with no per-file events for its contents. */
+  closeUnder(uriPrefix: string): void {
+    for (const uri of [...this.docs.keys()]) {
+      if (uri.startsWith(uriPrefix)) this.close(uri);
+    }
+  }
+
   /** Declare whether the analyzer has been fed the WHOLE project (every `.gd` under the root). Arms
    *  the absence-based UNDEFINED_FUNCTION / UNDEFINED_IDENTIFIER diagnostics (core 0.5.3+) — a
    *  partial view can never prove a name is defined nowhere, so they stay silent until this is set.

@@ -29,6 +29,10 @@ func _initialize() -> void:
 		# line one level deeper (over-indented with no preceding `:` = invalid generated .gd); the
 		# first-line anchor keeps normal lines at body level and clamps the outlier up to it. [BUG: G1/G4]
 		{ "name": "setup_outlier_indent", "input": "component Out() {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (<Label text=\"x\" />)\n}\n" },
+		# A leading OVER-INDENTED comment (legal at any indentation in GDScript). Anchoring on it
+		# dragged real code off its base: the if-body got dedented out of its block. The anchor must
+		# come from the first non-comment line. [BUG: comment-anchor]
+		{ "name": "setup_comment_anchor", "input": "component Cmt() {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n" },
 	]
 	var out: Array = []
 	for c in cases:

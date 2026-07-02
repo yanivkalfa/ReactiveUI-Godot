@@ -6,7 +6,7 @@ import { findMatching, skipNoncode, keywordAt } from "../scanner";
 import { SourceMap, offsetToPosition, positionToOffset } from "../sourceMap";
 import { buildVirtualDoc } from "../virtualDoc";
 import { declarationDiags } from "../declarations";
-import { scanDeclarations, WorkspaceIndex, componentTagAt } from "../workspaceIndex";
+import { scanDeclarations, WorkspaceIndex, componentTagAt, vetoGuitkxDeclared } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
 import { formatGuitkx, markupWindows, missingReturnComponents } from "../formatGuitkx";
@@ -458,13 +458,23 @@ test("analyzer e2e: workspace-complete arms UNDEFINED_FUNCTION for a typo'd hook
   assert.ok(setterHint!.label.includes("Callable"), `setter should project to Callable, got '${setterHint!.label}'`);
 });
 
-test("module virtual doc emits one static func per member — headers never leak as GDScript", () => {
+test("module virtual doc emits one static func per member, under its REAL name — headers never leak", () => {
   const src =
     'module Widgets {\n\tcomponent A() { return (<Label text="a" />) }\n\tcomponent B() {\n\t\tvar s := useState(0)\n\t\treturn (<A />)\n\t}\n\thook use_z(n: int) {\n\t\tvar s := useState(n)\n\t\treturn s\n\t}\n}\n';
   const { text } = buildVirtualDoc(src);
-  assert.equal((text.match(/^static func render_\d+\(/gm) || []).length, 2, "one render func per member component");
-  assert.equal((text.match(/^static func __hook_\d+\(/gm) || []).length, 1, "one __hook func per member hook");
+  // The compiler emits module members under their declared names (`_emit_func(c["name"],…)`,
+  // `static func use_z(…)`), and sibling code legally references them bare — mirror it exactly.
+  assert.ok(text.includes("static func A(props"), "member component A under its real name");
+  assert.ok(text.includes("static func B(props"), "member component B under its real name");
+  assert.ok(text.includes("static func use_z(n: int):"), "member hook under its real name, params verbatim");
   assert.ok(!text.includes("component A"), "member headers must not appear in the generated GDScript");
+});
+
+test("hook declarations: `-> Hint` survives (like _ret_suffix), tuple-style hints are dropped, params never eaten", () => {
+  assert.ok(buildVirtualDoc("hook use_a(n: int) -> Array {\n\treturn [n]\n}\n").text.includes("static func use_a(n: int) -> Array:"));
+  // a params-less hook with a PARENTHESIZED hint: the `( … )` belongs to the hint, not the params
+  const v = buildVirtualDoc("hook use_pair -> (int, Callable) {\n\treturn [1, func(): pass]\n}\n");
+  assert.ok(v.text.includes("static func use_pair():"), `tuple-style hint dropped and not parsed as params, got ${JSON.stringify(v.text.match(/static func use_pair.*$/m))}`);
 });
 
 // The workspace-complete arming made two emission gaps VISIBLE as false errors: (1) a module body fed
@@ -487,7 +497,7 @@ test("analyzer e2e: module members and hook params never false-flag; a typo in a
 
   const hk = "hook use_counter(start: int = 0) {\n\tvar s := useState(start)\n\treturn [s[0], s[1]]\n}\n";
   const vHk = buildVirtualDoc(hk);
-  assert.ok(vHk.text.includes("static func __hook(start: int = 0):"), "hook params are spliced verbatim");
+  assert.ok(vHk.text.includes("static func use_counter(start: int = 0):"), "hook emitted under its real name, params verbatim");
   az.sync("file:///proj/hk.__guitkx_virtual.gd", vHk.text);
   const hkDiags = az.diagnosticsAt("file:///proj/hk.__guitkx_virtual.gd", vHk.text);
   assert.ok(!hkDiags.some((d) => d.code.startsWith("UNDEFINED_")), `hook params must be in scope, got ${JSON.stringify(hkDiags)}`);
@@ -500,6 +510,43 @@ test("analyzer e2e: module members and hook params never false-flag; a typo in a
   assert.ok(undef.length >= 1, "a typo'd hook call inside a module member still fires");
   const s = vBad.map.toSource(undef[0].range.start);
   assert.equal(bad.slice(s!, s! + 9), "usseState", "…mapped onto the member's typo");
+
+  // A sibling member's bare call to a module-local hook is LEGAL guitkx (the compiler deliberately
+  // leaves it unaliased and emits the hook under its real name) — it must never flag.
+  const sib = "module M2 {\n\thook use_z(n: int) {\n\t\tvar s := useState(n)\n\t\treturn s\n\t}\n\tcomponent B() {\n\t\tvar s := use_z(1)\n\t\treturn (<Label text={ str(s) } />)\n\t}\n}\n";
+  const vSib = buildVirtualDoc(sib);
+  az.sync("file:///proj/sib.__guitkx_virtual.gd", vSib.text);
+  const sibUndef = az.diagnosticsAt("file:///proj/sib.__guitkx_virtual.gd", vSib.text).filter((d) => d.code.startsWith("UNDEFINED_"));
+  assert.equal(sibUndef.length, 0, `bare sibling-hook call must resolve, got ${JSON.stringify(sibUndef)}`);
+});
+
+test("reindent anchor skips comment lines — an over-indented leading comment cannot shift real code", () => {
+  // A comment is legal at ANY indentation in GDScript. Anchoring on one dragged every code line off
+  // its true base: the virtual doc/generated .gd went invalid and Format Document dedented a
+  // statement out of its `if` block (source corruption). All four mirrored reindenters skip comments
+  // when picking the anchor; this covers the vdoc + TS formatter (the GD suite covers its mirrors).
+  const src = "component X() {\n\t\t# over-indented note\n\tvar a := useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label />)\n}\n";
+  const { text } = buildVirtualDoc(src);
+  assert.ok(text.includes("\n\tvar a := useState(0)"), "code anchors at body level, not at the comment");
+  assert.ok(text.includes("\n\tif a[0]:"), "if header at body level");
+  assert.ok(text.includes("\n\t\ta[1].call(1)"), "the if body stays nested");
+  const fmt = formatGuitkx(src).text;
+  assert.ok(fmt.includes("\tif a[0]:\n\t\ta[1].call(1)"), `formatter must not dedent the if body, got ${JSON.stringify(fmt)}`);
+});
+
+test("vetoGuitkxDeclared drops UNDEFINED_* for names declared in sibling .guitkx files, keeps real typos", () => {
+  // The analyzer only sees .gd files; a .guitkx-declared class's generated sibling .gd is git-ignored
+  // (fresh clone / before the first Godot compile) — the index knows the binding, so never flag it.
+  const wi = new WorkspaceIndex();
+  wi.reindex("file:///proj/demo_hooks.guitkx", "module DemoHooks {\n\thook use_x() {\n\t\treturn 1\n\t}\n}\n");
+  const text = "var a = DemoHooks.use_x()\nvar b = Nonexistent.thing()\n";
+  const diags = [
+    { code: "UNDEFINED_IDENTIFIER", range: { start: text.indexOf("DemoHooks"), end: text.indexOf("DemoHooks") + 9 } },
+    { code: "UNDEFINED_IDENTIFIER", range: { start: text.indexOf("Nonexistent"), end: text.indexOf("Nonexistent") + 11 } },
+  ];
+  const kept = vetoGuitkxDeclared(wi, diags, text);
+  assert.equal(kept.length, 1, "the .guitkx-declared name is vetoed");
+  assert.equal(text.slice(kept[0].range.start, kept[0].range.end), "Nonexistent", "a genuinely unknown name still flags");
 });
 
 test("virtualDoc paramNames is noncode-aware (comma/colon inside a string default does not mis-split)", () => {

@@ -63,5 +63,10 @@
     "expected": "component Out {\n\tvar a = useState(0)\n\tvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
     "input": "component Out() {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "setup_outlier_indent"
+  },
+  {
+    "expected": "component Cmt {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "input": "component Cmt() {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
+    "name": "setup_comment_anchor"
   }
 ]

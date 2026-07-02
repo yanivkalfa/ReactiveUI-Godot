@@ -300,15 +300,21 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 		return ""
 	var unit := Compiler._indent_unit(lines)
 	var anchor := -1
+	var anchor_any := -1
 	var depths: Array = []
 	for l in lines:
-		if (l as String).strip_edges() == "":
+		var t := (l as String).strip_edges()
+		if t == "":
 			depths.append(-1)
 			continue
 		var d := Compiler._indent_depth(l as String, unit)
 		depths.append(d)
-		if anchor == -1:
+		if anchor_any == -1:
+			anchor_any = d
+		if anchor == -1 and not t.begins_with("#"):
 			anchor = d
+	if anchor == -1:
+		anchor = anchor_any  # comment-only block
 	var out := ""
 	for i in lines.size():
 		if int(depths[i]) == -1:

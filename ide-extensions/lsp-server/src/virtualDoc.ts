@@ -92,17 +92,22 @@ function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: 
 
   if (kind === "hook") {
     if (!body) return;
-    // The hook's own params, VERBATIM and mapped — a hook body reads its params, so without them in
-    // scope every such read would be a false UNDEFINED_IDENTIFIER (and hover/goto on one, dead).
-    // Mirrors the compiler, which emits hook params verbatim (guitkx.gd _compile_hook).
+    // The hook is emitted under its REAL declared name, exactly like the compiler (guitkx.gd
+    // _compile_hook / _compile_module): a sibling module member legally calls it bare (`use_z(1)` —
+    // the compiler deliberately skips aliasing module-local hooks), so a mangled `__hook_N` name
+    // turned every such call into a false UNDEFINED_FUNCTION. Params are spliced VERBATIM and
+    // mapped — a hook body reads its params, so without them in scope every read would be a false
+    // UNDEFINED_IDENTIFIER (and hover/goto on one, dead). The `-> Hint` survives like the compiler's
+    // _ret_suffix (tuple-style `-> (a, b)` is dropped — GDScript has no tuple type).
+    const name = readDeclName(ctx.src, at);
     const params = readParamsSpan(ctx.src, at);
-    ctx.gen += `static func __hook${suffix}(`;
+    ctx.gen += `static func ${name !== "" ? name : `__hook${suffix}`}(`;
     if (params && params.text.trim() !== "") {
       const gs = ctx.gen.length;
       ctx.gen += params.text;
       ctx.map.addSpan(params.start, gs, params.text.length);
     }
-    ctx.gen += "):\n";
+    ctx.gen += `)${retSuffix(ctx.src, at)}:\n`;
     // Map the hook body per line (see emitVerbatimBlock) so hover/completion/definition resolve
     // inside it regardless of re-indentation or CRLF line endings.
     emitVerbatimBlock(ctx, body.start, body.start + body.text.length, 1);
@@ -110,24 +115,29 @@ function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: 
     return;
   }
 
-  ctx.gen += `static func render${suffix}(props: Dictionary, children: Array) -> RUIVNode:\n`;
+  // A top-level component compiles to `static func render(...)` (guitkx.gd _emit); module member
+  // components compile under their REAL names (`_emit_func(c["name"], ...)`) — mirror both, so a
+  // sibling expr referencing a member component by name resolves instead of false-flagging.
+  const compName = suffix === "" ? "render" : readDeclName(ctx.src, at) || `render${suffix}`;
+  ctx.gen += `static func ${compName}(props: Dictionary, children: Array) -> RUIVNode:\n`;
   if (!body) {
     ctx.gen += "\tpass\n";
     return;
   }
-  for (const name of paramNames(readParams(ctx.src, at))) ctx.gen += `\tvar ${name} = props.get("${name}")\n`;
+  const propVars = paramNames(readParams(ctx.src, at));
+  for (const name of propVars) ctx.gen += `\tvar ${name} = props.get("${name}")\n`;
   const split = splitReturn(ctx.src, body.start, body.start + body.text.length);
 
   // setup verbatim (mapped, one line at a time so the per-line indent never shifts an expr offset)
-  if (split && split.setupEnd > body.start) {
+  const setupHasStmt = split.setupEnd > body.start && hasStatement(ctx.src.slice(body.start, split.setupEnd));
+  if (split.setupEnd > body.start) {
     emitVerbatimBlock(ctx, body.start, split.setupEnd, 1);
   }
   // scope-aware markup
-  let emitted = false;
-  if (split) {
-    emitted = emitMarkup(ctx, split.markupStart, split.markupEnd, 1);
-  }
-  if (!emitted && (!split || split.setupEnd <= body.start)) ctx.gen += "\tpass\n";
+  const emitted = emitMarkup(ctx, split.markupStart, split.markupEnd, 1);
+  // `pass` when nothing above counts as a statement — prop destructures do, comment-only setup
+  // does not (a func body of only comments is invalid GDScript).
+  if (!emitted && !setupHasStmt && propVars.length === 0) ctx.gen += "\tpass\n";
 }
 
 // True when the block has at least one real statement line (not blank, not a `#` comment) — then the
@@ -364,21 +374,26 @@ function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number)
   // virtual .gd is valid GDScript. A line indented `\t  ` (tab + 2 spaces) renders like `\t\t` but is
   // byte-different; a naive common-prefix strip leaves that mismatch and the analyser reports a
   // phantom "unindent doesn't match". A tab counts as one unit, the space-unit is the smallest
-  // leading-space run, and depth = round(cols / unit). Anchored to the FIRST non-blank line (in valid
-  // GDScript the body's base level), NOT the shallowest: a min-depth anchor let one outlier-shallow
-  // line raise every other line a level (over-indented with no preceding `:` — invalid virtual .gd).
-  // A line shallower than the anchor clamps to `indent` tabs. Each line's own leading whitespace is
-  // glue — only the code after it is mapped, at its depth-tab level.
+  // leading-space run, and depth = round(cols / unit). Anchored to the FIRST non-blank NON-COMMENT
+  // line (in valid GDScript the body's base level), NOT the shallowest: a min-depth anchor let one
+  // outlier-shallow line raise every other line a level (over-indented with no preceding `:` —
+  // invalid virtual .gd), and a comment anchor would mis-shift real code (GDScript allows a comment
+  // at any indentation). A line shallower than the anchor clamps to `indent` tabs. Each line's own
+  // leading whitespace is glue — only the code after it is mapped, at its depth-tab level.
   const unit = indentUnit(rawLines);
   let anchor = -1;
+  let anchorAny = -1;
   const depths: number[] = [];
   for (const raw of rawLines) {
     const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    if (l.trim() === "") { depths.push(-1); continue; }
+    const t = l.trim();
+    if (t === "") { depths.push(-1); continue; }
     const d = indentDepth(l, unit);
     depths.push(d);
-    if (anchor === -1) anchor = d;
+    if (anchorAny === -1) anchorAny = d;
+    if (anchor === -1 && !t.startsWith("#")) anchor = d;
   }
+  if (anchor === -1) anchor = anchorAny; // comment-only block
   let srcOff = start; // absolute source offset of the current line's first char
   for (let k = 0; k < rawLines.length; k++) {
     const raw = rawLines[k];
@@ -463,7 +478,7 @@ interface ReturnSplit {
   markupEnd: number;
 }
 
-function splitReturn(src: string, start: number, end: number): ReturnSplit | null {
+function splitReturn(src: string, start: number, end: number): ReturnSplit {
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -476,7 +491,9 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | nul
       while (p < end && /\s/.test(src[p])) p++;
       if (src[p] === "(") {
         const close = findMatching(src, p);
-        if (close === -1) return null;
+        // A half-typed `return (`: keep analysing the setup ABOVE the return (empty markup window)
+        // instead of abandoning the whole body — mid-keystroke intelligence stays alive.
+        if (close === -1) return { setupEnd: i, markupStart: end, markupEnd: end };
         return { setupEnd: i, markupStart: p + 1, markupEnd: close };
       }
       if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
@@ -492,12 +509,50 @@ function readWord(src: string, i: number): string {
   return src.slice(i, j);
 }
 
+// The declared name following the (possibly misspelled) keyword at `at`, or "" when absent.
+function readDeclName(src: string, at: number): string {
+  const n = src.length;
+  let i = at;
+  while (i < n && /[A-Za-z0-9_]/.test(src[i])) i++; // the keyword token
+  while (i < n && (src[i] === " " || src[i] === "\t")) i++;
+  const s = i;
+  while (i < n && /[A-Za-z0-9_]/.test(src[i])) i++;
+  return src.slice(s, i);
+}
+
+// The declaration's ` -> Hint` suffix, mirroring guitkx.gd _ret_suffix: empty when there is no hint,
+// and a tuple-style `-> (a, b)` is dropped (GDScript has no tuple type).
+function retSuffix(src: string, declAt: number): string {
+  const n = src.length;
+  let j = declAt;
+  while (j < n && src[j] !== "{" && src[j] !== "\n") {
+    if (src[j] === "(") {
+      const pc = findMatching(src, j);
+      if (pc === -1) return "";
+      j = pc + 1;
+      continue;
+    }
+    if (src[j] === "-" && src[j + 1] === ">") {
+      let e = j + 2;
+      while (e < n && src[e] !== "{") e++;
+      const hint = src.slice(j + 2, e).trim();
+      return hint === "" || hint.startsWith("(") ? "" : ` -> ${hint}`;
+    }
+    j++;
+  }
+  return "";
+}
+
 // The `(...)` parameter list of a component/hook declaration (between the name and the body `{`),
 // with its source offset so the text can be spliced into the virtual doc MAPPED (hook signatures).
+// Stops at a `->` return hint: params always precede it, so a params-less declaration with a
+// parenthesized hint (`hook use_pair -> (int, Callable) { … }`) must not eat the hint as params —
+// the compiler parses it the same way (guitkx.gd _parse_hook_at reads params before the hint).
 function readParamsSpan(src: string, declAt: number): { text: string; start: number } | null {
   const n = src.length;
   let j = declAt;
   while (j < n && src[j] !== "(" && src[j] !== "{") {
+    if (src[j] === "-" && src[j + 1] === ">") return null;
     const k = skipNoncode(src, j);
     if (k !== j) {
       j = k;

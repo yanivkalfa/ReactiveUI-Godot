@@ -301,9 +301,12 @@ function fmtSetup(setup: string, indent: number, o: FmtOptions): string {
 // (a tab then 4 spaces, which RENDERS like two tabs but is byte-different) — is normalized to real tabs
 // instead of emitted verbatim as `\t␠␠␠␠` (the "Format Document leaves 4 spaces in nested code" bug).
 // Mirrors the compiler's guitkx.gd `_reindent_setup` (identical `indentUnit`/`indentDepth`), so the
-// formatted source and the generated `.gd` indent the same. Anchored to the FIRST non-blank line (in
-// valid GDScript the body's base level), NOT the shallowest: a min-depth anchor let one outlier-shallow
-// line push every other line a level deeper. A line shallower than the anchor clamps to `indent`.
+// formatted source and the generated `.gd` indent the same. Anchored to the FIRST non-blank
+// NON-COMMENT line (in valid GDScript the body's base level), NOT the shallowest: a min-depth anchor
+// let one outlier-shallow line push every other line a level deeper. Comments are skipped when
+// PICKING the anchor (GDScript allows a comment at any indentation, so a stray over-indented leading
+// comment must not shift real code) but re-emitted by depth like any line. A line shallower than the
+// anchor clamps to `indent`.
 function reanchor(code: string, indent: number, o: FmtOptions): string {
   let lines = code.split("\n");
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
@@ -311,16 +314,20 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   if (lines.length === 0) return "";
   const unit = indentUnit(lines);
   let anchor = -1;
+  let anchorAny = -1;
   const depths: number[] = [];
   for (const l of lines) {
-    if (l.trim() === "") {
+    const t = l.trim();
+    if (t === "") {
       depths.push(-1);
       continue;
     }
     const d = indentDepth(l, unit);
     depths.push(d);
-    if (anchor === -1) anchor = d;
+    if (anchorAny === -1) anchorAny = d;
+    if (anchor === -1 && !t.startsWith("#")) anchor = d;
   }
+  if (anchor === -1) anchor = anchorAny; // comment-only block
   let out = "";
   for (let i = 0; i < lines.length; i++) {
     if (depths[i] === -1) {

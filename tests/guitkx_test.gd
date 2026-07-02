@@ -403,6 +403,22 @@ func _test_outlier_indent() -> void:
 	var s := GDScript.new()
 	s.source_code = gd.replace("class_name X\n", "")
 	_check_true(s.reload() == OK, "outlier-shallow setup generates VALID GDScript")
+	# A leading over-indented comment must not become the anchor (comments are legal at any depth):
+	# anchoring on it dedented the if-body out of its block -- invalid .gd + formatter corruption.
+	var cmt := RUIGuitkx.compile("component X {\n\t\t# note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn ( <Label /> )\n}\n", "X")
+	_check_true(cmt["ok"], "leading over-indented comment still compiles (got %s)" % str(cmt["diagnostics"]))
+	var cgd: String = cmt["gd"]
+	_check(cgd, "\n\tif a[0]:", "code anchors at body level, not at the comment")
+	_check(cgd, "\n\t\ta[1].call(1)", "the if body stays nested under its if")
+	var cs := GDScript.new()
+	cs.source_code = cgd.replace("class_name X\n", "")
+	_check_true(cs.reload() == OK, "comment-led setup generates VALID GDScript")
+	# A comment-only hook body must still produce a valid func (comments are not statements).
+	var ch := RUIGuitkx.compile("hook use_todo() {\n\t# TODO: implement\n}\n", "UseTodo")
+	_check_true(ch["ok"], "comment-only hook body compiles")
+	var chs := GDScript.new()
+	chs.source_code = (ch["gd"] as String).replace("class_name UseTodo\n", "")
+	_check_true(chs.reload() == OK, "comment-only hook body generates VALID GDScript (trailing pass)")
 
 func _test_hook() -> void:
 	var src := "hook use_counter(start: int = 0) {\n" + \
