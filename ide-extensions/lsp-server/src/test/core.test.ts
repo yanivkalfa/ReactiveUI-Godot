@@ -9,7 +9,7 @@ import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows } from "../formatGuitkx";
+import { formatGuitkx, markupWindows, missingReturnComponents } from "../formatGuitkx";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
@@ -238,6 +238,35 @@ test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
 test("declarationDiags: a fully typo'd header still reports something, never silence", () => {
   const d = declarationDiags("@clasaas_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
   assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX0102"), `got ${JSON.stringify(d)}`);
+});
+
+// G3: a component whose closed body has NO markup return used to be silent live (no markup window →
+// every window tier skips it; the virtual doc just emits `pass`) — only the post-save sidecar showed it.
+test("missingReturnComponents flags a component with no markup return (live GUITKX0102)", () => {
+  const src = "component NoRet() {\n\tvar a = useState(0)\n}\n";
+  const hits = missingReturnComponents(src);
+  assert.equal(hits.length, 1, `got ${JSON.stringify(hits)}`);
+  assert.equal(src.slice(hits[0].start, hits[0].end), "component NoRet", "span anchors the declaration head");
+});
+
+test("missingReturnComponents: a lone `return null` guard still counts as missing", () => {
+  assert.equal(missingReturnComponents("component G(show: bool) {\n\tif not show:\n\t\treturn null\n}\n").length, 1);
+});
+
+test("missingReturnComponents stays silent on valid components, hooks, and in-progress typing", () => {
+  assert.equal(missingReturnComponents("component Ok() {\n\treturn ( <Label /> )\n}\n").length, 0, "valid component");
+  assert.equal(missingReturnComponents("hook use_x() {\n\tvar s = useState(0)\n\treturn s\n}\n").length, 0, "hooks never have markup returns");
+  // an unclosed `return (` is the compiler's GUITKX0304 (unclosed paren), not a missing return —
+  // flagging it would squiggle every component mid-keystroke.
+  assert.equal(missingReturnComponents("component Typing() {\n\treturn (\n}\n").length, 0, "half-typed return (");
+  assert.equal(missingReturnComponents("component Open() {\n\tvar a = 1\n").length, 0, "unclosed body is transient");
+});
+
+test("missingReturnComponents finds module-member components (and only the broken one)", () => {
+  const src = "module M {\n\tcomponent A() { return (<Label />) }\n\tcomponent B() {\n\t\tvar x = 1\n\t}\n}\n";
+  const hits = missingReturnComponents(src);
+  assert.equal(hits.length, 1, `got ${JSON.stringify(hits)}`);
+  assert.equal(src.slice(hits[0].start, hits[0].end), "component B");
 });
 
 test("declarationDiags stays silent for a valid header (no false positives)", () => {

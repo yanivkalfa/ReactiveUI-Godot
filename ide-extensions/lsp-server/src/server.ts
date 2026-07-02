@@ -34,7 +34,8 @@ import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, loadFormatterConfig } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig } from "./formatGuitkx";
+import { parseMarkup } from "./markup";
 import { dirname, join, relative } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
@@ -455,6 +456,7 @@ documents.onDidChangeContent((change) => {
     ...declarationDiagnostics(change.document),
     ...structuralDiagnostics(change.document),
     ...markupDiagnostics(change.document),
+    ...missingReturnDiagnostics(change.document),
     ...unreachableDiagnostics(change.document),
     ...embeddedDiagnostics(change.document),
   ];
@@ -1273,6 +1275,35 @@ function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   return diags;
 }
 
+// Live missing-markup-return check [GUITKX0102]: a component whose closed body has no `return ( ... )`
+// used to be SILENT while typing — no markup window means every window-scoped tier skips it, and
+// buildVirtualDoc just emits `pass` — so the error only appeared post-save via the compiler sidecar
+// (pinned to line 0). Message text mirrors guitkx.gd _split_return so the sidecar copy dedupes away.
+function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
+  return missingReturnComponents(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message: "GUITKX0102: component has no `return ( ... )` (only `return null`?)",
+    source: "guitkx",
+  }));
+}
+
+// Locate a directive's body braces: `@for (header) { body }` → the `{`/`}` offsets. Null when the
+// directive is malformed or runs past the window (the markup parser reports those itself).
+function directiveBody(src: string, from: number, end: number): { open: number; close: number } | null {
+  let p = from;
+  while (p < end && /[ \t\r\n]/.test(src[p])) p++;
+  if (src[p] !== "(") return null;
+  const hc = findMatching(src, p);
+  if (hc === -1 || hc >= end) return null;
+  p = hc + 1;
+  while (p < end && /[ \t\r\n]/.test(src[p])) p++;
+  if (src[p] !== "{") return null;
+  const bc = findMatching(src, p);
+  if (bc === -1 || bc >= end) return null;
+  return { open: p, close: bc };
+}
+
 function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, end: number, diags: Diagnostic[]): void {
   const scopes: Array<Set<string>> = [new Set()];
   let i = start;
@@ -1284,6 +1315,30 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
     }
     if (c === "#") {
       while (i < end && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "@") {
+      // Live @for/@while single-root rule [GUITKX0108]: each iteration must yield exactly one keyed
+      // child, like a component root. Roots are counted with the SAME parser the compiler uses
+      // (markup.ts is the parity-tested port of guitkx_markup.gd, shared golden corpus), so the live
+      // verdict cannot diverge from the on-save compile. Mirrors guitkx.gd _validate_body.
+      const w = (src.slice(i + 1, i + 8).match(/^[a-z_]+/) || [""])[0];
+      if (w === "for" || w === "while") {
+        const body = directiveBody(src, i + 1 + w.length, end);
+        if (body) {
+          const pr = parseMarkup(src, body.open + 1, body.close);
+          const roots = pr.nodes.filter((n) => n !== null).length;
+          if (pr.error === "" && roots > 1) {
+            diags.push({
+              severity: DiagnosticSeverity.Error,
+              range: { start: doc.positionAt(body.open), end: doc.positionAt(body.close + 1) },
+              message: `GUITKX0108: a @for/@while body must contain exactly one root element (got ${roots}) -- wrap siblings in a fragment <>...</>`,
+              source: "guitkx",
+            });
+          }
+        }
+      }
+      i += 1 + w.length;
       continue;
     }
     if (c === "(") {

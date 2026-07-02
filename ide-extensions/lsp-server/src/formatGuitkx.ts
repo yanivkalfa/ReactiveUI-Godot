@@ -429,7 +429,7 @@ function parseComponentAt(src: string, at: number): CompParse {
   if (bclose === -1) return fail;
   const bodyStart = i + 1;
   const split = splitReturn(src, bodyStart, bclose);
-  if (!split) return fail;
+  if (!split || split === "unclosed") return fail;
   const setup = src.slice(bodyStart, split.setupEnd);
   const mr = parseMarkup(src, split.markupStart, split.markupEnd);
   if (mr.error !== "" || mr.nodes.length !== 1) return fail;
@@ -549,7 +549,7 @@ export function markupWindows(src: string): { start: number; end: number }[] {
         const b = declBody(src, d.at);
         if (b) {
           const split = splitReturn(src, b.start, b.close);
-          if (split && split.markupEnd > split.markupStart) wins.push({ start: split.markupStart, end: split.markupEnd });
+          if (split && split !== "unclosed" && split.markupEnd > split.markupStart) wins.push({ start: split.markupStart, end: split.markupEnd });
           i = b.close + 1;
         } else i = d.at + 1;
       } else if (d.kind === "hook") {
@@ -566,6 +566,55 @@ export function markupWindows(src: string): { start: number; end: number }[] {
   };
   collect(0, src.length);
   return wins;
+}
+
+// Components whose CLOSED body contains no markup return at all — `splitReturn` found neither
+// `return (` nor `return <` (a lone `return null` guard doesn't count). The compiler fails these with
+// GUITKX0102 on save (guitkx.gd _split_return); this is the live mirror so the editor flags it while
+// typing instead of staying silent until the sidecar lands. The walk is the same recovering walk as
+// markupWindows (a typo'd header still gets its body checked); hooks never have markup returns and
+// modules recurse, so only real components report — never helper funcs. An UNCLOSED `return (` (the
+// half-typed case, the compiler's GUITKX0304) deliberately does not report. Span = the declaration
+// head (keyword through name), the natural squiggle anchor.
+export function missingReturnComponents(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          if (splitReturn(src, b.start, b.close) === null) out.push(declHead(src, d.at));
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
+}
+
+// The `component Name` head span at a declaration keyword offset (typo'd keywords included).
+function declHead(src: string, at: number): { start: number; end: number } {
+  const n = src.length;
+  let i = at;
+  while (i < n && isIdent(src[i])) i++; // the (possibly-misspelled) keyword
+  const kwEnd = i;
+  while (i < n && (src[i] === " " || src[i] === "\t")) i++;
+  const ns = i;
+  while (i < n && isIdent(src[i])) i++;
+  return { start: at, end: i > ns ? i : kwEnd };
 }
 
 // The `{`…matching-`}` body of a component/hook at `at` (keyword-token-agnostic, params-aware), for
@@ -620,7 +669,10 @@ interface ReturnSplit {
   markupStart: number;
   markupEnd: number;
 }
-function splitReturn(src: string, start: number, end: number): ReturnSplit | null {
+// `"unclosed"` = a markup return exists but its `(` never closes (the compiler's GUITKX0304, and the
+// half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX0102).
+// Distinguished so the live missing-return diagnostic can't fire on an in-progress paren.
+function splitReturn(src: string, start: number, end: number): ReturnSplit | "unclosed" | null {
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -633,7 +685,7 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | nul
       while (p < end && /\s/.test(src[p])) p++;
       if (src[p] === "(") {
         const close = findMatching(src, p);
-        if (close === -1) return null;
+        if (close === -1) return "unclosed";
         return { setupEnd: i, markupStart: p + 1, markupEnd: close };
       }
       if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
