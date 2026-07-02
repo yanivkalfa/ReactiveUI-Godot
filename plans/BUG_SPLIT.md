@@ -20,27 +20,38 @@ dynamic dispatch) — needs the broad regression corpus before default-on.
 Files: `crates/gdscript-syntax/src/parser/grammar.rs` (A4), `crates/gdscript-hir/src/infer.rs` (A1/A2/A3),
 `crates/gdscript-hir/src/{warnings.rs,ty.rs}` (A1/A3).
 
-## ReactiveUI-Godot (`.guitkx` toolchain) — leave for now
+## ReactiveUI-Godot (`.guitkx` toolchain) — **DONE** (branch `fix/guitkx-live-diagnostics`)
 
 | ID | Priority | Effort | Status | One-liner | Deps |
 |----|----------|--------|--------|-----------|------|
-| **G1** | High | medium | to do | virtual-doc setup reindent anchors to MIN depth → one outlier line breaks the emitted `.gd` ("expected an expression" + the whole `@for` cascade) | — |
-| **G4** | Medium | small | to do | Format Document reflows nested code to the wrong indent — same MIN-anchor bug in the formatter | G1 |
-| **G2** | Medium | medium | to do | `@for`/`@while` body single-root rule (`GUITKX0108`) exists in the compiler but never runs **live** — double `<Label>` not flagged while typing | — |
-| **G3** | Medium | medium | to do | missing `return (...)` (`GUITKX0102`) never flagged **live** — only post-save via the sidecar | — |
+| **G1** | High | medium | **DONE** | reindent now anchors to the **first non-blank non-comment line** (not MIN depth) with clamp, in all FOUR mirrors (`guitkx.gd _reindent_setup`, `guitkx_formatter.gd _reanchor`, `virtualDoc.ts emitVerbatimBlock`, `formatGuitkx.ts reanchor`); shared-corpus fixtures `setup_outlier_indent` + `setup_comment_anchor` | — |
+| **G4** | Medium | small | **DONE** | same fix in the formatters (one change, four mirrors); Format Document can no longer dedent an `if` body via a stray comment/outlier | G1 |
+| **G2** | Medium | medium | **DONE** | `GUITKX0108` fires live: `scanWindowDiagnostics` counts loop-body roots with `parseMarkup` (the parity-tested compiler-port), ranged at the body | — |
+| **G3** | Medium | medium | **DONE** | `GUITKX0102` fires live: `missingReturnComponents()` (same recovering walk as `markupWindows`); `splitReturn` distinguishes "no return" from a half-typed unclosed `return (` | — |
 
-**G1 + G4 are one fix** replicated across three byte-identical reindenters (`virtualDoc.ts`
-`emitVerbatimBlock`, `guitkx.gd` `_reindent_setup`, `formatGuitkx.ts` `reanchor`) — do them together
-(cross-tested by `test-fixtures/formatter-cases.json`). **G2 + G3 share a shape:** a compiler rule that
-exists but is never run in the live LSP tier — both should reuse the existing `splitReturn`/body-parse
-helpers rather than re-implement.
+Shipped as library **0.4.3** / IDE **0.5.4** together with the analyzer-0.5.3 wiring (below) and an
+adversarial-review hardening pass (module members emitted under real names; workspace-completeness
+soundness; `vetoGuitkxDeclared` for `.guitkx`-declared class names; comment-only hook bodies).
 
-Files: `RG/ide-extensions/lsp-server/src/{virtualDoc.ts,formatGuitkx.ts,server.ts}`,
-`RG/addons/reactive_ui/guitkx/{guitkx.gd,guitkx_formatter.gd}`.
+## Cross-repo note (A3 ↔ G-stub) — **DONE**
 
-## Cross-repo note (A3 ↔ G-stub)
+`@gdscript-analyzer/core` bumped to **0.5.3**; `setWorkspaceComplete(true)` is armed only after a
+fresh full `.gd` scan runs with a live client file watcher (never over-claims). Hook stubs are now
+class-level **wrapper funcs** with hooks.gd-byte-identical signatures (drift tripwire test) and
+`## @return-tuple(...)` tags on `useState`/`useReducer`/`useTransition` in `hooks.gd` — so
+`s := useState(0)` types `s[1]` as `Callable` end-to-end (verified against the real analyzer in
+`core.test.ts`). Remaining, tracked follow-ups:
 
-A3's end-to-end (`sliced[1].casll()` flagged in a real `.guitkx`) needs **both** the analyzer `Ty::Tuple`
-work **and** a Godot change: `declareHookStubs` (`virtualDoc.ts:351-353`) must emit *typed* hook stubs so
-the tuple return survives the `var useState = Hooks.useState` alias. The analyzer portion is verifiable now
-on a hand-written `.gd`; the guitkx path is blocked on that Godot change.
+- **Untyped `var s = useState(0)`** stays `Variant` (GDScript semantics — only `:=` infers); needs
+  the analyzer's assignment-carried flow narrowing (tracked in GA/TECH_DEBT.md).
+- **`.casll()` severity**: a method miss on a typed `Callable` is `UNSAFE_METHOD_ACCESS` (opt-in via
+  project warning settings / `--strict`); the closed-builtin-receiver severity study is queued in
+  GA/TECH_DEBT.md before it can default on.
+- **Block-structure-aware reindent** (levels derived from `:` openers, bracket continuations,
+  multi-line strings) would also normalize a deep-outlier FIRST line — today that (already-invalid)
+  input errors at the anomalous line, Godot-parity. Design sketched in the review notes.
+- **Live `GUITKX0106`** (missing `key` in a loop) and component-level single-root live — the sidecar
+  covers both today.
+- **`.guitkx` vdoc library shims**: feeding never-compiled `.guitkx` declarations into the analyzer
+  as virtual libraries would give full member resolution (arg-checking on `DemoHooks.use_x(...)`);
+  today `vetoGuitkxDeclared` guarantees no false UNDEFINED_* but adds no member table.
