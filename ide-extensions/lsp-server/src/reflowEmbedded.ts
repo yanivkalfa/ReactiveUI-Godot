@@ -14,13 +14,16 @@ import { embeddedRegions } from "./formatGuitkx";
 export type GdFormatter = (gd: string) => string | null;
 
 /** Reflow embedded-GDScript regions of an already-formatted document via `format`. A region that fails
- *  to format, or whose reflow is not token-equivalent to the original, is left exactly as-is. */
-export function reflowEmbedded(formatted: string, format: GdFormatter): string {
+ *  to format, or whose reflow is not token-equivalent to the original, is left exactly as-is.
+ *  `indentUnit` (Phase D): the document's one-level indent string ("  " for the spaces-2 default) —
+ *  gdscript-fmt emits TAB depth, and splicing those tabs verbatim into a spaces file is the classic
+ *  mixed-indent bug, so each reflowed line's relative depth is converted to the document's unit. */
+export function reflowEmbedded(formatted: string, format: GdFormatter, indentUnit = "  "): string {
   const regions = embeddedRegions(formatted).sort((a, b) => b.start - a.start); // descending: offsets stay valid
   let out = formatted;
   for (const r of regions) {
     const original = out.slice(r.start, r.end);
-    const reflowed = reflowRegion(format, original);
+    const reflowed = reflowRegion(format, original, indentUnit);
     if (reflowed !== null && tokenEquivalent(original, reflowed)) {
       out = out.slice(0, r.start) + reflowed + out.slice(r.end);
     }
@@ -29,7 +32,7 @@ export function reflowEmbedded(formatted: string, format: GdFormatter): string {
 }
 
 // Reflow one region, preserving its boundary whitespace; null on any failure.
-function reflowRegion(format: GdFormatter, region: string): string | null {
+function reflowRegion(format: GdFormatter, region: string, indentUnit: string): string | null {
   const lead = region.slice(0, region.length - region.replace(/^[ \t\r\n]+/, "").length);
   const trail = region.slice(region.replace(/[ \t\r\n]+$/, "").length);
   const core = region.slice(lead.length, region.length - trail.length);
@@ -49,7 +52,16 @@ function reflowRegion(format: GdFormatter, region: string): string | null {
   if (!fl.length || !/^func __rui_reflow\(\):/.test(fl[0])) return null;
   const body = fl.slice(1);
   const bodyIndent = commonIndent(body.filter((l) => l.trim() !== ""));
-  const reflowedCore = body.map((l) => (l.trim() === "" ? "" : hostIndent + l.slice(bodyIndent.length))).join("\n");
+  // Relative depth beyond the region base arrives as gdscript-fmt TABS — convert each level to the
+  // document's indent unit so a spaces-2 file never gains interior tabs.
+  const reflowedCore = body
+    .map((l) => {
+      if (l.trim() === "") return "";
+      const rest = l.slice(bodyIndent.length);
+      const rel = rest.match(/^\t*/)![0].length;
+      return hostIndent + indentUnit.repeat(rel) + rest.slice(rel);
+    })
+    .join("\n");
   return lead + reflowedCore + trail;
 }
 

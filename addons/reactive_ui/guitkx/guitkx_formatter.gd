@@ -15,8 +15,8 @@ const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
 
 const DEFAULTS := {
 	"printWidth": 100,
-	"indentStyle": "tab",        # "tab" | "space"
-	"indentSize": 4,             # spaces per level when indentStyle == "space"
+	"indentStyle": "space",      # "tab" | "space" -- Phase D: Unity-exact default ("tab is 2 spaces")
+	"indentSize": 2,             # spaces per level when indentStyle == "space"
 	"singleAttributePerLine": false,
 	"insertSpaceBeforeSelfClose": true,
 }

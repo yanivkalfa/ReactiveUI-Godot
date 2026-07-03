@@ -18,10 +18,12 @@ export interface FmtOptions {
   singleAttributePerLine: boolean;
   insertSpaceBeforeSelfClose: boolean;
 }
+// Phase D: Unity-exact defaults — spaces at width 2 ([uitkx]'s configurationDefaults), user-set
+// "tab is 2 spaces". Keep guitkx_formatter.gd's OPTIONS in lockstep (parity corpus pins both).
 const DEFAULTS: FmtOptions = {
   printWidth: 100,
-  indentStyle: "tab",
-  indentSize: 4,
+  indentStyle: "space",
+  indentSize: 2,
   singleAttributePerLine: false,
   insertSpaceBeforeSelfClose: true,
 };
@@ -381,11 +383,14 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   return out;
 }
 
-// Inferred space-indent unit: the smallest positive run of leading spaces across `lines` (1 for
-// tab-only source), so a tab weighs the same as one such run. Mirrors guitkx.gd `_indent_unit`.
+// Inferred space-indent unit: the minimum POSITIVE DIFFERENCE between distinct leading-space
+// widths — NOT the minimum width, which is the block's base offset: a spaces-2 body anchored at
+// width 4 (4/6/8) divided by 4 folds two levels together and dedents a nested `return` out of its
+// guard on reformat (Phase D corruption find). One distinct width keeps the old min-width
+// behavior; tab-only source keeps unit 1 (a tab = one level). Mirrors guitkx.gd `_indent_unit`.
 // Exported for the T2.5 rules-of-hooks scan (liveMarkup.ts) so both consumers share ONE geometry.
 export function indentUnit(lines: string[]): number {
-  let unit = 0;
+  const widths = new Set<number>();
   for (const l of lines) {
     let sp = 0;
     for (const c of l) {
@@ -393,9 +398,16 @@ export function indentUnit(lines: string[]): number {
       else if (c === "\t") continue;
       else break;
     }
-    if (sp > 0 && (unit === 0 || sp < unit)) unit = sp;
+    if (sp > 0) widths.add(sp);
   }
-  return unit > 0 ? unit : 1;
+  if (widths.size === 0) return 1;
+  const sorted = [...widths].sort((a, b) => a - b);
+  let unit = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const d = sorted[i] - sorted[i - 1];
+    if (d > 0 && d < unit) unit = d;
+  }
+  return Math.max(unit, 1);
 }
 
 // Indentation depth in whole levels: a tab = `unit` columns, a space = 1 column, rounded. Mirrors

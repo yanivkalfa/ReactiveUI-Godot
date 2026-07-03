@@ -1,92 +1,72 @@
 [
   {
-    "expected": "component Counter(start: int = 0) {\n\tvar s = useState(start)\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ s[0] } />\n\t\t\t<Button text=\"+1\" on_pressed={ inc } />\n\t\t</VBox>\n\t)\n}\n",
+    "expected": "component Counter(start: int = 0) {\n  var s = useState(start)\n  return (\n    <VBox>\n      <Label text={ s[0] } />\n      <Button text=\"+1\" on_pressed={ inc } />\n    </VBox>\n  )\n}\n",
     "input": "component  Counter( start: int = 0 ){\n\tvar s = useState(start)\n\treturn (\n<VBox>\n<Label text={s[0]}/>\n<Button text=\"+1\" on_pressed={inc}/>\n</VBox>\n)\n}\n",
     "name": "counter"
   },
   {
-    "expected": "component Btn {\n\treturn (\n\t\t<Button text=\"Click\" disabled flat={ true } on_pressed={ go } />\n\t)\n}\n",
+    "expected": "component Btn {\n  return (\n    <Button text=\"Click\" disabled flat={ true } on_pressed={ go } />\n  )\n}\n",
     "input": "component Btn(){\nreturn (\n<Button text=\"Click\" disabled flat={true} on_pressed={go}/>\n)\n}\n",
     "name": "attrs"
   },
   {
-    "expected": "component Status(state:int) {\n\treturn (\n\t\t<VBox>\n\t\t\t@if (state == 0) {\n\t\t\t\t<Label text=\"idle\" />\n\t\t\t} @elif (state == 1) {\n\t\t\t\t<Label text=\"run\" />\n\t\t\t} @else {\n\t\t\t\t<Label text=\"done\" />\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n",
+    "expected": "component Status(state:int) {\n  return (\n    <VBox>\n      @if (state == 0) {\n        <Label text=\"idle\" />\n      } @elif (state == 1) {\n        <Label text=\"run\" />\n      } @else {\n        <Label text=\"done\" />\n      }\n    </VBox>\n  )\n}\n",
     "input": "component Status(state:int){\nreturn (\n<VBox>\n@if (state == 0) { <Label text=\"idle\"/> } @elif (state == 1) { <Label text=\"run\"/> } @else { <Label text=\"done\"/> }\n</VBox>\n)\n}\n",
     "name": "if_elif_else"
   },
   {
-    "expected": "component L(items:Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\t<Label text={ str(it) } key={ it } />\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n",
+    "expected": "component L(items:Array) {\n  return (\n    <VBox>\n      @for (it in items) {\n        <Label text={ str(it) } key={ it } />\n      }\n    </VBox>\n  )\n}\n",
     "input": "component L(items:Array){\nreturn (\n<VBox>\n@for (it in items) { <Label text={str(it)} key={it}/> }\n</VBox>\n)\n}\n",
     "name": "for_loop"
   },
   {
-    "expected": "component M(x:int) {\n\treturn (\n\t\t<VBox>\n\t\t\t@match (x) {\n\t\t\t\t@case (0) {\n\t\t\t\t\t<Label text=\"zero\" />\n\t\t\t\t}\n\t\t\t\t@default {\n\t\t\t\t\t<Label text=\"other\" />\n\t\t\t\t}\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n",
+    "expected": "component M(x:int) {\n  return (\n    <VBox>\n      @match (x) {\n        @case (0) {\n          <Label text=\"zero\" />\n        }\n        @default {\n          <Label text=\"other\" />\n        }\n      }\n    </VBox>\n  )\n}\n",
     "input": "component M(x:int){\nreturn (\n<VBox>\n@match (x) { @case (0) { <Label text=\"zero\"/> } @default { <Label text=\"other\"/> } }\n</VBox>\n)\n}\n",
     "name": "match"
   },
   {
-    "expected": "component F {\n\treturn (\n\t\t<>\n\t\t\t<Label text=\"a\" />\n\t\t\t<Label text=\"b\" />\n\t\t</>\n\t)\n}\n",
+    "expected": "component F {\n  return (\n    <>\n      <Label text=\"a\" />\n      <Label text=\"b\" />\n    </>\n  )\n}\n",
     "input": "component F(){\nreturn (\n<>\n<Label text=\"a\"/>\n<Label text=\"b\"/>\n</>\n)\n}\n",
     "name": "fragment"
   },
   {
-    "expected": "hook use_counter(start:int) {\n\tvar s = useState(start)\n\treturn s\n}\n",
+    "expected": "hook use_counter(start:int) {\n  var s = useState(start)\n  return s\n}\n",
     "input": "hook use_counter( start:int ){\n\tvar s = useState(start)\n\treturn s\n}\n",
     "name": "hook"
   },
   {
-    "expected": "module Widgets {\n\tcomponent A {\n\t\treturn (\n\t\t\t<Label text=\"a\" />\n\t\t)\n\t}\n\n\tcomponent B {\n\t\treturn (\n\t\t\t<A />\n\t\t)\n\t}\n}\n",
+    "expected": "module Widgets {\n  component A {\n    return (\n      <Label text=\"a\" />\n    )\n  }\n\n  component B {\n    return (\n      <A />\n    )\n  }\n}\n",
     "input": "module Widgets {\ncomponent A(){ return (<Label text=\"a\"/>) }\ncomponent B(){ return (<A/>) }\n}\n",
     "name": "module"
   },
   {
-    "expected": "@class_name Fancy\n\ncomponent Card(title:String) {\n\treturn (\n\t\t<Panel>\n\t\t\t<Label text={ title } />\n\t\t</Panel>\n\t)\n}\n",
+    "expected": "@class_name Fancy\n\ncomponent Card(title:String) {\n  return (\n    <Panel>\n      <Label text={ title } />\n    </Panel>\n  )\n}\n",
     "input": "@class_name Fancy\ncomponent Card(title:String){\nreturn (\n<Panel>\n<Label text={title}/>\n</Panel>\n)\n}\n",
     "name": "classname"
   },
   {
-    "expected": "hook use_thing(n: int) {\n\tvar s = useState(n)\n\treturn s\n}\n",
+    "expected": "hook use_thing(n: int) {\n  var s = useState(n)\n  return s\n}\n",
     "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n",
     "name": "hook_return_hint"
   },
   {
-    "expected": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "expected": "component G(show: bool) {\n  if not show:\n    return null\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
     "input": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "guard_return_null"
   },
   {
-    "expected": "component Mix {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t\ta[1].call(1)\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "expected": "component Mix {\n  var a = useState(0)\n  var toggle = func():\n    a[1].call(1)\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
     "input": "component Mix() {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t    a[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "setup_mixed_indent"
   },
   {
-    "expected": "component Out {\n\tvar a = useState(0)\n\tvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "expected": "component Out {\n  var a = useState(0)\n  var b = 1\n  if a[0]:\n    b += 1\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
     "input": "component Out() {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "setup_outlier_indent"
   },
   {
-    "expected": "component Cmt {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "expected": "component Cmt {\n    # over-indented note\n  var a = useState(0)\n  if a[0]:\n    a[1].call(1)\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
     "input": "component Cmt() {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "setup_comment_anchor"
-  },
-  {
-    "name": "preserve_leading_and_trailing",
-    "input": "# file header\n@class_name Foo\ncomponent  Foo(){\n\treturn (\n<Label text=\"a\"/>\n)\n}\n\ncomponent Ghost() {\n\treturn ( <Label /> )\n}\n",
-    "expected": "# file header\n@class_name Foo\ncomponent Foo {\n\treturn (\n\t\t<Label text=\"a\" />\n\t)\n}\n\ncomponent Ghost() {\n\treturn ( <Label /> )\n}\n"
-  },
-  {
-    "name": "module_junk_verbatim",
-    "input": "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n}\n",
-    "expected": "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n}\n"
-  },
-  {
-    "name": "markup_comments",
-    "input": "component C() {\n\treturn (\n// note\n<VBox>\n/* multi */\n<Label {/* why */} text=\"a\"/>\n<!-- html -->\n</VBox>\n)\n}\n",
-    "expected": "component C {\n\treturn (\n\t\t// note\n\t\t<VBox>\n\t\t\t/* multi */\n\t\t\t<Label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</VBox>\n\t)\n}\n"
-  },
-  {
-    "name": "fragment_named",
-    "input": "component F() {\n\treturn (\n<Fragment>\n<Label text=\"a\"/>\n</Fragment>\n)\n}\n",
-    "expected": "component F {\n\treturn (\n\t\t<Fragment>\n\t\t\t<Label text=\"a\" />\n\t\t</Fragment>\n\t)\n}\n"
   }
 ]

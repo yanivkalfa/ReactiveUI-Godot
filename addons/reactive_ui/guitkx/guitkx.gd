@@ -1705,7 +1705,12 @@ static func _strip_leading_ws(s: String) -> String:
 ## Inferred space-indent width: the smallest positive run of leading spaces seen across `lines` (1 if
 ## the source uses only tabs). Lets a tab weigh the same as one such space-run in _indent_depth.
 static func _indent_unit(lines: Array) -> int:
-	var unit := 0
+	# The space-unit is the minimum POSITIVE DIFFERENCE between distinct leading-space widths —
+	# NOT the minimum width itself: a spaces-2 block anchored at a base offset (widths 4/6/8)
+	# has min-width 4, and dividing by 4 folds depths 6 and 8 into the same level, dedenting a
+	# nested `return` out of its guard on reformat (Phase D corruption find). A single distinct
+	# width keeps the old min-width behavior; tab-only blocks keep unit 1 (a tab = one level).
+	var widths := {}
 	for l in lines:
 		var s := l as String
 		var sp := 0
@@ -1717,9 +1722,18 @@ static func _indent_unit(lines: Array) -> int:
 				continue
 			else:
 				break
-		if sp > 0 and (unit == 0 or sp < unit):
-			unit = sp
-	return unit if unit > 0 else 1
+		if sp > 0:
+			widths[sp] = true
+	if widths.is_empty():
+		return 1
+	var sorted: Array = widths.keys()
+	sorted.sort()
+	var unit := int(sorted[0])
+	for i in range(1, sorted.size()):
+		var d := int(sorted[i]) - int(sorted[i - 1])
+		if d > 0 and d < unit:
+			unit = d
+	return maxi(unit, 1)
 
 ## Indentation depth of a line in whole levels: a tab = `unit` columns, a space = 1 column, rounded.
 static func _indent_depth(s: String, unit: int) -> int:

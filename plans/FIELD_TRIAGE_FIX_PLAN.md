@@ -291,10 +291,14 @@ immediately.
   reference) — bodies must be pure producers; document.
 
 ### Tasks
-- **D0 ⬜ Formatter/config parity (can ship first):** FmtOptions defaults → space/2;
-  vscode `configurationDefaults` for `[guitkx]` mirroring Unity's `[uitkx]` block
-  (defaultFormatter, formatOnSave true, tabSize 2, insertSpaces true, autoIndent full);
-  reformat every repo `.guitkx`.
+- **D0 ✅ Formatter/config parity** — landed (this branch). FmtOptions + guitkx_formatter.gd
+  defaults → space/2; `[guitkx]` configurationDefaults (defaultFormatter, formatOnSave,
+  autoIndent full, tabSize 2, insertSpaces, detectIndentation false); embedded reflow converts
+  gdscript-fmt tab depth to the document unit. BONUS FIND: `_indent_unit` (GD + both TS
+  mirrors) inferred the unit as the MIN WIDTH — the base offset — folding spaces-2 nesting
+  levels together and dedenting a nested `return` out of its guard on reformat; now the min
+  positive delta between distinct widths (sample-idempotency sweep caught it). Corpus
+  regenerated (14 cases, spaces-2). Repo-wide reformat deferred into D5 (files migrate anyway).
 - **D1 ⬜ GD markup grammar:** `_parse_if/_parse_loop/_parse_match` bodies → `body_code` model:
   raw text + top-level markup-return spans (reuse JsxScan/`_paren_holds_markup`), each return's
   markup parsed recursively for AST/validation; `return null` legal; markup present WITHOUT a

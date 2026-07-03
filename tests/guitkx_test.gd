@@ -597,7 +597,7 @@ func _test_formatter() -> void:
 	var f1: String = r1["text"]
 	print("--- formatted ---\n" + f1 + "---")
 	_check(f1, "component Foo(name: String = \"x\") {", "header canonicalized")
-	_check(f1, "\t\t<VBox>", "markup tab-indented")
+	_check(f1, "    <VBox>", "markup indented (spaces-2 default, Phase D)")
 	_check(f1, "<Label text={ name } />", "self-close spacing")
 	_check(f1, "@if (s[0] > 0) {", "control flow formatted")
 	# idempotency

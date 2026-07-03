@@ -33,6 +33,16 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "configurationDefaults": {
+      "[guitkx]": {
+        "editor.defaultFormatter": "ReactiveUITK.guitkx",
+        "editor.formatOnSave": true,
+        "editor.autoIndent": "full",
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": false
+      }
+    },
     "grammars": [
       {
         "language": "guitkx",
