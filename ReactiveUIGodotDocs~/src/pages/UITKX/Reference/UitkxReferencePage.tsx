@@ -164,7 +164,7 @@ export const UitkxReferencePage: FC = () => (
           <TableRow>
             <TableCell><code>@uss</code></TableCell>
             <TableCell><code>@uss "res://ui/theme.tres"</code></TableCell>
-            <TableCell>Associate a <code>Theme</code>/<code>StyleBox</code> resource path (reserved).</TableCell>
+            <TableCell>Preload a <code>Theme</code> and apply it to the component's root element (unless it sets <code>theme</code> itself). One per file; component files only. <code>@theme</code> is an alias.</TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -309,9 +309,9 @@ export const UitkxReferencePage: FC = () => (
             <TableCell>Boolean shorthand — a valueless attribute is <code>true</code>.</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><code># comment</code></TableCell>
-            <TableCell><code># TODO</code></TableCell>
-            <TableCell>GDScript line comment (to end of line)</TableCell>
+            <TableCell><code>{'// … /* … */ <!-- … -->'}</code></TableCell>
+            <TableCell><code>{'// TODO'}</code></TableCell>
+            <TableCell>Markup comments (Unity-parity set): <code>{'//'}</code> line, <code>{'/* */'}</code> block, <code>{'<!-- -->'}</code>, and <code>{'{/* … */}'}</code> inside attribute lists. <code>#</code> is not a markup comment — it stays GDScript-only (setup and expressions).</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>{'<>…</>'}</code></TableCell>

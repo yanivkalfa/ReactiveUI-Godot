@@ -143,7 +143,8 @@ component RefDemo() {
   )
 }`
 
-export const HOOKS_CONTEXT_EXAMPLE = `# Provider component
+export const HOOKS_CONTEXT_EXAMPLE = `# ============ theme_provider.guitkx ============
+# One declaration per file (GUITKX2105) -- these are TWO files.
 @class_name ThemeProvider
 
 component ThemeProvider() {
@@ -156,6 +157,7 @@ component ThemeProvider() {
   )
 }
 
+# ============ themed_card.guitkx ============
 # Consumer component — any depth in the subtree
 @class_name ThemedCard
 

@@ -1,0 +1,35 @@
+@class_name DemoDirectives
+@uss "res://examples/demos/directives/directives_theme.tres"
+component DemoDirectives(items: Array = ["alpha", "beta"], mode: int = 1) {
+	# setup is plain GDScript -- its comments use `#` as usual
+	var count = useState(items.size())
+	var style_base = { "modulate": Color(1, 1, 1) }
+	return (
+		<vbox>
+			// markup line comment
+			/* markup block
+			   comment */
+			<!-- html-style comment -->
+			<label {/* attr-list comment */} text="every directive lives here" />
+			@if (mode == 1) { <label text="one" /> } @elif (mode == 2) { <label text="two" /> } @else { <label text="other" /> }
+			@for (it in items) {
+				<label key={ str(it) } text={ str(it) } />
+			}
+			@for (i in 3) {
+				<Fragment key={ str(i) }>
+					<label text={ "row %d" % i } />
+				</Fragment>
+			}
+			@while (false) {
+				<label key="never" text="unreached" />
+			}
+			@match (mode) {
+				@case (1) { <label text="case one" /> }
+				@case (2) { <label text="case two" /> }
+				@default { <label text="default" /> }
+			}
+			<vbox {...style_base} key="spread-key" />
+			{ count[0] }
+		</vbox>
+	)
+}

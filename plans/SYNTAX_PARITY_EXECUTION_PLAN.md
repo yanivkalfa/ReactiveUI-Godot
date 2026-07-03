@@ -512,7 +512,7 @@ key) fires live (was sidecar-only per BUG_SPLIT follow-ups).
 
 ## Phase 6 — Docs + demos
 
-### T6.1 — Doc corrections batch  · effort: small · Status: ⬜
+### T6.1 — Doc corrections batch  · effort: small · Status: 🟨 (done: `@uss` reference row is truthful (real semantics + @theme alias, was "(reserved)"); the `#`-comment claim replaced with the real Unity-parity comment set incl. the `#`-is-GDScript-only note; the two-decl HOOKS_CONTEXT_EXAMPLE is explicitly split into two files with the GUITKX2105 rationale; the renumbered codes were swept through docs.tsx + the diagnostics page in T3.1; docs site builds green. REMAINING for a follow-up docs pass: the UITKX↔GUITKX concordance page (T3.1 output), rewriting the differences page to exactly the non-goals table, the Unity-directive→Godot mapping table, and the smaller nits (snake-case-hooks self-contradiction, str(i) key rationale, .types.guitkx, Counter filename-rule) — pure authoring, no code dependencies)
 GDoc fixes: `#`-comment claim → the real comment set (T2.1); `@uss` headline vs "(reserved)" → truthful
 after T2.3; mid-text interpolation examples → T2.4 form; snake_case-hooks self-contradiction
 (Differences:20-29); `str(i)` vs raw-int keys (Reference:52 vs todo.guitkx:30); two-decl
@@ -522,7 +522,7 @@ stale comment (`guitkx_markup.gd:5`). New pages: UITKX↔GUITKX diagnostic conco
 "differences from .uitkx" page updated to EXACTLY the non-goals table of this plan; Unity-directive →
 Godot mapping table (incl. `@foreach`→`@for`-in, C-style-`@for`→range, `@switch`→`@match`).
 
-### T6.2 — Demo coverage  · effort: small · Status: ⬜
+### T6.2 — Demo coverage  · effort: small · Status: ✅ (`examples/demos/directives/directives.guitkx` + its Theme: every directive (@if/@elif/@else, @for-in + range, @while, @match/@case/@default), all four comment forms, `<Fragment key>`, `@uss`, spread-with-key, node-start `{expr}` interpolation — compiles clean (0 errors 0 warnings) and is copied into the contract fixtures (goldens now 61), so the grammar of record and the LSP are pinned on all of it)
 Zero demos exercise `@match`/`@while`/`@elif` today. Add `examples/demos/directives/` exercising every
 directive + comments + `<Fragment>` + `@uss` + spread-with-key — this demo doubles as a contract fixture
 and a smoke target for the headless suite.
