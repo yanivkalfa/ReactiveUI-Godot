@@ -94,14 +94,22 @@ function fail(m) {
   if (!d.some((x) => x.message.includes("GUITKX0104"))) fail("dup-key diagnostic missing: " + JSON.stringify(d));
   console.log(`dup-key diagnostic OK (${d.length} diags, includes GUITKX0104)`);
 
-  // live loop single-root rule (GUITKX0108) — used to surface only post-save via the compiler sidecar
+  // live loop single-root rule (GUITKX0108) — Phase D form: the directive body RETURNS its markup
   const uriLoop = "file:///tmp/Loop.guitkx";
-  const textLoop = 'component Loop(items: Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\t<Label text={ str(it) } key={ it } />\n\t\t\t\t<Label text="dup" />\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n';
+  const textLoop = 'component Loop(items: Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\treturn (\n\t\t\t\t<Label text={ str(it) } key={ it } />\n\t\t\t\t<Label text="dup" />\n\t\t\t\t)\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n';
   notify("textDocument/didOpen", { textDocument: { uri: uriLoop, languageId: "guitkx", version: 1, text: textLoop } });
   await new Promise((r) => setTimeout(r, 400));
   const dLoop = diagnostics[uriLoop] || [];
   if (!dLoop.some((x) => x.message.includes("GUITKX0108"))) fail("live loop single-root diagnostic missing: " + JSON.stringify(dLoop));
   console.log("loop single-root diagnostic OK (live GUITKX0108)");
+
+  // Phase D migration rule: the pre-0.7 bare-markup directive body flags GUITKX2103 live
+  const uriLegacy = "file:///tmp/Legacy.guitkx";
+  notify("textDocument/didOpen", { textDocument: { uri: uriLegacy, languageId: "guitkx", version: 1, text: 'component L(items: Array) {\n\treturn ( <VBox>@for (it in items) { <Label text={ str(it) } /> }</VBox> )\n}\n' } });
+  await new Promise((r) => setTimeout(r, 400));
+  const dLegacy = diagnostics[uriLegacy] || [];
+  if (!dLegacy.some((x) => x.message.includes("GUITKX2103"))) fail("live legacy-body diagnostic missing: " + JSON.stringify(dLegacy));
+  console.log("legacy directive-body diagnostic OK (live GUITKX2103)");
 
   // live missing-return rule (GUITKX2101) — a component without `return ( ... )` used to be silent
   const uriNr = "file:///tmp/NoRet.guitkx";
@@ -155,7 +163,8 @@ function fail(m) {
   notify("textDocument/didOpen", { textDocument: { uri: uri6, languageId: "guitkx", version: 1, text: text6 } });
   const fmtRes = await request("textDocument/formatting", { textDocument: { uri: uri6 }, options: { tabSize: 4, insertSpaces: false } });
   const edits = fmtRes.result || [];
-  if (!edits.length || !edits[0].newText.includes("\t\t<VBox>") || !edits[0].newText.includes('<Label text="hi" />')) fail("in-process formatting edit wrong: " + JSON.stringify(fmtRes.result));
+  // Phase D: the canonical style is spaces-2 (Unity-exact) -- markup sits at level 2 = four spaces
+  if (!edits.length || !edits[0].newText.includes("    <VBox>") || !edits[0].newText.includes('<Label text="hi" />')) fail("in-process formatting edit wrong: " + JSON.stringify(fmtRes.result));
   console.log("formatting OK (in-process, no Godot binary, canonical edit)");
 
   // semantic tokens: <Label> host (type) + <A> component (class) in the module file
