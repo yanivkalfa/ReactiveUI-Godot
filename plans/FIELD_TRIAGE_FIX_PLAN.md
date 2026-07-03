@@ -305,11 +305,15 @@ immediately.
   positive delta between distinct widths (sample-idempotency sweep caught it). Corpus
   regenerated (14 cases, spaces-2). Repo-wide reformat deferred into D5 (files migrate anyway).
 - **D1 ⬜ GD markup grammar:** `_parse_if/_parse_loop/_parse_match` bodies → `body_code` model:
-  raw text + top-level markup-return spans (reuse JsxScan/`_paren_holds_markup`), each return's
-  markup parsed recursively for AST/validation; `return null` legal; markup present WITHOUT a
-  top-level return → NEW migration diagnostic ("a directive body returns its markup — write
-  `return ( <markup> )`"); no markup and no return → same. New/updated node shapes documented
-  in the header. Both parsers stay line-mirrors (markup.ts D4).
+  raw text (parser stays dumb — Unity parity); a new compiler-side splitter (adapt
+  `_split_return:963`'s scan) classifies every DIRECTIVE-LEVEL return: markup-paren / bare
+  markup / `return null` / bare `return` / VALUE return (`return node_var` — LEGAL, rewritten
+  like any other; Unity splices it verbatim). Returns inside nested `func():` scopes are found
+  by indent-tracked func-header stack and are NOT body returns (their markup still lowers in
+  place, Phase C behavior). Markup content present with NO body return → **GUITKX2103**
+  migration error ("a directive body returns its markup — write `return ( <markup> )`");
+  code-only bodies with no return are legal (produce nothing, Unity parity). New node shapes
+  documented in the mirror header (markup.ts D4). Hooks scan → **GUITKX2104** (D2).
 - **D2 ⬜ No-hooks-in-directive-bodies diagnostic** (both sides, live + compiler): scan
   body_code for vocabulary hooks + `use_`-prefixed calls (Unity HooksValidator parity).
 - **D3 ⬜ GD lowering:** `_emit_if/_emit_loop/_emit_match` → the lambda-IIFE design above, prep
