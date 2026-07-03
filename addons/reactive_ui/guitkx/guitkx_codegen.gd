@@ -40,24 +40,100 @@ static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: A
 			"code": d.get("code", ""), "severity": int(d.get("severity", Diag.ERROR)),
 			"message": d.get("message", ""), "off": int(d.get("offset", -1)), "len": int(d.get("length", 0)),
 		})
-	var f := FileAccess.open(diags_path_for(guitkx_path), FileAccess.WRITE)
+	var payload := JSON.stringify({ "v": 2, "src_hash": src_hash(src), "diagnostics": entries })
+	var sc_path := diags_path_for(guitkx_path)
+	if FileAccess.file_exists(sc_path) and FileAccess.get_file_as_string(sc_path) == payload:
+		return   # identical verdict -- don't churn the file (the LSP watches sidecars for changes)
+	var f := FileAccess.open(sc_path, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({ "v": 2, "src_hash": src_hash(src), "diagnostics": entries }))
+		f.store_string(payload)
 		f.close()
 
 ## True if the sibling .gd is missing or older than the .guitkx source. A zero mtime (the editor
 ## scan-window flake) counts as STALE -- erring toward a compile attempt is safe (the empty-read
 ## hold in compile_file guards it), while trusting `0 > 0` once let a stale demo survive a cold
 ## open uncompiled (field capture 2026-07-03).
+## Mtimes are WHOLE SECONDS, so a save landing in the same second as the last .gd write is
+## invisible to `>` -- that file silently skipped recompiles until its next edit ("saved it and
+## Godot never recompiled", field capture 2026-07-04). An mtime TIE is therefore broken by
+## CONTENT: the sidecar stores the src_hash of exactly what the last compile saw -- hash-equal
+## means settled (no busy-recompile spin inside the second), different means a missed save.
+## A file whose last compile ERRORED has no sibling .gd at all (T1.1 deletes it); its sidecar
+## remembers the verdict instead: same src_hash + an error entry means "this exact content was
+## already compiled and reported broken" -> NOT stale, or the watch poll would busy-recompile
+## broken files every couple of seconds forever. Any edit hash-mismatches and it goes stale.
 static func is_stale(guitkx_path: String) -> bool:
 	var gd_path := gd_path_for(guitkx_path)
 	if not FileAccess.file_exists(gd_path):
-		return true
+		return sidecar_error_diags(guitkx_path).is_empty()
 	var src_t := FileAccess.get_modified_time(guitkx_path)
 	var gd_t := FileAccess.get_modified_time(gd_path)
 	if src_t == 0 or gd_t == 0:
 		return true
-	return src_t > gd_t
+	if src_t != gd_t:
+		return src_t > gd_t
+	return not _sidecar_hash_matches(guitkx_path)
+
+## True when the sidecar's stored src_hash matches the CURRENT source bytes -- i.e. the last
+## compile (clean or errored, both write the sidecar) saw exactly this content. A missing,
+## foreign, or pre-v2 sidecar reads as false (-> stale: one recompile writes it and settles).
+static func _sidecar_hash_matches(guitkx_path: String) -> bool:
+	var sc := diags_path_for(guitkx_path)
+	if not FileAccess.file_exists(sc):
+		return false
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(sc))
+	if not (parsed is Dictionary):
+		return false
+	var src := FileAccess.get_file_as_string(guitkx_path)
+	if src.is_empty():
+		return false
+	return int((parsed as Dictionary).get("src_hash", -1)) == src_hash(src)
+
+## The persisted error verdict for the CURRENT content of `path`, or [] when none applies: the
+## sidecar must exist, hash-match the source (the same bytes the failed compile saw), and carry
+## at least one error-severity entry. compile_all uses this to skip pointless recompiles of
+## known-broken files while still RE-SURFACING their errors on every sweep -- a fresh editor
+## session must re-report a persistently-broken file (the dock dedup is what prevents spam,
+## never silence). line/col are re-derived from the stored offsets, same as a fresh compile.
+static func sidecar_error_diags(guitkx_path: String) -> Array:
+	var sc := diags_path_for(guitkx_path)
+	if not FileAccess.file_exists(sc):
+		return []
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(sc))
+	if not (parsed is Dictionary):
+		return []
+	var d := parsed as Dictionary
+	var src := FileAccess.get_file_as_string(guitkx_path)
+	if src.is_empty() or int(d.get("src_hash", -1)) != src_hash(src):
+		return []
+	var out: Array = []
+	var has_error := false
+	for e in (d.get("diagnostics", []) as Array):
+		if not (e is Dictionary):
+			continue
+		var ed := (e as Dictionary).duplicate()
+		if int(ed.get("severity", 1)) == Diag.ERROR:
+			has_error = true
+		var off := int(ed.get("off", -1))
+		if off >= 0:
+			var lc := Diag.line_col(src, off)
+			ed["line"] = lc["line"]
+			ed["col"] = lc["col"]
+			ed["offset"] = off
+			ed["length"] = int(ed.get("len", 0))
+		out.append(ed)
+	return out if has_error else []
+
+## Cheap watch-poll predicate: does ANY .guitkx under `root` need a sweep? Read-only and
+## early-exiting -- a dir walk plus one or two mtime reads per file; source reads happen only
+## for the rare .gd-less (known-broken) files. A changed compiler pipeline is stale by definition.
+static func has_stale(root: String = "res://") -> bool:
+	if compiler_changed():
+		return true
+	for path in find_all(root):
+		if is_stale(path):
+			return true
+	return false
 
 # --- Compiler-version staleness ----------------------------------------------------------------
 # is_stale()'s mtime check cannot see a COMPILER change: after a `git pull` updates the .guitkx
@@ -245,7 +321,8 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 		push_error("[guitkx] %s: the generated %s has GDScript errors (see the parser messages above) -- likely an unknown identifier or type error in an expression; fix the .guitkx source" % [guitkx_path, gd_path.get_file()])
 	return { "ok": true, "path": guitkx_path, "gd_path": gd_path, "diagnostics": r["diagnostics"], "gd_parse_ok": gd_parse_ok }
 
-## Compile every stale .guitkx under `root`. Returns { compiled:[...], errors:[...], held:[paths] }.
+## Compile every stale .guitkx under `root`. Returns { compiled:[...], errors:[...], held:[paths],
+## total:int (all tracked .guitkx, for the plugin's sweep summary) }.
 ## `held` = files skipped because the compiler ENVIRONMENT wasn't ready (env_error: unreadable
 ## vocabulary) — a tooling state, not source errors: callers must not report them per file (the
 ## loader's one-per-episode hold line already announced the episode) and should re-run the sweep
@@ -265,8 +342,15 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	# tags are checked against it.
 	var known := known_component_names(all_paths)
 	for path in all_paths:
-		if not force and not is_stale(path):
-			continue
+		if not force:
+			# Known-broken content (sidecar hash-match + error): skip the recompile -- the verdict
+			# cannot change -- but keep SURFACING it, so a fresh session's first sweep re-reports.
+			var cached := sidecar_error_diags(path)
+			if not cached.is_empty():
+				errors.append({ "ok": false, "path": path, "diagnostics": cached })
+				continue
+			if not is_stale(path):
+				continue
 		var r := compile_file(path, known)
 		if r["ok"]:
 			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"] })
@@ -276,7 +360,7 @@ static func compile_all(root: String = "res://") -> Dictionary:
 			errors.append(r)
 	if force and held.is_empty():
 		_write_fp_marker()
-	return { "compiled": compiled, "errors": errors, "held": held }
+	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size() }
 
 ## Recursively collect all .guitkx paths under `dir` (skips Godot's hidden cache dirs).
 static func find_all(dir: String = "res://") -> Array:

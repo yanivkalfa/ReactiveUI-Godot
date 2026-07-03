@@ -350,6 +350,43 @@ immediately.
 
 ---
 
+## Phase R3 — 0.8.0 field captures: stale live scanner + watcher liveness — branch `fix/round3-live-scan-and-watcher`, addon **0.7.1** + ext/lsp **0.8.1**
+
+Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, ~1:20 AM):
+
+- **R3.1 — bogus `GUITKX0108 (got 3)` on a CORRECT return-form body (ext 0.8.0).** ✅
+  Root cause: `server.ts scanWindowDiagnostics` was a second, pre-Phase-D live walker that still
+  parsed directive bodies as bare markup — `return (` and `)` counted as text roots (hence
+  "got 3"), and body GD prep code was walked as markup (an `a < b` in prep could false-flag
+  0300; prep braces polluted the key-dedup scopes). Phase D updated `liveMarkup.ts` but missed
+  this parallel pass entirely — and the smoke only asserted that errors FIRE, never that clean
+  code stays clean. Fix: directive-aware walking — headers skipped, `@match` entered as an arm
+  container, every other directive body split with `splitBody` (the compiler/formatter's body
+  model) and ONLY each return's markup span recursed into; the stale 0108 emission deleted
+  (per-return 0108/0106/2103/2104 live in `walkDirectiveBody`). New smoke check: a correct body
+  (prep + `return null` guard + single-root return) must produce ZERO diagnostics.
+- **R3.2 — Godot editor never recompiled the saved legacy body (addon 0.7.0).** ✅
+  Forensics: the user's legacy-body save landed 01:20:49; their editor started 01:20:55; the
+  on-disk outputs stayed untouched — the cold-open sweep did nothing, and no later trigger ever
+  fired (focus-in/fs-changed only; the "00:42 sweep evidence" turned out to be the Phase D gate
+  runs — generated outputs aren't git-tracked). The compiler itself is exonerated: probing their
+  exact file yields a clean 2103 at 15:10. Fixes (belt + suspenders + observability):
+  - **2s standing watch poll** (`has_stale`, read-only, early-exit) — external saves compile
+    within ~2s with no focus/restart;
+  - **mtime-tie break by content** — whole-second mtimes made a same-second save invisible to
+    `>` forever; ties now compare the sidecar's `src_hash` (no busy-spin, no missed save);
+  - **known-broken hash-skip that still REPORTS** — errored files (no `.gd` by T1.1) are skipped
+    by the poll while their persisted sidecar verdict is re-surfaced on every sweep/session;
+  - **proof-of-life** — the session's first sweep always prints
+    `[guitkx] sweep: N tracked -- X compiled, Y error(s), Z held` (silence now MEANS
+    plugin-not-running), later sweeps print when they did work, and the initial-scan wait
+    heartbeats every ~10s. Sidecars rewrite only on a changed verdict (the LSP watches them).
+  - GD tests: known-broken ≠ stale, `sidecar_error_diags` surfacing, same-second tie-break,
+    sweep `total`, `has_stale` poll semantics.
+  - Follow-up (parked, needs a live-editor capture): if the next session's Output shows NO sweep
+    line, the plugin isn't loading at all in the user's editor — a different hunt (plugin-load
+    error higher in the Output), now unambiguously diagnosable.
+
 ## Non-goals / parked
 - **Setup markup as a value** (`var x = <Label/>` — Unity's bare-JSX ranges): natural C-follow-up,
   not in C's acceptance. Track after C lands.
@@ -374,3 +411,10 @@ immediately.
   the compiled guard renders both paths. Gates: lsp 173/173 + smoke, 63 goldens (t04/t14 flipped
   legal, t21 new), GD suite, docs build. Release: addon **0.6.0**, ext/lsp **0.7.0** (minor —
   language capability).
+- 2026-07-04 — **Phase R3 COMPLETE** on `fix/round3-live-scan-and-watcher` (same-night captures
+  on the just-published 0.8.0/0.7.0, see the Phase R3 section). The stale pre-Phase-D scanner
+  pass in `server.ts` is gone (bodies walked via `splitBody`, only return markup recursed); the
+  addon watcher gained the 2s stale poll, content tie-break, known-broken skip-but-report, and
+  sweep proof-of-life. Gates: lsp 174/174 + smoke (now 14 checks incl. the clean-body inverse
+  gate), GD suite incl. new codegen staleness tests, pristine-worktree full suite, ext build.
+  Release: addon **0.7.1**, ext/lsp **0.8.1**.

@@ -37,8 +37,7 @@ import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
-import { parseMarkup } from "./markup";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans, splitBody } from "./formatGuitkx";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
@@ -46,7 +45,7 @@ import { hasDump, classProperties, classSignals } from "./classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, guitkxVirtualLibText, normalizeUri } from "./workspaceIndex";
 import { scanTagRefs } from "./refs";
-import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
+import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
 import { cpToUtf16 } from "./codePoints";
 import { readFileSync, readdirSync, statSync, existsSync, watch as fsWatch } from "fs";
@@ -1612,21 +1611,11 @@ function unclosedReturnDiagnostics(doc: TextDocument): Diagnostic[] {
   }));
 }
 
-// Locate a directive's body braces: `@for (header) { body }` → the `{`/`}` offsets. Null when the
-// directive is malformed or runs past the window (the markup parser reports those itself).
-function directiveBody(src: string, from: number, end: number): { open: number; close: number } | null {
-  let p = from;
-  while (p < end && /[ \t\r\n]/.test(src[p])) p++;
-  if (src[p] !== "(") return null;
-  const hc = findMatching(src, p);
-  if (hc === -1 || hc >= end) return null;
-  p = hc + 1;
-  while (p < end && /[ \t\r\n]/.test(src[p])) p++;
-  if (src[p] !== "{") return null;
-  const bc = findMatching(src, p);
-  if (bc === -1 || bc >= end) return null;
-  return { open: p, close: bc };
-}
+// Directive words whose `{ ... }` body is GDSCRIPT under the Phase D grammar (prep statements +
+// directive-level `return ( <markup/> )`) -- the scanner must NOT read those braces as markup.
+// @match is the odd one out: its body is a CONTAINER of @case/@default directives, so the scanner
+// steps inside it and lets the arms handle their own bodies.
+const BODY_DIRECTIVES = new Set(["if", "elif", "else", "for", "while", "case", "default"]);
 
 function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, end: number, diags: Diagnostic[]): void {
   const scopes: Array<Set<string>> = [new Set()];
@@ -1642,27 +1631,38 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
       continue;
     }
     if (c === "@") {
-      // Live @for/@while single-root rule [GUITKX0108]: each iteration must yield exactly one keyed
-      // child, like a component root. Roots are counted with the SAME parser the compiler uses
-      // (markup.ts is the parity-tested port of guitkx_markup.gd, shared golden corpus), so the live
-      // verdict cannot diverge from the on-save compile. Mirrors guitkx.gd _validate_body.
+      // Phase D: a directive body is CODE (prep statements + directive-level returns), not markup.
+      // Scan ONLY each return's markup span -- splitBody is the same body model the compiler, the
+      // formatter, and liveMarkup use -- so GD prep code cannot false-flag GUITKX0300/keys and
+      // `return (` / `)` lines cannot be counted as extra roots (the pre-Phase-D live GUITKX0108
+      // here did exactly that on every migrated body). The body's SEMANTIC errors (2103 legacy
+      // markup, 2104 hooks, per-return 0108/0106) are liveMarkup.walkDirectiveBody's job.
       const w = (src.slice(i + 1, i + 8).match(/^[a-z_]+/) || [""])[0];
-      if (w === "for" || w === "while") {
-        const body = directiveBody(src, i + 1 + w.length, end);
-        if (body) {
-          const pr = parseMarkup(src, body.open + 1, body.close);
-          const roots = pr.nodes.filter((n) => n !== null).length;
-          if (pr.error === "" && roots > 1) {
-            diags.push({
-              severity: DiagnosticSeverity.Error,
-              range: { start: doc.positionAt(body.open), end: doc.positionAt(body.close + 1) },
-              message: `GUITKX0108: a @for/@while body must contain exactly one root element (got ${roots}) -- wrap siblings in a fragment <>...</>`,
-              source: "guitkx",
-            });
+      let p = i + 1 + w.length;
+      if (w === "match" || BODY_DIRECTIVES.has(w)) {
+        while (p < end && /[ \t\r\n]/.test(src[p])) p++;
+        if (src[p] === "(") {
+          const hc = findMatching(src, p); // header condition -- GDScript, skip whole
+          p = hc === -1 || hc >= end ? end : hc + 1;
+          while (p < end && /[ \t\r\n]/.test(src[p])) p++;
+        }
+        if (src[p] === "{") {
+          if (w === "match") {
+            i = p + 1; // container of @case/@default arms -- step inside
+            continue;
           }
+          const close = findMatching(src, p);
+          const bodyEnd = close === -1 || close >= end ? end : close;
+          for (const part of splitBody(src.slice(p + 1, bodyEnd)).parts) {
+            if (part.t === "ret" && part.markup && part.m_end > part.m_start) {
+              scanWindowDiagnostics(src, doc, p + 1 + part.m_start, p + 1 + part.m_end, diags);
+            }
+          }
+          i = bodyEnd + 1;
+          continue;
         }
       }
-      i += 1 + w.length;
+      i = p;
       continue;
     }
     if (c === "(") {
@@ -1672,10 +1672,6 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
       continue;
     }
     if (c === "{") {
-      if (isBodyBrace(src, i)) {
-        i++; // control-flow body is markup — enter it
-        continue;
-      }
       const cl = findMatching(src, i); // child {expr} — GDScript, skip whole
       i = cl === -1 || cl >= end ? end : cl + 1;
       continue;

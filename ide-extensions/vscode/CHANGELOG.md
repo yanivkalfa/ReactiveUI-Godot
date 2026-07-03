@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.1] - 2026-07-04
+- **Fixed bogus `GUITKX0108 … (got 3)` on correct directive bodies.** A pre-0.8 live scanner
+  pass still parsed directive bodies as bare markup, counting the `return (` / `)` lines as
+  extra roots — every correctly-migrated body squiggled as a multi-root error. The scanner now
+  walks only each return's markup span (the same body model the compiler and formatter use),
+  which also stops body prep code (`if a < b:` …) from ever false-flagging `GUITKX0300` or
+  polluting duplicate-key scopes. Correct bodies are now diagnostic-free; the smoke suite pins
+  it. (Server 0.8.1; pairs with addon 0.7.1's watcher liveness rework.)
+
 ## [0.8.0] - 2026-07-04
 - **Directive bodies are code blocks (pairs with addon 0.7.0, BREAKING):** prep GDScript +
   `return ( <markup> )` in every `@if/@for/@while/@case` body, recursively — full Unity-parity.

@@ -111,6 +111,19 @@ function fail(m) {
   if (!dLegacy.some((x) => x.message.includes("GUITKX2103"))) fail("live legacy-body diagnostic missing: " + JSON.stringify(dLegacy));
   console.log("legacy directive-body diagnostic OK (live GUITKX2103)");
 
+  // The inverse gate the 0.8.0 field capture proved missing: a CORRECT Phase D body — GD prep code
+  // (with a `<` comparison), a `return null` guard, and a single-root markup return — must produce
+  // ZERO diagnostics. The retired pre-Phase-D scanner pass parsed the body as bare markup and
+  // flagged `return (`/`)` as extra roots ("GUITKX0108 ... (got 3)") on every migrated file.
+  const uriClean = "file:///tmp/CleanBody.guitkx";
+  const textClean =
+    'component CleanBody(items: Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\tvar label = "row " + str(it)\n\t\t\t\tif it < 3:\n\t\t\t\t\treturn null\n\t\t\t\treturn (\n\t\t\t\t\t<Label text={ label } key={ str(it) } />\n\t\t\t\t)\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n';
+  notify("textDocument/didOpen", { textDocument: { uri: uriClean, languageId: "guitkx", version: 1, text: textClean } });
+  await new Promise((r) => setTimeout(r, 400));
+  const dClean = diagnostics[uriClean] || [];
+  if (dClean.length > 0) fail("correct directive body must be diagnostic-free, got: " + JSON.stringify(dClean));
+  console.log("clean directive-body OK (prep code + return-null guard + single-root return, 0 diags)");
+
   // live missing-return rule (GUITKX2101) — a component without `return ( ... )` used to be silent
   const uriNr = "file:///tmp/NoRet.guitkx";
   notify("textDocument/didOpen", { textDocument: { uri: uriNr, languageId: "guitkx", version: 1, text: "component NoRet() {\n\tvar a = useState(0)\n}\n" } });
