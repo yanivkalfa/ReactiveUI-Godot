@@ -25,6 +25,14 @@ var _busy := false
 # path -> the joined diagnostic string last reported for it, so we push_error/push_warning only when a
 # file's diagnostics actually CHANGE (Godot's dock never clears; re-pushing on every focus-in = spam).
 var _last_diags: Dictionary = {}
+# Compiler-environment retry: when a sweep returns HELD files (vocabulary unreadable — the editor's
+# first-scan window), "retrying on the next compile" must not wait for a user edit or focus change,
+# or a cold open stays uncompiled until someone touches a file (field capture 2026-07-03: 3.5 hours).
+# One pending timer at a time; retries are cheap (a held sweep attempts one read per file and stops),
+# announced once per episode, and end the moment a sweep runs unheld.
+const _ENV_RETRY_SECS := 2.0
+var _env_retry_pending := false
+var _env_retry_announced := false
 
 func _enter_tree() -> void:
 	_efs = EditorInterface.get_resource_filesystem()
@@ -64,7 +72,30 @@ func _compile_all() -> void:
 		_report_warnings(entry["path"], entry["warnings"])
 	for e in res["errors"]:
 		_report_error(e)
+	# HELD files (compiler environment not ready) are NOT errors: no per-file dock line — the
+	# loader's one-per-episode hold warning already announced it — just a scheduled retry so the
+	# sweep re-runs by itself once the environment recovers.
+	var held: Array = res.get("held", [])
+	if held.is_empty():
+		_env_retry_announced = false
+	else:
+		_schedule_env_retry(held.size())
 	_busy = false
+
+# One-shot deferred re-sweep while compiles are held. Bound method (not a lambda): if the plugin
+# is freed before the timer fires, Godot drops the connection with the object.
+func _schedule_env_retry(count: int) -> void:
+	if _env_retry_pending:
+		return
+	_env_retry_pending = true
+	if not _env_retry_announced:
+		_env_retry_announced = true
+		print("[guitkx] %d file(s) waiting for the compiler environment -- retrying every %.0fs until it recovers" % [count, _ENV_RETRY_SECS])
+	get_tree().create_timer(_ENV_RETRY_SECS).timeout.connect(_on_env_retry_timeout)
+
+func _on_env_retry_timeout() -> void:
+	_env_retry_pending = false
+	_compile_all()
 
 # push_error only when THIS file's error set differs from what we last reported for it.
 # One dock line PER diagnostic, "path:LINE:COL: CODE: message" (1-based, from the offsets the

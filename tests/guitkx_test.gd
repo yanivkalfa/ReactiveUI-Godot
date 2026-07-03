@@ -49,6 +49,7 @@ func _run() -> void:
 	_test_formatter_corpus()
 	_test_formatter_options()
 	_test_codegen()
+	_test_cold_open_recovery()
 	_test_spread()
 	if _failed:
 		print("[guitkx_test] FAILED")
@@ -976,6 +977,58 @@ func _test_codegen() -> void:
 	DirAccess.remove_absolute(gd)
 	_check_true(Codegen.is_stale(gx), "stale again after sibling .gd removed")
 	DirAccess.remove_absolute(gx)
+
+func _test_cold_open_recovery() -> void:
+	# R0 (0.6.1): the vocabulary the compiler actually uses is the EMBEDDED const projection
+	# (guitkx_vocabulary.gen.gd) -- it must never drift from vocabulary.json, the single source of
+	# truth shared verbatim with the LSP. Regenerate with dev/gen_vocabulary.gd after any change.
+	var gen = preload("res://addons/reactive_ui/guitkx/guitkx_vocabulary.gen.gd")
+	var json_text := FileAccess.get_file_as_string("res://addons/reactive_ui/guitkx/vocabulary.json")
+	var parsed = JSON.parse_string(json_text)
+	_check_true(parsed is Dictionary, "vocabulary.json parses")
+	_check_true(JSON.stringify(parsed) == JSON.stringify(gen.DATA),
+		"guitkx_vocabulary.gen.gd in sync with vocabulary.json (regenerate: dev/gen_vocabulary.gd)")
+	RUIGuitkx._VOCAB = {}
+	_check_true(not RUIGuitkx.vocab().is_empty(), "vocab() serves the embedded const at the default path")
+	# R2+R3 (0.6.1): a sweep hitting the unreadable-vocabulary environment reports those files as
+	# HELD -- not errors (no per-file dock line; the loader's hold warning announced the episode) --
+	# and must NOT consume the compiler-changed fingerprint marker: a held forced sweep compiled
+	# nothing, so the force has to re-fire next sweep, or old-compiler outputs and sidecars survive
+	# every later sweep (the 2026-07-03 zombie-sidecar field capture).
+	var dir := "res://tests/__cold_open_tmp"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var gx := dir + "/held_fixture.guitkx"
+	var f := FileAccess.open(gx, FileAccess.WRITE)
+	f.store_string("component HeldFixture(msg: String = \"hi\") {\n\treturn ( <Label text={ msg } /> )\n}\n")
+	f.close()
+	var marker := "res://.godot/rui_guitkx_compiler.fp"
+	if FileAccess.file_exists(marker):
+		DirAccess.remove_absolute(marker)   # -> compiler_changed() == true: the next sweep is FORCED
+	RUIGuitkx._VOCAB = {}
+	RUIGuitkx._VOCAB_PATH = "res://addons/reactive_ui/guitkx/__no_such_vocabulary__.json"
+	var held_sweep := Codegen.compile_all(dir)
+	_check_true((held_sweep["compiled"] as Array).is_empty() and (held_sweep["errors"] as Array).is_empty(),
+		"held sweep reports no compiles and NO errors: " + str(held_sweep))
+	_check_true((held_sweep["held"] as Array) == [gx], "env-held file lands in held[]: " + str(held_sweep["held"]))
+	_check_true(not FileAccess.file_exists(marker), "fingerprint marker NOT consumed by a held forced sweep")
+	# Environment recovers (default path -> embedded const): the same sweep now compiles, holds
+	# nothing, and the fingerprint marker finally lands.
+	RUIGuitkx._VOCAB_PATH = RUIGuitkx._VOCAB_PATH_DEFAULT
+	RUIGuitkx._VOCAB = {}
+	var ok_sweep := Codegen.compile_all(dir)
+	_check_true((ok_sweep["held"] as Array).is_empty() and (ok_sweep["errors"] as Array).is_empty(),
+		"recovered sweep holds nothing: " + str(ok_sweep))
+	_check_true((ok_sweep["compiled"] as Array).size() == 1, "recovered sweep compiles the previously-held file")
+	_check_true(FileAccess.file_exists(marker), "fingerprint marker written once the forced sweep actually ran")
+	# The persisted marker must be THIS process's healthily-computed fingerprint — never "" and
+	# never a value hashed over scan-window empty reads (compiler_fingerprint returns "" then and
+	# _write_fp_marker refuses to persist it).
+	_check_true(Codegen.compiler_fingerprint() != "" and FileAccess.get_file_as_string(marker) == Codegen.compiler_fingerprint(),
+		"marker holds the readable-sources fingerprint")
+	DirAccess.remove_absolute(Codegen.gd_path_for(gx))
+	DirAccess.remove_absolute(gx + ".diags.json")
+	DirAccess.remove_absolute(gx)
+	DirAccess.remove_absolute(dir)
 
 func _test_control_flow() -> void:
 	var src := "component List2(items: Array = [], show_header: bool = true) {\n" + \
