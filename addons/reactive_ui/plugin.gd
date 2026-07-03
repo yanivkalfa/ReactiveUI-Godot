@@ -33,11 +33,28 @@ var _last_diags: Dictionary = {}
 const _ENV_RETRY_SECS := 2.0
 var _env_retry_pending := false
 var _env_retry_announced := false
+# 0.7.1: the standing WATCH POLL. Focus-in and filesystem_changed both miss the common field case --
+# save in VS Code while the Godot editor sits in the background (field capture 2026-07-04: a stale
+# .guitkx survived 40 minutes and an editor restart unnoticed because no trigger ever fired while
+# the file was saved). Poll the cheap read-only staleness predicate instead: an external save is
+# picked up within ~_POLL_SECS with no focus dance and no restart. Known-broken files are
+# hash-skipped in has_stale, so this never busy-recompiles a file that still errors.
+const _POLL_SECS := 2.0
+var _poll_timer: Timer
+# First sweep prints its summary even when nothing was stale -- cold-open proof of life. A silent
+# Output after startup therefore means the PLUGIN IS NOT RUNNING, never "maybe nothing to do".
+var _first_sweep_done := false
+var _scan_waits := 0
 
 func _enter_tree() -> void:
 	_efs = EditorInterface.get_resource_filesystem()
 	if _efs and not _efs.filesystem_changed.is_connected(_on_fs_changed):
 		_efs.filesystem_changed.connect(_on_fs_changed)
+	_poll_timer = Timer.new()
+	_poll_timer.wait_time = _POLL_SECS
+	_poll_timer.timeout.connect(_on_poll_timeout)
+	add_child(_poll_timer)
+	_poll_timer.start()
 	_kick_initial_sweep()
 
 # 0.6.2: the initial sweep must WAIT OUT the editor's first filesystem scan. Sweeping inside it
@@ -57,9 +74,18 @@ func _check_scan_done() -> void:
 	if _efs == null:
 		return
 	if _efs.is_scanning():
+		_scan_waits += 1
+		if _scan_waits % 20 == 0:   # every ~10s: a scan that never settles must be VISIBLE, not silent
+			print("[guitkx] still waiting for the editor's filesystem scan (%.0fs) -- the initial sweep runs after it" % (_scan_waits * 0.5))
 		get_tree().create_timer(0.5).timeout.connect(_check_scan_done)
 		return
 	_compile_all()
+
+func _on_poll_timeout() -> void:
+	if _busy or _efs == null or _efs.is_scanning():
+		return
+	if Codegen.has_stale("res://"):
+		_compile_all()
 
 func _exit_tree() -> void:
 	if _efs and _efs.filesystem_changed.is_connected(_on_fs_changed):
@@ -101,6 +127,13 @@ func _compile_all() -> void:
 		_env_retry_announced = false
 	else:
 		_schedule_env_retry(held.size())
+	# Sweep summary: printed whenever the sweep DID anything, and unconditionally for the first
+	# sweep of the session (cold-open proof of life -- see _first_sweep_done).
+	var attempted: int = (res["compiled"] as Array).size() + (res["errors"] as Array).size() + held.size()
+	if attempted > 0 or not _first_sweep_done:
+		print("[guitkx] sweep: %d .guitkx tracked -- %d compiled, %d error(s), %d held" % [
+			int(res.get("total", 0)), (res["compiled"] as Array).size(), (res["errors"] as Array).size(), held.size()])
+	_first_sweep_done = true
 	_busy = false
 
 # One-shot deferred re-sweep while compiles are held. Bound method (not a lambda): if the plugin

@@ -1044,16 +1044,54 @@ func _test_codegen() -> void:
 	var r_bad := Codegen.compile_file(gx)
 	_check_true(not r_bad["ok"], "broken rewrite fails to compile")
 	_check_true(not FileAccess.file_exists(gd), "stale sibling .gd deleted on failed compile")
+	# 0.7.1: a KNOWN-BROKEN file (sidecar hash-matches the current content and carries an error
+	# entry) is NOT stale -- the watch poll must not busy-recompile it every _POLL_SECS -- but its
+	# persisted verdict stays visible through sidecar_error_diags (compile_all re-surfaces it on
+	# every sweep; the dock dedup is what prevents spam, never silence).
+	_check_true(not Codegen.is_stale(gx), "known-broken content is not stale (sidecar hash-match + error entry)")
+	_check_true(Codegen.sidecar_error_diags(gx).size() > 0, "sidecar_error_diags surfaces the persisted verdict")
 	# fix it again -> the .gd comes back
 	var f_fix := FileAccess.open(gx, FileAccess.WRITE)
 	f_fix.store_string(src)
 	f_fix.close()
 	_check_true(Codegen.compile_file(gx)["ok"], "fixed file compiles again")
 	_check_true(FileAccess.file_exists(gd), "sibling .gd regenerated after the fix")
-	# delete the .gd -> stale again (missing-file branch)
+	# delete the .gd -> stale again (missing-file branch: the sidecar is CLEAN for this content, so
+	# its absence of an error verdict must not mask a manually-removed output)
 	DirAccess.remove_absolute(gd)
 	_check_true(Codegen.is_stale(gx), "stale again after sibling .gd removed")
+	DirAccess.remove_absolute(gx + ".diags.json")
 	DirAccess.remove_absolute(gx)
+	# has_stale: the watch-poll predicate (0.7.1) -- false while everything is fresh or known-broken,
+	# true the moment content changes. Mtimes are whole seconds, so a save landing in the same second
+	# as the last compile ties on mtime; the tie is broken by CONTENT (sidecar src_hash), which makes
+	# this deterministic where bare `>` silently missed it ("saved it and Godot never recompiled").
+	var hs_dir := "res://tests/__has_stale_tmp"
+	DirAccess.make_dir_recursive_absolute(hs_dir)
+	if Codegen.compiler_changed():
+		Codegen.compile_all(hs_dir)   # settle the fingerprint marker so has_stale reflects FILE state
+	var hgx := hs_dir + "/probe.guitkx"
+	var hf := FileAccess.open(hgx, FileAccess.WRITE)
+	hf.store_string("component Probe() {\n\treturn ( <Label text=\"a\" /> )\n}\n")
+	hf.close()
+	_check_true(Codegen.has_stale(hs_dir), "fresh .guitkx with no sibling .gd reads stale")
+	_check_true(Codegen.compile_file(hgx)["ok"], "probe compiles")
+	var hf2 := FileAccess.open(hgx, FileAccess.WRITE)   # rewrite lands in the SAME mtime second
+	hf2.store_string("component Probe() {\n\treturn ( <Label text=\"b\" /> )\n}\n")
+	hf2.close()
+	_check_true(Codegen.is_stale(hgx), "a save in the same second as the last compile is stale (mtime tie, hash differs)")
+	_check_true(Codegen.compile_file(hgx)["ok"], "probe recompiles")
+	var hbad := FileAccess.open(hgx, FileAccess.WRITE)
+	hbad.store_string("component Probe() {\n\treturn ( <Broken> )\n}\n")
+	hbad.close()
+	_check_true(not Codegen.compile_file(hgx)["ok"], "broken probe errors")
+	_check_true(not Codegen.has_stale(hs_dir), "known-broken probe does not keep the watch poll hot")
+	var hsweep := Codegen.compile_all(hs_dir)
+	_check_true((hsweep["errors"] as Array).size() == 1 and (hsweep["compiled"] as Array).is_empty(),
+		"sweep re-surfaces the persisted error without recompiling: " + str(hsweep))
+	_check_true(int(hsweep.get("total", -1)) == 1, "sweep reports the tracked total")
+	DirAccess.remove_absolute(hgx + ".diags.json")
+	DirAccess.remove_absolute(hgx)   # (the probe .gd was already T1.1-deleted by the broken compile)
 
 func _test_cold_open_recovery() -> void:
 	# R0 (0.6.1): the vocabulary the compiler actually uses is the EMBEDDED const projection
