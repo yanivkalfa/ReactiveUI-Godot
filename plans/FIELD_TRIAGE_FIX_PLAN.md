@@ -336,7 +336,13 @@ immediately.
 - **D7 ✅ Docs + release:** diagnostics rows 2103/2104, CHANGELOGs (root 0.7.0 + vscode 0.8.0
   with migration notes), addon 0.7.0 + ext/lsp 0.8.0. Original scope: language-reference directive section rewritten, Unity-differences
   page updated, CHANGELOGs, addon 0.7.0 + ext/lsp 0.8.0, migration notes (loud).
-- **D8 ⬜ Gates:** full headless suite + TS suite + pristine-clone cold open + field checklist.
+- **D8 ✅ Gates (final green 2026-07-04):** guitkx_build 42/0, contract 63 goldens, core 114,
+  style 25, router 18+37, update, demos 30/30, guitkx ALL PASSED (incl. the 4-deep runtime
+  proof), TS 174/174, ext + docs builds. GATE FIND (fixed `5517e52`): the module-member re-emit
+  dropped `-> Type` hints (cascading `:=` inference failures through five demo files — the
+  demos hang) and deleted `##` member docs; both formatters fixed, damaged files restored +
+  re-swept, corpus case `module_docs_and_hint` pins it (the old corpus was blind — its expected
+  outputs came from the same lossy emitter). Pristine-clone replay = CI on the PR.
 
 - **Accept (phase):** the Unity kitchen-sink patterns (translated to GDScript expressions)
   compile and render in guitkx; old bare-markup bodies error with the migration message; hooks
