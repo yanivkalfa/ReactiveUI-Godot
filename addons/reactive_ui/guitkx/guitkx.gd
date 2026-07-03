@@ -858,7 +858,7 @@ static func _split_return(body: String) -> Dictionary:
 						bad.append(_bad_return(chosen, body, n))
 					chosen = { "at": i, "p": p, "shape": "paren", "close": close }
 				elif _paren_holds_markup(body, p + 1, close):
-					bad.append({ "at": i, "to": eol, "msg": "a conditional/early `return` cannot return markup (setup is plain GDScript) -- return null and branch with @if/@match in the markup" })
+					bad.append({ "at": i, "to": eol, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" })
 				i = close + 1
 				continue
 			elif p < n and body[p] == "<":
@@ -868,7 +868,7 @@ static func _split_return(body: String) -> Dictionary:
 						bad.append(_bad_return(chosen, body, n))
 					chosen = { "at": i, "p": p, "shape": "bare", "close": -1 }
 				else:
-					bad.append({ "at": i, "to": eol, "msg": "a conditional/early `return` cannot return markup (setup is plain GDScript) -- return null and branch with @if/@match in the markup" })
+					bad.append({ "at": i, "to": eol, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" })
 				i = eol
 				continue
 			elif L.keyword_at(body, p, "null"):
@@ -899,7 +899,7 @@ static func _bad_return(cand: Dictionary, body: String, n: int) -> Dictionary:
 	var to: int = body.find("\n", at)
 	if to == -1:
 		to = n
-	return { "at": at, "to": to, "msg": "a component's setup cannot `return` before the final markup return -- use a `return null` guard or branch with @if in the markup" }
+	return { "at": at, "to": to, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" }
 
 ## True when a parenthesized return's content [from,to) starts with markup (`<` element or `@`
 ## directive) -- neither can begin a legal GDScript expression, so this never false-flags a plain

@@ -37,7 +37,7 @@ import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, earlyMarkupReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
 import { parseMarkup } from "./markup";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
@@ -668,6 +668,7 @@ function publishDiagnosticsFor(doc: TextDocument): void {
     ...structuralDiagnostics(doc),
     ...markupDiagnostics(doc),
     ...missingReturnDiagnostics(doc),
+    ...earlyMarkupReturnDiagnostics(doc),
     ...unclosedReturnDiagnostics(doc),
     ...unreachableDiagnostics(doc),
     ...embeddedDiagnostics(doc),
@@ -1583,6 +1584,21 @@ function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
     severity: DiagnosticSeverity.Error,
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
     message: "GUITKX2101: component has no `return ( ... )` (only `return null`?)",
+    source: "guitkx",
+  }));
+}
+
+// A4 (0.6.0 field triage): early/conditional markup returns -- the compiler's GUITKX2102 -- now
+// fire LIVE. They were compiler-only: with the Godot editor closed the only trace was a stale
+// sidecar entry at a drifting offset, so fixing (or introducing) one changed nothing on screen.
+// Message matches guitkx.gd _split_return/_bad_return, and GUITKX2102 joined vocabulary `live`,
+// so sidecar copies dedupe when fresh and drop when stale like every live-owned code.
+function earlyMarkupReturnDiagnostics(doc: TextDocument): Diagnostic[] {
+  return earlyMarkupReturns(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message:
+      "GUITKX2102: an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup",
     source: "guitkx",
   }));
 }

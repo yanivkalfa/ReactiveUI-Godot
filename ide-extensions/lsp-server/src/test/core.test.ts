@@ -9,7 +9,7 @@ import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt, guitkxVirtualLibText } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows, missingReturnComponents, setupSpans } from "../formatGuitkx";
+import { formatGuitkx, markupWindows, missingReturnComponents, earlyMarkupReturns, setupSpans } from "../formatGuitkx";
 import { windowStructureDiags, hookContextDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
@@ -977,6 +977,27 @@ test("live PascalCase 0105 fires only against a known-components universe (T4.5 
     !windowStructureDiags(fragSrc, markupWindows(fragSrc), known).some((d) => d.code === "GUITKX0105"),
     "<Fragment> is structural, never an unknown component"
   );
+});
+
+test("A4: early/conditional markup returns are detected live (compiler GUITKX2102 was sidecar-only)", () => {
+  // Demoted earlier top-level markup return (the field repro's `return <s></s>` shape).
+  const early = "component C {\n\tvar a = useState(0)\n\treturn <s></s>\n\treturn (\n\t\t<vbox />\n\t)\n}\n";
+  const d1 = earlyMarkupReturns(early);
+  assert.equal(d1.length, 1, JSON.stringify(d1));
+  assert.equal(early.slice(d1[0].start, d1[0].start + 6), "return");
+  // Nested conditional markup return.
+  const nested = "component D {\n\tvar ready = useState(false)\n\tif not ready[0]:\n\t\treturn ( <label /> )\n\treturn ( <vbox /> )\n}\n";
+  assert.equal(earlyMarkupReturns(nested).length, 1);
+  // The sanctioned guard and plain value returns stay silent.
+  const guard = "component E {\n\tif true:\n\t\treturn null\n\treturn ( <vbox /> )\n}\n";
+  assert.equal(earlyMarkupReturns(guard).length, 0, "return null guards are sanctioned");
+  const valueRet = "component F {\n\tvar f = func(x):\n\t\treturn (x + 1)\n\treturn ( <vbox /> )\n}\n";
+  assert.equal(earlyMarkupReturns(valueRet).length, 0, "a parenthesized value in a lambda is plain GDScript");
+  // Nested-only markup returns (no final markup return): 2102 fires alongside the 2101 the
+  // missing-return check reports -- same pairing the compiler produces.
+  const nestedOnly = "component G {\n\tif true:\n\t\treturn ( <label /> )\n}\n";
+  assert.equal(earlyMarkupReturns(nestedOnly).length, 1);
+  assert.equal(missingReturnComponents(nestedOnly).length, 1);
 });
 
 test("live 0105 exempts vocabulary host tags from the component-universe check (0.6.0 field regression)", () => {

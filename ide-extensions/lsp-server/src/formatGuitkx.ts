@@ -795,8 +795,18 @@ interface ReturnSplit {
 // mirrors guitkx.gd _split_return exactly -- the `return` is the first token on its line AND the
 // line's indent depth is <= the body's anchor depth (same anchor rule as reanchor/_reindent_setup).
 // Statement-level returns (inside if:/lambdas) are setup code, never windows -- the compiler
-// classifies the markup-shaped ones as GUITKX2102.
+// classifies the markup-shaped ones as GUITKX2102, and `bad` (A4) carries them here so the live
+// tier can emit the same 2102 instead of leaving it sidecar-only.
 function splitReturn(src: string, start: number, end: number): ReturnSplit | "unclosed" | null {
+  return splitReturnEx(src, start, end).split;
+}
+
+// The full mirror of guitkx.gd _split_return: the chosen window PLUS the `bad` list -- every
+// markup-shaped return that is NOT the final markup return (a demoted earlier top-level one, a
+// nested `return ( <markup> )`, a nested bare `return <`). Span = the `return` keyword to its EOL,
+// the same anchor guitkx.gd uses for its GUITKX2102 entries. `bad` is meaningful even when `split`
+// is null/"unclosed", exactly like the compiler processing `bad` alongside an error.
+function splitReturnEx(src: string, start: number, end: number): { split: ReturnSplit | "unclosed" | null; bad: { start: number; end: number }[] } {
   const lines = src.slice(start, end).split("\n");
   const unit = indentUnit(lines);
   let anchor = -1;
@@ -812,7 +822,14 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | "un
     }
   }
   if (anchor === -1) anchor = anchorAny;
+  const bad: { start: number; end: number }[] = [];
+  const eolAt = (at: number): number => {
+    let e = src.indexOf("\n", at);
+    if (e === -1 || e > end) e = end;
+    return e;
+  };
   let chosen: ReturnSplit | null = null;
+  let chosenAt = -1;
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -826,19 +843,31 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | "un
       const ls = Math.max(start, src.lastIndexOf("\n", i - 1) + 1);
       const lead = src.slice(ls, i);
       const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
-      let eol = src.indexOf("\n", i);
-      if (eol === -1 || eol > end) eol = end;
+      const eol = eolAt(i);
       if (src[p] === "(") {
         const close = findMatching(src, p);
         // close >= end: the `)` lives beyond the body -- inside the sliced body the compiler sees
         // no close at all, so mirror its GUITKX0304 verdict.
-        if (close === -1 || close >= end) return "unclosed";
-        if (topLevel) chosen = { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        if (close === -1 || close >= end) return { split: "unclosed", bad };
+        if (topLevel) {
+          if (chosen !== null) bad.push({ start: chosenAt, end: eolAt(chosenAt) });
+          chosen = { setupEnd: i, markupStart: p + 1, markupEnd: close };
+          chosenAt = i;
+        } else if (parenHoldsMarkup(src, p + 1, close)) {
+          bad.push({ start: i, end: eol });
+        }
         i = close + 1;
         continue;
       }
       if (src[p] === "<") {
-        if (topLevel) chosen = { setupEnd: i, markupStart: p, markupEnd: end };
+        if (topLevel) {
+          if (chosen !== null) bad.push({ start: chosenAt, end: eolAt(chosenAt) });
+          chosen = { setupEnd: i, markupStart: p, markupEnd: end };
+          chosenAt = i;
+        } else {
+          // bare `return <...` is markup by construction (`<` cannot start a GDScript expression)
+          bad.push({ start: i, end: eol });
+        }
         i = eol;
         continue;
       }
@@ -853,7 +882,51 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | "un
     }
     i++;
   }
-  return chosen;
+  return { split: chosen, bad };
+}
+
+// Mirrors guitkx.gd _paren_holds_markup: a nested `return ( ... )` is markup-shaped when its first
+// real char is `<` or `@` (neither can begin a legal GDScript expression, so a plain parenthesized
+// value like `return (x + 1)` in a setup lambda never false-flags). guitkx.gd's _first_real also
+// skips markup comments; `return ( /* c */ <X/> )` in setup GDScript is pathological, so a
+// whitespace skip suffices for the live mirror.
+function parenHoldsMarkup(src: string, from: number, to: number): boolean {
+  let i = from;
+  while (i < to && /[ \t\r\n]/.test(src[i])) i++;
+  return i < to && (src[i] === "<" || src[i] === "@");
+}
+
+// A4 (0.6.0 field triage): every component's demoted/early/conditional markup returns -- the
+// compiler's GUITKX2102, which used to be sidecar-only (with the Godot editor closed it appeared
+// only as a stale entry at a drifting offset, never updating as the user typed). Same recovering
+// declaration walk as missingReturnComponents; hooks never have markup returns, modules recurse.
+export function earlyMarkupReturns(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          out.push(...splitReturnEx(src, b.start, b.close).bad);
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
 }
 
 // --- helpers ---
