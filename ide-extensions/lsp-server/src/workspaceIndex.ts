@@ -12,6 +12,7 @@ import { join } from "path";
 
 export interface DeclInfo {
   kind: "component" | "hook" | "module" | "member";
+  kw: "component" | "hook" | "module"; // the declaration keyword itself (a member's kind erases it)
   name: string;
   binding: string;
   module?: string;
@@ -74,7 +75,7 @@ function scanRange(src: string, start: number, end: number, override: ClassNameR
       const body = readBody(src, nm.end);
       const declEnd = body ? body.end + 1 : nm.end;
       out.push({
-        kind, name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
+        kind, kw: kw as DeclInfo["kw"], name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
         classNameStart: useOverride ? override!.start : undefined,
         classNameEnd: useOverride ? override!.end : undefined,
       });

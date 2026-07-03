@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_t13_single_decl()
 	_test_t14_last_return()
 	_test_t15_unknown_tags()
+	_test_t26_naming()
 	_test_p2_markup_features()
 	_test_return_null_guard()
 	_test_jsx_value()
@@ -275,6 +276,26 @@ func _test_t14_last_return() -> void:
 	var expr_src := "component E(items: Array = []) {\n\treturn ( { items.map(func(i): return <label text={ str(i) } />) } )\n}\n"
 	var expr := RUIGuitkx.compile(expr_src, "E")
 	_check_true(bool(expr["ok"]), "T1.4: {expr} root still compiles (got %s)" % str(expr["diagnostics"]))
+
+func _test_t26_naming() -> void:
+	# T2.6 (Unity 2100): component names are PascalCase -- they become the generated class_name.
+	var src := "component my_widget() {\n\treturn ( <label text=\"x\" /> )\n}\n"
+	var r := RUIGuitkx.compile(src, "my_widget")
+	_check_true(not r["ok"], "T2.6: lowercase component name fails")
+	_check_diag_at(r, "GUITKX2100", src, "my_widget", "T2.6: 2100 lands on the name")
+
+	# T2.6 (Unity 2203): hooks should be use_-prefixed -- warning, still compiles.
+	var src_h := "hook make_thing() {\n\treturn 1\n}\n"
+	var rh := RUIGuitkx.compile(src_h, "make_thing")
+	_check_true(bool(rh["ok"]), "T2.6: non-use_ hook still compiles")
+	_check_diag_at(rh, "GUITKX2203", src_h, "make_thing", "T2.6: 2203 lands on the hook name")
+
+	# T2.6: real content BEFORE the first declaration errors instead of being silently skipped.
+	var src_j := "var oops = 1\ncomponent A() {\n\treturn ( <label text=\"x\" /> )\n}\n"
+	var rj := RUIGuitkx.compile(src_j, "A")
+	_check_true(not rj["ok"], "T2.6: junk before the declaration fails")
+	_check_diag_at(rj, "GUITKX2105", src_j, "var oops = 1", "T2.6: leading-junk 2105 position")
+	_check_true(bool(RUIGuitkx.compile("# header\ncomponent A() {\n\treturn ( <label text=\"x\" /> )\n}\n", "A")["ok"]), "T2.6: leading comments stay legal")
 
 func _test_p2_markup_features() -> void:
 	# T2.1: all four comment forms parse, emit nothing, and don't count as roots/children.

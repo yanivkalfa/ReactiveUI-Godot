@@ -72,6 +72,15 @@ static func compile(source: String, basename: String = "Component", known_compon
 		break
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
 	var decl := _find_decl(source, i)
+	# T2.6: _find_decl SKIPS anything before the keyword -- real content there (a stray statement, a
+	# misspelled directive) used to vanish silently. Same 2105 family as trailing junk (T1.3).
+	if decl["kind"] != "":
+		var lead_junk := _first_real(source, i, int(decl["at"]))
+		if lead_junk != -1:
+			var jle := source.find("\n", lead_junk)
+			if jle == -1 or jle > int(decl["at"]):
+				jle = int(decl["at"])
+			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content before the `%s` declaration" % decl["kind"], lead_junk, maxi(1, jle - lead_junk)))
 	var r: Dictionary
 	match decl["kind"]:
 		"component":
@@ -205,6 +214,10 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if comp_name == "":
 		diags.append(D.make("GUITKX0300", D.ERROR, "missing component name", j))
 		return { "ok": false }
+	# T2.6 (Unity UITKX2100): component names are PascalCase -- they become the generated class_name
+	# and the <Tag/> other files reference. Parsing continues so further diagnostics still surface.
+	if not (comp_name[0] >= "A" and comp_name[0] <= "Z"):
+		diags.append(D.make("GUITKX2100", D.ERROR, "component name `%s` must be PascalCase" % comp_name, ns, comp_name.length()))
 	var params := ""
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":
@@ -442,6 +455,10 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 	if hook_name == "":
 		diags.append(D.make("GUITKX0300", D.ERROR, "missing hook name", j))
 		return { "ok": false }
+	# T2.6 (Unity UITKX2203, snake-case adaptation): hook names start with `use_` so call sites read
+	# as hooks and the auto-prefixing/lint machinery can recognize them. Warning -- helpers compile.
+	if not hook_name.begins_with("use_"):
+		diags.append(D.make("GUITKX2203", D.WARNING, "hook name `%s` should start with `use_`" % hook_name, ns, hook_name.length()))
 	var params := ""
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":

@@ -1443,7 +1443,7 @@ function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
 // single typo like `comssponent` used to make the LSP skip ALL analysis and report nothing.
 function declarationDiagnostics(doc: TextDocument): Diagnostic[] {
   return declarationDiags(doc.getText()).map((d) => ({
-    severity: DiagnosticSeverity.Error,
+    severity: d.severity === "warning" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
     range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },
     message: d.message,
     source: "guitkx",

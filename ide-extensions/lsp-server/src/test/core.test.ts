@@ -353,6 +353,20 @@ test("T2.4: literal braces in text fire the GUITKX0150 migration warning live", 
   assert.ok(hit && hit.severity === "warning", `got ${JSON.stringify(d)}`);
 });
 
+test("T2.6: live naming checks -- 2100 PascalCase error, 2203 use_ warning", () => {
+  const d = declarationDiags("component my_widget() {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.some((x) => x.code === "GUITKX2100"), `got ${JSON.stringify(d)}`);
+  const dh = declarationDiags("hook make_thing() {\n\treturn 1\n}\n");
+  const hit = dh.find((x) => x.code === "GUITKX2203");
+  assert.ok(hit && hit.severity === "warning", `got ${JSON.stringify(dh)}`);
+});
+
+test("T2.6: junk before the first declaration is 2105 live (comments/directives skipped)", () => {
+  const d = declarationDiags("var oops = 1\ncomponent A() {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(d)}`);
+  assert.equal(declarationDiags("# header\n@class_name A\ncomponent A() {\n\treturn ( <Label /> )\n}\n").length, 0);
+});
+
 test("T2.1/T2.2: comments and <Fragment> stay clean live", () => {
   const src = "component C() {\n\treturn (\n\t\t// note\n\t\t<Fragment>\n\t\t\t<label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</Fragment>\n\t)\n}\n";
   assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);

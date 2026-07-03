@@ -16,6 +16,7 @@ export interface DeclDiag {
   end: number;
   code: string;
   message: string;
+  severity?: "warning"; // absent = error
 }
 
 const DECL_KWS = ["component", "hook", "module"];
@@ -122,6 +123,57 @@ export function declarationDiags(src: string): DeclDiag[] {
         end: Math.max(junk + 1, le),
         code: "GUITKX2105",
         message: `GUITKX2105: invalid top-level content after the \`${first.kind}\` declaration -- one declaration per file (wrap several in \`module Name { ... }\`)`,
+      });
+    }
+    // T2.6: real content BEFORE the first declaration (a stray statement; a misspelled directive
+    // already gets its own 0300 above, so `@...` lines are skipped here).
+    let p2 = 0;
+    while (p2 < first.declStart) {
+      const k = skipNoncode(src, p2);
+      if (k !== p2) {
+        p2 = k;
+        continue;
+      }
+      if (/[ \t\r\n]/.test(src[p2])) {
+        p2++;
+        continue;
+      }
+      if (src[p2] === "@") {
+        const nl = src.indexOf("\n", p2);
+        p2 = nl === -1 ? src.length : nl + 1;
+        continue;
+      }
+      break;
+    }
+    if (p2 < first.declStart) {
+      let le2 = src.indexOf("\n", p2);
+      if (le2 === -1 || le2 > first.declStart) le2 = first.declStart;
+      out.push({
+        start: p2,
+        end: Math.max(p2 + 1, le2),
+        code: "GUITKX2105",
+        message: `GUITKX2105: invalid content before the \`${first.kw}\` declaration`,
+      });
+    }
+  }
+
+  // T2.6 naming (Unity 2100/2203): PascalCase components; use_-prefixed hooks (warning).
+  for (const d of decls) {
+    if (d.kw === "component" && d.name !== "" && !/^[A-Z]/.test(d.name)) {
+      out.push({
+        start: d.nameStart,
+        end: d.nameEnd,
+        code: "GUITKX2100",
+        message: `GUITKX2100: component name \`${d.name}\` must be PascalCase`,
+      });
+    }
+    if (d.kw === "hook" && d.name !== "" && !d.name.startsWith("use_")) {
+      out.push({
+        start: d.nameStart,
+        end: d.nameEnd,
+        code: "GUITKX2203",
+        message: `GUITKX2203: hook name \`${d.name}\` should start with \`use_\``,
+        severity: "warning",
       });
     }
   }
