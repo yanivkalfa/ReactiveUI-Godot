@@ -230,3 +230,38 @@ export function neutralizeMarkup(expr: string): string {
   out += expr.slice(prev);
   return out;
 }
+
+// A2 (0.6.0 field regression): neutralize markup anywhere in a SETUP block — an early/demoted
+// markup return (`return <s></a>` before the final markup return) or a markup value. Length- AND
+// newline-preserving, unlike neutralizeMarkup, because virtualDoc splices setup verbatim with a
+// per-line source map: every `\n` byte survives, every other byte in a markup range becomes a
+// space, and `null` lands on the first line segment of the range wide enough to hold it. A
+// neutralized `return <s></a>` therefore reads `return null` — real GDScript, and an unconditional
+// early return keeps its parity-correct unreachable-after-return signal (Unity dims the same way).
+export function neutralizeSetupMarkup(block: string): string {
+  const ranges = findMarkupRanges(block, 0, block.length);
+  if (ranges.length === 0) return block;
+  const out = block.split("");
+  let prev = 0;
+  for (const r of ranges) {
+    if (r.start < prev) continue;
+    const re = r.end === -1 ? block.length : r.end;
+    let placed = false;
+    let i = r.start;
+    while (i < re) {
+      let segEnd = block.indexOf("\n", i);
+      if (segEnd === -1 || segEnd > re) segEnd = re;
+      for (let k = i; k < segEnd; k++) out[k] = " ";
+      if (!placed && segEnd - i >= 4) {
+        out[i] = "n";
+        out[i + 1] = "u";
+        out[i + 2] = "l";
+        out[i + 3] = "l";
+        placed = true;
+      }
+      i = segEnd + 1;
+    }
+    prev = re;
+  }
+  return out.join("");
+}

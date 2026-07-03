@@ -52,6 +52,30 @@ test("T5.1: nested markup in an {expr} reaches the analyzer as null padding, not
   assert.ok(/open and null/.test(vd.text), vd.text);
 });
 
+test("A2: an early/demoted markup return in SETUP is neutralized, not spliced raw (0.6.0 field regression)", () => {
+  // The field repro: `return <s></a>` before the final markup return leaked into the virtual doc
+  // as literal GDScript and sprayed SYNTAX/UNDEFINED/STANDALONE noise over the line.
+  const src = "component C {\n\tvar a = useState(0)\n\treturn <s></a>\n\tvar toggle = 1\n\treturn (\n\t\t<label text={ str(a[0]) } />\n\t)\n}\n";
+  const vd = buildVirtualDoc(src);
+  assert.ok(!vd.text.includes("<s>"), `raw markup must not reach the analyzer:\n${vd.text}`);
+  assert.ok(vd.text.includes("return null"), `the demoted return stays a real statement (unreachable-after parity):\n${vd.text}`);
+  assert.ok(vd.text.includes("var toggle = 1"), "real setup statements around the demoted return survive verbatim");
+
+  // A nested conditional markup return (compiler 2102 territory) neutralizes the same way.
+  const src2 = "component D {\n\tvar ready = useState(false)\n\tif not ready[0]:\n\t\treturn ( <label /> )\n\treturn (\n\t\t<vbox />\n\t)\n}\n";
+  const vd2 = buildVirtualDoc(src2);
+  assert.ok(!vd2.text.includes("<label"), `nested markup return neutralized:\n${vd2.text}`);
+  assert.ok(/return \( null/.test(vd2.text), `the paren guard keeps a value expression:\n${vd2.text}`);
+
+  // neutralizeSetupMarkup is length- AND newline-preserving (the per-line source map contract).
+  const { neutralizeSetupMarkup } = require("../jsxScan");
+  const block = "var a = 1\nreturn ( <VBox>\n\t<label />\n</VBox> )\nvar b = 2\n";
+  const out = neutralizeSetupMarkup(block);
+  assert.equal(out.length, block.length);
+  assert.equal(out.split("\n").length, block.split("\n").length);
+  assert.ok(!out.includes("<"), out);
+});
+
 // T5.3 audit closures ------------------------------------------------------------------------
 
 test("T5.3/G9: a component whose body is only an @for block flags missing-return live", () => {
