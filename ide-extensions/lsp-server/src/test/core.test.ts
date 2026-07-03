@@ -979,6 +979,22 @@ test("live PascalCase 0105 fires only against a known-components universe (T4.5 
   );
 });
 
+test("A5: directive-header grammar fires GUITKX2508 live (field: `@for (i in 2: int5)` passed silently)", () => {
+  const fires = (src: string): boolean => windowStructureDiags(src, markupWindows(src)).some((x) => x.code === "GUITKX2508");
+  const bad = 'component H {\n\treturn ( <vbox>@for (i in 2: int5) { <label key={ str(i) } text="x" /> }</vbox> )\n}\n';
+  assert.ok(fires(bad), "statement garbage after `in` flags");
+  const good = 'component H {\n\treturn ( <vbox>@for (i in 25) { <label key={ str(i) } text="x" /> }</vbox> )\n}\n';
+  assert.ok(!fires(good), "a range loop over an int is legal");
+  const dict = 'component H {\n\treturn ( <vbox>@for (kv in {"a": 1}) { <label key={ str(kv) } text="x" /> }</vbox> )\n}\n';
+  assert.ok(!fires(dict), "dict colons are bracketed, not top-level");
+  const noIn = 'component H {\n\treturn ( <vbox>@for (garbage) { <label key={ str(1) } text="x" /> }</vbox> )\n}\n';
+  assert.ok(fires(noIn), "a header without ` in ` flags");
+  const emptyIf = 'component H {\n\treturn ( <vbox>@if () { <label text="x" /> }</vbox> )\n}\n';
+  assert.ok(fires(emptyIf), "an empty @if condition flags");
+  const okIf = 'component H {\n\treturn ( <vbox>@if (a and b) { <label text="x" /> }</vbox> )\n}\n';
+  assert.ok(!fires(okIf), "a real condition stays clean");
+});
+
 test("A4: early/conditional markup returns are detected live (compiler GUITKX2102 was sidecar-only)", () => {
   // Demoted earlier top-level markup return (the field repro's `return <s></s>` shape).
   const early = "component C {\n\tvar a = useState(0)\n\treturn <s></s>\n\treturn (\n\t\t<vbox />\n\t)\n}\n";

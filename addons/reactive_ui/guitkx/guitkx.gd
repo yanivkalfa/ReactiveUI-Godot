@@ -537,20 +537,82 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 				diags.append(D.make("GUITKX0150", D.WARNING, "braces inside text are literal -- interpolate with a leading `{expr}` node or a `text={ ... }` attribute instead", _cbase(base, int(nd.get("at", -1))), (str(nd.get("value", "")) as String).length()))
 		"if":
 			for br in nd["branches"]:
+				var ihe := _header_error("if", str(br.get("cond", "")))
+				if ihe != "":
+					diags.append(D.make("GUITKX2508", D.ERROR, ihe, _cbase(base, int(nd.get("at", -1))), 3))
+					break
+			for br in nd["branches"]:
 				_validate_body(br["body_markup"], diags, false, _cbase(base, br["body_at"]))
 			if nd["else_body"] != null:
 				_validate_body(nd["else_body"], diags, false, _cbase(base, nd["else_body_at"]))
 		"for":
+			var fhe := _header_error("for", str(nd["header"]))
+			if fhe != "":
+				diags.append(D.make("GUITKX2508", D.ERROR, fhe, _cbase(base, int(nd.get("at", -1))), 4))
 			# T2.7 (Unity UITKX0019): the loop binder threads down so `key={ binder }` can warn.
 			var fh := _split_for_header(str(nd["header"]))
 			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]), str(fh.get("var", "")))
 		"while":
+			var whe := _header_error("while", str(nd["header"]))
+			if whe != "":
+				diags.append(D.make("GUITKX2508", D.ERROR, whe, _cbase(base, int(nd.get("at", -1))), 6))
 			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]))
 		"match":
+			var mhe := _header_error("match", str(nd.get("subject", "")))
+			if mhe == "":
+				for c in nd.get("cases", []):
+					mhe = _header_error("case", str(c.get("value", "")))
+					if mhe != "":
+						break
+			if mhe != "":
+				diags.append(D.make("GUITKX2508", D.ERROR, mhe, _cbase(base, int(nd.get("at", -1))), 6))
 			for c in nd.get("cases", []):
 				_validate_body(c["body_markup"], diags, false, _cbase(base, c["body_at"]))
 			if nd.get("default_body") != null:
 				_validate_body(nd["default_body"], diags, false, _cbase(base, nd["default_body_at"]))
+
+## A5/B2 (0.6.0 field triage): directive-header grammar. Headers were captured raw by the parser
+## and emitted VERBATIM into GDScript (`for i in 2: int5:` -- invalid), so garbage passed every
+## guitkx tier and only Godot's own parser choked on the generated .gd at load time. Mirrors
+## liveMarkup.ts headerError (change BOTH or neither). Deliberately shallow: the expression's
+## SEMANTICS stay the analyzer's job; this catches shapes a single expression can never contain
+## (no ` in ` in @for, a non-identifier loop var, an unbracketed `:`). "" = well-formed.
+static func _header_error(kind: String, header: String) -> String:
+	var h := header.strip_edges()
+	if kind == "for":
+		var sep := h.find(" in ")
+		if sep == -1:
+			return "malformed `@for` header -- expected `(<identifier> in <expression>)`"
+		if not h.substr(0, sep).strip_edges().is_valid_identifier():
+			return "malformed `@for` header -- expected `(<identifier> in <expression>)`"
+		var iter := h.substr(sep + 4).strip_edges()
+		if iter == "" or _top_level_colon(iter):
+			return "malformed `@for` header -- the part after `in` is not a single expression"
+		return ""
+	if h == "" or _top_level_colon(h):
+		return "malformed `@%s` header -- expected a single expression" % kind
+	return ""
+
+## An unbracketed `:` at depth 0 -- legal nowhere in a single GDScript expression (dict colons sit
+## inside `{}`, typed-lambda colons inside `()`), so it marks statement garbage like `2: int5`.
+static func _top_level_colon(s: String) -> bool:
+	var depth := 0
+	var i := 0
+	var n := s.length()
+	while i < n:
+		var j := L.skip_noncode(s, i)
+		if j != i:
+			i = j
+			continue
+		var c := s[i]
+		if c == "(" or c == "[" or c == "{":
+			depth += 1
+		elif c == ")" or c == "]" or c == "}":
+			depth -= 1
+		elif c == ":" and depth <= 0:
+			return true
+		i += 1
+	return false
 
 static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: int = -1, binder: String = "") -> void:
 	var parser := Markup.new()

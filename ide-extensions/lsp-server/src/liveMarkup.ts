@@ -110,18 +110,38 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
           });
         }
         break;
-      case "if":
+      case "if": {
+        for (const br of nd.branches) {
+          const ihe = headerError("if", br.cond);
+          if (ihe !== "") {
+            out.push({ start: base + nd.at, end: base + nd.at + 3, code: "GUITKX2508", message: `GUITKX2508: ${ihe}` });
+            break;
+          }
+        }
         for (const br of nd.branches) walkBody(br.body_markup, base + br.body_at, out, known);
         if (nd.else_body !== null) walkBody(nd.else_body, base + nd.else_body_at, out, known);
         break;
+      }
       case "for":
-      case "while":
+      case "while": {
+        const lhe = headerError(nd.t, nd.header);
+        if (lhe !== "") out.push({ start: base + nd.at, end: base + nd.at + 1 + nd.t.length, code: "GUITKX2508", message: `GUITKX2508: ${lhe}` });
         walkLoopBody(nd.body_markup, base + nd.body_at, out, known);
         break;
-      case "match":
+      }
+      case "match": {
+        let mhe = headerError("match", nd.subject);
+        if (mhe === "") {
+          for (const c of nd.cases) {
+            mhe = headerError("case", c.value);
+            if (mhe !== "") break;
+          }
+        }
+        if (mhe !== "") out.push({ start: base + nd.at, end: base + nd.at + 6, code: "GUITKX2508", message: `GUITKX2508: ${mhe}` });
         for (const c of nd.cases) walkBody(c.body_markup, base + c.body_at, out, known);
         if (nd.default_body !== null) walkBody(nd.default_body, base + nd.default_body_at, out, known);
         break;
+      }
     }
   }
 }
@@ -184,6 +204,47 @@ function attrHookChecks(attrs: { kind: string; value: string; vat: number }[], b
       });
     }
   }
+}
+
+// A5 (0.6.0 field triage): directive-header grammar -- mirrors guitkx.gd _header_error (change
+// BOTH or neither). Headers are captured raw by the parser and were validated NOWHERE (the
+// compiler even emits them verbatim into GDScript), so `@for (i in 2: int5)` passed every tier
+// silently and only Godot's own parser choked on the generated .gd at load time. Deliberately
+// shallow: the expression's SEMANTICS stay the analyzer's job; this catches shapes a single
+// expression can never contain. "" = well-formed.
+function headerError(kind: string, header: string): string {
+  const h = header.trim();
+  if (kind === "for") {
+    const sep = h.indexOf(" in ");
+    if (sep === -1) return "malformed `@for` header -- expected `(<identifier> in <expression>)`";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(h.slice(0, sep).trim())) return "malformed `@for` header -- expected `(<identifier> in <expression>)`";
+    const iter = h.slice(sep + 4).trim();
+    if (iter === "" || topLevelColon(iter)) return "malformed `@for` header -- the part after `in` is not a single expression";
+    return "";
+  }
+  if (h === "" || topLevelColon(h)) return `malformed \`@${kind}\` header -- expected a single expression`;
+  return "";
+}
+
+// An unbracketed `:` at depth 0 -- legal nowhere in a single GDScript expression (dict colons sit
+// inside `{}`, typed-lambda colons inside `()`), so it marks statement garbage like `2: int5`.
+function topLevelColon(s: string): boolean {
+  let depth = 0;
+  let i = 0;
+  const n = s.length;
+  while (i < n) {
+    const j = skipNoncode(s, i);
+    if (j !== i) {
+      i = j;
+      continue;
+    }
+    const c = s[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === ":" && depth <= 0) return true;
+    i++;
+  }
+  return false;
 }
 
 // Token-boundary hook-call detection -- a `my_useState(` look-alike or `obj.useState(` member call
