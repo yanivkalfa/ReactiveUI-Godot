@@ -1,0 +1,13 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0102",
+			"len": 11,
+			"off": 0,
+			"severity": 0
+		}
+	],
+	"markup": [],
+	"ok": false,
+	"windows": []
+}

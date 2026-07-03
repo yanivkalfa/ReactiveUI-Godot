@@ -47,6 +47,7 @@ import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offs
 import { scanTagRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
+import { cpToUtf16 } from "./codePoints";
 import { readFileSync, readdirSync, statSync, existsSync, watch as fsWatch } from "fs";
 import { AnalyzerAdapter, AdapterSymbol } from "./analyzerAdapter";
 import {
@@ -669,9 +670,12 @@ function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic
   const extra: Diagnostic[] = [];
   for (const d of sc.diagnostics) {
     if (!d.code) continue;
-    const positioned = d.off >= 0 && d.off <= text.length;
+    // Sidecar offsets are Unicode CODE POINTS (GDScript String indices); positionAt takes UTF-16.
+    const off = d.off >= 0 ? cpToUtf16(text, d.off) : -1;
+    const endOff = d.off >= 0 ? cpToUtf16(text, d.off + Math.max(1, d.len)) : -1;
+    const positioned = off >= 0 && off <= text.length;
     const range = positioned
-      ? { start: doc.positionAt(d.off), end: doc.positionAt(Math.min(text.length, d.off + Math.max(1, d.len))) }
+      ? { start: doc.positionAt(off), end: doc.positionAt(Math.min(text.length, Math.max(off + 1, endOff))) }
       : { start: { line: 0, character: 0 }, end: { line: 0, character: Math.max(1, firstLineLen) } };
     if (positioned ? liveCodeLines.has(`${d.code}@${range.start.line}`) : liveCodes.has(d.code)) continue;
     extra.push({

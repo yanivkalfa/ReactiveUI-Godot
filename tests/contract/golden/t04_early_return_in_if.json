@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 1,
+			"off": 10,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0114",
+			"len": 44,
+			"off": 87,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":61,\"attrs\":[{\"at\":68,\"end\":80,\"kind\":\"str\",\"name\":\"text\",\"value\":\"early\",\"vat\":74}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"Label\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 84,
+			"start": 60
+		}
+	]
+}

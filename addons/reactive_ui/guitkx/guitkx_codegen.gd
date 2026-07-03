@@ -152,6 +152,11 @@ static func _walk(dir: String, out: Array) -> void:
 	var d := DirAccess.open(dir)
 	if d == null:
 		return
+	# Honor Godot's `.gdignore` convention: a directory holding one is invisible to the asset DB,
+	# so the codegen must not compile .guitkx inside it either (e.g. tests/contract/fixtures, which
+	# contains DELIBERATELY-broken parser fixtures).
+	if FileAccess.file_exists(dir.path_join(".gdignore")):
+		return
 	d.list_dir_begin()
 	var name := d.get_next()
 	while name != "":

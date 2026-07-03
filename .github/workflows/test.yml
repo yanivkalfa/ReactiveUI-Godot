@@ -37,6 +37,9 @@ jobs:
       - name: Compile .guitkx -> sibling .gd (generated output is git-ignored)
         run: godot --headless --path . --script res://tests/guitkx_build.gd
 
+      - name: Contract goldens are fresh (GD half of the GD<->TS grammar parity harness)
+        run: godot --headless --path . --script res://tests/contract_dump.gd -- --check
+
       - name: Build class cache (editor import scan)
         run: godot --headless --path . --editor --quit || true
 

@@ -1,0 +1,24 @@
+@class_name DemoMemo
+
+component DemoMemo() {
+	var n = useState(1)
+	var other = useState(0)
+	var calc_count = useRef(0)
+	var mfn = func():
+		calc_count["current"] += 1
+		var sum := 0
+		for i in (n[0] * 50000):
+			sum += i
+		return sum
+	var result = useMemo(mfn, [n[0]])
+	return (
+		<DemoBox title="useMemo — cache expensive work">
+			<Label text={ "n=%d → expensive result=%d" % [n[0], result] } />
+			<Label text={ "factory ran %d time(s) — only recomputes when n changes" % calc_count["current"] } style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
+			<HBox style={ {"separation": 8} }>
+				<Button text="n + 1 (recomputes)" onClick={ func(): n[1].call(n[0] + 1) } />
+				<Button text={ "unrelated re-render: %d" % other[0] } onClick={ func(): other[1].call(other[0] + 1) } />
+			</HBox>
+		</DemoBox>
+	)
+}

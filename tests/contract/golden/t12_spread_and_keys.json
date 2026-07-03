@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 1,
+			"off": 10,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0104",
+			"len": 12,
+			"off": 113,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":50,\"attrs\":[],\"children\":[{\"at\":60,\"attrs\":[{\"at\":67,\"end\":77,\"kind\":\"spread\",\"name\":\"\",\"value\":\"extra\",\"vat\":71},{\"at\":78,\"end\":90,\"kind\":\"expr\",\"name\":\"key\",\"value\":\"\\\"k1\\\"\",\"vat\":84},{\"at\":91,\"end\":99,\"kind\":\"str\",\"name\":\"text\",\"value\":\"s\",\"vat\":97}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":106,\"attrs\":[{\"at\":113,\"end\":125,\"kind\":\"expr\",\"name\":\"key\",\"value\":\"\\\"k1\\\"\",\"vat\":119},{\"at\":126,\"end\":134,\"kind\":\"str\",\"name\":\"text\",\"value\":\"t\",\"vat\":132}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 149,
+			"start": 47
+		}
+	]
+}

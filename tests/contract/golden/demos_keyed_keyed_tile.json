@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":209,\"attrs\":[{\"at\":216,\"end\":303,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": col[\\\"current\\\"], \\\"corner_radius\\\": 6, \\\"min_size\\\": Vector2(54, 54)}\",\"vat\":224}],\"children\":[{\"at\":308,\"attrs\":[],\"children\":[{\"at\":321,\"attrs\":[{\"at\":328,\"end\":344,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"str(id)\",\"vat\":335},{\"at\":345,\"end\":399,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 22, \\\"font_color\\\": Color.WHITE}\",\"vat\":353}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":9,\"t\":\"el\",\"tag\":\"Center\"}],\"line\":8,\"t\":\"el\",\"tag\":\"Panel\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 428,
+			"start": 206
+		}
+	]
+}

@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":680,\"attrs\":[{\"at\":686,\"end\":710,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"fill\\\": true}\",\"vat\":694}],\"children\":[{\"at\":715,\"attrs\":[{\"at\":722,\"end\":785,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.1, 0.1, 0.12), \\\"min_width\\\": 210}\",\"vat\":730}],\"children\":[{\"at\":791,\"attrs\":[{\"at\":799,\"end\":822,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"margin\\\": 8}\",\"vat\":807}],\"children\":[{\"at\":829,\"attrs\":[{\"at\":835,\"end\":880,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 4, \\\"expand_v\\\": true}\",\"vat\":843}],\"children\":[{\"at\":888,\"attrs\":[{\"at\":895,\"end\":913,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Reactive UI\",\"vat\":901},{\"at\":914,\"end\":978,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 22, \\\"font_color\\\": Color(0.0, 0.9, 0.75)}\",\"vat\":922}],\"children\":[],\"line\":26,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":988,\"attrs\":[{\"at\":995,\"end\":1020,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Godot demo gallery\",\"vat\":1001},{\"at\":1021,\"end\":1067,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.6, 0.6, 0.6)}\",\"vat\":1029}],\"children\":[],\"line\":27,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":1077,\"attrs\":[],\"children\":[],\"line\":28,\"t\":\"el\",\"tag\":\"HSeparator\"},{\"at\":1098,\"attrs\":[{\"at\":1106,\"end\":1169,\"kind\":\"expr\",\"name\":\"horizontal_scroll_mode\",\"value\":\"ScrollContainer.SCROLL_MODE_DISABLED\",\"vat\":1131},{\"at\":1170,\"end\":1198,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_v\\\": true}\",\"vat\":1178}],\"children\":[{\"at\":1207,\"attrs\":[{\"at\":1213,\"end\":1240,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 4}\",\"vat\":1221}],\"children\":[{\"at\":1250,\"code\":\"buttons\",\"t\":\"expr\",\"vat\":1252}],\"line\":30,\"t\":\"el\",\"tag\":\"VBox\"}],\"line\":29,\"t\":\"el\",\"tag\":\"Scroll\"}],\"line\":25,\"t\":\"el\",\"tag\":\"VBox\"}],\"line\":24,\"t\":\"el\",\"tag\":\"Margin\"}],\"line\":23,\"t\":\"el\",\"tag\":\"Panel\"},{\"at\":1335,\"attrs\":[{\"at\":1342,\"end\":1425,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.13, 0.13, 0.16), \\\"expand_h\\\": true, \\\"expand_v\\\": true}\",\"vat\":1350}],\"children\":[{\"at\":1431,\"code\":\"V.fc(demos[sel[0]][\\\"fn\\\"])\",\"t\":\"expr\",\"vat\":1433}],\"line\":37,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":22,\"t\":\"el\",\"tag\":\"HBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 1484,
+			"start": 677
+		}
+	]
+}

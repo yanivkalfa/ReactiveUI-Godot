@@ -1,0 +1,25 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 1,
+			"off": 10,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":42,\"attrs\":[],\"children\":[{\"at\":52,\"branches\":[{\"body_at\":61,\"body_markup\":\" <Label text=\\\"a\\\" /> \",\"cond\":\"c\"},{\"body_at\":101,\"body_markup\":\" <Label text=\\\"b\\\" /> \",\"cond\":\"false\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 134,
+			"start": 39
+		}
+	]
+}

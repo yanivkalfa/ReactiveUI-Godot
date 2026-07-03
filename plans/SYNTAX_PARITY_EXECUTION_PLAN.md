@@ -120,7 +120,7 @@ diagnostics — building the dumper against legacy strings would be throwaway wo
 
 ## Phase 0 — Foundations
 
-### T0.1 — Golden-corpus GD↔TS contract harness  · effort: medium · Status: ⬜
+### T0.1 — Golden-corpus GD↔TS contract harness  · effort: medium · Status: ✅ (53 fixtures = 41 demo copies + 12 targeted; `tests/contract_dump.gd` dumps/`--check`s goldens {ok, diagnostics, windows, markup-AST}; `contract.test.ts` asserts markupWindows+parseMarkup reproduce them; pending fixtures assert their divergence STILL exists (self-burning-down: t05 typo-header recovery); CI: test.yml `--check` + ide-extensions.yml npm test; first run caught a REAL cross-cutting bug — GDScript code-point vs JS UTF-16 offsets on emoji files — fixed via `codePoints.ts` boundary, canonical unit = code points, see tests/contract/README.md)
 **Problem.** The grammar is implemented twice (GD compiler, TS LSP) with zero enforcement (matrix §5.1).
 **Build.**
 1. `RG/tests/contract/fixtures/*.guitkx` — seed with ≥25 fixtures: every demo under `examples/demos/`

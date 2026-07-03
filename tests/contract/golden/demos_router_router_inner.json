@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":843,\"attrs\":[{\"at\":852,\"end\":904,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Router — nested routes, outlet, active links\",\"vat\":859}],\"children\":[{\"at\":909,\"attrs\":[{\"at\":915,\"end\":943,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 12}\",\"vat\":923}],\"children\":[{\"at\":949,\"code\":\"V.nav_link({ \\\"to\\\": \\\"/\\\", \\\"label\\\": \\\"Home\\\", \\\"end\\\": true, \\\"style\\\": IDLE, \\\"active_style\\\": ACTIVE })\",\"t\":\"expr\",\"vat\":951},{\"at\":1052,\"code\":\"V.nav_link({ \\\"to\\\": \\\"/users\\\", \\\"label\\\": \\\"Users\\\", \\\"style\\\": IDLE, \\\"active_style\\\": ACTIVE })\",\"t\":\"expr\",\"vat\":1054},{\"at\":1148,\"code\":\"V.nav_link({ \\\"to\\\": \\\"/about\\\", \\\"label\\\": \\\"About\\\", \\\"style\\\": IDLE, \\\"active_style\\\": ACTIVE })\",\"t\":\"expr\",\"vat\":1150},{\"at\":1244,\"code\":\"V.nav_link({ \\\"to\\\": \\\"/nope\\\", \\\"label\\\": \\\"Broken\\\", \\\"style\\\": IDLE, \\\"active_style\\\": ACTIVE })\",\"t\":\"expr\",\"vat\":1246}],\"line\":20,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":1350,\"attrs\":[{\"at\":1357,\"end\":1386,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"location: %s\\\" % loc\",\"vat\":1364},{\"at\":1387,\"end\":1433,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.6, 0.8, 1.0)}\",\"vat\":1395}],\"children\":[],\"line\":26,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":1440,\"attrs\":[{\"at\":1447,\"end\":1525,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.18, 0.18, 0.22), \\\"corner_radius\\\": 6, \\\"pad\\\": 14}\",\"vat\":1455}],\"children\":[{\"at\":1531,\"code\":\"V.routes({}, [\\n\\t\\t\\t\\t\\tV.route({ \\\"path\\\": \\\"/\\\", \\\"element\\\": V.label({ \\\"text\\\": \\\"🏠  Home page\\\" }) }),\\n\\t\\t\\t\\t\\tV.route({ \\\"path\\\": \\\"/users\\\", \\\"element\\\": users_layout.call() }, [\\n\\t\\t\\t\\t\\t\\tV.route({ \\\"index\\\": true, \\\"element\\\": V.label({ \\\"text\\\": \\\"← pick a user\\\" }) }),\\n\\t\\t\\t\\t\\t\\tV.route({ \\\"path\\\": \\\":id\\\", \\\"render\\\": user }),\\n\\t\\t\\t\\t\\t]),\\n\\t\\t\\t\\t\\tV.route({ \\\"path\\\": \\\"/about\\\", \\\"element\\\": V.label({ \\\"text\\\": \\\"ℹ️  About this library\\\" }) }),\\n\\t\\t\\t\\t\\tV.route({ \\\"path\\\": \\\"*\\\", \\\"element\\\": V.label({ \\\"text\\\": \\\"🚫  404 — no route matched\\\" }) }),\\n\\t\\t\\t\\t])\",\"t\":\"expr\",\"vat\":1533}],\"line\":27,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":19,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 2059,
+			"start": 840
+		}
+	]
+}

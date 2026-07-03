@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":293,\"attrs\":[{\"at\":302,\"end\":341,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useEffect — lifecycle + cleanup\",\"vat\":309}],\"children\":[{\"at\":346,\"attrs\":[{\"at\":354,\"end\":399,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Toggle dependency (now %s)\\\" % on[0]\",\"vat\":361},{\"at\":400,\"end\":441,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): on[1].call(not on[0])\",\"vat\":410}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":448,\"attrs\":[{\"at\":455,\"end\":510,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Effect log (cleanup runs before the next setup):\",\"vat\":461},{\"at\":511,\"end\":557,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":519}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":564,\"attrs\":[{\"at\":571,\"end\":605,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"\\\\n\\\".join(log[\\\"current\\\"])\",\"vat\":578}],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 623,
+			"start": 290
+		}
+	]
+}

@@ -1,0 +1,25 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 1,
+			"off": 10,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":26,\"attrs\":[],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"9foo\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 34,
+			"start": 25
+		}
+	]
+}
