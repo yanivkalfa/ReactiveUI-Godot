@@ -5,12 +5,6 @@
 			"len": 1,
 			"off": 10,
 			"severity": 1
-		},
-		{
-			"code": "GUITKX2102",
-			"len": 33,
-			"off": 52,
-			"severity": 0
 		}
 	],
 	"markup": [
@@ -18,11 +12,21 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
+			"tree": "[{\"at\":61,\"attrs\":[{\"at\":68,\"end\":80,\"kind\":\"str\",\"name\":\"text\",\"value\":\"early\",\"vat\":74}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"Label\"}]"
+		},
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
 			"tree": "[{\"at\":107,\"attrs\":[{\"at\":115,\"end\":126,\"kind\":\"str\",\"name\":\"text\",\"value\":\"late\",\"vat\":121}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Button\"}]"
 		}
 	],
-	"ok": false,
+	"ok": true,
 	"windows": [
+		{
+			"end": 84,
+			"start": 60
+		},
 		{
 			"end": 130,
 			"start": 106

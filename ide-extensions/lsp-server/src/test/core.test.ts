@@ -9,7 +9,7 @@ import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt, guitkxVirtualLibText } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows, missingReturnComponents, earlyMarkupReturns, setupSpans } from "../formatGuitkx";
+import { formatGuitkx, markupWindows, missingReturnComponents, unreachableRegions, setupSpans } from "../formatGuitkx";
 import { windowStructureDiags, hookContextDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
@@ -995,25 +995,38 @@ test("A5: directive-header grammar fires GUITKX2508 live (field: `@for (i in 2: 
   assert.ok(!fires(okIf), "a real condition stays clean");
 });
 
-test("A4: early/conditional markup returns are detected live (compiler GUITKX2102 was sidecar-only)", () => {
-  // Demoted earlier top-level markup return (the field repro's `return <s></s>` shape).
-  const early = "component C {\n\tvar a = useState(0)\n\treturn <s></s>\n\treturn (\n\t\t<vbox />\n\t)\n}\n";
-  const d1 = earlyMarkupReturns(early);
-  assert.equal(d1.length, 1, JSON.stringify(d1));
-  assert.equal(early.slice(d1[0].start, d1[0].start + 6), "return");
-  // Nested conditional markup return.
-  const nested = "component D {\n\tvar ready = useState(false)\n\tif not ready[0]:\n\t\treturn ( <label /> )\n\treturn ( <vbox /> )\n}\n";
-  assert.equal(earlyMarkupReturns(nested).length, 1);
-  // The sanctioned guard and plain value returns stay silent.
-  const guard = "component E {\n\tif true:\n\t\treturn null\n\treturn ( <vbox /> )\n}\n";
-  assert.equal(earlyMarkupReturns(guard).length, 0, "return null guards are sanctioned");
-  const valueRet = "component F {\n\tvar f = func(x):\n\t\treturn (x + 1)\n\treturn ( <vbox /> )\n}\n";
-  assert.equal(earlyMarkupReturns(valueRet).length, 0, "a parenthesized value in a lambda is plain GDScript");
-  // Nested-only markup returns (no final markup return): 2102 fires alongside the 2101 the
-  // missing-return check reports -- same pairing the compiler produces.
+test("Phase C: early markup returns are live WINDOWS (legal + full markup intelligence), not errors", () => {
+  // A conditional early markup return yields a second window, in source order before the final one.
+  const nested = "component D {\n\tvar ready = useState(false)\n\tif not ready[0]:\n\t\treturn ( <label text=\"w\" /> )\n\treturn ( <vbox /> )\n}\n";
+  const wins = markupWindows(nested);
+  assert.equal(wins.length, 2, JSON.stringify(wins));
+  assert.ok(nested.slice(wins[0].start, wins[0].end).includes("<label"), "the early window is the guard's markup");
+  assert.ok(nested.slice(wins[1].start, wins[1].end).includes("<vbox"), "the final window follows");
+  // ...which means a typo INSIDE the early return now squiggles live.
+  const typo = "component D {\n\tif true:\n\t\treturn ( <lable text=\"w\" /> )\n\treturn ( <vbox /> )\n}\n";
+  const d = windowStructureDiags(typo, markupWindows(typo));
+  assert.ok(d.some((x) => x.code === "GUITKX0105" && x.message.includes("lable")), JSON.stringify(d));
+  // The sanctioned guard and plain value returns still produce nothing.
+  const guard = "component E {\n\tif true:\n\t\treturn null\n\tvar f = func(x):\n\t\treturn (x + 1)\n\treturn ( <vbox /> )\n}\n";
+  assert.equal(markupWindows(guard).length, 1, "null guards and value returns are not windows");
+  // Nested-only markup returns (no FINAL markup return) still report missing-return -- some
+  // render() paths would return nothing, so 2101 stands on both sides.
   const nestedOnly = "component G {\n\tif true:\n\t\treturn ( <label /> )\n}\n";
-  assert.equal(earlyMarkupReturns(nestedOnly).length, 1);
   assert.equal(missingReturnComponents(nestedOnly).length, 1);
+});
+
+test("Phase C: an unconditional early markup return dims everything after it (Unity Site-B parity)", () => {
+  const src = "component U {\n\treturn ( <label /> )\n\tvar x = 1\n\treturn ( <vbox /> )\n}\n";
+  const r = unreachableRegions(src);
+  assert.equal(r.length, 1, JSON.stringify(r));
+  const dimmed = src.slice(r[0].start, r[0].end);
+  assert.ok(dimmed.includes("var x = 1"), `setup after the early return dims: ${dimmed}`);
+  assert.ok(dimmed.includes("<vbox />"), `the (dead) final return dims too: ${dimmed}`);
+  // A CONDITIONAL early return dims nothing extra -- only the legacy after-final-return region.
+  const cond = "component V {\n\tif true:\n\t\treturn ( <label /> )\n\treturn ( <vbox /> )\n\tvar tail = 1\n}\n";
+  const rc = unreachableRegions(cond);
+  assert.equal(rc.length, 1, JSON.stringify(rc));
+  assert.ok(cond.slice(rc[0].start, rc[0].end).includes("var tail = 1"), "only the after-final tail dims");
 });
 
 test("live 0105 exempts vocabulary host tags from the component-universe check (0.6.0 field regression)", () => {

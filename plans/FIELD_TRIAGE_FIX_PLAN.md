@@ -147,14 +147,14 @@
 > `if (loading) { return (<Spinner/>); }` just works. Unity's 2102 means "malformed render
 > return", not "no early returns". guitkx converges to that.
 
-### C1 ⬜ `_split_return` → ordered span model
+### C1 ✅ `_split_return` → ordered span model — landed `7f7609a`
 `guitkx.gd:813-893` currently yields one setup string + one markup window and 2102-flags every
 other markup return (5 sites: `:857-858, :860-861, :867-868, :870-871, :878-888`). Rework into an
 ordered list of `(gdscript-segment | markup-return)` spans, top-level **and** nested; 2102
 narrows to Unity semantics (a return that *should* be the render return but isn't
 `return ( <markup> )`-shaped / non-markup content in the final position).
 
-### C2 ⬜ `_emit_func` interleaved, scope-correct emission
+### C2 ✅ `_emit_func` interleaved, scope-correct emission — landed `7f7609a` (per-return fresh line buffer at the return's real indent, shared `__cfN` counter; the t04 indent hazard is the runtime-verified test case)
 `guitkx.gd:1052-1074` emits verbatim setup + one final return. New: interleave verbatim GDScript
 segments with in-place lowered `return <expr>` at the return's **real indent**. The hazard: 
 `_emit_if/_emit_loop/_emit_match` hoist `__cfN` pre-statements to render() top level
@@ -163,20 +163,20 @@ or force inline lowering (`_emit_if_inline`/`_emit_for_inline`; `@while`/`@match
 returns may stay GUITKX0026 initially). The untracked `tests/contract/fixtures/t04_early_return_in_if.gd`
 experiment shows exactly this indent bug — it becomes the acceptance fixture, done right.
 
-### C3 ⬜ TS/LSP mirror (same-commit invariant)
+### C3 ✅ TS/LSP mirror (same-commit invariant) — landed `7f7609a` (early returns = live markup windows; unconditional-early dim in unreachableRegions; A4-era live 2102 removed, 2102 left vocabulary `live`; virtualDoc keeps the A2 neutralization — the analyzer's `return null` view is flow-correct)
 `splitReturn`/`markupWindows()` (single-window assumption), `virtualDoc` multi-window stubs,
 live structure walk + 0105/keys per window, formatter (`formatGuitkx.ts`), semantic tokens.
 A2's neutralization stays as the catch-all for *unrecognized* markup; recognized early returns
 become real windows with full markup intelligence.
 
-### C4 ⬜ Contract goldens + fixtures
+### C4 ✅ Contract goldens + fixtures — landed `7f7609a` (t04/t14 flip legal; new t21 pins the two-window shape; decision resolved: EVERY early markup return is legal incl. unconditional top-level ones, which dim the rest — full Unity parity, stricter-than-Unity option dropped)
 Regen all goldens (`contract_dump.gd` currently assumes one window per component, `:112-114`);
 new goldens: early return in `if`, unconditional early markup return (→ unreachable-after hint,
 0107 parity), multiple top-level markup returns (now legal? — decide: Unity keeps *one* render
 return; recommended: conditional/nested early markup returns legal, **two unconditional
 top-level** markup returns stays an error).
 
-### C5 ⬜ Docs + changelog + versions
+### C5 ✅ Docs + changelog + versions — diagnostics page rows (2102/2508), CHANGELOGs, addon 0.6.0 + ext/lsp 0.7.0
 Language reference "early returns" section, Unity-differences page row removed, CHANGELOG,
 addon 0.6.0 / ext 0.7.0 bumps.
 
@@ -203,3 +203,10 @@ addon 0.6.0 / ext 0.7.0 bumps.
   update, demos 30/30, guitkx) — the clone also served as the B1 cold-open replay; extension
   build + bundle + verify. Release: addon **0.5.1**, extension + language server **0.6.1**.
   Phase C (early markup returns, the Unity way) remains the next wave on its own branch.
+- 2026-07-03 — **Phase C COMPLETE** on `feat/early-markup-returns` (core in one GD+TS commit,
+  `7f7609a`, per the parity invariant). Early markup returns are LEGAL and lowered in place at
+  their own scope depth; every early return is a live markup window; unconditional early returns
+  dim the rest; 2102 narrowed to Unity semantics ("final return isn't markup"). Runtime-proved:
+  the compiled guard renders both paths. Gates: lsp 173/173 + smoke, 63 goldens (t04/t14 flipped
+  legal, t21 new), GD suite, docs build. Release: addon **0.6.0**, ext/lsp **0.7.0** (minor —
+  language capability).

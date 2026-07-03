@@ -1,0 +1,9 @@
+component T21(ready: bool = false) {
+	if not ready:
+		return ( <label text="loading" /> )
+	return (
+		<vbox>
+			<label text="content" />
+		</vbox>
+	)
+}

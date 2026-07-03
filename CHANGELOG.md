@@ -4,6 +4,43 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-07-03
+
+**Early markup returns — the Unity way** (the minor bump: a new language capability).
+A component can now `return ( <markup> )` anywhere, not just as its final statement:
+
+```
+component Panel(ready: bool = false) {
+	if not ready:
+		return ( <Label text="loading" /> )
+	return (
+		<VBox>…</VBox>
+	)
+}
+```
+
+### Added
+- **Early and conditional markup returns are legal** and compile to scope-correct GDScript —
+  lowered in place at the return's own indentation through a per-return line buffer, so control
+  flow inside the returned markup (`@if`/`@for`) lands INSIDE the guard block, never hoisted past
+  a scope boundary. Runtime-verified: both paths of a compiled guard render.
+- **Live tier:** every early markup return is a full markup WINDOW — parse errors, unknown-tag
+  did-you-means, key checks, and highlighting all work inside the guard (contract fixtures
+  t04/t14 flipped legal; new t21 pins the two-window shape end-to-end).
+- An UNCONDITIONAL early markup return dims everything after it as unreachable (`GUITKX0107`
+  hint), including the now-dead final return — Unity's Site-B dim, mirrored live.
+
+### Changed
+- **`GUITKX2102` narrows to Unity semantics:** the only remaining error is "the FINAL top-level
+  return is not markup". The 0.5.1-era live 2102 on early returns is gone (they're windows now),
+  and 2102 left the vocabulary `live` list — it is compiler-only again.
+- `GUITKX2101` stands: a component still needs a FINAL top-level markup return — conditional
+  markup returns alone would leave `render()` paths that return nothing.
+
+### IDE
+- VS Code extension **0.7.0** / language server **0.7.0**; diagnostics docs page gains the
+  GUITKX2102 and GUITKX2508 rows.
+
 ## [0.5.1] — 2026-07-03
 
 **The field-triage release** — every defect from the first real-project test of 0.5.0 + extension

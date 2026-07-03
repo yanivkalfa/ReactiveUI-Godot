@@ -110,8 +110,14 @@ func _collect_windows(src: String, from: int, to: int, out: Array) -> void:
 				i = at + 1
 				continue
 			var split: Dictionary = Compiler._split_return(src.substr(int(b["start"]), int(b["close"]) - int(b["start"])))
-			if not split.has("error") and int(split["m_end"]) > int(split["m_start"]):
-				out.append({ "start": int(b["start"]) + int(split["m_start"]), "end": int(b["start"]) + int(split["m_end"]) })
+			if not split.has("error"):
+				# Phase C mirror of markupWindows(): EARLY markup returns are windows too, in source
+				# order before the final one.
+				for part in split.get("parts", []):
+					if str(part["t"]) == "ret" and int(part["m_end"]) > int(part["m_start"]):
+						out.append({ "start": int(b["start"]) + int(part["m_start"]), "end": int(b["start"]) + int(part["m_end"]) })
+				if int(split["m_end"]) > int(split["m_start"]):
+					out.append({ "start": int(b["start"]) + int(split["m_start"]), "end": int(b["start"]) + int(split["m_end"]) })
 			i = int(b["close"]) + 1
 		elif d["kind"] == "hook":
 			var h: Dictionary = Compiler._parse_hook_at(src, at, [])

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.0] - 2026-07-03
+- **Early markup returns** (pairs with addon 0.6.0): `if not ready: return ( <Label /> )` is
+  legal guitkx now, React-style — and the guard's markup gets FULL live intelligence: parse
+  errors, unknown-tag did-you-means, key checks, highlighting, everything the final return has.
+- An unconditional early markup return dims the dead code after it (including the unreachable
+  final return), exactly like the Unity toolchain.
+- The "a component's setup cannot `return` before the final markup return" error is gone;
+  `GUITKX2102` now only means "the final return isn't markup".
+- Diagnostics docs page gains the `GUITKX2102` and `GUITKX2508` reference rows.
+
 ## [0.6.1] - 2026-07-03
 - **Fixed the host-tag storm:** `<HBox>`, `<Button>`, `<Label>` and every vocabulary alias no
   longer squiggle as "unknown component" once the workspace scan completes; a typo'd host tag now
