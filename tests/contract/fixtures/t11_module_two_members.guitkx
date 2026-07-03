@@ -1,0 +1,8 @@
+module Pair {
+	component A() {
+		return ( <Label text="a" /> )
+	}
+	component B() {
+		return ( <Button text="b" /> )
+	}
+}

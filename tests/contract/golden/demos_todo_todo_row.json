@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":77,\"attrs\":[{\"at\":83,\"end\":110,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":91}],\"children\":[{\"at\":115,\"attrs\":[{\"at\":122,\"end\":156,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"•  \\\" + str(item[\\\"text\\\"])\",\"vat\":129},{\"at\":157,\"end\":185,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_h\\\": true}\",\"vat\":165}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":192,\"attrs\":[{\"at\":200,\"end\":210,\"kind\":\"str\",\"name\":\"text\",\"value\":\" ✕ \",\"vat\":206},{\"at\":211,\"end\":256,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): onRemove.call(item[\\\"id\\\"])\",\"vat\":221}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":5,\"t\":\"el\",\"tag\":\"HBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 271,
+			"start": 74
+		}
+	]
+}

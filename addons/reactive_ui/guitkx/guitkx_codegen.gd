@@ -8,6 +8,7 @@ extends RefCounted
 ## the logic here is engine-free (pure FileAccess/DirAccess) so it is unit-testable headlessly.
 
 const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
+const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
 ## The sibling .gd path for a .guitkx path.
 static func gd_path_for(guitkx_path: String) -> String:
@@ -27,22 +28,21 @@ static func src_hash(s: String) -> int:
 		h = (h * 16777619) & 0xFFFFFFFF
 	return h
 
-## Split a diagnostic string ("GUITKX0104 (warning): ...") into { code, severity, message }.
-static func _parse_diag(s: String) -> Dictionary:
-	var end := 0
-	while end < s.length() and s[end] != " " and s[end] != ":" and s[end] != "(":
-		end += 1
-	return { "code": s.substr(0, end), "severity": "warning" if "(warning)" in s else "error", "message": s }
-
 ## Write the diagnostics sidecar (ALWAYS — even on compile failure), gated by the source hash so the LSP
-## ignores it once the buffer diverges from the last compile.
+## ignores it once the buffer diverges from the last compile. Schema v2 (T0.2): structured entries
+## { code, severity:int (0 err / 1 warn / 2 hint), message (no code prefix), off, len } — `off`/`len`
+## are character offsets into the compiled source (off -1 = whole file), so the LSP ranges precisely
+## via positionAt(). The reader (diagsSidecar.ts) keeps a v1 fallback for sidecars written pre-T0.2.
 static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: Array) -> void:
-	var parsed: Array = []
+	var entries: Array = []
 	for d in diagnostics:
-		parsed.append(_parse_diag(str(d)))
+		entries.append({
+			"code": d.get("code", ""), "severity": int(d.get("severity", Diag.ERROR)),
+			"message": d.get("message", ""), "off": int(d.get("offset", -1)), "len": int(d.get("length", 0)),
+		})
 	var f := FileAccess.open(diags_path_for(guitkx_path), FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({ "src_hash": src_hash(src), "diagnostics": parsed }))
+		f.store_string(JSON.stringify({ "v": 2, "src_hash": src_hash(src), "diagnostics": entries }))
 		f.close()
 
 ## True if the sibling .gd is missing or older than the .guitkx source.
@@ -64,6 +64,8 @@ const _COMPILER_SOURCES := [
 	"res://addons/reactive_ui/guitkx/guitkx_markup.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_lexer.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd",
+	"res://addons/reactive_ui/guitkx/guitkx_diag.gd",
+	"res://addons/reactive_ui/guitkx/vocabulary.json",
 ]
 # Machine-local marker (`.godot` is gitignored + regenerated), holding the fingerprint that last
 # generated this project's .gd. A mismatch (or absence) means the compiler moved -> recompile all.
@@ -96,15 +98,88 @@ static func _write_fp_marker() -> void:
 		f.store_string(compiler_fingerprint())
 		f.close()
 
+## T1.5: the PascalCase component names resolvable in this project -- each .guitkx's binding
+## (@class_name override, else its first declaration's name) plus every global script class.
+## Passed into compile() so `<UnknownComp/>` errors with a did-you-mean instead of emitting a
+## call to a class that does not exist.
+static func known_component_names(guitkx_paths: Array) -> Array:
+	var names := {}
+	for p in guitkx_paths:
+		var src := FileAccess.get_file_as_string(str(p))
+		var b := _binding_name(src)
+		if b != "":
+			names[b] = true
+	for gc in ProjectSettings.get_global_class_list():
+		names[str(gc.get("class", ""))] = true
+	names.erase("")
+	return names.keys()
+
+## The class name a .guitkx compiles to: the @class_name override, else the first declaration's name.
+## The override scan mirrors compile()'s preamble loop (ws/comment-skipped, file start only) -- a
+## naive whole-file find() would let a COMMENT mentioning @class_name shadow the real binding and
+## produce false unknown-component errors in sibling files.
+static func _binding_name(src: String) -> String:
+	var n := src.length()
+	var i := 0
+	var override := ""
+	while i < n:
+		i = Compiler._skip_ws_and_comments(src, i)
+		if src.substr(i, 11) == "@class_name":
+			var le := src.find("\n", i)
+			if le == -1:
+				le = n
+			var raw := src.substr(i + 11, le - i - 11)
+			var hash_at := raw.find("#")
+			if hash_at != -1:
+				raw = raw.substr(0, hash_at)
+			override = raw.strip_edges()
+			i = le
+			continue
+		break
+	if override != "":
+		return override
+	var d: Dictionary = Compiler._find_decl(src, 0)
+	if d["kind"] == "":
+		return ""
+	i = int(d["at"])
+	while i < n and (src[i] >= "a" and src[i] <= "z"):
+		i += 1   # the decl keyword
+	while i < n and (src[i] == " " or src[i] == "\t"):
+		i += 1
+	var s := i
+	while i < n and (src[i] == "_" or (src[i] >= "a" and src[i] <= "z") or (src[i] >= "A" and src[i] <= "Z") or (src[i] >= "0" and src[i] <= "9")):
+		i += 1
+	return src.substr(s, i - s)
+
 ## Compile one .guitkx and write its sibling .gd. Returns { ok, path, gd_path?, diagnostics?/error? }.
-static func compile_file(guitkx_path: String) -> Dictionary:
+static func compile_file(guitkx_path: String, known_components: Array = []) -> Dictionary:
 	if not FileAccess.file_exists(guitkx_path):
 		return { "ok": false, "path": guitkx_path, "error": "file not found" }
 	var src := FileAccess.get_file_as_string(guitkx_path)
 	var basename := guitkx_path.get_file().get_basename()
-	var r: Dictionary = Compiler.compile(src, basename)
+	var r: Dictionary = Compiler.compile(src, basename, known_components)
+	if bool(r.get("env_error", false)):
+		# The compiler environment isn't ready (vocabulary unreadable — e.g. the editor's first
+		# filesystem scan). NOT a source regression: keep the existing sibling .gd AND the last
+		# sidecar; the next pass self-heals once the vocabulary loads. Deleting here is exactly
+		# how a transient tooling state once wiped every generated demo .gd on a fresh CI clone.
+		push_error("[guitkx] compiler not ready for %s (vocabulary.json unreadable) -- keeping existing outputs, will retry" % guitkx_path)
+		return { "ok": false, "env_error": true, "path": guitkx_path, "diagnostics": r["diagnostics"] }
 	write_diags_sidecar(guitkx_path, src, r["diagnostics"])
+	# Surface boundary: derive 0-based line/col from each offset ONCE, here, where the source is at
+	# hand -- downstream consumers (plugin.gd dock lines, tests) read d.line/d.col without the source.
+	for d in r["diagnostics"]:
+		if d is Dictionary and int((d as Dictionary).get("offset", -1)) >= 0:
+			var lc := Diag.line_col(src, int(d["offset"]))
+			d["line"] = lc["line"]
+			d["col"] = lc["col"]
 	if not r["ok"]:
+		# T1.1: never leave a stale sibling .gd (from an older successful compile) next to a broken
+		# .guitkx -- the editor would silently keep running code that no longer matches the source.
+		var stale_gd := gd_path_for(guitkx_path)
+		if FileAccess.file_exists(stale_gd):
+			DirAccess.remove_absolute(stale_gd)
+			push_error("[guitkx] %s no longer compiles -- removed stale %s (fix the errors to regenerate it)" % [guitkx_path, stale_gd])
 		return { "ok": false, "path": guitkx_path, "diagnostics": r["diagnostics"] }
 	var gd_path := gd_path_for(guitkx_path)
 	var f := FileAccess.open(gd_path, FileAccess.WRITE)
@@ -122,10 +197,14 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	var compiled: Array = []
 	var errors: Array = []
 	var force := compiler_changed()
-	for path in find_all(root):
+	var all_paths := find_all(root)
+	# T1.5: resolve the project's component-class universe ONCE per pass so every file's PascalCase
+	# tags are checked against it.
+	var known := known_component_names(all_paths)
+	for path in all_paths:
 		if not force and not is_stale(path):
 			continue
-		var r := compile_file(path)
+		var r := compile_file(path, known)
 		if r["ok"]:
 			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"] })
 		else:
@@ -143,6 +222,11 @@ static func find_all(dir: String = "res://") -> Array:
 static func _walk(dir: String, out: Array) -> void:
 	var d := DirAccess.open(dir)
 	if d == null:
+		return
+	# Honor Godot's `.gdignore` convention: a directory holding one is invisible to the asset DB,
+	# so the codegen must not compile .guitkx inside it either (e.g. tests/contract/fixtures, which
+	# contains DELIBERATELY-broken parser fixtures).
+	if FileAccess.file_exists(dir.path_join(".gdignore")):
 		return
 	d.list_dir_begin()
 	var name := d.get_next()

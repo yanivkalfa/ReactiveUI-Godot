@@ -35,18 +35,20 @@ import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
+import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
 import { parseMarkup } from "./markup";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
-import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, vetoGuitkxDeclared as vetoDeclared } from "./workspaceIndex";
+import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, guitkxVirtualLibText, normalizeUri } from "./workspaceIndex";
 import { scanTagRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS, isBodyBrace } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
+import { cpToUtf16 } from "./codePoints";
 import { readFileSync, readdirSync, statSync, existsSync, watch as fsWatch } from "fs";
 import { AnalyzerAdapter, AdapterSymbol } from "./analyzerAdapter";
 import {
@@ -58,6 +60,7 @@ import {
   findTag,
   STYLE_KEYS,
   BUILTIN_MEMBERS,
+  VOCABULARY,
 } from "./schema";
 
 const connection = createConnection(ProposedFeatures.all);
@@ -93,6 +96,9 @@ connection.onInitialize((params: InitializeParams) => {
   // Hooks`) into the analyzer so embedded code resolves cross-file — enabling go-to-definition into
   // the real library files (`useRef` -> hooks.gd, `V.create` -> v.gd). Best-effort, once.
   loadLibraries();
+  // T4.5: every indexed .guitkx also feeds its compiled BINDINGS as a virtual library (after
+  // loadLibraries, so a real generated sibling .gd on disk wins and the virtual one is skipped).
+  syncAllGuitkxLibraries();
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -142,9 +148,22 @@ connection.onInitialized(() => {
 function armWorkspaceComplete(): void {
   if (!loadLibraries()) return; // incomplete scan — never over-claim
   analyzer.setWorkspaceComplete(true);
+  // The component universe (indexed .guitkx bindings + harvested .gd class_names) is complete
+  // too — arm the live PascalCase unknown-component check (GUITKX0105, ungated by T4.5).
+  componentUniverseReady = true;
   // Diagnostics published before arming were computed with UNDEFINED_* disarmed — re-publish
   // every open document so files opened at startup get the armed pass too.
   for (const doc of documents.all()) publishDiagnosticsFor(doc);
+}
+
+// The project's `.gd` `class_name`s, harvested during the library walks. Only ever grows (a
+// deleted file leaves its name behind) — deliberately: the set gates a diagnostic OFF, so a
+// stale entry can only suppress, never false-flag.
+const gdClassNames = new Set<string>();
+let componentUniverseReady = false;
+function harvestClassName(text: string): void {
+  const m = /^[ \t]*class_name[ \t]+([A-Za-z_][A-Za-z0-9_]*)/m.exec(text);
+  if (m) gdClassNames.add(m[1]);
 }
 
 // In-process watcher fallback for clients without dynamic watcher registration. fs.watch storms
@@ -222,9 +241,18 @@ function handleWatchedPath(fsPath: string, deleted: boolean): void {
   }
   if (deleted) {
     analyzer.close(pathToFileURL(fsPath).toString());
+    resyncSiblingGuitkxLibrary(fsPath); // the generated .gd vanished -> the virtual twin returns
     return;
   }
   upsertLibraryFile(fsPath);
+  resyncSiblingGuitkxLibrary(fsPath); // the generated .gd appeared -> the virtual twin retires
+}
+
+// A watched `.gd` may be the GENERATED sibling of an indexed `.guitkx` — its appearance/removal
+// flips which of the two (real file vs virtual library) the analyzer should hold.
+function resyncSiblingGuitkxLibrary(gdFsPath: string): void {
+  const guitkxUri = pathToFileURL(gdFsPath.replace(/\.gd$/i, ".guitkx")).toString();
+  if (index.entriesFor(guitkxUri).length) syncGuitkxLibrary(guitkxUri);
 }
 
 // Keep the workspace index in step with on-disk `.guitkx` changes. An OPEN document's buffer is the
@@ -235,13 +263,38 @@ function reindexGuitkxFile(fsPath: string, deleted: boolean): void {
   if (documents.get(uri)) return;
   if (deleted) {
     index.evict(uri);
+    syncGuitkxLibrary(uri); // no entries left -> closes the virtual library
     return;
   }
   try {
     index.reindex(uri, readFileSync(fsPath, "utf8"));
+    syncGuitkxLibrary(uri);
   } catch {
     /* unreadable mid-write — the next event retries */
   }
+}
+
+// T4.5 — feed one indexed .guitkx's compiled bindings to the analyzer as a virtual library (see
+// guitkxVirtualLibText for the rationale; it replaced the vetoGuitkxDeclared suppression). The
+// REAL generated sibling .gd wins whenever it exists on disk — loadLibraries/the watcher feed it,
+// and the virtual twin is closed so the analyzer's class_name registry never sees a duplicate.
+function syncGuitkxLibrary(rawUri: string): void {
+  const uri = normalizeUri(rawUri);
+  const libUri = uri + ".__guitkx_lib.gd";
+  let siblingGd: string;
+  try {
+    siblingGd = uriToProjectPath(uri).replace(/\.guitkx$/i, ".gd");
+  } catch {
+    return; // not a file:// uri — nothing to mirror
+  }
+  const resPath = resPathFor(siblingGd);
+  const text = resPath !== null && !existsSync(siblingGd) ? guitkxVirtualLibText(index.entriesFor(uri)) : null;
+  if (text === null) analyzer.close(libUri);
+  else analyzer.upsertLibrary(libUri, text, resPath as string);
+}
+
+function syncAllGuitkxLibraries(): void {
+  for (const uri of index.uris()) syncGuitkxLibrary(uri);
 }
 
 // Feed one on-disk `.gd` into the analyzer (create or update), keyed identically to loadLibraries().
@@ -249,7 +302,9 @@ function upsertLibraryFile(fsPath: string): void {
   const resPath = resPathFor(fsPath);
   if (resPath === null) return;
   try {
-    analyzer.upsertLibrary(pathToFileURL(fsPath).toString(), readFileSync(fsPath, "utf8"), resPath);
+    const text = readFileSync(fsPath, "utf8");
+    harvestClassName(text);
+    analyzer.upsertLibrary(pathToFileURL(fsPath).toString(), text, resPath);
   } catch {
     /* unreadable mid-write — the next change event retries */
   }
@@ -607,17 +662,37 @@ function publishDiagnosticsFor(doc: TextDocument): void {
     return;
   }
   index.reindex(doc.uri, doc.getText());
+  syncGuitkxLibrary(doc.uri);
   const live = [
     ...declarationDiagnostics(doc),
     ...structuralDiagnostics(doc),
     ...markupDiagnostics(doc),
     ...missingReturnDiagnostics(doc),
+    ...unclosedReturnDiagnostics(doc),
     ...unreachableDiagnostics(doc),
     ...embeddedDiagnostics(doc),
   ];
   connection.sendDiagnostics({ uri: doc.uri, diagnostics: mergeCompilerSidecar(doc, live) });
 }
 
+
+// The generated Warning Reference for the analyzer's codes — one table page; linked from every
+// warning-code diagnostic via LSP codeDescription (T4.6: the code is a real Diagnostic.code now,
+// not a prefix folded into the message).
+const GD_WARNING_DOCS = "https://yanivkalfa.github.io/gdscript-analyzer/reference/warnings.html";
+
+// The LSP `code`/`codeDescription`/`tags` fields for an analyzer diagnostic (T4.4/T4.6). Syntax
+// errors get the bare code (no reference entry); `tags` carries the analyzer's LSP numbers
+// (1 = Unnecessary -> editors dim the range) and is absent on a pre-tags core (<= 0.5.4).
+function gdCodeFields(d: { code: string; tags?: number[] }): Partial<Diagnostic> {
+  const out: Partial<Diagnostic> = {};
+  if (d.code) {
+    out.code = d.code;
+    if (d.code !== "GDSCRIPT_SYNTAX") out.codeDescription = { href: GD_WARNING_DOCS };
+  }
+  if (d.tags?.length) out.tags = d.tags as Diagnostic["tags"];
+  return out;
+}
 
 // Embedded-GDScript type/parse diagnostics from @gdscript-analyzer/core, mapped back into the .guitkx
 // source. Safe to surface: the analyzer's seam design resolves an unknown cross-file symbol (a library
@@ -630,43 +705,82 @@ function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
   const { text, map } = buildVirtualDoc(src);
   const vUri = doc.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
   analyzer.sync(vUri, text);
+  // The markup tier owns everything after the component's return (GUITKX0107 dims the whole
+  // region); the analyzer's own UNREACHABLE_CODE over the same lines would double-report (T4.4).
+  const deadRegions = unreachableRegions(src);
   const out: Diagnostic[] = [];
-  for (const d of vetoDeclared(index, analyzer.diagnosticsAt(vUri, text), text)) {
+  for (const d of analyzer.diagnosticsAt(vUri, text)) {
     let s = map.toSource(d.range.start);
     let e = map.toSource(d.range.end);
     if (s === null || e === null) continue; // a diagnostic in generated glue, not user code
     if (s > e) [s, e] = [e, s];
+    if (d.code === "UNREACHABLE_CODE" && deadRegions.some((r) => s >= r.start && s < r.end)) continue;
     out.push({
       severity: d.severity,
       range: { start: offsetToPosition(src, s), end: offsetToPosition(src, e) },
-      message: d.code ? `${d.code}: ${d.message}` : d.message,
+      message: d.message,
       source: "gdscript",
+      ...gdCodeFields(d),
     });
   }
   return out;
 }
 
 // Surface the compiler's full diagnostic catalog (from the on-save Foo.guitkx.diags.json sidecar) in
-// VS Code without a running editor. Only when the sidecar still matches the buffer (source hash);
-// deduped by code against the precise live tier (live wins). Ranged at line 1 — the compiler emits no
-// char offsets, so these are file-level "compiler says…" entries; the live tier owns precise squiggles.
+// VS Code without a running editor. Only when the sidecar still matches the buffer (source hash).
+// v2 sidecars (T0.2) carry char offsets, so entries get PRECISE ranges via positionAt and are deduped
+// against the live tier by (code, line) — a live GUITKX0104 on element A no longer suppresses the
+// compiler's 0104 on a different line. Position-less entries (off -1, incl. normalized v1 sidecars)
+// anchor to the first line and fall back to code-only dedupe (their line carries no information).
 function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic[] {
   const sc = readSidecar(uriToProjectPath(doc.uri));
   const text = doc.getText();
-  if (!sc || sc.src_hash !== srcHash(text)) return live;
+  if (!sc) return live;
+  if (sc.src_hash !== srcHash(text)) {
+    // T3.3: while the buffer diverges from the last compile, entries for codes the live tier ALSO
+    // computes are dropped (the live tier owns them now), but COMPILER-ONLY codes are kept with a
+    // stale marker instead of vanishing on the first keystroke. Their offsets belong to the old
+    // text -- clamp; the marker tells the user the position is approximate until the next save.
+    const liveSet = new Set(VOCABULARY.live);
+    const stale: Diagnostic[] = [];
+    for (const d of sc.diagnostics) {
+      if (!d.code || liveSet.has(d.code)) continue;
+      const off = d.off >= 0 ? Math.min(text.length, cpToUtf16(text, Math.min(d.off, text.length))) : 0;
+      stale.push({
+        severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
+        range: { start: doc.positionAt(off), end: doc.positionAt(Math.min(text.length, off + Math.max(1, d.len))) },
+        message: `${d.code}: ${d.message} (from the last compile -- position may have shifted; recompiles on save)`,
+        source: "guitkx (compiler, stale)",
+      });
+    }
+    return stale.length ? [...live, ...stale] : live;
+  }
   const liveCodes = new Set<string>();
+  const liveCodeLines = new Set<string>();
   for (const d of live) {
     const m = /GUITKX\d+/.exec(d.message);
-    if (m) liveCodes.add(m[0]);
+    if (m) {
+      liveCodes.add(m[0]);
+      liveCodeLines.add(`${m[0]}@${d.range.start.line}`);
+    }
   }
   const firstLineLen = (text.indexOf("\n") + 1 || text.length + 1) - 1;
   const extra: Diagnostic[] = [];
   for (const d of sc.diagnostics) {
-    if (!d.code || liveCodes.has(d.code)) continue;
+    if (!d.code) continue;
+    // Sidecar offsets are Unicode CODE POINTS (GDScript String indices); positionAt takes UTF-16.
+    const off = d.off >= 0 ? cpToUtf16(text, d.off) : -1;
+    const endOff = d.off >= 0 ? cpToUtf16(text, d.off + Math.max(1, d.len)) : -1;
+    const positioned = off >= 0 && off <= text.length;
+    const range = positioned
+      ? { start: doc.positionAt(off), end: doc.positionAt(Math.min(text.length, Math.max(off + 1, endOff))) }
+      : { start: { line: 0, character: 0 }, end: { line: 0, character: Math.max(1, firstLineLen) } };
+    if (positioned ? liveCodeLines.has(`${d.code}@${range.start.line}`) : liveCodes.has(d.code)) continue;
     extra.push({
-      severity: d.severity === "error" ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
-      range: { start: { line: 0, character: 0 }, end: { line: 0, character: Math.max(1, firstLineLen) } },
-      message: d.message,
+      severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
+      range,
+      // v2 messages carry no code prefix (compose it, matching the live tier's style); v1 already do.
+      message: sc.v === 2 ? `${d.code}: ${d.message}` : d.message,
       source: "guitkx (compiler)",
     });
   }
@@ -796,7 +910,9 @@ function loadLibraries(): boolean {
     const resPath = resPathFor(file);
     if (resPath === null) continue; // hidden dirs (res://.godot/** etc.) are intentionally skipped
     try {
-      analyzer.upsertLibrary(pathToFileURL(file).toString(), readFileSync(file, "utf8"), resPath);
+      const text = readFileSync(file, "utf8");
+      harvestClassName(text);
+      analyzer.upsertLibrary(pathToFileURL(file).toString(), text, resPath);
     } catch {
       err.failed = true; // unreadable .gd — a name we cannot prove absent
     }
@@ -880,11 +996,12 @@ function gdLoc(uri: string, r: { start: number; end: number }): Location {
 
 function gdDiagnostics(uri: string, src: string): Diagnostic[] {
   analyzer.sync(uri, src);
-  return vetoDeclared(index, analyzer.diagnosticsAt(uri, src), src).map((d) => ({
+  return analyzer.diagnosticsAt(uri, src).map((d) => ({
     severity: d.severity,
     range: { start: offsetToPosition(src, d.range.start), end: offsetToPosition(src, d.range.end) },
-    message: d.code ? `${d.code}: ${d.message}` : d.message,
+    message: d.message,
     source: "gdscript",
+    ...gdCodeFields(d),
   }));
 }
 
@@ -1416,7 +1533,8 @@ function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
     severity: DiagnosticSeverity.Hint,
     tags: [DiagnosticTag.Unnecessary],
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
-    message: "Unreachable code after the component's return — the compiler drops it.",
+    // The code prefix makes the sidecar's compile-time copy dedupe away ((code,line) key -- T3.2/T3.3).
+    message: "GUITKX0107: Unreachable code after the component's return — the compiler drops it.",
     source: "guitkx",
   }));
 }
@@ -1426,7 +1544,7 @@ function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
 // single typo like `comssponent` used to make the LSP skip ALL analysis and report nothing.
 function declarationDiagnostics(doc: TextDocument): Diagnostic[] {
   return declarationDiags(doc.getText()).map((d) => ({
-    severity: DiagnosticSeverity.Error,
+    severity: d.severity === "warning" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
     range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },
     message: d.message,
     source: "guitkx",
@@ -1436,11 +1554,27 @@ function declarationDiagnostics(doc: TextDocument): Diagnostic[] {
 function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   const src = doc.getText();
   const diags: Diagnostic[] = [];
-  for (const w of markupWindows(src)) scanWindowDiagnostics(src, doc, w.start, w.end, diags);
+  const wins = markupWindows(src);
+  // T1.5 (G5): markup parse errors (0301/0302/...) and unknown lowercase tags (0105) fire LIVE --
+  // they used to be computed and discarded, so `return <s></a>` squiggled nothing until save.
+  // T2.5: rules-of-hooks (0013-0016) fire live over every setup span with the same routine the
+  // compiler runs (liveMarkup.hookContextDiags mirrors guitkx.gd _validate_hooks).
+  // T4.5: PascalCase tags check live against the full component universe (indexed .guitkx
+  // bindings + the project's .gd class_names) once the workspace scan has completed.
+  const knownComponents = componentUniverseReady && index.ready ? new Set([...index.names(), ...gdClassNames]) : null;
+  for (const d of [...windowStructureDiags(src, wins, knownComponents), ...hookContextDiags(src, setupSpans(src))]) {
+    diags.push({
+      severity: d.severity === "warning" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
+      range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },
+      message: d.message,
+      source: "guitkx",
+    });
+  }
+  for (const w of wins) scanWindowDiagnostics(src, doc, w.start, w.end, diags);
   return diags;
 }
 
-// Live missing-markup-return check [GUITKX0102]: a component whose closed body has no `return ( ... )`
+// Live missing-markup-return check [GUITKX2101]: a component whose closed body has no `return ( ... )`
 // used to be SILENT while typing — no markup window means every window-scoped tier skips it, and
 // buildVirtualDoc just emits `pass` — so the error only appeared post-save via the compiler sidecar
 // (pinned to line 0). Message text mirrors guitkx.gd _split_return so the sidecar copy dedupes away.
@@ -1448,7 +1582,18 @@ function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
   return missingReturnComponents(doc.getText()).map((r) => ({
     severity: DiagnosticSeverity.Error,
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
-    message: "GUITKX0102: component has no `return ( ... )` (only `return null`?)",
+    message: "GUITKX2101: component has no `return ( ... )` (only `return null`?)",
+    source: "guitkx",
+  }));
+}
+
+// T3.5: the half-typed/unclosed `return (` -- the compiler's GUITKX0304 -- now shows live too
+// (missing-return deliberately skips it, and no markup window exists to carry a parse error).
+function unclosedReturnDiagnostics(doc: TextDocument): Diagnostic[] {
+  return unclosedReturns(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message: "GUITKX0304: unclosed `(` after return",
     source: "guitkx",
   }));
 }
@@ -1557,7 +1702,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
         const scope = scopes[scopes.length - 1];
         if (scope.has(keySig)) {
           diags.push({
-            severity: DiagnosticSeverity.Warning,
+            severity: DiagnosticSeverity.Error, // T3.2: duplicate keys break reconciliation -- error on both surfaces
             range: { start: doc.positionAt(tag.keyStart), end: doc.positionAt(tag.keyEnd) },
             message: `GUITKX0104: duplicate key '${keySig.slice(2)}' among sibling elements.`,
             source: "guitkx",
@@ -1566,8 +1711,11 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
         scope.add(keySig);
       }
       // unknown-element did-you-mean: PascalCase tag that is neither a host element nor an indexed
-      // component, but is a near-miss of one (lowercase tags are host factories — never flagged).
-      if (/^[A-Z]/.test(tag.tagName) && !findTag(tag.tagName) && !index.has(tag.tagName)) {
+      // component, but is a near-miss of one. Lowercase tags are vocabulary-checked in liveMarkup.ts
+      // (T1.5); the PascalCase check stays SUGGESTION-GATED until T4.5 feeds .guitkx declarations
+      // into the analyzer -- ungated it would false-flag hand-written .gd component classes, which
+      // only the compiler (via the plugin's known_components) can see today.
+      if (/^[A-Z]/.test(tag.tagName) && tag.tagName.toLowerCase() !== "fragment" && !findTag(tag.tagName) && !index.has(tag.tagName)) {
         const sugg = closestTag(tag.tagName);
         if (sugg) {
           diags.push({
@@ -1589,7 +1737,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
           diags.push({
             severity: DiagnosticSeverity.Error,
             range: { start: doc.positionAt(a.start), end: doc.positionAt(a.end) },
-            message: `GUITKX0107: unknown attribute '${a.name}' on <${tag.tagName}>` + (sugg ? `. Did you mean '${sugg}'?` : "."),
+            message: `GUITKX0109: unknown attribute '${a.name}' on <${tag.tagName}>` + (sugg ? `. Did you mean '${sugg}'?` : "."),
             source: "guitkx",
           });
         }

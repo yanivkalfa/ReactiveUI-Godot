@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":84,\"attrs\":[{\"at\":93,\"end\":119,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Counter — useState\",\"vat\":100}],\"children\":[{\"at\":124,\"attrs\":[{\"at\":131,\"end\":158,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Count: %d\\\" % s[0]\",\"vat\":138},{\"at\":159,\"end\":186,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 28}\",\"vat\":167}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":193,\"attrs\":[{\"at\":199,\"end\":226,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":207}],\"children\":[{\"at\":232,\"attrs\":[{\"at\":240,\"end\":253,\"kind\":\"str\",\"name\":\"text\",\"value\":\"  −1  \",\"vat\":246},{\"at\":254,\"end\":293,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): s[1].call(s[0] - 1)\",\"vat\":264}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":301,\"attrs\":[{\"at\":309,\"end\":322,\"kind\":\"str\",\"name\":\"text\",\"value\":\"  +1  \",\"vat\":315},{\"at\":323,\"end\":375,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): s[1].call(func(c): return c + 1)\",\"vat\":333}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":383,\"attrs\":[{\"at\":391,\"end\":405,\"kind\":\"str\",\"name\":\"text\",\"value\":\" Reset \",\"vat\":397},{\"at\":406,\"end\":438,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): s[1].call(0)\",\"vat\":416}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":8,\"t\":\"el\",\"tag\":\"HBox\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 467,
+			"start": 81
+		}
+	]
+}

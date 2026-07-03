@@ -1,0 +1,13 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2203",
+			"len": 7,
+			"off": 200,
+			"severity": 1
+		}
+	],
+	"markup": [],
+	"ok": true,
+	"windows": []
+}

@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":338,\"attrs\":[{\"at\":344,\"end\":371,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":352}],\"children\":[{\"at\":376,\"attrs\":[{\"at\":383,\"end\":411,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Count: %d\\\" % count\",\"vat\":390}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":418,\"attrs\":[{\"at\":426,\"end\":435,\"kind\":\"str\",\"name\":\"text\",\"value\":\"+1\",\"vat\":432},{\"at\":436,\"end\":481,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): set_count.call(count + 1)\",\"vat\":446}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":488,\"branches\":[{\"body_at\":505,\"body_markup\":\"\\n\\t\\t\\t\\t<Label text=\\\"High five!\\\" />\\n\\t\\t\\t\",\"cond\":\"count > 5\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":10,\"t\":\"el\",\"tag\":\"VBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 554,
+			"start": 335
+		}
+	]
+}

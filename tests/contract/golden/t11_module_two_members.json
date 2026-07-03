@@ -1,0 +1,28 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":42,\"attrs\":[{\"at\":49,\"end\":57,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":55}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"Label\"}]"
+		},
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":94,\"attrs\":[{\"at\":102,\"end\":110,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":108}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Button\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 61,
+			"start": 41
+		},
+		{
+			"end": 114,
+			"start": 93
+		}
+	]
+}

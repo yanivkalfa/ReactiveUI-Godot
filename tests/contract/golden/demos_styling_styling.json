@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":63,\"attrs\":[{\"at\":72,\"end\":119,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Styling — StyleBoxFlat + theme channels\",\"vat\":79}],\"children\":[{\"at\":124,\"attrs\":[{\"at\":131,\"end\":163,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"DemoStylingStyle.PANEL\",\"vat\":139}],\"children\":[{\"at\":169,\"attrs\":[{\"at\":175,\"end\":202,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 4}\",\"vat\":183}],\"children\":[{\"at\":209,\"attrs\":[{\"at\":216,\"end\":235,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Styled panel\",\"vat\":222},{\"at\":236,\"end\":299,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 22, \\\"font_color\\\": Color(0.6, 0.8, 1.0)}\",\"vat\":244}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":308,\"attrs\":[{\"at\":315,\"end\":410,\"kind\":\"str\",\"name\":\"text\",\"value\":\"bg + corner radius + border, all from one StyleBoxFlat (styles live in styling.style.gd)\",\"vat\":321},{\"at\":411,\"end\":457,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":419}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":7,\"t\":\"el\",\"tag\":\"VBox\"}],\"line\":6,\"t\":\"el\",\"tag\":\"Panel\"},{\"at\":488,\"attrs\":[{\"at\":494,\"end\":522,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 10}\",\"vat\":502}],\"children\":[{\"at\":528,\"attrs\":[{\"at\":535,\"end\":572,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"DemoStylingStyle.SQUARE_RED\",\"vat\":543}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Panel\"},{\"at\":580,\"attrs\":[{\"at\":587,\"end\":626,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"DemoStylingStyle.SQUARE_GREEN\",\"vat\":595}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Panel\"},{\"at\":634,\"attrs\":[{\"at\":641,\"end\":679,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"DemoStylingStyle.SQUARE_BLUE\",\"vat\":649}],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":12,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":697,\"attrs\":[{\"at\":704,\"end\":741,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Theme channels reach any item:\",\"vat\":710},{\"at\":742,\"end\":788,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":750}],\"children\":[],\"line\":17,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":795,\"attrs\":[{\"at\":802,\"end\":822,\"kind\":\"str\",\"name\":\"text\",\"value\":\"outlined text\",\"vat\":808},{\"at\":823,\"end\":858,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"DemoStylingStyle.OUTLINED\",\"vat\":831}],\"children\":[],\"line\":18,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":5,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 876,
+			"start": 60
+		}
+	]
+}

@@ -9,6 +9,7 @@
 import { skipNoncode, skipString, findMatching, keywordAt } from "./scanner";
 import { findDecl } from "./declScan";
 import { SourceMap } from "./sourceMap";
+import { neutralizeMarkup } from "./jsxScan";
 
 export interface VirtualDoc {
   text: string;
@@ -23,7 +24,7 @@ export interface VirtualDoc {
 // go-to-definition chaining (`Hooks.<name>` appears on the stub line — see server.ts hookStubRhsOffset).
 // `params`/`ret` MUST stay byte-identical to the hooks.gd declarations — asserted by the
 // "hook stub signatures match hooks.gd" parity test in core.test.ts.
-const HOOK_STUBS: { name: string; params: string; args: string; ret: string; tuple?: string }[] = [
+export const HOOK_STUBS: { name: string; params: string; args: string; ret: string; tuple?: string }[] = [
   { name: "useState", params: "initial = null", args: "initial", ret: " -> Array", tuple: "Variant, Callable" },
   { name: "useReducer", params: "reducer: Callable, initial = null", args: "reducer, initial", ret: " -> Array", tuple: "Variant, Callable" },
   { name: "useRef", params: "initial = null", args: "initial", ret: " -> Dictionary" },
@@ -195,6 +196,11 @@ function emitMarkup(ctx: Ctx, start: number, end: number, indent: number): boole
     if (c === "{") {
       const close = findMatching(src, i);
       if (close !== -1 && close < end) {
+        // T2.1: a `{/* comment */}` hole is markup commentary, not a GDScript expression.
+        if (src.slice(i + 1, close).trim().startsWith("/*")) {
+          i = close + 1;
+          continue;
+        }
         emitExpr(ctx, i + 1, close, indent);
         any = true;
         i = close + 1;
@@ -232,8 +238,11 @@ function emitTagAttrs(ctx: Ctx, lt: number, end: number, indent: number): { next
       else if (src[i] === "{") {
         const close = findMatching(src, i);
         if (close !== -1 && close < end) {
-          emitExpr(ctx, i + 1, close, indent);
-          emitted = true;
+          // T2.1: skip `{/* comment */}` attribute-list holes (not GDScript).
+          if (!src.slice(i + 1, close).trim().startsWith("/*")) {
+            emitExpr(ctx, i + 1, close, indent);
+            emitted = true;
+          }
           i = close + 1;
         } else i++;
       }
@@ -341,6 +350,10 @@ function emitMatchArms(ctx: Ctx, start: number, end: number, indent: number): vo
 }
 
 // Emit `var _eN = (<expr>)` at `indent`, mapping the expr text verbatim.
+// T5.1: markup NESTED inside the expression (`open and <Panel/>`, `xs.map(func(x): return <Row/>)`)
+// used to be spliced raw -- the analyzer parsed `<` as an operator and sprayed syntax noise over the
+// island (the G7/G8 noise source). jsxScan.neutralizeMarkup replaces each markup range with `null`
+// padded to the SAME length, so the expression stays valid GDScript and the 1:1 offset map holds.
 function emitExpr(ctx: Ctx, start: number, end: number, indent: number): void {
   const text = ctx.src.slice(start, end);
   const trimmed = text.replace(/^\s+/, "");
@@ -349,7 +362,7 @@ function emitExpr(ctx: Ctx, start: number, end: number, indent: number): void {
   const prefix = `${"\t".repeat(indent)}var _e${ctx.counter++} = (`;
   ctx.gen += prefix;
   const gs = ctx.gen.length;
-  ctx.gen += trimmed;
+  ctx.gen += neutralizeMarkup(trimmed);
   ctx.map.addSpan(start + lead, gs, trimmed.length);
   ctx.gen += ")\n";
 }
@@ -478,7 +491,27 @@ interface ReturnSplit {
   markupEnd: number;
 }
 
+// T1.4 (Unity useLastReturn parity): the window is the LAST top-level markup return, mirroring
+// guitkx.gd _split_return / formatGuitkx.ts splitReturn -- first token on its line, line depth <=
+// the body's anchor depth. Statement-level returns (in if:/lambdas) stay in the analyzed setup.
 function splitReturn(src: string, start: number, end: number): ReturnSplit {
+  const lines = src.slice(start, end).split("\n");
+  const unit = indentUnit(lines);
+  let anchor = -1;
+  let anchorAny = -1;
+  for (const raw of lines) {
+    const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const t = l.trim();
+    if (t === "") continue;
+    const d = indentDepth(l, unit);
+    if (anchorAny === -1) anchorAny = d;
+    if (!t.startsWith("#")) {
+      anchor = d;
+      break;
+    }
+  }
+  if (anchor === -1) anchor = anchorAny;
+  let chosen: ReturnSplit | null = null;
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -489,18 +522,35 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit {
     if (keywordAt(src, i, "return")) {
       let p = i + 6;
       while (p < end && /\s/.test(src[p])) p++;
+      const ls = Math.max(start, src.lastIndexOf("\n", i - 1) + 1);
+      const lead = src.slice(ls, i);
+      const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
+      let eol = src.indexOf("\n", i);
+      if (eol === -1 || eol > end) eol = end;
       if (src[p] === "(") {
         const close = findMatching(src, p);
         // A half-typed `return (`: keep analysing the setup ABOVE the return (empty markup window)
         // instead of abandoning the whole body — mid-keystroke intelligence stays alive.
-        if (close === -1) return { setupEnd: i, markupStart: end, markupEnd: end };
-        return { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        if (close === -1 || close >= end) return { setupEnd: i, markupStart: end, markupEnd: end };
+        if (topLevel) chosen = { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        i = close + 1;
+        continue;
       }
-      if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
+      if (src[p] === "<") {
+        if (topLevel) chosen = { setupEnd: i, markupStart: p, markupEnd: end };
+        i = eol;
+        continue;
+      }
+      if (keywordAt(src, p, "null")) {
+        i = p + 4;
+        continue;
+      }
+      i = topLevel ? eol : i + 6;
+      continue;
     }
     i++;
   }
-  return { setupEnd: end, markupStart: end, markupEnd: end };
+  return chosen ?? { setupEnd: end, markupStart: end, markupEnd: end };
 }
 
 function readWord(src: string, i: number): string {

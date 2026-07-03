@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":65,\"attrs\":[{\"at\":74,\"end\":122,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Fragment — group nodes without a wrapper\",\"vat\":81}],\"children\":[{\"at\":127,\"attrs\":[{\"at\":134,\"end\":204,\"kind\":\"str\",\"name\":\"text\",\"value\":\"A fragment inserts its children flat — no extra container node:\",\"vat\":140}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":211,\"attrs\":[{\"at\":218,\"end\":276,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.18, 0.18, 0.22), \\\"pad\\\": 10}\",\"vat\":226}],\"children\":[{\"at\":282,\"attrs\":[{\"at\":288,\"end\":315,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 4}\",\"vat\":296}],\"children\":[{\"at\":322,\"attrs\":[{\"at\":329,\"end\":353,\"kind\":\"str\",\"name\":\"text\",\"value\":\"• before fragment\",\"vat\":335}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":362,\"children\":[{\"at\":371,\"attrs\":[{\"at\":378,\"end\":407,\"kind\":\"str\",\"name\":\"text\",\"value\":\"• — fragment child A —\",\"vat\":384},{\"at\":408,\"end\":455,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.6, 0.85, 1.0)}\",\"vat\":416}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":465,\"attrs\":[{\"at\":472,\"end\":501,\"kind\":\"str\",\"name\":\"text\",\"value\":\"• — fragment child B —\",\"vat\":478},{\"at\":502,\"end\":549,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.6, 0.85, 1.0)}\",\"vat\":510}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Label\"}],\"t\":\"frag\"},{\"at\":567,\"attrs\":[{\"at\":574,\"end\":597,\"kind\":\"str\",\"name\":\"text\",\"value\":\"• after fragment\",\"vat\":580}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":8,\"t\":\"el\",\"tag\":\"VBox\"}],\"line\":7,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":5,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 639,
+			"start": 62
+		}
+	]
+}

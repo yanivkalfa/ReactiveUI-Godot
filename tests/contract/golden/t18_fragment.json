@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 13,
+			"off": 10,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0111",
+			"len": 2,
+			"off": 24,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":54,\"attrs\":[],\"children\":[{\"at\":64,\"attrs\":[],\"children\":[{\"at\":79,\"attrs\":[{\"at\":86,\"end\":94,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":92}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"label\"},{\"at\":102,\"attrs\":[{\"at\":109,\"end\":117,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":115}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}],\"named\":\"Fragment\",\"t\":\"frag\"},{\"at\":139,\"body_at\":154,\"body_markup\":\"\\n\\t\\t\\t\\t<Fragment key={ str(i) }>\\n\\t\\t\\t\\t\\t<label text={ str(i) } />\\n\\t\\t\\t\\t</Fragment>\\n\\t\\t\\t\",\"header\":\"i in 3\",\"t\":\"for\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 248,
+			"start": 51
+		}
+	]
+}

@@ -17,6 +17,9 @@ const L = preload("res://addons/reactive_ui/guitkx/guitkx_lexer.gd")
 ## Returns an Array of { start, end, op } ranges (sorted, non-overlapping). `start`/`end` bound the
 ## markup element (start at `<`, end exclusive past the close). `op` is "" normally, or "and"/"&&"
 ## for a short-circuit that must desugar to a ternary at emit time.
+## UNBALANCED markup (opens but never closes) is reported as { start, end: -1 } and terminates the
+## scan -- after a boundary token `<tag` is never valid GDScript either, so the caller must surface
+## a diagnostic instead of emitting the text verbatim (T1.2).
 static func find_markup_ranges(src: String, start: int, end: int) -> Array:
 	var out: Array = []
 	var delim: Array = []          # ( [ { stack, for the dict-`:` rule
@@ -25,9 +28,10 @@ static func find_markup_ranges(src: String, start: int, end: int) -> Array:
 	var s0 := _skip_ws(src, start, end)
 	if _markup_at(src, s0, end):
 		var e0 := _find_element_end(src, s0, end)
-		if e0 != -1:
-			out.append({ "start": s0, "end": e0, "op": "", "op_pos": start })
-			i = e0
+		if e0 == -1:
+			return [{ "start": s0, "end": -1, "op": "", "op_pos": start }]
+		out.append({ "start": s0, "end": e0, "op": "", "op_pos": start })
+		i = e0
 	while i < end:
 		var j := L.skip_noncode(src, i)
 		if j != i:
@@ -59,27 +63,32 @@ static func find_markup_ranges(src: String, start: int, end: int) -> Array:
 		if c == ":" and not delim.is_empty() and delim[-1] == "{" and not _is_colon_op(src, i, end):
 			i = _try(src, i + 1, end, "", i, out, i + 1)
 			continue
-		if (c == "r" or c == "e" or c == "a") and _is_ident_boundary(src, i):
-			# keyword boundaries: return / else / and
+		if (c == "r" or c == "e" or c == "a" or c == "o") and _is_ident_boundary(src, i):
+			# keyword boundaries: return / else / and / or (T3.5 mirrors Unity's operator set)
 			if L.keyword_at(src, i, "return"):
 				i = _try(src, i + 6, end, "", i, out, i + 6); continue
 			if L.keyword_at(src, i, "else"):
 				i = _try(src, i + 4, end, "", i, out, i + 4); continue
 			if L.keyword_at(src, i, "and"):
 				i = _try(src, i + 3, end, "and", i, out, i + 3); continue
+			if L.keyword_at(src, i, "or"):
+				i = _try(src, i + 2, end, "or", i, out, i + 2); continue
 		i += 1
 	return out
 
 # Peek for markup at the next ws-skipped position; if found, record [p, elem_end) (with the boundary
 # op + its position for the `and`/`&&` desugar) and return elem_end so the caller jumps past it.
+# Markup that never closes is recorded as { end: -1 } and ends the scan (see find_markup_ranges).
 # Otherwise return `fallback` (advance by one token).
 static func _try(src: String, after: int, end: int, op: String, op_pos: int, out: Array, fallback: int) -> int:
 	var p := _skip_ws(src, after, end)
 	if _markup_at(src, p, end):
 		var e := _find_element_end(src, p, end)
-		if e != -1:
-			out.append({ "start": p, "end": e, "op": op, "op_pos": op_pos })
-			return e
+		if e == -1:
+			out.append({ "start": p, "end": -1, "op": op, "op_pos": op_pos })
+			return end
+		out.append({ "start": p, "end": e, "op": op, "op_pos": op_pos })
+		return e
 	return fallback
 
 static func _markup_at(src: String, i: int, end: int) -> bool:

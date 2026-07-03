@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":59,\"attrs\":[{\"at\":68,\"end\":87,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Hello World\",\"vat\":75}],\"children\":[{\"at\":92,\"attrs\":[{\"at\":99,\"end\":130,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Hello, reactive Godot! 👋\",\"vat\":105},{\"at\":131,\"end\":158,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 20}\",\"vat\":139}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":165,\"attrs\":[{\"at\":172,\"end\":269,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Every demo here is a .guitkx component — JSX-like markup compiled to a GDScript render fn.\",\"vat\":178},{\"at\":270,\"end\":316,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":278}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":5,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 334,
+			"start": 56
+		}
+	]
+}

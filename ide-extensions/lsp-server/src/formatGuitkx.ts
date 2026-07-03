@@ -37,7 +37,8 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
   let classNameLine = "";
   while (i < n) {
     i = skipWsNl(source, i);
-    if (source.slice(i, i + 11) === "@class_name") {
+    // T3.5: directive keywords require a token boundary (`@class_nameFoo` is not a directive).
+    if (source.slice(i, i + 11) === "@class_name" && (i + 11 >= n || !isIdent(source[i + 11]))) {
       let le = source.indexOf("\n", i);
       if (le === -1) le = n;
       classNameLine = source.slice(i, le).trim();
@@ -47,36 +48,55 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     break;
   }
   const decl = findDecl(source, i);
+  if (decl.kind === "") return source;
+  // T1.3: the preamble (everything before the declaration keyword) is canonicalized ONLY when it is
+  // nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
+  // byte-for-byte -- Format Document must never delete user content (it used to eat file-header
+  // comments whole).
+  const pre = source.slice(0, decl.at);
+  const preCanonical = pre.replace(/@class_name[^\n]*/, "").trim() === "";
   let out = "";
-  if (classNameLine !== "") out += classNameLine + "\n\n";
+  if (!preCanonical) out += pre;
+  else if (classNameLine !== "") out += classNameLine + "\n\n";
+  let declEnd = -1;
   switch (decl.kind) {
     case "component": {
       const pc = parseComponentAt(source, decl.at);
       if (!pc.ok) return source;
-      out += fmtComponent(pc.name, pc.params, pc.setup, pc.root, o);
+      out += fmtComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
+      declEnd = pc.next;
       break;
     }
     case "hook": {
       const ph = parseHookAt(source, decl.at);
       if (!ph.ok) return source;
       out += fmtHook(ph.name, ph.params, ph.body, o);
+      declEnd = ph.next;
       break;
     }
     case "module": {
       const m = fmtModule(source, decl.at, o);
       if (m === null) return source;
-      out += m;
+      out += m.text;
+      declEnd = m.next;
       break;
     }
     default:
       return source;
+  }
+  // T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
+  // error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
+  // canonical blank line (idempotent).
+  if (declEnd >= 0 && declEnd < n) {
+    const trailing = source.slice(declEnd);
+    if (trailing.trim() !== "") out = out.replace(/[ \t\n]+$/, "") + "\n\n" + trailing.replace(/^[ \t\n]+/, "");
   }
   return out.replace(/[ \t\n]+$/, "") + "\n";
 }
 
 // --- declarations ---
 
-function fmtComponent(name: string, params: string, setup: string, root: MarkupNode, o: FmtOptions): string {
+function fmtComponent(name: string, params: string, setup: string, nodes: MarkupNode[], o: FmtOptions): string {
   let out = `component ${name}${fmtParams(params)} {\n`;
   const fs = fmtSetup(setup, 1, o);
   if (fs !== "") {
@@ -85,7 +105,11 @@ function fmtComponent(name: string, params: string, setup: string, root: MarkupN
     if (hasTrailingBlank(setup)) out += "\n"; // keep an authored blank line before `return (`
   }
   out += pad(1, o) + "return (\n";
-  out += fmtNode(root, 2, o);
+  // T2.1: every window node in order -- the render root plus any sibling comments.
+  for (const nd of nodes) {
+    if (nd == null) continue;
+    out += fmtNode(nd, 2, o);
+  }
   out += pad(1, o) + ")\n";
   out += "}\n";
   return out;
@@ -113,7 +137,7 @@ function hasTrailingBlank(s: string): boolean {
   return /\n[ \t]*\n[ \t]*$/.test(s);
 }
 
-function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
+function fmtModule(src: string, mi: number, o: FmtOptions): { text: string; next: number } | null {
   const n = src.length;
   let j = mi;
   while (j < n && isIdent(src[j])) j++; // skip the `module` keyword token
@@ -130,13 +154,18 @@ function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
   let first = true;
   while (i < bclose) {
     const d = findDecl(src, i);
+    // T1.3: real content between members that isn't a declaration would be silently DROPPED by the
+    // re-emit below (findDecl skips it). The compiler now errors on it (GUITKX2105); the formatter
+    // falls back to verbatim -- it must never delete user text.
+    const scanTo = d.kind === "" ? bclose : Math.min(d.at, bclose);
+    if (realSpan(src, i, scanTo)) return null;
     if (d.kind === "" || d.at >= bclose) break;
     if (!first) out += "\n";
     first = false;
     if (d.kind === "component") {
       const c = parseComponentAt(src, d.at);
       if (!c.ok) return null;
-      out += indentBlock(fmtComponent(c.name, c.params, c.setup, c.root, o), 1, o);
+      out += indentBlock(fmtComponent(c.name, c.params, c.setup, c.nodes, o), 1, o);
       i = c.next;
     } else if (d.kind === "hook") {
       const h = parseHookAt(src, d.at);
@@ -148,7 +177,7 @@ function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
     }
   }
   out += "}\n";
-  return out;
+  return { text: out, next: bclose + 1 };
 }
 
 // --- markup ---
@@ -159,8 +188,17 @@ function fmtNode(nd: MarkupNode, indent: number, o: FmtOptions): string {
       return fmtElement(nd, indent, o);
     case "frag": {
       const inner = fmtChildren(nd.children, indent + 1, o);
+      // T2.2: the named <Fragment> alias keeps the author's spelling + attrs (key/comments).
+      if (nd.named) {
+        let head = `<${nd.named}`;
+        for (const a of nd.attrs ?? []) head += " " + fmtAttr(a);
+        return `${pad(indent, o)}${head}>\n${inner}${pad(indent, o)}</${nd.named}>\n`;
+      }
       return `${pad(indent, o)}<>\n${inner}${pad(indent, o)}</>\n`;
     }
+    case "comment":
+      // T2.1: comments are preserved verbatim (re-anchored to the current indent).
+      return `${pad(indent, o)}${nd.raw.trim()}\n`;
     case "text":
       return `${pad(indent, o)}${nd.value.trim()}\n`;
     case "expr":
@@ -230,6 +268,8 @@ function fmtAttr(a: Attr): string {
       return `{...${a.value.trim()}}`;
     case "bool":
       return a.name;
+    case "comment":
+      return a.value; // T2.1: `{/* ... */}` preserved verbatim
   }
   return a.name;
 }
@@ -342,7 +382,8 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
 
 // Inferred space-indent unit: the smallest positive run of leading spaces across `lines` (1 for
 // tab-only source), so a tab weighs the same as one such run. Mirrors guitkx.gd `_indent_unit`.
-function indentUnit(lines: string[]): number {
+// Exported for the T2.5 rules-of-hooks scan (liveMarkup.ts) so both consumers share ONE geometry.
+export function indentUnit(lines: string[]): number {
   let unit = 0;
   for (const l of lines) {
     let sp = 0;
@@ -358,7 +399,7 @@ function indentUnit(lines: string[]): number {
 
 // Indentation depth in whole levels: a tab = `unit` columns, a space = 1 column, rounded. Mirrors
 // guitkx.gd `_indent_depth`.
-function indentDepth(s: string, unit: number): number {
+export function indentDepth(s: string, unit: number): number {
   let cols = 0;
   for (const c of s) {
     if (c === "\t") cols += unit;
@@ -407,11 +448,11 @@ interface CompParse {
   setupEnd: number;
   markupStart: number;
   markupEnd: number;
-  root: MarkupNode;
+  nodes: MarkupNode[]; // ALL window nodes incl. comments (T2.1) -- the formatter re-emits them in order
   next: number;
 }
 function parseComponentAt(src: string, at: number): CompParse {
-  const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, root: { t: "text", value: "" }, next: at };
+  const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, nodes: [], next: at };
   const n = src.length;
   // Skip the declaration keyword TOKEN (not a fixed "component".length) so a recovered typo header
   // (`comssponent Foo {`) parses from the right place. For an exact keyword this is identical.
@@ -439,8 +480,9 @@ function parseComponentAt(src: string, at: number): CompParse {
   if (!split || split === "unclosed") return fail;
   const setup = src.slice(bodyStart, split.setupEnd);
   const mr = parseMarkup(src, split.markupStart, split.markupEnd);
-  if (mr.error !== "" || mr.nodes.length !== 1) return fail;
-  return { ok: true, name, params, setup, setupStart: bodyStart, setupEnd: split.setupEnd, markupStart: split.markupStart, markupEnd: split.markupEnd, root: mr.nodes[0], next: bclose + 1 };
+  // exactly one RENDER root; comments are legal window siblings (T2.1)
+  if (mr.error !== "" || mr.nodes.filter((n) => n && n.t !== "comment").length !== 1) return fail;
+  return { ok: true, name, params, setup, setupStart: bodyStart, setupEnd: split.setupEnd, markupStart: split.markupStart, markupEnd: split.markupEnd, nodes: mr.nodes, next: bclose + 1 };
 }
 
 interface HookParse {
@@ -577,7 +619,7 @@ export function markupWindows(src: string): { start: number; end: number }[] {
 
 // Components whose CLOSED body contains no markup return at all — `splitReturn` found neither
 // `return (` nor `return <` (a lone `return null` guard doesn't count). The compiler fails these with
-// GUITKX0102 on save (guitkx.gd _split_return); this is the live mirror so the editor flags it while
+// GUITKX2101 on save (guitkx.gd _split_return); this is the live mirror so the editor flags it while
 // typing instead of staying silent until the sidecar lands. The walk is the same recovering walk as
 // markupWindows (a typo'd header still gets its body checked); hooks never have markup returns and
 // modules recurse, so only real components report — never helper funcs. An UNCLOSED `return (` (the
@@ -594,6 +636,38 @@ export function missingReturnComponents(src: string): { start: number; end: numb
         const b = declBody(src, d.at);
         if (b) {
           if (splitReturn(src, b.start, b.close) === null) out.push(declHead(src, d.at));
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
+}
+
+// T3.5: components whose body holds a markup return with an UNCLOSED `(` -- the compiler's
+// GUITKX0304. No window is produced for them, so every window-scoped tier skips the file and the
+// live side used to stay silent. Span = the declaration head (same anchor as missing-return).
+export function unclosedReturns(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          if (splitReturn(src, b.start, b.close) === "unclosed") out.push(declHead(src, d.at));
           i = b.close + 1;
         } else i = d.at + 1;
       } else if (d.kind === "hook") {
@@ -657,6 +731,43 @@ function moduleBodyAt(src: string, at: number): { start: number; end: number } |
   return { start: i + 1, end: close };
 }
 
+// T2.5: every embedded-GDScript span the rules-of-hooks scan covers -- component setups (body start
+// to the chosen return; the whole body when no/unclosed return, matching the compiler's view of an
+// all-setup body) and hook declaration bodies, top-level or module members.
+export function setupSpans(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          const split = splitReturn(src, b.start, b.close);
+          const end = split && split !== "unclosed" ? split.setupEnd : b.close;
+          if (end > b.start) out.push({ start: b.start, end });
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        if (ph.ok) {
+          if (ph.bodyEnd > ph.bodyStart) out.push({ start: ph.bodyStart, end: ph.bodyEnd });
+          i = ph.next;
+        } else i = d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
+}
+
 // The embedded-GDScript spans (component setup / hook body) of a (already-formatted) document — the
 // regions an optional gdformat pass may reflow. Top-level component/hook only (modules keep base-indent).
 export function embeddedRegions(src: string): { start: number; end: number }[] {
@@ -677,9 +788,31 @@ interface ReturnSplit {
   markupEnd: number;
 }
 // `"unclosed"` = a markup return exists but its `(` never closes (the compiler's GUITKX0304, and the
-// half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX0102).
+// half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX2101).
 // Distinguished so the live missing-return diagnostic can't fire on an in-progress paren.
+//
+// T1.4 (Unity useLastReturn parity): the window is the LAST top-level markup return. "Top-level"
+// mirrors guitkx.gd _split_return exactly -- the `return` is the first token on its line AND the
+// line's indent depth is <= the body's anchor depth (same anchor rule as reanchor/_reindent_setup).
+// Statement-level returns (inside if:/lambdas) are setup code, never windows -- the compiler
+// classifies the markup-shaped ones as GUITKX2102.
 function splitReturn(src: string, start: number, end: number): ReturnSplit | "unclosed" | null {
+  const lines = src.slice(start, end).split("\n");
+  const unit = indentUnit(lines);
+  let anchor = -1;
+  let anchorAny = -1;
+  for (const l of lines) {
+    const t = l.trim();
+    if (t === "") continue;
+    const d = indentDepth(l, unit);
+    if (anchorAny === -1) anchorAny = d;
+    if (!t.startsWith("#")) {
+      anchor = d;
+      break;
+    }
+  }
+  if (anchor === -1) anchor = anchorAny;
+  let chosen: ReturnSplit | null = null;
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -690,22 +823,37 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | "un
     if (keywordAt(src, i, "return")) {
       let p = i + 6;
       while (p < end && /\s/.test(src[p])) p++;
+      const ls = Math.max(start, src.lastIndexOf("\n", i - 1) + 1);
+      const lead = src.slice(ls, i);
+      const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
+      let eol = src.indexOf("\n", i);
+      if (eol === -1 || eol > end) eol = end;
       if (src[p] === "(") {
         const close = findMatching(src, p);
-        if (close === -1) return "unclosed";
-        return { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        // close >= end: the `)` lives beyond the body -- inside the sliced body the compiler sees
+        // no close at all, so mirror its GUITKX0304 verdict.
+        if (close === -1 || close >= end) return "unclosed";
+        if (topLevel) chosen = { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        i = close + 1;
+        continue;
       }
-      if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
+      if (src[p] === "<") {
+        if (topLevel) chosen = { setupEnd: i, markupStart: p, markupEnd: end };
+        i = eol;
+        continue;
+      }
       // `return null` may be a CONDITIONAL guard (e.g. `if not ready: return null`); keep scanning
       // for a later markup return rather than bailing to verbatim. Mirrors guitkx.gd _split_return. [audit]
       if (keywordAt(src, p, "null")) {
         i = p + 4;
         continue;
       }
+      i = topLevel ? eol : i + 6;
+      continue;
     }
     i++;
   }
-  return null;
+  return chosen;
 }
 
 // --- helpers ---

@@ -1,0 +1,18 @@
+@class_name DemoEffect
+
+component DemoEffect() {
+	var on = useState(true)
+	var log = useRef([])
+	var eff = func():
+		var was: bool = on[0]
+		log["current"].append("▶ setup (dep=%s)" % was)
+		return func(): log["current"].append("■ cleanup (dep=%s)" % was)
+	useEffect(eff, [on[0]])
+	return (
+		<DemoBox title="useEffect — lifecycle + cleanup">
+			<Button text={ "Toggle dependency (now %s)" % on[0] } onClick={ func(): on[1].call(not on[0]) } />
+			<Label text="Effect log (cleanup runs before the next setup):" style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
+			<Label text={ "\n".join(log["current"]) } />
+		</DemoBox>
+	)
+}
