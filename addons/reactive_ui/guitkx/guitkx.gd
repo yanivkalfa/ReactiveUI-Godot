@@ -52,15 +52,43 @@ static func hook_names() -> Array:
 static func v_factories() -> Array:
 	return vocab().get("v_factories", [])
 
+## B1 (0.6.0 field triage): one log line per unreadable-vocabulary EPISODE. A cold editor open used
+## to produce three red lines per file per sweep (~250 for the demos project) because every compile
+## retried the read, failed, and logged. Reset on a successful load so a later real failure logs again.
+static var _vocab_hold := false
+
 static func _load_vocabulary() -> Dictionary:
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(_VOCAB_PATH))
+	var text := FileAccess.get_file_as_string(_VOCAB_PATH)
+	if text.is_empty():
+		# The editor's first-scan window: `res://` reads can come back EMPTY for the whole scan
+		# (field capture 2026-07-03 -- every per-file compile of a cold open failed the read). The
+		# absolute OS path bypasses the res:// indirection, which does read fine mid-scan.
+		var f := FileAccess.open(ProjectSettings.globalize_path(_VOCAB_PATH), FileAccess.READ)
+		if f != null:
+			text = f.get_as_text()
+			f.close()
+	if text.is_empty():
+		# Checked BEFORE parsing: JSON.parse_string("") adds Godot's own "Parse JSON failed" line
+		# on top of ours. Transient (scan window) or missing file -- warn once per episode; the
+		# per-file GUITKX2507 env_error still records the hold for every compile that needs it.
+		if not _vocab_hold:
+			_vocab_hold = true
+			push_warning("[guitkx] vocabulary.json could not be read (editor scan window or missing file) -- compiles hold, existing outputs kept, retrying; further failures are silent until it recovers")
+		return {}
+	var parsed = JSON.parse_string(text)
 	if parsed is Dictionary and (parsed as Dictionary).has("host_tags") and (parsed as Dictionary).has("hooks"):
+		if _vocab_hold:
+			_vocab_hold = false
+			print("[guitkx] vocabulary loaded -- compiler ready again")
 		return parsed
 	# assert() is stripped from release exports, so fail LOUDLY but non-fatally: the compiler is
 	# editor tooling and must never crash a game that accidentally loads this script. Returning {}
 	# (not a keyed fallback) keeps vocab() retrying on the next call — self-healing as soon as the
-	# file becomes readable again.
-	push_error("[guitkx] vocabulary.json missing or invalid -- the compiler cannot classify tags/hooks without it")
+	# file becomes readable again. A non-empty-but-wrong file is REAL breakage (not the scan
+	# window), so this one stays an error -- still once per episode.
+	if not _vocab_hold:
+		_vocab_hold = true
+		push_error("[guitkx] vocabulary.json is not the expected JSON shape -- the compiler cannot classify tags/hooks without it")
 	return {}
 
 ## `known_components`: PascalCase class names resolvable as components in this project (sibling
