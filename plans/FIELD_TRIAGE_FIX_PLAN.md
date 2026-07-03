@@ -240,6 +240,45 @@ self-closers unchanged).
 
 ---
 
+## Phase R2 — scan-window completeness (0.6.2, field follow-up) — branch `fix/scan-window-sweep`
+
+> R landed and the cold open went quiet — but a stale `.guitkx` STILL survived a cold open
+> uncompiled (field capture 18:23→18:30): the startup sweep runs inside the first scan, where
+> `get_modified_time` returns 0 → `0 > 0` = "fresh" → silent no-op, `held` empty, no retry.
+> Separately: an unknown identifier in an expression is legal guitkx, and the generated .gd
+> only parses when first LOADED — a typo showed nothing anywhere until play time.
+
+### H1 ⬜ Initial sweep waits out `is_scanning()` (0.5s poll), then runs; headless unchanged.
+### H2 ⬜ Empty source read of an existing file = HELD (env), never a compile input — an empty
+flake read must never fail a compile and T1.1-delete a healthy sibling .gd.
+### H3 ⬜ `is_stale`: a zero mtime on either file counts as stale (compile attempt is safe now
+that H2 guards the read).
+### H4 ⬜ Parse every freshly generated .gd on a throwaway `GDScript` (class_name stripped, no
+resource-cache pollution) — GDScript-level errors land in the dock at compile time
+(`gd_parse_ok` on the compile_file result). Unity parity: Roslyn surfaces generated-C# errors
+immediately.
+
+- **Accept:** save a stale edit → cold open → file compiles once the scan ends, no user
+  interaction; a `slisced` typo produces a dock error at compile time; full suites green.
+
+---
+
+## Phase D — directive-body returns, HARD Unity convergence (next wave, user-decided 2026-07-03)
+
+> USER DECISIONS: (1) NO bare-markup shorthand kept — directive bodies converge on Unity's
+> grammar exactly, even though every existing demo/golden migrates. (2) Directive bodies are
+> mini-components WITHOUT hooks (hook calls inside them = diagnostic; Unity's hook-context rule).
+> (3) Formatter/indent = Unity exactly: spaces, width 2, format-on-save via configurationDefaults.
+> Spec-by-example: Unity `Samples/Components/UitkxTestFileDoNotTouch/UitkxTestFileDoNotTouch.uitkx`
+> (4-deep nesting, prep code + `return ( <markup> )`, `return null` skip-guards,
+> `return ( @if ... )`, setup-code JSX vars with directives, local funcs returning markup).
+> Scope: guitkx_markup.gd body grammar + guitkx.gd lowering (per-iteration prep scoping) + TS
+> mirror (markup.ts/liveMarkup/virtualDoc/semanticTokens/formatter) + contract goldens + ALL
+> demos migrated + docs + migration-grade diagnostic for the old form. Breaking pre-1.0 →
+> addon 0.7.0 / ext 0.8.0. Detailed task breakdown to be written when the wave starts.
+
+---
+
 ## Non-goals / parked
 - **Setup markup as a value** (`var x = <Label/>` — Unity's bare-JSX ranges): natural C-follow-up,
   not in C's acceptance. Track after C lands.
