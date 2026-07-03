@@ -281,6 +281,32 @@ test("declarationDiags flags a misspelled @class_name DIRECTIVE (@clasaas_name -
   );
 });
 
+// T1.3: the compiler compiles only the FIRST top-level declaration; everything after is GUITKX2105.
+test("T1.3: declarationDiags flags content after the first top-level declaration (GUITKX2105)", () => {
+  const src = "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n";
+  const d = declarationDiags(src);
+  const hit = d.find((x) => x.code === "GUITKX2105");
+  assert.ok(hit, `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.end), "component B() {");
+});
+
+test("T1.3: trailing comments after the declaration stay clean (no 2105)", () => {
+  assert.equal(declarationDiags("component A() {\n\treturn ( <Label /> )\n}\n# note\n").length, 0);
+});
+
+test("T1.3: the index holds only the first top-level declaration (no completion ghosts)", () => {
+  const idx = new WorkspaceIndex();
+  idx.reindex("file:///t/A.guitkx", "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(idx.has("A"), "first decl indexed");
+  assert.ok(!idx.has("B"), "ghost second decl NOT indexed");
+});
+
+test("T1.3: module members still index (the compiler compiles them)", () => {
+  const idx = new WorkspaceIndex();
+  idx.reindex("file:///t/M.guitkx", "module M {\n\tcomponent A() { return ( <Label /> ) }\n\thook use_y() { return 2 }\n}\n");
+  assert.ok(idx.has("M") && idx.has("A") && idx.has("use_y"), "module + both members indexed");
+});
+
 // Error-recovery: a near-miss keyword at a real declaration position is treated as that declaration
 // (analysis-only) so a typo'd header no longer blacks out markup + embedded checks. [declScan]
 test("findDecl recovers a typo'd keyword only at a real declaration shape", () => {

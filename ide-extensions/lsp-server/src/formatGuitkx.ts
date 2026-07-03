@@ -47,29 +47,48 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     break;
   }
   const decl = findDecl(source, i);
+  if (decl.kind === "") return source;
+  // T1.3: the preamble (everything before the declaration keyword) is canonicalized ONLY when it is
+  // nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
+  // byte-for-byte -- Format Document must never delete user content (it used to eat file-header
+  // comments whole).
+  const pre = source.slice(0, decl.at);
+  const preCanonical = pre.replace(/@class_name[^\n]*/, "").trim() === "";
   let out = "";
-  if (classNameLine !== "") out += classNameLine + "\n\n";
+  if (!preCanonical) out += pre;
+  else if (classNameLine !== "") out += classNameLine + "\n\n";
+  let declEnd = -1;
   switch (decl.kind) {
     case "component": {
       const pc = parseComponentAt(source, decl.at);
       if (!pc.ok) return source;
       out += fmtComponent(pc.name, pc.params, pc.setup, pc.root, o);
+      declEnd = pc.next;
       break;
     }
     case "hook": {
       const ph = parseHookAt(source, decl.at);
       if (!ph.ok) return source;
       out += fmtHook(ph.name, ph.params, ph.body, o);
+      declEnd = ph.next;
       break;
     }
     case "module": {
       const m = fmtModule(source, decl.at, o);
       if (m === null) return source;
-      out += m;
+      out += m.text;
+      declEnd = m.next;
       break;
     }
     default:
       return source;
+  }
+  // T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
+  // error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
+  // canonical blank line (idempotent).
+  if (declEnd >= 0 && declEnd < n) {
+    const trailing = source.slice(declEnd);
+    if (trailing.trim() !== "") out = out.replace(/[ \t\n]+$/, "") + "\n\n" + trailing.replace(/^[ \t\n]+/, "");
   }
   return out.replace(/[ \t\n]+$/, "") + "\n";
 }
@@ -113,7 +132,7 @@ function hasTrailingBlank(s: string): boolean {
   return /\n[ \t]*\n[ \t]*$/.test(s);
 }
 
-function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
+function fmtModule(src: string, mi: number, o: FmtOptions): { text: string; next: number } | null {
   const n = src.length;
   let j = mi;
   while (j < n && isIdent(src[j])) j++; // skip the `module` keyword token
@@ -130,6 +149,11 @@ function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
   let first = true;
   while (i < bclose) {
     const d = findDecl(src, i);
+    // T1.3: real content between members that isn't a declaration would be silently DROPPED by the
+    // re-emit below (findDecl skips it). The compiler now errors on it (GUITKX2105); the formatter
+    // falls back to verbatim -- it must never delete user text.
+    const scanTo = d.kind === "" ? bclose : Math.min(d.at, bclose);
+    if (realSpan(src, i, scanTo)) return null;
     if (d.kind === "" || d.at >= bclose) break;
     if (!first) out += "\n";
     first = false;
@@ -148,7 +172,7 @@ function fmtModule(src: string, mi: number, o: FmtOptions): string | null {
     }
   }
   out += "}\n";
-  return out;
+  return { text: out, next: bclose + 1 };
 }
 
 // --- markup ---

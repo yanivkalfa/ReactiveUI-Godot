@@ -1,0 +1,7 @@
+component First() {
+	return ( <label text="a" /> )
+}
+
+component Second() {
+	return ( <label text="b" /> )
+}

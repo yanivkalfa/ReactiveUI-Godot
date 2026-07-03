@@ -173,6 +173,14 @@ export class WorkspaceIndex {
     } catch {
       return; // parse-failure tolerant: keep nothing rather than corrupt the index
     }
+    // T1.3: index only what the compiler would actually COMPILE -- the first top-level declaration
+    // (anything after it is a GUITKX2105 error) plus, when it is a module, its members. A second
+    // top-level component used to be indexed and offered in completion while the generated .gd never
+    // contained it (a ghost). scanDeclarations itself stays full-scan for documentSymbol/outline.
+    const first = decls.find((d) => d.kind !== "member");
+    if (first) {
+      decls = decls.filter((d) => d === first || (d.kind === "member" && d.declStart > first.declStart && d.declEnd <= first.declEnd));
+    }
     const entries: IndexEntry[] = decls.map((d) => ({
       uri,
       binding: d.binding,

@@ -68,5 +68,15 @@
     "expected": "component Cmt {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
     "input": "component Cmt() {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "setup_comment_anchor"
+  },
+  {
+    "name": "preserve_leading_and_trailing",
+    "input": "# file header\n@class_name Foo\ncomponent  Foo(){\n\treturn (\n<Label text=\"a\"/>\n)\n}\n\ncomponent Ghost() {\n\treturn ( <Label /> )\n}\n",
+    "expected": "# file header\n@class_name Foo\ncomponent Foo {\n\treturn (\n\t\t<Label text=\"a\" />\n\t)\n}\n\ncomponent Ghost() {\n\treturn ( <Label /> )\n}\n"
+  },
+  {
+    "name": "module_junk_verbatim",
+    "input": "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n}\n",
+    "expected": "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n}\n"
   }
 ]

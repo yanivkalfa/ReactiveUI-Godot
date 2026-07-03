@@ -169,6 +169,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	var pc := _parse_component_at(source, ci, diags)
 	if not pc["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
+	_error_on_trailing(source, int(pc["next"]), "component", diags)
 	if class_name_override == "" and pc["name"] != basename:
 		diags.append(D.make("GUITKX0103", D.WARNING, "component `%s` differs from file name `%s`" % [pc["name"], basename], pc["name_at"], (pc["name"] as String).length()))
 	_validate(pc["setup"], pc["root"], diags, pc["body_at"])
@@ -384,50 +385,19 @@ static func _literal_key(el: Dictionary) -> String:
 
 ## hook file: `hook name(params) [-> (...)] { body }` -> a class with one static function. The
 ## body is plain GDScript (hook calls auto-prefixed); the `-> (tuple)` hint is dropped (GDScript
-## has no tuple type -- a multi-value hook returns an Array).
+## has no tuple type -- a multi-value hook returns an Array). Parsing is _parse_hook_at (T1.3
+## de-duplicated the inline copy) so this path also knows where the declaration ENDS.
 static func _compile_hook(source: String, hi: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
-	var n := source.length()
-	var j := hi + 4   # "hook"
-	j = _skip_ws_only(source, j)
-	var ns := j
-	while j < n and L._is_ident(source[j]):
-		j += 1
-	var hook_name := source.substr(ns, j - ns)
-	if hook_name == "":
-		diags.append(D.make("GUITKX0300", D.ERROR, "missing hook name", j))
+	var ph := _parse_hook_at(source, hi, diags)
+	if not ph["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	var params := ""
-	j = _skip_ws_only(source, j)
-	if j < n and source[j] == "(":
-		var pc := L.find_matching(source, j)
-		if pc == -1:
-			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in hook params", j, 1))
-			return { "ok": false, "gd": "", "diagnostics": diags }
-		params = source.substr(j + 1, pc - j - 1)
-		j = pc + 1
-	# optional `-> ReturnHint` — PRESERVED so callers' `:=` type-inference works; tuple-style
-	# `-> (a, b)` is dropped (GDScript has no tuple type — a multi-value hook returns an Array). [audit]
-	var ret_hint := ""
-	j = _skip_ws_only(source, j)
-	if j + 1 < n and source[j] == "-" and source[j + 1] == ">":
-		var rh := j + 2
-		while j < n and source[j] != "{":
-			j += 1
-		ret_hint = source.substr(rh, j - rh).strip_edges()
-	# body
-	j = _skip_ws_only(source, j)
-	if j >= n or source[j] != "{":
-		diags.append(D.make("GUITKX0303", D.ERROR, "hook body `{ ... }` expected", mini(j, n - 1)))
+	_error_on_trailing(source, int(ph["next"]), "hook", diags)
+	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	var bclose := L.find_matching(source, j)
-	if bclose == -1:
-		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed hook body", j, 1))
-		return { "ok": false, "gd": "", "diagnostics": diags }
-	var body := source.substr(j + 1, bclose - j - 1)
 	var cls := class_name_override if class_name_override != "" else basename
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
-	out += "static func %s(%s)%s:\n" % [hook_name, params, _ret_suffix(ret_hint)]
-	var body_block := _reindent_setup(_apply_hook_aliases(body))
+	out += "static func %s(%s)%s:\n" % [ph["name"], ph["params"], _ret_suffix(str(ph.get("ret", "")))]
+	var body_block := _reindent_setup(_apply_hook_aliases(ph["body"]))
 	if body_block != "":
 		out += body_block + "\n"
 	if not _has_statement(body_block):
@@ -494,6 +464,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed module body", j, 1))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var body_end := bclose
+	_error_on_trailing(source, bclose + 1, "module", diags)
 	var comps: Array = []
 	var hooks: Array = []
 	var module_comps := {}
@@ -501,6 +472,15 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	var i := j + 1
 	while i < body_end:
 		var d := _find_decl(source, i)
+		# T1.3: _find_decl SKIPS anything that isn't a declaration keyword -- content between members
+		# used to vanish silently. Real (non-ws, non-comment) text there is an error, not a skip.
+		var scan_to: int = mini(int(d["at"]), body_end) if d["kind"] != "" else body_end
+		var junk := _first_real(source, i, scan_to)
+		if junk != -1:
+			var jle := source.find("\n", junk)
+			jle = body_end if (jle == -1 or jle > body_end) else jle
+			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content in module `%s` -- only `component` and `hook` declarations are allowed here" % mod_name, junk, maxi(1, jle - junk)))
+			return { "ok": false, "gd": "", "diagnostics": diags }
 		if d["kind"] == "" or d["at"] >= body_end:
 			break
 		if d["kind"] == "component":
@@ -584,6 +564,19 @@ static func _split_return(body: String) -> Dictionary:
 				continue
 		i += 1
 	return { "error": D.make("GUITKX0102", D.ERROR, "component has no `return ( ... )` (only `return null`?)") }
+
+## T1.3: any real (non-ws, non-comment) content after the single top-level declaration is an error
+## (Unity UITKX2105 parity: "Invalid top-level statement after function-style component declaration").
+## A second `component`/`hook` used to be dropped SILENTLY while the LSP still indexed it -- completion
+## offered a component that did not exist in the generated .gd. Squiggle = first junk char to its EOL.
+static func _error_on_trailing(source: String, from: int, kind: String, diags: Array) -> void:
+	var first := _first_real(source, from, source.length())
+	if first == -1:
+		return
+	var le := source.find("\n", first)
+	if le == -1:
+		le = source.length()
+	diags.append(D.make("GUITKX2105", D.ERROR, "invalid top-level content after the `%s` declaration -- one declaration per file (wrap several in `module Name { ... }`)" % kind, first, maxi(1, le - first)))
 
 ## First / last offset of real (non-ws, non-comment) code in [from, to), or -1.
 static func _first_real(s: String, from: int, to: int) -> int:

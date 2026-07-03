@@ -23,6 +23,7 @@ func _run() -> void:
 	_test_module()
 	_test_module_dup_across_kinds()
 	_test_p1_error_gates()
+	_test_t13_single_decl()
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
@@ -222,6 +223,30 @@ func _test_p1_error_gates() -> void:
 	var r4 := RUIGuitkx.compile(src_mod, "M2")
 	_check_true(not r4["ok"], "T1.1: module-member validation error fails the module compile")
 	_check_true(_has_code(r4, "GUITKX0108"), "T1.1: the member's 0108 is the reported error")
+
+func _test_t13_single_decl() -> void:
+	# T1.3: content after the single top-level declaration errors (Unity UITKX2105 parity) --
+	# a second component used to be dropped silently while the LSP still indexed the ghost.
+	var src := "component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	var r := RUIGuitkx.compile(src, "A")
+	_check_true(not r["ok"], "T1.3: second top-level declaration fails the compile")
+	_check_diag_at(r, "GUITKX2105", src, "component B() {", "T1.3: 2105 lands on the second declaration")
+
+	# trailing comments after the declaration stay legal.
+	var src_c := "component A() {\n\treturn ( <Label /> )\n}\n# trailing note\n"
+	_check_true(RUIGuitkx.compile(src_c, "A")["ok"], "T1.3: trailing comments after the declaration are fine")
+
+	# hook files too (the hook path now parses via _parse_hook_at and knows where it ends).
+	var src_h := "hook use_x() {\n\treturn 1\n}\nstray text\n"
+	var r_h := RUIGuitkx.compile(src_h, "use_x")
+	_check_true(not r_h["ok"], "T1.3: trailing junk after a hook fails the compile")
+	_check_diag_at(r_h, "GUITKX2105", src_h, "stray text", "T1.3: hook trailing 2105 lands on the junk")
+
+	# junk BETWEEN module members used to vanish silently (_find_decl skipped it).
+	var src_m := "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n\thook use_y() { return 2 }\n}\n"
+	var r_m := RUIGuitkx.compile(src_m, "M")
+	_check_true(not r_m["ok"], "T1.3: junk between module members fails the compile")
+	_check_diag_at(r_m, "GUITKX2105", src_m, "var oops = 1", "T1.3: module junk 2105 lands on the junk")
 
 func _test_return_null_guard() -> void:
 	# [audit #19] `return null` as a conditional guard before the real markup return must compile.

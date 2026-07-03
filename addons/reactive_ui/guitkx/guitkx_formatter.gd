@@ -44,28 +44,56 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 		break
 	# 2. declaration
 	var decl: Dictionary = Compiler._find_decl(source, i)
+	if decl["kind"] == "":
+		return source   # nothing to format
 	var diags: Array = []
+	# T1.3: the preamble (everything before the declaration keyword) is canonicalized ONLY when it is
+	# nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
+	# byte-for-byte -- Format Document must never delete user content (it used to eat file-header
+	# comments whole). Mirrors formatGuitkx.ts.
+	var pre := source.substr(0, decl["at"])
+	var pre_check := pre
+	var cn_at := pre_check.find("@class_name")
+	if cn_at != -1:
+		var cn_le := pre_check.find("\n", cn_at)
+		if cn_le == -1:
+			cn_le = pre_check.length()
+		pre_check = pre_check.substr(0, cn_at) + pre_check.substr(cn_le)
+	var pre_canonical := pre_check.strip_edges() == ""
 	var out := ""
-	if class_name_line != "":
+	if not pre_canonical:
+		out += pre
+	elif class_name_line != "":
 		out += class_name_line + "\n\n"
+	var decl_end := -1
 	match decl["kind"]:
 		"component":
 			var pc: Dictionary = Compiler._parse_component_at(source, decl["at"], diags)
 			if not pc["ok"]:
 				return source
 			out += _fmt_component(pc["name"], pc["params"], pc["setup"], pc["root"], o)
+			decl_end = int(pc["next"])
 		"hook":
 			var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
 			if not ph["ok"]:
 				return source
 			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o)
+			decl_end = int(ph["next"])
 		"module":
-			var m := _fmt_module(source, decl["at"], o, diags)
+			var m: Variant = _fmt_module(source, decl["at"], o, diags)
 			if m == null:
 				return source
-			out += m
+			out += (m as Dictionary)["text"]
+			decl_end = int((m as Dictionary)["next"])
 		_:
 			return source   # nothing to format
+	# T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
+	# error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
+	# canonical blank line (idempotent). Mirrors formatGuitkx.ts.
+	if decl_end >= 0 and decl_end < source.length():
+		var trailing := source.substr(decl_end)
+		if trailing.strip_edges() != "":
+			out = out.rstrip(" \t\n") + "\n\n" + trailing.lstrip(" \t\n")
 	# normalize trailing whitespace -> exactly one newline
 	out = out.rstrip(" \t\n") + "\n"
 	return out
@@ -114,6 +142,12 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 	var first := true
 	while i < bclose:
 		var d: Dictionary = Compiler._find_decl(source, i)
+		# T1.3: real content between members that isn't a declaration would be silently DROPPED by the
+		# re-emit below (_find_decl skips it). The compiler now errors on it (GUITKX2105); the formatter
+		# falls back to verbatim -- it must never delete user text. Mirrors formatGuitkx.ts.
+		var scan_to: int = mini(int(d["at"]), bclose) if d["kind"] != "" else bclose
+		if Compiler._first_real(source, i, scan_to) != -1:
+			return null
 		if d["kind"] == "" or d["at"] >= bclose:
 			break
 		if not first:
@@ -134,7 +168,7 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 		else:
 			return null
 	out += "}\n"
-	return out
+	return { "text": out, "next": bclose + 1 }
 
 # --- markup ---
 

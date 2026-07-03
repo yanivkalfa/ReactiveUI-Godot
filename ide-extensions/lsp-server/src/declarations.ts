@@ -88,7 +88,8 @@ export function declarationDiags(src: string): DeclDiag[] {
 
   // No valid component/hook/module declaration -> flag the nearest misspelled keyword, else say none
   // was found. Either way the author learns the header is broken instead of getting silence.
-  if (scanDeclarations(src).length === 0) {
+  const decls = scanDeclarations(src);
+  if (decls.length === 0) {
     const near = nearestDeclKeyword(src);
     if (near) {
       out.push({
@@ -106,5 +107,38 @@ export function declarationDiags(src: string): DeclDiag[] {
       });
     }
   }
+
+  // T1.3 live mirror of the compiler's GUITKX2105: the compiler compiles ONLY the first top-level
+  // declaration -- any real content after it (a second component, stray text) errors on save, so
+  // squiggle it while typing too instead of letting it sit as a silent ghost.
+  const first = decls.find((d) => d.kind !== "member");
+  if (first) {
+    const junk = firstRealAfter(src, first.declEnd);
+    if (junk !== -1) {
+      let le = src.indexOf("\n", junk);
+      if (le === -1) le = src.length;
+      out.push({
+        start: junk,
+        end: Math.max(junk + 1, le),
+        code: "GUITKX2105",
+        message: `GUITKX2105: invalid top-level content after the \`${first.kind}\` declaration -- one declaration per file (wrap several in \`module Name { ... }\`)`,
+      });
+    }
+  }
   return out;
+}
+
+// First real (non-whitespace, non-comment) offset at/after `from`, or -1. Mirrors guitkx.gd _first_real.
+function firstRealAfter(src: string, from: number): number {
+  let i = from;
+  while (i < src.length) {
+    const k = skipNoncode(src, i);
+    if (k !== i) {
+      i = k;
+      continue;
+    }
+    if (!/[ \t\r\n]/.test(src[i])) return i;
+    i++;
+  }
+  return -1;
 }

@@ -202,7 +202,7 @@ inner parser's message and the body's offset) — after T1.1 that fails the comp
 **Tests.** Fixture per site: `@if (c) { <Broken> }`, `@for` body, nested-jsx expr. GD + contract.
 **Done when.** Grep `# body parse error` finds no reachable silent path.
 
-### T1.3 — Second declaration / trailing junk: error; formatter stops deleting content  · effort: small/medium · Status: ⬜
+### T1.3 — Second declaration / trailing junk: error; formatter stops deleting content  · effort: small/medium · Status: ✅ (code is **GUITKX2105**, not the draft's 2104 — DC.cs authority check: Unity 2105 = "Invalid top-level statement after function-style component declaration", 2104 = mixing directive-header form, no Godot analog; compiler: `_error_on_trailing` after component/hook/module + junk-between-module-members check (`_compile_hook` de-duplicated onto `_parse_hook_at` to learn its end); formatter mirrors: preamble canonicalized ONLY when pure ws+@class_name else byte-verbatim, trailing content re-emitted after one canonical blank line (idempotent), module junk ⇒ whole-doc verbatim — 2 new shared corpus cases; workspaceIndex.reindex filters to first-decl+its-members (scanDeclarations stays full for outline); declarations.ts adds the LIVE 2105 mirror; contract fixture t13_second_decl)
 **Current.** Second top-level decl silently dropped (`guitkx.gd:54-69`) while the LSP indexes it
 (`workspaceIndex.ts:35-88` — completion offers a component that doesn't exist in the `.gd`); Format
 Document DELETES unrecognized regions incl. leading file comments (`formatGuitkx.ts:49-75, 740-747`).
