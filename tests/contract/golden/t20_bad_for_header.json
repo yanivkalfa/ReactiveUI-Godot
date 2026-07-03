@@ -9,7 +9,7 @@
 		{
 			"code": "GUITKX2508",
 			"len": 4,
-			"off": 40,
+			"off": 44,
 			"severity": 0
 		}
 	],
@@ -18,14 +18,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":30,\"attrs\":[],\"children\":[{\"at\":40,\"body_at\":61,\"body_markup\":\"\\n\\t\\t\\t\\t<label key={ str(i) } text=\\\"x\\\" />\\n\\t\\t\\t\",\"header\":\"i in 2: int5\",\"t\":\"for\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":31,\"attrs\":[],\"children\":[{\"at\":44,\"body_at\":65,\"body_markup\":\"\\n        return (\\n          <label key={ str(i) } text=\\\"x\\\" />\\n        )\\n      \",\"header\":\"i in 2: int5\",\"t\":\"for\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
 		}
 	],
 	"ok": false,
 	"windows": [
 		{
-			"end": 116,
-			"start": 27
+			"end": 159,
+			"start": 26
 		}
 	]
 }

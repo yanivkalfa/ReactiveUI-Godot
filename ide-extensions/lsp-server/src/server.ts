@@ -322,24 +322,25 @@ function resPathFor(fsPath: string): string | null {
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
 
 function formatOptsFor(uri: string): Partial<FmtOptions> {
-  // .guitkx embeds GDScript -> default to TAB indentation (the editor's insertSpaces/tabSize is
-  // ignored: a spaces base + the embedded code's authored tabs is the classic mixed-indent bug). A
-  // project guitkx.config.json (walk-up, like Prettier / uitkx.config.json) overrides printWidth /
-  // indentStyle / indentSize / attribute wrapping.
+  // Phase D: Unity-exact default — SPACES at width 2 (the [guitkx] configurationDefaults mirror
+  // [uitkx]'s). Embedded-GDScript reflow converts gdscript-fmt's tab depth to the same unit, so
+  // the old mixed-indent hazard is handled at the splice. A project guitkx.config.json (walk-up,
+  // like Prettier / uitkx.config.json) overrides printWidth / indentStyle / indentSize / wrapping.
   let dir = "";
   try {
     dir = dirname(uriToProjectPath(uri));
   } catch {
     dir = "";
   }
-  return { indentStyle: "tab", indentSize: 4, ...(dir ? loadFormatterConfig(dir) : {}) };
+  return { indentStyle: "space", indentSize: 2, ...(dir ? loadFormatterConfig(dir) : {}) };
 }
 
 // In-process markup format (formatGuitkx) + embedded-GDScript reflow through the analyzer's formatter —
 // the SAME gdscript-fmt that drives plain .gd files — so embedded code formats identically (BUG-1).
 function formatFull(src: string, opts: Partial<FmtOptions>): { text: string; changed: boolean } {
   const base = formatGuitkx(src, opts).text;
-  const text = embeddedReflow ? reflowEmbedded(base, (gd) => analyzer.formatGd(gd)) : base;
+  const unit = opts.indentStyle === "tab" ? "\t" : " ".repeat(opts.indentSize ?? 2);
+  const text = embeddedReflow ? reflowEmbedded(base, (gd) => analyzer.formatGd(gd), unit) : base;
   return { text, changed: text !== src };
 }
 

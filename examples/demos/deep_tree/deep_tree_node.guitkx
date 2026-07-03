@@ -1,21 +1,24 @@
 @class_name DemoDeepTreeNode
 
 component DemoDeepTreeNode(level: int = 0) {
-	return (
-		<>
-			@if (level <= 0) {
-				<Label text="🌳 leaf" style={ {"font_color": Color(0.5, 0.9, 0.5)} } />
-			}
-			@else {
-				<Margin style={ {"margin": 5} }>
-					<Panel style={ {"bg_color": Color(0.15, 0.15, 0.18), "pad": 4} }>
-						<VBox style={ {"separation": 2} }>
-							<Label text={ "level %d" % level } style={ {"font_color": Color(0.6, 0.7, 0.9)} } />
-							<DemoDeepTreeNode level={ level - 1 } />
-						</VBox>
-					</Panel>
-				</Margin>
-			}
-		</>
-	)
+  return (
+    <>
+      @if (level <= 0) {
+        return (
+          <Label text="🌳 leaf" style={ {"font_color": Color(0.5, 0.9, 0.5)} } />
+        )
+      } @else {
+        return (
+          <Margin style={ {"margin": 5} }>
+            <Panel style={ {"bg_color": Color(0.15, 0.15, 0.18), "pad": 4} }>
+              <VBox style={ {"separation": 2} }>
+                <Label text={ "level %d" % level } style={ {"font_color": Color(0.6, 0.7, 0.9)} } />
+                <DemoDeepTreeNode level={ level - 1 } />
+              </VBox>
+            </Panel>
+          </Margin>
+        )
+      }
+    </>
+  )
 }

@@ -108,7 +108,7 @@ function tryAt(src: string, after: number, end: number, op: string, opPos: numbe
   return fallback;
 }
 
-function markupAt(src: string, i: number, end: number): boolean {
+export function markupAt(src: string, i: number, end: number): boolean {
   if (i >= end || src[i] !== "<") return false;
   if (i + 1 >= end) return false;
   const c = src[i + 1];

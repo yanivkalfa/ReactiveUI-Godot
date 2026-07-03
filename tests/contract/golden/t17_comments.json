@@ -12,14 +12,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":35,\"raw\":\"// leading note\",\"t\":\"comment\"},{\"at\":53,\"attrs\":[],\"children\":[{\"at\":63,\"raw\":\"/* block\\n\\t\\t\\t   note */\",\"t\":\"comment\"},{\"at\":89,\"attrs\":[{\"at\":96,\"end\":113,\"kind\":\"comment\",\"name\":\"\",\"value\":\"{/* attr note */}\",\"vat\":-1},{\"at\":114,\"end\":122,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":120}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"label\"},{\"at\":129,\"raw\":\"<!-- html-style -->\",\"t\":\"comment\"},{\"at\":152,\"branches\":[{\"body_at\":164,\"body_markup\":\"\\n\\t\\t\\t\\t// inside a body\\n\\t\\t\\t\\t<label text=\\\"b\\\" />\\n\\t\\t\\t\",\"cond\":\"true\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":4,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":36,\"raw\":\"// leading note\",\"t\":\"comment\"},{\"at\":56,\"attrs\":[],\"children\":[{\"at\":69,\"raw\":\"/* block\\n\\t\\t\\t   note */\",\"t\":\"comment\"},{\"at\":98,\"attrs\":[{\"at\":105,\"end\":122,\"kind\":\"comment\",\"name\":\"\",\"value\":\"{/* attr note */}\",\"vat\":-1},{\"at\":123,\"end\":131,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":129}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"label\"},{\"at\":141,\"raw\":\"<!-- html-style -->\",\"t\":\"comment\"},{\"at\":167,\"branches\":[{\"body_at\":179,\"body_markup\":\"\\n        return ( // inside a body\\n\\t\\t\\t\\t<label text=\\\"b\\\" /> )\\n      \",\"cond\":\"true\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":4,\"t\":\"el\",\"tag\":\"vbox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 225,
-			"start": 32
+			"end": 261,
+			"start": 31
 		}
 	]
 }

@@ -12,24 +12,24 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":63,\"attrs\":[{\"at\":70,\"end\":84,\"kind\":\"str\",\"name\":\"text\",\"value\":\"loading\",\"vat\":76}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":66,\"attrs\":[{\"at\":73,\"end\":87,\"kind\":\"str\",\"name\":\"text\",\"value\":\"loading\",\"vat\":79}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"label\"}]"
 		},
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":102,\"attrs\":[],\"children\":[{\"at\":112,\"attrs\":[{\"at\":119,\"end\":133,\"kind\":\"str\",\"name\":\"text\",\"value\":\"content\",\"vat\":125}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}],\"line\":5,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":108,\"attrs\":[],\"children\":[{\"at\":121,\"attrs\":[{\"at\":128,\"end\":142,\"kind\":\"str\",\"name\":\"text\",\"value\":\"content\",\"vat\":134}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}],\"line\":5,\"t\":\"el\",\"tag\":\"vbox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 88,
-			"start": 62
+			"end": 91,
+			"start": 65
 		},
 		{
-			"end": 148,
-			"start": 99
+			"end": 160,
+			"start": 103
 		}
 	]
 }

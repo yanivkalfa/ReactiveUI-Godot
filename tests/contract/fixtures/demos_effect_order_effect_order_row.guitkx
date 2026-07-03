@@ -1,11 +1,11 @@
 @class_name DemoEffectOrderRow
 
 component DemoEffectOrderRow(idx, append) {
-	var eff = func():
-		append.call("▶ mount row %d" % idx)
-		return func(): append.call("■ unmount row %d" % idx)
-	useEffect(eff, [])
-	return (
-		<Label text={ "• row %d" % idx } />
-	)
+  var eff = func():
+    append.call("▶ mount row %d" % idx)
+    return func(): append.call("■ unmount row %d" % idx)
+  useEffect(eff, [])
+  return (
+    <Label text={ "• row %d" % idx } />
+  )
 }

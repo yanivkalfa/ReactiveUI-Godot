@@ -18,14 +18,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":108,\"attrs\":[],\"children\":[{\"at\":118,\"attrs\":[{\"at\":125,\"end\":151,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"str(pick.call(3))\",\"vat\":132}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":115,\"attrs\":[],\"children\":[{\"at\":128,\"attrs\":[{\"at\":135,\"end\":161,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"str(pick.call(3))\",\"vat\":142}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"vbox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 166,
-			"start": 105
+			"end": 179,
+			"start": 110
 		}
 	]
 }

@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":178,\"attrs\":[{\"at\":187,\"end\":226,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useRef — imperative node access\",\"vat\":194}],\"children\":[{\"at\":231,\"attrs\":[{\"at\":241,\"end\":286,\"kind\":\"str\",\"name\":\"placeholder_text\",\"value\":\"focus me with the button →\",\"vat\":259},{\"at\":287,\"end\":304,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"input_ref\",\"vat\":293},{\"at\":305,\"end\":333,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 280}\",\"vat\":313}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":340,\"attrs\":[{\"at\":348,\"end\":370,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Focus the field\",\"vat\":354},{\"at\":371,\"end\":388,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"focus\",\"vat\":381}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":9,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":186,\"attrs\":[{\"at\":195,\"end\":234,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useRef — imperative node access\",\"vat\":202}],\"children\":[{\"at\":242,\"attrs\":[{\"at\":260,\"end\":305,\"kind\":\"str\",\"name\":\"placeholder_text\",\"value\":\"focus me with the button →\",\"vat\":278},{\"at\":314,\"end\":331,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"input_ref\",\"vat\":320},{\"at\":340,\"end\":368,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 280}\",\"vat\":348}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":378,\"attrs\":[{\"at\":386,\"end\":408,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Focus the field\",\"vat\":392},{\"at\":409,\"end\":426,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"focus\",\"vat\":419}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":9,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 406,
-			"start": 175
+			"end": 447,
+			"start": 181
 		}
 	]
 }

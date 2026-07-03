@@ -1,35 +1,44 @@
 @class_name DemoTodo
 
-component DemoTodo() {
-	var items = useState([])
-	var text = useState("")
-	var next_id = useRef(1)
-	var add = func():
-		if text[0].strip_edges() == "":
-			return
-		var arr: Array = items[0].duplicate()
-		arr.append({ "id": next_id["current"], "text": text[0] })
-		next_id["current"] += 1
-		items[1].call(arr)
-		text[1].call("")
-	var remove = func(id):
-		var arr: Array = []
-		for it in items[0]:
-			if it["id"] != id:
-				arr.append(it)
-		items[1].call(arr)
-	return (
-		<DemoBox title="Todo — keyed list + events">
-			<HBox style={ {"separation": 8} }>
-				<LineEdit text={ text[0] } placeholder_text="New todo…" onChange={ func(t): text[1].call(t) } onSubmit={ func(_t): add.call() } style={ {"expand_h": true} } />
-				<Button text="Add" onClick={ func(): add.call() } />
-			</HBox>
-			<Label text={ "%d item(s) — keys preserve row identity on add/remove" % items[0].size() } style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
-			<VBox style={ {"separation": 4} }>
-				@for (it in items[0]) {
-					<DemoTodoRow key={ it["id"] } item={ it } onRemove={ remove } />
-				}
-			</VBox>
-		</DemoBox>
-	)
+component DemoTodo {
+  var items = useState([])
+  var text = useState("")
+  var next_id = useRef(1)
+  var add = func():
+    if text[0].strip_edges() == "":
+      return
+    var arr: Array = items[0].duplicate()
+    arr.append({ "id": next_id["current"], "text": text[0] })
+    next_id["current"] += 1
+    items[1].call(arr)
+    text[1].call("")
+  var remove = func(id):
+    var arr: Array = []
+    for it in items[0]:
+      if it["id"] != id:
+        arr.append(it)
+    items[1].call(arr)
+  return (
+    <DemoBox title="Todo — keyed list + events">
+      <HBox style={ {"separation": 8} }>
+        <LineEdit
+          text={ text[0] }
+          placeholder_text="New todo…"
+          onChange={ func(t): text[1].call(t) }
+          onSubmit={ func(_t): add.call() }
+          style={ {"expand_h": true} } />
+        <Button text="Add" onClick={ func(): add.call() } />
+      </HBox>
+      <Label
+        text={ "%d item(s) — keys preserve row identity on add/remove" % items[0].size() }
+        style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
+      <VBox style={ {"separation": 4} }>
+        @for (it in items[0]) {
+          return (
+            <DemoTodoRow key={ it["id"] } item={ it } onRemove={ remove } />
+          )
+        }
+      </VBox>
+    </DemoBox>
+  )
 }

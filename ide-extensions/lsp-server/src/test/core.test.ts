@@ -325,7 +325,7 @@ test("T1.5: unknown lowercase tag fires live with a did-you-mean", () => {
 });
 
 test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed offsets)", () => {
-  const src = "component B() {\n\treturn ( <vbox>@if (true) { <lable /> }</vbox> )\n}\n";
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { return ( <lable /> ) }</vbox> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0105");
   assert.ok(hit, `got ${JSON.stringify(d)}`);
@@ -333,7 +333,7 @@ test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed 
 });
 
 test("T1.5: a broken @if body's parse error surfaces live (bodies are opaque to the window parse)", () => {
-  const src = "component B() {\n\treturn ( <vbox>@if (true) { <Broken> }</vbox> )\n}\n";
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { return ( <Broken> ) }</vbox> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0301");
   assert.ok(hit, `got ${JSON.stringify(d)}`);
@@ -656,7 +656,9 @@ test("reindent anchor skips comment lines — an over-indented leading comment c
   assert.ok(text.includes("\n\tif a[0]:"), "if header at body level");
   assert.ok(text.includes("\n\t\ta[1].call(1)"), "the if body stays nested");
   const fmt = formatGuitkx(src).text;
-  assert.ok(fmt.includes("\tif a[0]:\n\t\ta[1].call(1)"), `formatter must not dedent the if body, got ${JSON.stringify(fmt)}`);
+  // Phase D: the formatter default is spaces-2 — the invariant is the RELATIVE nesting (the if body
+  // one level deeper than its header), pinned in the default style.
+  assert.ok(fmt.includes("  if a[0]:\n    a[1].call(1)"), `formatter must not dedent the if body, got ${JSON.stringify(fmt)}`);
 });
 
 test("guitkxVirtualLibText mirrors a .guitkx's compiled bindings (T4.5 — replaced the veto)", () => {

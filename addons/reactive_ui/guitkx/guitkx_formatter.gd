@@ -15,8 +15,8 @@ const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
 
 const DEFAULTS := {
 	"printWidth": 100,
-	"indentStyle": "tab",        # "tab" | "space"
-	"indentSize": 4,             # spaces per level when indentStyle == "space"
+	"indentStyle": "space",      # "tab" | "space" -- Phase D: Unity-exact default ("tab is 2 spaces")
+	"indentSize": 2,             # spaces per level when indentStyle == "space"
 	"singleAttributePerLine": false,
 	"insertSpaceBeforeSelfClose": true,
 }
@@ -78,7 +78,7 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 			var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
 			if not ph["ok"]:
 				return source
-			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o)
+			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o, str(ph.get("ret", "")))
 			decl_end = int(ph["next"])
 		"module":
 			var m: Variant = _fmt_module(source, decl["at"], o, diags)
@@ -118,8 +118,11 @@ static func _fmt_component(comp_name: String, params: String, setup: String, nod
 	out += "}\n"
 	return out
 
-static func _fmt_hook(hook_name: String, params: String, body: String, o: Dictionary) -> String:
-	var out := "hook %s%s {\n" % [hook_name, _fmt_params(params)]
+static func _fmt_hook(hook_name: String, params: String, body: String, o: Dictionary, ret_hint: String = "") -> String:
+	# The `-> Type` return hint is part of the signature -- dropping it turned every `var x := use_x(...)`
+	# caller into an inference error once the untyped generated func cascaded (Phase D reformat find).
+	var hint := "" if ret_hint.strip_edges() == "" else " -> %s" % ret_hint.strip_edges()
+	var out := "hook %s%s%s {\n" % [hook_name, _fmt_params(params), hint]
 	var fb := _fmt_setup(body, 1, o)
 	if fb != "":
 		if _has_leading_blank(body): out += "\n"
@@ -158,6 +161,10 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 		if not first:
 			out += "\n"
 		first = false
+		# `#`/`##` doc comments between members belong to the NEXT member. `_first_real` treats them
+		# as non-content, so they hit neither the verbatim fallback nor the re-emit -- the Phase D
+		# reformat sweep silently DELETED real module docs. Re-emit them above their member.
+		out += _member_comments(source, i, int(d["at"]), o)
 		if d["kind"] == "component":
 			var c: Dictionary = Compiler._parse_component_at(source, d["at"], diags)
 			if not c["ok"]:
@@ -168,12 +175,25 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 			var h: Dictionary = Compiler._parse_hook_at(source, d["at"], diags)
 			if not h["ok"]:
 				return null
-			out += _indent_block(_fmt_hook(h["name"], h["params"], h["body"], o), 1, o)
+			out += _indent_block(_fmt_hook(h["name"], h["params"], h["body"], o, str(h.get("ret", ""))), 1, o)
 			i = h["next"]
 		else:
 			return null
+	out += _member_comments(source, i, bclose, o)
 	out += "}\n"
 	return { "text": out, "next": bclose + 1 }
+
+## The comment lines in [from, to) (a member's leading docs / the module's tail), re-anchored at
+## module-member indent.
+static func _member_comments(source: String, from: int, to: int, o: Dictionary) -> String:
+	if to <= from:
+		return ""
+	var out := ""
+	for l in source.substr(from, to - from).split("\n"):
+		var t := (l as String).strip_edges()
+		if t.begins_with("#"):
+			out += _pad(1, o) + t + "\n"
+	return out
 
 # --- markup ---
 
@@ -315,15 +335,62 @@ static func _fmt_match(nd: Dictionary, indent: int, o: Dictionary) -> String:
 	return out
 
 # Re-parse a raw control-flow body string and format its nodes; verbatim re-indent fallback on error.
+## Phase D: a directive body is CODE (prep statements + directive-level returns). GDScript
+## segments re-anchor with the WHOLE body's indent geometry (a segment after a return must not
+## re-anchor on its own first line); each markup return re-emits as `return (` + recursively
+## formatted markup + `)` at the return's own relative depth. Legacy/unsplittable bodies are
+## re-anchored verbatim (never corrupt -- the compiler reports GUITKX2103, not the formatter).
 static func _fmt_body(body_src: String, indent: int, o: Dictionary) -> String:
-	var parser := Markup.new()
-	var pr := parser.parse(body_src, 0, body_src.length())
-	if pr["error"] != "":
+	var sp: Dictionary = Compiler._split_body(body_src)
+	if sp.has("error") or int(sp["legacy_at"]) != -1:
 		return _reanchor(body_src, indent, o)
-	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
+	var unit: int = int(sp["unit"])
+	var anchor: int = int(sp["anchor"])
 	var out := ""
-	for nx in nodes:
-		out += _fmt_node(nx, indent, o)
+	for part in (sp["parts"] as Array):
+		var pd := part as Dictionary
+		if pd["t"] == "gd":
+			var seg := body_src.substr(int(pd["from"]), int(pd["to"]) - int(pd["from"]))
+			if seg.strip_edges() != "":
+				out += _reanchor_rel(seg, indent, unit, anchor, o)
+			continue
+		var lvl: int = indent + maxi(0, int(pd["depth"]) - anchor)
+		var pad := _pad(lvl, o)
+		var shape := str(pd["shape"])
+		if shape == "null":
+			out += pad + "return null\n"
+			continue
+		if shape == "void":
+			out += pad + "return\n"
+			continue
+		var payload := body_src.substr(int(pd["m_start"]), int(pd["m_end"]) - int(pd["m_start"]))
+		if not bool(pd.get("markup", false)):
+			if shape == "paren":
+				out += pad + "return ( %s )\n" % _collapse_spaces(payload.strip_edges())
+			else:
+				out += pad + "return %s\n" % _collapse_spaces(payload.strip_edges())
+			continue
+		var parser := Markup.new()
+		var pr := parser.parse(body_src, int(pd["m_start"]), int(pd["m_end"]))
+		if pr["error"] != "":
+			# broken markup in this return: keep the authored span (the compiler reports the error)
+			out += pad + body_src.substr(int(pd["at"]), int(pd["end"]) - int(pd["at"])).strip_edges() + "\n"
+			continue
+		out += pad + "return (\n"
+		for nx in (pr["nodes"] as Array).filter(func(x): return x != null):
+			out += _fmt_node(nx, lvl + 1, o)
+		out += pad + ")\n"
+	return out
+
+## Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line).
+static func _reanchor_rel(code: String, indent: int, unit: int, anchor: int, o: Dictionary) -> String:
+	var out := ""
+	for l in code.split("\n"):
+		var t := (l as String).strip_edges()
+		if t == "":
+			continue
+		var level: int = indent + maxi(0, Compiler._indent_depth(l as String, unit) - anchor)
+		out += _pad(level, o) + _collapse_spaces(Compiler._strip_leading_ws(l as String)) + "\n"
 	return out
 
 # --- embedded GDScript (setup) — structure-preserving base-indent normalization only ---

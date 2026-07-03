@@ -13,12 +13,17 @@ func _initialize() -> void:
 	var cases := [
 		{ "name": "counter", "input": "component  Counter( start: int = 0 ){\n\tvar s = useState(start)\n\treturn (\n<VBox>\n<Label text={s[0]}/>\n<Button text=\"+1\" on_pressed={inc}/>\n</VBox>\n)\n}\n" },
 		{ "name": "attrs", "input": "component Btn(){\nreturn (\n<Button text=\"Click\" disabled flat={true} on_pressed={go}/>\n)\n}\n" },
-		{ "name": "if_elif_else", "input": "component Status(state:int){\nreturn (\n<VBox>\n@if (state == 0) { <Label text=\"idle\"/> } @elif (state == 1) { <Label text=\"run\"/> } @else { <Label text=\"done\"/> }\n</VBox>\n)\n}\n" },
-		{ "name": "for_loop", "input": "component L(items:Array){\nreturn (\n<VBox>\n@for (it in items) { <Label text={str(it)} key={it}/> }\n</VBox>\n)\n}\n" },
-		{ "name": "match", "input": "component M(x:int){\nreturn (\n<VBox>\n@match (x) { @case (0) { <Label text=\"zero\"/> } @default { <Label text=\"other\"/> } }\n</VBox>\n)\n}\n" },
+		{ "name": "if_elif_else", "input": "component Status(state:int){\nreturn (\n<VBox>\n@if (state == 0) { return (<Label text=\"idle\"/>) } @elif (state == 1) { return (<Label text=\"run\"/>) } @else { return (<Label text=\"done\"/>) }\n</VBox>\n)\n}\n" },
+		{ "name": "for_loop", "input": "component L(items:Array){\nreturn (\n<VBox>\n@for (it in items) { return (<Label text={str(it)} key={it}/>) }\n</VBox>\n)\n}\n" },
+		{ "name": "match", "input": "component M(x:int){\nreturn (\n<VBox>\n@match (x) { @case (0) { return (<Label text=\"zero\"/>) } @default { return (<Label text=\"other\"/>) } }\n</VBox>\n)\n}\n" },
+		# Phase D: a directive body with prep code + null-skip -- the code-block grammar formats too.
+		{ "name": "body_prep_code", "input": "component P(items:Array){\nreturn (\n<VBox>\n@for (it in items) {\nvar label := \"row %s\" % it\nif it == null:\nreturn null\nreturn (<Label key={str(it)} text={label}/>)\n}\n</VBox>\n)\n}\n" },
 		{ "name": "fragment", "input": "component F(){\nreturn (\n<>\n<Label text=\"a\"/>\n<Label text=\"b\"/>\n</>\n)\n}\n" },
 		{ "name": "hook", "input": "hook use_counter( start:int ){\n\tvar s = useState(start)\n\treturn s\n}\n" },
 		{ "name": "module", "input": "module Widgets {\ncomponent A(){ return (<Label text=\"a\"/>) }\ncomponent B(){ return (<A/>) }\n}\n" },
+		# Phase D reformat finds: module-member `##` docs and `-> Type` hints must survive the re-emit
+		# (both were silently dropped -- the hint loss cascaded := inference errors through callers).
+		{ "name": "module_docs_and_hint", "input": "module Docs {\n## builds the thing.\n## second line.\nhook use_built( n: int ) -> Dictionary {\n\tvar s = useState(n)\n\treturn { \"v\": s }\n}\n\n## renders it.\ncomponent Shown(){ return (<Label text=\"x\"/>) }\n}\n" },
 		{ "name": "classname", "input": "@class_name Fancy\ncomponent Card(title:String){\nreturn (\n<Panel>\n<Label text={title}/>\n</Panel>\n)\n}\n" },
 		{ "name": "hook_return_hint", "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n" },
 		{ "name": "guard_return_null", "input": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (<Label text=\"x\" />)\n}\n" },

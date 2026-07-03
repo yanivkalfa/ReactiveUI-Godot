@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0] - 2026-07-04
+- **Directive bodies are code blocks (pairs with addon 0.7.0, BREAKING):** prep GDScript +
+  `return ( <markup> )` in every `@if/@for/@while/@case` body, recursively — full Unity-parity.
+  The old bare-markup body flags **GUITKX2103** live with the migration message; a hook call
+  inside a body flags **GUITKX2104**. Markup in prep values (`var badge = ( <HBox/> )`) gets
+  full intelligence.
+- **Format-on-save ships enabled** for `.guitkx` (defaultFormatter bound, tab size 2, spaces) —
+  the formatter emits the Unity-exact spaces-2 canonical style, embedded GDScript reflowed to
+  the same unit.
+- Fixed a reformat corruption: nested code at spaces-2 could lose a level (a `return` dedented
+  out of its `if`) because the indent unit was inferred from the base offset; all three
+  reindenters now infer from the step between indent widths.
+
 ## [0.7.1] - 2026-07-03
 - **Enter after a closing tag no longer over-indents.** The increase-indent rule matched any
   line ending in `>` — `</VBox>` included — so a new line after a closing tag gained an extra

@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":84,\"attrs\":[{\"at\":93,\"end\":144,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Bailout — unchanged children skip re-render\",\"vat\":100}],\"children\":[{\"at\":149,\"attrs\":[{\"at\":156,\"end\":190,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Parent state: %d\\\" % n[0]\",\"vat\":163}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":197,\"attrs\":[{\"at\":205,\"end\":228,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Re-render parent\",\"vat\":211},{\"at\":229,\"end\":268,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): n[1].call(n[0] + 1)\",\"vat\":239}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":275,\"attrs\":[{\"at\":282,\"end\":350,\"kind\":\"str\",\"name\":\"text\",\"value\":\"The child's props never change → its render count stays flat:\",\"vat\":288},{\"at\":351,\"end\":397,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":359}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":404,\"attrs\":[{\"at\":422,\"end\":436,\"kind\":\"str\",\"name\":\"label\",\"value\":\"static\",\"vat\":429}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"DemoBailoutChild\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":86,\"attrs\":[{\"at\":95,\"end\":146,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Bailout — unchanged children skip re-render\",\"vat\":102}],\"children\":[{\"at\":154,\"attrs\":[{\"at\":161,\"end\":195,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Parent state: %d\\\" % n[0]\",\"vat\":168}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":205,\"attrs\":[{\"at\":213,\"end\":236,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Re-render parent\",\"vat\":219},{\"at\":237,\"end\":276,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): n[1].call(n[0] + 1)\",\"vat\":247}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":286,\"attrs\":[{\"at\":301,\"end\":369,\"kind\":\"str\",\"name\":\"text\",\"value\":\"The child's props never change → its render count stays flat:\",\"vat\":307},{\"at\":378,\"end\":424,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":386}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":434,\"attrs\":[{\"at\":452,\"end\":466,\"kind\":\"str\",\"name\":\"label\",\"value\":\"static\",\"vat\":459}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBailoutChild\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 454,
+			"end": 487,
 			"start": 81
 		}
 	]

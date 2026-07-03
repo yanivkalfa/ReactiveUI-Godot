@@ -12,14 +12,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":38,\"attrs\":[],\"children\":[{\"at\":48,\"cases\":[{\"body_at\":76,\"body_markup\":\" <Label text=\\\"zero\\\" /> \",\"value\":\"0\"},{\"body_at\":116,\"body_markup\":\" <Label text=\\\"one\\\" /> \",\"value\":\"1\"}],\"default_body\":\" <Label text=\\\"many\\\" /> \",\"default_body_at\":154,\"subject\":\"v\",\"t\":\"match\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBox\"}]"
+			"tree": "[{\"at\":41,\"attrs\":[],\"children\":[{\"at\":54,\"cases\":[{\"body_at\":86,\"body_markup\":\"\\n          return (\\n            <Label text=\\\"zero\\\" />\\n          )\\n        \",\"value\":\"0\"},{\"body_at\":181,\"body_markup\":\"\\n          return (\\n            <Label text=\\\"one\\\" />\\n          )\\n        \",\"value\":\"1\"}],\"default_body\":\"\\n          return (\\n            <Label text=\\\"many\\\" />\\n          )\\n        \",\"default_body_at\":274,\"subject\":\"v\",\"t\":\"match\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 195,
-			"start": 35
+			"end": 372,
+			"start": 36
 		}
 	]
 }

@@ -432,19 +432,27 @@ function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number,
   if (!ctx.gen.endsWith("\n")) ctx.gen += "\n";
 }
 
-// Inferred space-indent width: the smallest positive run of leading spaces across `rawLines` (1 if
-// the source uses only tabs), so a tab weighs the same as one such run in indentDepth. Mirrors
-// guitkx.gd _indent_unit.
+// Inferred space-indent width: the minimum POSITIVE DIFFERENCE between distinct leading-space
+// widths — not the minimum width (that's the base offset; dividing by it folds nesting levels
+// together, the Phase D corruption find). One distinct width = old min-width behavior; tab-only
+// source keeps unit 1 (a tab = one level). Mirrors guitkx.gd _indent_unit.
 function indentUnit(rawLines: string[]): number {
-  let unit = 0;
+  const widths = new Set<number>();
   for (const raw of rawLines) {
     const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
     const lead = l.match(/^[\t ]*/)![0];
     let sp = 0;
     for (const c of lead) if (c === " ") sp++;
-    if (sp > 0 && (unit === 0 || sp < unit)) unit = sp;
+    if (sp > 0) widths.add(sp);
   }
-  return unit > 0 ? unit : 1;
+  if (widths.size === 0) return 1;
+  const sorted = [...widths].sort((a, b) => a - b);
+  let unit = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const d = sorted[i] - sorted[i - 1];
+    if (d > 0 && d < unit) unit = d;
+  }
+  return Math.max(unit, 1);
 }
 
 // Indentation depth of a line in whole levels: tab = `unit` columns, space = 1 column, rounded.

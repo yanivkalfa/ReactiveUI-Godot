@@ -4,6 +4,46 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-07-04
+
+**Directive bodies are code blocks — full Unity convergence (BREAKING).** A directive body
+(`@if/@elif/@else`, `@for`, `@while`, `@case/@default`) is no longer bare markup children: it is
+GDScript **preparation code plus `return ( <markup> )`**, exactly like ReactiveUIToolKit for
+Unity — and it nests recursively:
+
+```
+@for (it in items) {
+	var label = "row %s" % it
+	if it == null:
+		return null          # skip this item
+	return ( <Label key={ str(it) } text={ label } /> )
+}
+```
+
+### Breaking
+- **The pre-0.7 bare-markup body errors with `GUITKX2103`** ("a directive body returns its
+  markup — write `return ( <markup> )`"), live in the editor and at compile. Migrate a project
+  in one shot: `godot --headless --path . --script
+  res://addons/reactive_ui/dev/migrate_directive_bodies.gd -- res://<your-ui-dir>` (all bundled
+  examples are migrated).
+- **`.guitkx` canonical formatting is now spaces at width 2** (Unity-exact; "tab is 2 spaces").
+  `dev/reformat_all.gd` sweeps a project; the VS Code extension formats on save.
+
+### Added
+- **Prep code in directive bodies**, per-iteration scoping, `return null` / bare `return`
+  skip-guards, value returns (`return node_var`), and **markup values in prep statements and in
+  component setup** (`var badge = ( <HBox>…</HBox> )` — directives inside included), lowered in
+  place. Bodies run in the real function scope, so mutations behave like Unity's closures.
+- **`GUITKX2104`**: a hook call inside a directive body is an error (Unity HooksValidator
+  parity) — hooks must run unconditionally in setup.
+- Runtime-proven 4-level nesting (`@for → @if/@else → @for → @if` with prep vars at every
+  level): the kitchen-sink acceptance test renders its exact expected node tree.
+
+### IDE
+- VS Code extension **0.8.0** / language server **0.8.0**: the live tier, formatter (byte-parity
+  corpus), and diagnostics all speak the new grammar; format-on-save ships enabled for
+  `[guitkx]` with the spaces-2 defaults.
+
 ## [0.6.2] — 2026-07-03
 
 **Scan-window completeness + instant GDScript feedback.** Field follow-up to 0.6.1: a stale

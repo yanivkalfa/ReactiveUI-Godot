@@ -699,38 +699,65 @@ static func _top_level_colon(s: String) -> bool:
 		i += 1
 	return false
 
+## Phase D: a directive body is CODE (prep statements + directive-level returns), not markup
+## children -- Unity ParseControlBlockBody parity. Validation: split the body; the pre-0.7 form
+## (markup at statement level with no `return`) -> GUITKX2103 migration error; hook calls in the
+## body's code -> GUITKX2104 (Unity HooksValidator scans BodyCode identically); each markup
+## return's content parses to EXACTLY ONE root (0108), gets the loop key checks (0106/0019) when
+## the directive is a loop, and recurses through _validate_node.
 static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: int = -1, binder: String = "") -> void:
-	var parser := Markup.new()
-	var pr := parser.parse(body_src, 0, body_src.length())
-	if pr["error"] != "":
-		# T1.2: a malformed control-flow body is a compile ERROR carrying the inner parser's own code
-		# and position -- never a silent skip (Unity parity: codegen fails on every parser error).
-		diags.append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
+	var sp := _split_body(body_src)
+	if sp.has("error"):
+		var e: Dictionary = (sp["error"] as Dictionary).duplicate()
+		e["offset"] = _cbase(base, int(e.get("offset", -1)))
+		diags.append(e)
 		return
-	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null and (x as Dictionary).get("t", "") != "comment")
-	if is_loop:
-		if nodes.size() > 1:
-			# A loop body must have a single root (like a component) so each iteration yields one keyed
-			# child. Wrap siblings in a fragment <>...</> with distinct keys. (Parity: Unity UITKX0108.)
-			diags.append(D.make("GUITKX0108", D.ERROR, "a @for/@while body must contain exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size(), _cbase(base, int(nodes[1]["at"])), _node_len(nodes[1])))
-		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "frag":
-			# T3.4: fragment loop roots need keys too -- only the named <Fragment key={...}> can carry one.
-			if not _has_key(nodes[0]):
-				diags.append(D.make("GUITKX0106", D.WARNING, "fragment in @for/@while has no `key` -- use <Fragment key={ ... }> so reordered children reconcile correctly", _cbase(base, int(nodes[0]["at"])), 2))
-		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "expr":
-			# T3.4: an expression loop root can't be verified statically -- remind about keys.
-			diags.append(D.make("GUITKX0106", D.WARNING, "expression in @for/@while -- make sure the node it produces carries a stable `key` (e.g. V.fc(..., key))", _cbase(base, int(nodes[0]["at"])), 1))
-		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
-			if not _has_key(nodes[0]):
-				diags.append(D.make("GUITKX0106", D.WARNING, "element in @for/@while has no `key` -- add key= so reordered children reconcile correctly", _cbase(base, int(nodes[0]["at"])), _node_len(nodes[0])))
-			elif binder != "":
-				# T2.7 (Unity UITKX0019): the loop variable used DIRECTLY as the key -- positional keys
-				# defeat reconciliation on reorder; derive the key from a stable id on the item.
-				var ka := _key_attr(nodes[0])
-				if str(ka.get("kind", "")) == "expr" and str(ka.get("value", "")).strip_edges() == binder:
-					diags.append(D.make("GUITKX0019", D.WARNING, "loop variable `%s` used directly as the key -- use a stable unique identifier from the item instead" % binder, _cbase(base, int(ka.get("at", -1))), maxi(1, int(ka.get("end", 0)) - int(ka.get("at", 0)))))
-	for nx in nodes:
-		_validate_node(nx, diags, base)
+	if int(sp["legacy_at"]) != -1:
+		diags.append(D.make("GUITKX2103", D.ERROR, "a directive body returns its markup -- write `return ( <markup> )` (directive bodies are code blocks since 0.7, Unity parity)", _cbase(base, int(sp["legacy_at"])), 1))
+		return
+	for part in (sp["parts"] as Array):
+		var pd := part as Dictionary
+		if pd["t"] == "gd":
+			# GUITKX2104: hooks run per-render in component order -- a call inside a directive body
+			# executes conditionally/per-iteration and corrupts the hook sequence.
+			var seg := body_src.substr(int(pd["from"]), int(pd["to"]) - int(pd["from"]))
+			var h := _find_hook_call(seg)
+			if h != -1:
+				diags.append(D.make("GUITKX2104", D.ERROR, "hook called inside a directive body -- hooks must run unconditionally in component setup; call it there and reference the result", _cbase(base, int(pd["from"]) + h), 1))
+			continue
+		if not bool(pd.get("markup", false)):
+			continue
+		var parser := Markup.new()
+		var pr := parser.parse(body_src, int(pd["m_start"]), int(pd["m_end"]))
+		if pr["error"] != "":
+			# T1.2: a malformed return payload is a compile ERROR carrying the inner parser's own
+			# code and position -- never a silent skip (Unity parity).
+			diags.append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
+			return
+		var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null and (x as Dictionary).get("t", "") != "comment")
+		if nodes.size() != 1:
+			diags.append(D.make("GUITKX0108", D.ERROR, "a directive-body `return` must return exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size(), _cbase(base, int(pd["m_start"])), 1))
+			if nodes.is_empty():
+				continue
+		var root: Dictionary = nodes[0]
+		if is_loop and bool(pd.get("rewrite", true)):
+			# Each rewrite-target return yields one keyed child per iteration (Unity UITKX0106/0019).
+			if root.get("t", "") == "frag":
+				if not _has_key(root):
+					diags.append(D.make("GUITKX0106", D.WARNING, "fragment returned in @for/@while has no `key` -- use <Fragment key={ ... }> so reordered children reconcile correctly", _cbase(base, int(root["at"])), 2))
+			elif root.get("t", "") == "expr":
+				diags.append(D.make("GUITKX0106", D.WARNING, "expression returned in @for/@while -- make sure the node it produces carries a stable `key` (e.g. V.fc(..., key))", _cbase(base, int(root["at"])), 1))
+			elif root.get("t", "") == "el":
+				if not _has_key(root):
+					diags.append(D.make("GUITKX0106", D.WARNING, "element returned in @for/@while has no `key` -- add key= so reordered children reconcile correctly", _cbase(base, int(root["at"])), _node_len(root)))
+				elif binder != "":
+					# T2.7 (Unity UITKX0019): the loop variable used DIRECTLY as the key -- positional
+					# keys defeat reconciliation on reorder; derive it from a stable id on the item.
+					var ka := _key_attr(root)
+					if str(ka.get("kind", "")) == "expr" and str(ka.get("value", "")).strip_edges() == binder:
+						diags.append(D.make("GUITKX0019", D.WARNING, "loop variable `%s` used directly as the key -- use a stable unique identifier from the item instead" % binder, _cbase(base, int(ka.get("at", -1))), maxi(1, int(ka.get("end", 0)) - int(ka.get("at", 0)))))
+		for nx in nodes:
+			_validate_node(nx, diags, base)
 
 ## Squiggle width for a node-anchored diagnostic: `<Tag` for elements, 1 char otherwise.
 static func _node_len(nd: Dictionary) -> int:
@@ -1072,6 +1099,222 @@ static func _paren_holds_markup(body: String, from: int, to: int) -> bool:
 	var f := _first_real(body, from, to)
 	return f != -1 and (body[f] == "<" or body[f] == "@")
 
+# --- Phase D: directive-body splitter (Unity ParseControlBlockBody parity) ------------------------
+# Splits ONE directive body (raw code between the directive's braces) into ordered parts:
+#   { t:"gd", from, to }                                    verbatim GDScript prep segments
+#   { t:"ret", at, end, m_start, m_end, shape, depth, markup, rewrite }
+# shape: "paren" | "bare" (bare <Tag/>) | "value" | "null" | "void" (bare `return`).
+# `rewrite` false = the return lives inside a nested `func():` scope (indent-tracked): it belongs
+# to that lambda, so only its markup lowers -- the `return` keyword stays. Everything else is a
+# rewrite target for _emit_body_block (append/assign + continue).
+# `legacy_at` != -1 flags the pre-0.7 grammar: markup (or a nested @directive) at statement
+# position with no enclosing return -> GUITKX2103 migration error at that offset.
+# Offsets are body-relative; { error: Diag } on unclosed constructs.
+static func _split_body(body: String) -> Dictionary:
+	var n := body.length()
+	var lines: Array = Array(body.split("\n"))
+	var unit := _indent_unit(lines)
+	var anchor := -1
+	var anchor_any := -1
+	for l in lines:
+		var t := (l as String).strip_edges()
+		if t == "":
+			continue
+		var d := _indent_depth(l as String, unit)
+		if anchor_any == -1:
+			anchor_any = d
+		if not t.begins_with("#"):
+			anchor = d
+			break
+	if anchor == -1:
+		anchor = anchor_any
+	if anchor == -1:
+		anchor = 0
+	# per-line lambda floor: the innermost enclosing func-header depth (-1 = not inside a lambda).
+	# The header line itself is OUTSIDE its own lambda; a line at depth <= a header pops it.
+	var line_start: Array = [0]
+	for ci in n:
+		if body[ci] == "\n":
+			line_start.append(ci + 1)
+	var floors: Array = []
+	var fstack: Array = []
+	for li in lines.size():
+		var l := lines[li] as String
+		var t := l.strip_edges()
+		if t == "" or t.begins_with("#"):
+			floors.append(-1 if fstack.is_empty() else int(fstack[-1]))
+			continue
+		var d := _indent_depth(l, unit)
+		while not fstack.is_empty() and d <= int(fstack[-1]):
+			fstack.pop_back()
+		floors.append(-1 if fstack.is_empty() else int(fstack[-1]))
+		if _line_opens_func(l):
+			fstack.append(d)
+	var parts: Array = []
+	var rets := 0
+	var legacy_at := -1
+	var cursor := 0
+	var line_idx := 0
+	var bdepth := 0   # bracket depth across lines -- statement position requires depth 0
+	var i := 0
+	while i < n:
+		var k := L.skip_noncode(body, i)
+		if k != i:
+			i = k
+			continue
+		while line_idx + 1 < line_start.size() and int(line_start[line_idx + 1]) <= i:
+			line_idx += 1
+		var ls: int = int(line_start[line_idx])
+		var prefix := body.substr(ls, i - ls)
+		var at_stmt: bool = prefix.strip_edges() == "" and bdepth <= 0
+		var in_lambda: bool = int(floors[line_idx]) != -1
+		var c := body[i]
+		if c == "(" or c == "[" or c == "{":
+			bdepth += 1
+			i += 1
+			continue
+		if c == ")" or c == "]" or c == "}":
+			bdepth -= 1
+			i += 1
+			continue
+		if c == "<" and JsxScan._markup_at(body, i, n):
+			# Markup outside a `return`: at statement position it is the pre-0.7 body grammar
+			# (GUITKX2103); inside a value (`var x = ( <X/> )`, any bracket depth) the segment
+			# emitter splices it. Either way SKIP the whole element -- its attr lambdas may
+			# contain `return`s that must never be classified as body returns.
+			if at_stmt and not in_lambda:
+				if legacy_at == -1:
+					legacy_at = i
+			var ee := JsxScan._find_element_end(body, i, n)
+			i = n if ee == -1 else ee
+			continue
+		if c == "@" and at_stmt and not in_lambda and (L.keyword_at(body, i + 1, "if") or L.keyword_at(body, i + 1, "for") or L.keyword_at(body, i + 1, "while") or L.keyword_at(body, i + 1, "match")):
+			# a nested directive can only live INSIDE a return's markup now
+			if legacy_at == -1:
+				legacy_at = i
+			i += 1
+			continue
+		if not L.keyword_at(body, i, "return"):
+			i += 1
+			continue
+		var p := _skip_ws_only(body, i + 6)
+		var depth := _indent_depth(prefix, unit)
+		var pt := prefix.strip_edges()
+		if pt != "" and pt.ends_with(":"):
+			depth += 1   # `if x: return ...` -- the return is the opener's body
+		if in_lambda:
+			# lambda-owned return: only markup payloads need parts (lower in place, keep `return`)
+			if p < n and body[p] == "(":
+				var lc := L.find_matching(body, p)
+				if lc == -1:
+					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
+				if _paren_holds_markup(body, p + 1, lc):
+					_push_body_ret(parts, cursor, { "at": i, "end": lc + 1, "m_start": p + 1, "m_end": lc, "shape": "paren", "depth": depth, "markup": true, "rewrite": false })
+					cursor = lc + 1
+				i = lc + 1
+				continue
+			if p < n and body[p] == "<":
+				var lb := JsxScan._find_element_end(body, p, n)
+				if lb == -1:
+					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed markup in a `return`", p, 1) }
+				_push_body_ret(parts, cursor, { "at": i, "end": lb, "m_start": p, "m_end": lb, "shape": "bare", "depth": depth, "markup": true, "rewrite": false })
+				cursor = lb
+				i = lb
+				continue
+			i = p
+			continue
+		# directive-level return: ALWAYS a rewrite target
+		rets += 1
+		if p >= n or body[p] == "\n":
+			_push_body_ret(parts, cursor, { "at": i, "end": p, "m_start": p, "m_end": p, "shape": "void", "depth": depth, "markup": false, "rewrite": true })
+			cursor = p
+			i = p
+			continue
+		if body[p] == "(":
+			var pc := L.find_matching(body, p)
+			if pc == -1:
+				return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
+			_push_body_ret(parts, cursor, { "at": i, "end": pc + 1, "m_start": p + 1, "m_end": pc, "shape": "paren", "depth": depth, "markup": _paren_holds_markup(body, p + 1, pc), "rewrite": true })
+			cursor = pc + 1
+			i = pc + 1
+			continue
+		if body[p] == "<":
+			var bb := JsxScan._find_element_end(body, p, n)
+			if bb == -1:
+				return { "error": D.make("GUITKX0304", D.ERROR, "unclosed markup in a `return`", p, 1) }
+			_push_body_ret(parts, cursor, { "at": i, "end": bb, "m_start": p, "m_end": bb, "shape": "bare", "depth": depth, "markup": true, "rewrite": true })
+			cursor = bb
+			i = bb
+			continue
+		var se := _stmt_end(body, p)
+		var vt := body.substr(p, se - p).strip_edges()
+		var vshape := "null" if vt == "null" else ("void" if vt == "" else "value")
+		_push_body_ret(parts, cursor, { "at": i, "end": se, "m_start": p, "m_end": se, "shape": vshape, "depth": depth, "markup": false, "rewrite": true })
+		cursor = se
+		i = se
+	if cursor < n:
+		parts.append({ "t": "gd", "from": cursor, "to": n })
+	return { "parts": parts, "rets": rets, "legacy_at": legacy_at, "unit": unit, "anchor": anchor }
+
+static func _push_body_ret(parts: Array, cursor: int, ret: Dictionary) -> void:
+	if int(ret["at"]) > cursor:
+		parts.append({ "t": "gd", "from": cursor, "to": int(ret["at"]) })
+	ret["t"] = "ret"
+	parts.append(ret)
+
+## True when the line opens a lambda scope (a `func` token outside strings/comments).
+static func _line_opens_func(l: String) -> bool:
+	var i := 0
+	var n := l.length()
+	while i < n:
+		var j := L.skip_noncode(l, i)
+		if j != i:
+			i = j
+			continue
+		if L.keyword_at(l, i, "func"):
+			return true
+		i += 1
+	return false
+
+## End of the statement starting at `from`: the first newline at bracket depth 0 (strings/comments
+## skipped), or the body end -- GDScript statements end at EOL unless a bracket holds them open.
+static func _stmt_end(body: String, from: int) -> int:
+	var i := from
+	var n := body.length()
+	var depth := 0
+	while i < n:
+		var j := L.skip_noncode(body, i)
+		if j != i:
+			i = j
+			continue
+		var c := body[i]
+		if c == "(" or c == "[" or c == "{":
+			depth += 1
+		elif c == ")" or c == "]" or c == "}":
+			depth -= 1
+		elif c == "\n" and depth <= 0:
+			return i
+		i += 1
+	return n
+
+## The inline (expression-context) body shape: EXACTLY one directive-level return and no prep
+## statements. Returns { m_start, m_end, markup } ({} when the body is richer -> GUITKX0026).
+static func _body_single_ret(body: String) -> Dictionary:
+	var sp := _split_body(body)
+	if sp.has("error") or int(sp["legacy_at"]) != -1 or int(sp["rets"]) != 1:
+		return {}
+	var ret := {}
+	for part in (sp["parts"] as Array):
+		var pd := part as Dictionary
+		if pd["t"] == "gd":
+			if _has_statement(body.substr(int(pd["from"]), int(pd["to"]) - int(pd["from"]))):
+				return {}
+		elif bool(pd.get("rewrite", true)):
+			ret = { "m_start": int(pd["m_start"]), "m_end": int(pd["m_end"]), "markup": bool(pd.get("markup", false)) }
+		else:
+			return {}   # lambda-scope returns can't be the inline value
+	return ret
+
 ## T1.3: any real (non-ws, non-comment) content after the single top-level declaration is an error
 ## (Unity UITKX2105 parity: "Invalid top-level statement after function-style component declaration").
 ## A second `component`/`hook` used to be dropped SILENTLY while the LSP still indexed it -- completion
@@ -1237,7 +1480,15 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 			has_ret = true
 			break
 	if not has_ret:
-		var setup_block := _reindent_setup(_apply_hook_aliases(setup, skip_hooks))
+		# "JSX everywhere" (Phase D): value markup in SETUP (`var bla = ( <Box /> )`) splices in
+		# place; hoists from directives nested in that markup emit first at func-body level.
+		var saved_sl: Array = ctx["lines"]
+		ctx["lines"] = []
+		var spliced_setup := _splice_expr_markup(_apply_hook_aliases(setup, skip_hooks), ctx)
+		for h in ctx["lines"]:
+			out += str(h) + "\n"
+		ctx["lines"] = saved_sl
+		var setup_block := _reindent_setup(spliced_setup)
 		if setup_block != "":
 			out += setup_block + "\n"
 	else:
@@ -1254,7 +1505,15 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 		for part in early["parts"]:
 			if str(part["t"]) == "gd":
 				var seg := ebody.substr(int(part["from"]), int(part["to"]) - int(part["from"]))
-				var seg_block := _reindent_block(_apply_hook_aliases(seg, skip_hooks), eunit, eanchor)
+				var sb2 := _swap_base(ctx, _cbase(base, int(part["from"])))
+				var saved_gl2: Array = ctx["lines"]
+				ctx["lines"] = []
+				var spliced2 := _splice_expr_markup(_apply_hook_aliases(seg, skip_hooks), ctx)
+				for h2 in ctx["lines"]:
+					out += str(h2) + "\n"
+				ctx["lines"] = saved_gl2
+				_swap_base(ctx, sb2)
+				var seg_block := _reindent_block(spliced2, eunit, eanchor)
 				if seg_block != "":
 					out += seg_block + "\n"
 				continue
@@ -1484,29 +1743,110 @@ static func _emit_children_array(children: Array, ctx: Dictionary) -> String:
 # (or a fragment of several, or null when empty). Nested control flow recurses through _emit_expr,
 # so its pre-statements land at the caller's current indent (inside the branch/loop).
 # `base` = absolute source offset of body_src[0] (-1 unknown); swapped in for the nested parse.
-static func _emit_body(body_src: String, ctx: Dictionary, base: int = -1) -> String:
-	var parser := Markup.new()
-	var pr := parser.parse(body_src, 0, body_src.length())
-	if pr["error"] != "":
-		# T1.2: reachable only for bodies validation never re-parses (control flow nested in a JSX-value
-		# {expr}); append the parser's diagnostic so the T1.1 post-emit gate fails the compile.
+# --- Phase D: directive-body emission (Unity CSharpEmitter EmitIf/EmitFor parity) -----------------
+# A directive body is CODE (prep statements + directive-level returns). Lowering rewrites every
+# directive-level return in place -- `return ( <markup> )` / `return <Tag/>` / `return ( value )` /
+# `return value` -> sink assignment/append + `continue`; `return null` / bare `return` -> `continue`
+# -- inside an enclosing loop that supplies the early-exit: the REAL loop for @for/@while (append
+# sink), a single-iteration `for <id>_once in 1:` wrapper for @if/@match arms (assign sink). Unity
+# uses the identical rewrite for loops (RewriteReturnsForInline); its @if uses an IIFE with real
+# returns, but GDScript lambdas capture by VALUE (a body-mutated `while` counter would never
+# terminate), so the rewrite is applied uniformly. Returns inside nested `func():` scopes keep their
+# `return` (only the markup lowers). Bodies run in the real function scope, exactly like Unity's
+# reference-captured closures.
+
+## Emit one directive body into ctx.lines at the current indent. mode "assign" wraps the body in a
+## one-iteration loop and assigns `sink`; mode "append" emits into the caller's real loop appending
+## to `sink`. Always leaves at least one statement (valid GDScript block).
+static func _emit_body_block(body: String, ctx: Dictionary, base: int, sink: String, mode: String) -> void:
+	var before := (ctx["lines"] as Array).size()
+	var sp := _split_body(body)
+	if sp.has("error"):
 		if ctx.has("diags") and ctx["diags"] is Array:
-			(ctx["diags"] as Array).append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
+			var e: Dictionary = (sp["error"] as Dictionary).duplicate()
+			e["offset"] = _cbase(base, int(e.get("offset", -1)))
+			(ctx["diags"] as Array).append(e)
+		_line(ctx, "pass")
+		return
+	var once := ""
+	if mode == "assign":
+		once = "%s_once" % sink
+		_line(ctx, "for %s in 1:" % once)
+		ctx["indent"] += 1
+	var unit: int = int(sp["unit"])
+	var anchor: int = int(sp["anchor"])
+	var prev_base := _swap_base(ctx, base)
+	for part in (sp["parts"] as Array):
+		var pd := part as Dictionary
+		if pd["t"] == "gd":
+			var seg := body.substr(int(pd["from"]), int(pd["to"]) - int(pd["from"]))
+			# "JSX everywhere": value markup inside prep statements (`var n = ( <X/> )`) splices
+			# in place (Unity TransformBodyCode over BodyMarkupRanges). Hoists from directives
+			# nested in that markup land just before the segment at the block level (outer
+			# scope -- declared before use, always valid).
+			var gb := _swap_base(ctx, _cbase(base, int(pd["from"])))
+			var saved_gl: Array = ctx["lines"]
+			ctx["lines"] = []
+			var spliced := _splice_expr_markup(seg, ctx)
+			var hoists: Array = ctx["lines"]
+			ctx["lines"] = saved_gl
+			_swap_base(ctx, gb)
+			for h in hoists:
+				(ctx["lines"] as Array).append(h)
+			for l in spliced.split("\n"):
+				if (l as String).strip_edges() == "":
+					continue
+				var lvl: int = int(ctx["indent"]) + maxi(0, _indent_depth(l as String, unit) - anchor)
+				(ctx["lines"] as Array).append("\t".repeat(lvl) + _strip_leading_ws(l as String))
+			continue
+		# a return part: lower at the return's own depth so nested-hoist statements stay in scope
+		var lvl: int = int(ctx["indent"]) + maxi(0, int(pd["depth"]) - anchor)
+		var pad := "\t".repeat(lvl)
+		var shape := str(pd["shape"])
+		if shape == "null" or shape == "void":
+			(ctx["lines"] as Array).append(pad + "continue")
+			continue
+		var expr := ""
+		if bool(pd.get("markup", false)):
+			var saved_indent := int(ctx["indent"])
+			ctx["indent"] = lvl
+			expr = _emit_ret_markup(body, int(pd["m_start"]), int(pd["m_end"]), ctx)
+			ctx["indent"] = saved_indent
+		else:
+			expr = body.substr(int(pd["m_start"]), int(pd["m_end"]) - int(pd["m_start"])).strip_edges()
+		if not bool(pd.get("rewrite", true)):
+			# a markup return inside a nested func(): scope -- the return belongs to the lambda
+			(ctx["lines"] as Array).append(pad + "return " + expr)
+			continue
+		if mode == "assign":
+			(ctx["lines"] as Array).append(pad + "%s = %s" % [sink, expr])
+		else:
+			(ctx["lines"] as Array).append(pad + "%s.append(%s)" % [sink, expr])
+		(ctx["lines"] as Array).append(pad + "continue")
+	_swap_base(ctx, prev_base)
+	if (ctx["lines"] as Array).size() == before + (1 if mode == "assign" else 0):
+		_line(ctx, "pass")   # empty body -> keep the enclosing block valid
+	if mode == "assign":
+		ctx["indent"] -= 1
+
+## Parse + emit ONE return's markup [m_start, m_end) of `body` (offsets body-relative; ctx base is
+## already the body's base). Exactly one root is required (validation reports 0108; this recovers
+## with the first root / null). A directive root (`return ( @if ... )`) recurses naturally.
+static func _emit_ret_markup(body: String, m_start: int, m_end: int, ctx: Dictionary) -> String:
+	var parser := Markup.new()
+	var pr := parser.parse(body, m_start, m_end)
+	if pr["error"] != "":
+		if ctx.has("diags") and ctx["diags"] is Array:
+			(ctx["diags"] as Array).append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(int(ctx.get("base", -1)), maxi(0, int(pr["error_at"]))), 1))
 		return "null"
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null and (x as Dictionary).get("t", "") != "comment")
 	if nodes.is_empty():
 		return "null"
-	var prev := _swap_base(ctx, base)
-	var result: String
-	if nodes.size() == 1:
-		result = _emit_expr(nodes[0], ctx)
-	else:
-		var parts: Array = []
-		for nx in nodes:
-			parts.append(_emit_expr(nx, ctx))
-		result = "V.fragment([%s])" % ", ".join(parts)
-	_swap_base(ctx, prev)
-	return result
+	var expr := _emit_expr(nodes[0], ctx)
+	var rt := str((nodes[0] as Dictionary).get("t", ""))
+	if rt == "for" or rt == "while":
+		expr = "V.fragment(%s)" % expr   # a loop directly returned yields its node ARRAY
+	return expr
 
 static func _emit_if(nd: Dictionary, ctx: Dictionary) -> String:
 	if ctx.get("expr_mode", false):
@@ -1520,14 +1860,12 @@ static func _emit_if(nd: Dictionary, ctx: Dictionary) -> String:
 		var kw := "if" if i == 0 else "elif"
 		_line(ctx, "%s %s:" % [kw, br["cond"]])
 		ctx["indent"] += 1
-		var be := _emit_body(br["body_markup"], ctx, _cbase(nb, int(br["body_at"])))
-		_line(ctx, "%s = %s" % [id, be])
+		_emit_body_block(str(br["body_markup"]), ctx, _cbase(nb, int(br["body_at"])), id, "assign")
 		ctx["indent"] -= 1
 	if nd["else_body"] != null:
 		_line(ctx, "else:")
 		ctx["indent"] += 1
-		var ee := _emit_body(nd["else_body"], ctx, _cbase(nb, int(nd["else_body_at"])))
-		_line(ctx, "%s = %s" % [id, ee])
+		_emit_body_block(str(nd["else_body"]), ctx, _cbase(nb, int(nd["else_body_at"])), id, "assign")
 		ctx["indent"] -= 1
 	return id
 
@@ -1544,8 +1882,7 @@ static func _emit_loop(nd: Dictionary, ctx: Dictionary, kind: String) -> String:
 	else:
 		_line(ctx, "while %s:" % nd["header"])
 	ctx["indent"] += 1
-	var be := _emit_body(nd["body_markup"], ctx, _cbase(nb, int(nd["body_at"])))
-	_line(ctx, "%s.append(%s)" % [id, be])
+	_emit_body_block(str(nd["body_markup"]), ctx, _cbase(nb, int(nd["body_at"])), id, "append")
 	ctx["indent"] -= 1
 	return id
 
@@ -1563,33 +1900,32 @@ static func _emit_match(nd: Dictionary, ctx: Dictionary) -> String:
 	for c in cases:
 		_line(ctx, "%s:" % c["value"])
 		ctx["indent"] += 1
-		var be := _emit_body(c["body_markup"], ctx, _cbase(nb, int(c["body_at"])))
-		_line(ctx, "%s = %s" % [id, be])
+		_emit_body_block(str(c["body_markup"]), ctx, _cbase(nb, int(c["body_at"])), id, "assign")
 		ctx["indent"] -= 1
 	if nd["default_body"] != null:
 		_line(ctx, "_:")
 		ctx["indent"] += 1
-		var de := _emit_body(nd["default_body"], ctx, _cbase(nb, int(nd["default_body_at"])))
-		_line(ctx, "%s = %s" % [id, de])
+		_emit_body_block(str(nd["default_body"]), ctx, _cbase(nb, int(nd["default_body_at"])), id, "assign")
 		ctx["indent"] -= 1
 	ctx["indent"] -= 1
 	return id
 
 # --- inline (expression-context) control-flow lowering [audit #17] ---
 # Used when control-flow appears inside a JSX-VALUE ({expr} / lambda return), where hoisted
-# render-level statements would reference out-of-scope lambda locals. `@if`/`@elif`/`@else` become a
-# (possibly nested) ternary; `@for` becomes `.map`. Bodies recurse through _emit_body with expr_mode
-# still on, so nested control-flow inlines too.
+# render-level statements would reference out-of-scope lambda locals. Phase D: a directive body is
+# CODE, so the inline forms require a body that is EXACTLY one markup return with no prep
+# statements -- `@if` becomes a ternary of the lowered returns, `@for` becomes `.map`. Anything
+# richer cannot be an expression: GUITKX0026, lift it to the top-level markup.
 
 static func _emit_if_inline(nd: Dictionary, ctx: Dictionary) -> String:
 	var nb: int = int(ctx.get("base", -1))
 	var branches: Array = nd["branches"]
 	var acc := "null"
 	if nd["else_body"] != null:
-		acc = _emit_body(nd["else_body"], ctx, _cbase(nb, int(nd["else_body_at"])))
+		acc = _emit_inline_body(str(nd["else_body"]), ctx, _cbase(nb, int(nd["else_body_at"])), nd)
 	for i in range(branches.size() - 1, -1, -1):
 		var br: Dictionary = branches[i]
-		var be := _emit_body(br["body_markup"], ctx, _cbase(nb, int(br["body_at"])))
+		var be := _emit_inline_body(str(br["body_markup"]), ctx, _cbase(nb, int(br["body_at"])), nd)
 		acc = "(%s if (%s) else %s)" % [be, br["cond"], acc]
 	return acc
 
@@ -1599,8 +1935,25 @@ static func _emit_for_inline(nd: Dictionary, ctx: Dictionary) -> String:
 	var split := _split_for_header(str(nd["header"]))
 	if split.is_empty():
 		return _expr_ctrl_unsupported(ctx, "@for (could not parse the loop header)", nd)
-	var be := _emit_body(nd["body_markup"], ctx, _cbase(int(ctx.get("base", -1)), int(nd["body_at"])))
+	var be := _emit_inline_body(str(nd["body_markup"]), ctx, _cbase(int(ctx.get("base", -1)), int(nd["body_at"])), nd)
 	return "(%s).map(func(%s): return %s)" % [split["iter"], split["var"], be]
+
+## The single-return inline body: exactly one directive-level return (markup or value), no prep
+## statements. Emits the return's expression; anything else -> 0026 ("lift it out").
+static func _emit_inline_body(body: String, ctx: Dictionary, base: int, nd: Dictionary) -> String:
+	var one := _body_single_ret(body)
+	if one.is_empty():
+		return _expr_ctrl_unsupported(ctx, "a directive with prep code or multiple returns", nd)
+	var prev := _swap_base(ctx, base)
+	var expr: String
+	if bool(one.get("markup", false)):
+		expr = _emit_ret_markup(body, int(one["m_start"]), int(one["m_end"]), ctx)
+	else:
+		expr = body.substr(int(one["m_start"]), int(one["m_end"]) - int(one["m_start"])).strip_edges()
+		if expr == "":
+			expr = "null"
+	_swap_base(ctx, prev)
+	return expr
 
 static func _split_for_header(header: String) -> Dictionary:
 	var at := header.find(" in ")
@@ -1705,7 +2058,12 @@ static func _strip_leading_ws(s: String) -> String:
 ## Inferred space-indent width: the smallest positive run of leading spaces seen across `lines` (1 if
 ## the source uses only tabs). Lets a tab weigh the same as one such space-run in _indent_depth.
 static func _indent_unit(lines: Array) -> int:
-	var unit := 0
+	# The space-unit is the minimum POSITIVE DIFFERENCE between distinct leading-space widths —
+	# NOT the minimum width itself: a spaces-2 block anchored at a base offset (widths 4/6/8)
+	# has min-width 4, and dividing by 4 folds depths 6 and 8 into the same level, dedenting a
+	# nested `return` out of its guard on reformat (Phase D corruption find). A single distinct
+	# width keeps the old min-width behavior; tab-only blocks keep unit 1 (a tab = one level).
+	var widths := {}
 	for l in lines:
 		var s := l as String
 		var sp := 0
@@ -1717,9 +2075,18 @@ static func _indent_unit(lines: Array) -> int:
 				continue
 			else:
 				break
-		if sp > 0 and (unit == 0 or sp < unit):
-			unit = sp
-	return unit if unit > 0 else 1
+		if sp > 0:
+			widths[sp] = true
+	if widths.is_empty():
+		return 1
+	var sorted: Array = widths.keys()
+	sorted.sort()
+	var unit := int(sorted[0])
+	for i in range(1, sorted.size()):
+		var d := int(sorted[i]) - int(sorted[i - 1])
+		if d > 0 and d < unit:
+			unit = d
+	return maxi(unit, 1)
 
 ## Indentation depth of a line in whole levels: a tab = `unit` columns, a space = 1 column, rounded.
 static func _indent_depth(s: String, unit: int) -> int:

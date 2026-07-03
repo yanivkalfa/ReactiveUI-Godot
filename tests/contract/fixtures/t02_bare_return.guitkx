@@ -1,3 +1,5 @@
-component X() {
-	return <Label text="hi" />
+component X {
+  return (
+    <Label text="hi" />
+  )
 }

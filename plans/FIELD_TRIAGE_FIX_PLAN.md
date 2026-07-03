@@ -263,19 +263,90 @@ immediately.
 
 ---
 
-## Phase D — directive-body returns, HARD Unity convergence (next wave, user-decided 2026-07-03)
+## Phase D — directive-body returns, HARD Unity convergence — branch `feat/directive-body-returns`, addon **0.7.0** + ext/lsp **0.8.0** (breaking pre-1.0)
 
-> USER DECISIONS: (1) NO bare-markup shorthand kept — directive bodies converge on Unity's
-> grammar exactly, even though every existing demo/golden migrates. (2) Directive bodies are
-> mini-components WITHOUT hooks (hook calls inside them = diagnostic; Unity's hook-context rule).
-> (3) Formatter/indent = Unity exactly: spaces, width 2, format-on-save via configurationDefaults.
-> Spec-by-example: Unity `Samples/Components/UitkxTestFileDoNotTouch/UitkxTestFileDoNotTouch.uitkx`
-> (4-deep nesting, prep code + `return ( <markup> )`, `return null` skip-guards,
-> `return ( @if ... )`, setup-code JSX vars with directives, local funcs returning markup).
-> Scope: guitkx_markup.gd body grammar + guitkx.gd lowering (per-iteration prep scoping) + TS
-> mirror (markup.ts/liveMarkup/virtualDoc/semanticTokens/formatter) + contract goldens + ALL
-> demos migrated + docs + migration-grade diagnostic for the old form. Breaking pre-1.0 →
-> addon 0.7.0 / ext 0.8.0. Detailed task breakdown to be written when the wave starts.
+> USER DECISIONS (2026-07-03, verbatim): (1) "No we dont keep it, we stick to reactiveUIToolkit
+> unity. and do it properly even if it mean refactor things" — NO bare-markup shorthand; every
+> demo/golden/doc migrates. (2) "except it cannot have hooks" — directive bodies are
+> mini-components WITHOUT hooks (diagnostic; Unity HooksValidator scans BodyCode the same way).
+> (3) "tab is 2 spaces" — Unity-exact: spaces, width 2, format-on-save.
+> Spec-by-example: Unity `Samples/Components/UitkxTestFileDoNotTouch/UitkxTestFileDoNotTouch.uitkx`.
+
+### Unity architecture of record (verified in source 2026-07-03)
+- **Parser** (`UitkxParser.ParseControlBlockBody:157`): a directive body is RAW HOST CODE
+  (`BodyCode`, brace-matched), with JSX ranges found for splicing (`FindJsxBlockRanges` =
+  paren-wrapped, `FindBareJsxRanges` = bare) + `ParseBodyForIde` (first top-level `return (...)`
+  content parsed as markup AST for IDE features, nested directives included).
+- **Emitter** (`CSharpEmitter.cs:1918-2010`): `@if` → IIFE `((Func<VNode>)(() => { if.. { body
+  with REAL returns, JSX lowered in place } .. return null; }))()`; `@for/@while/@foreach` →
+  IIFE building `List<VNode> __r` where body top-level returns are REWRITTEN
+  (`RewriteReturnsForInline(code, "__r")`) to append-and-continue. Fall-through = null/absent.
+- **Hooks rule** (`HooksValidator.cs:60-98`): BodyCode scanned for hook calls → error.
+- **GDScript lowering (design v2 — REVISED during D0)**: lambdas are OUT — GD lambdas capture
+  by VALUE, so a lambda-wrapped `@while (i < n) { i += 1 ... }` never terminates and body
+  mutations silently vanish (Unity C# closures capture by REFERENCE; a lambda strategy would
+  diverge observably). Instead, Unity's rewrite technique applied UNIFORMLY: the body's
+  directive-level returns are rewritten in place — `return ( <markup> )` → `<target> = /
+  .append(<lowered>)` + `continue`; `return null` / bare `return` → `continue` — inside an
+  enclosing loop that provides the early-exit: the REAL loop for `@for/@while` (append target),
+  a single-iteration `for __rui_once in 1:` wrapper for `@if/@elif/@else/@match` arms (assign
+  target). Returns inside nested `func():` scopes are NOT rewritten (indent-tracked scope
+  skip); a directive-body `return <value>` that is neither markup nor null → error. Bodies run
+  in the real function scope (mutations behave exactly like Unity). Reuses Phase C's ret-span
+  scan + in-place lowering + `_reindent_block` geometry.
+
+### Tasks
+- **D0 ✅ Formatter/config parity** — landed (this branch). FmtOptions + guitkx_formatter.gd
+  defaults → space/2; `[guitkx]` configurationDefaults (defaultFormatter, formatOnSave,
+  autoIndent full, tabSize 2, insertSpaces, detectIndentation false); embedded reflow converts
+  gdscript-fmt tab depth to the document unit. BONUS FIND: `_indent_unit` (GD + both TS
+  mirrors) inferred the unit as the MIN WIDTH — the base offset — folding spaces-2 nesting
+  levels together and dedenting a nested `return` out of its guard on reformat; now the min
+  positive delta between distinct widths (sample-idempotency sweep caught it). Corpus
+  regenerated (14 cases, spaces-2). Repo-wide reformat deferred into D5 (files migrate anyway).
+- **D1 ✅ (landed `ae5d55a`) GD markup grammar:** `_parse_if/_parse_loop/_parse_match` bodies → `body_code` model:
+  raw text (parser stays dumb — Unity parity); a new compiler-side splitter (adapt
+  `_split_return:963`'s scan) classifies every DIRECTIVE-LEVEL return: markup-paren / bare
+  markup / `return null` / bare `return` / VALUE return (`return node_var` — LEGAL, rewritten
+  like any other; Unity splices it verbatim). Returns inside nested `func():` scopes are found
+  by indent-tracked func-header stack and are NOT body returns (their markup still lowers in
+  place, Phase C behavior). Markup content present with NO body return → **GUITKX2103**
+  migration error ("a directive body returns its markup — write `return ( <markup> )`");
+  code-only bodies with no return are legal (produce nothing, Unity parity). New node shapes
+  documented in the mirror header (markup.ts D4). Hooks scan → **GUITKX2104** (D2).
+- **D2 ✅ (landed `ae5d55a` GD + `f9d806e` live) No-hooks-in-directive-bodies diagnostic**
+  (both sides): GUITKX2104 via the shared `_find_hook_call`/`findHookCall` over body gd segments.
+- **D3 ✅ (landed `ae5d55a`) GD lowering:** `_emit_if/_emit_loop/_emit_match` → the lambda-IIFE design above, prep
+  code spliced verbatim (re-indent via Phase C `_reindent_block`), markup returns lowered in
+  place; expr_mode variants collapse into the same IIFE form (a lambda call IS an expression —
+  `@while/@match` inside {expr} become legal, GUITKX0026 narrows/retires).
+- **D4 ✅ (landed `f9d806e`) TS mirror:** splitBody line-mirror + fmtBody corpus byte-parity +
+  live 2103/2104/per-return 0108/0106 + recursion. virtualDoc keeps neutralizing bodies inside
+  windows (flow-correct; body-prep embedded analysis noted as follow-up polish). Original scope: markup.ts grammar; virtualDoc splices body prep code as ANALYZABLE
+  GDScript (embedded diagnostics inside directive bodies — new capability); liveMarkup
+  structure walk + new diagnostics live; semanticTokens; formatGuitkx emits the new form.
+- **D5 ✅ (landed `4a27efb` + reformat sweep) Migration:** `dev/migrate_directive_bodies.gd`
+  (loops first-legacy-wrap + rescan; .gdignore-aware, explicit roots win) migrated 8 demos + 14
+  fixtures + every inline test source; `dev/reformat_all.gd` swept 99 files to spaces-2; goldens
+  regenerated twice (migration, then reformat). Original scope: all 43 examples/demos + fixtures + contract goldens (regen via
+  contract_dump) + guitkx_test pins flipped to the new grammar.
+- **D6 ✅ Runtime proof:** `_test_phase_d_bodies` — the kitchen-sink 4-deep nesting renders its
+  exact 16-label tree (null-skip and @else both load-bearing); demos 30/30. Original scope: demos suite + GDScript.new() render tests incl. a 4-deep nested case
+  mirroring the Unity kitchen-sink file (prep vars per level, `return null` skip, else-branch).
+- **D7 ✅ Docs + release:** diagnostics rows 2103/2104, CHANGELOGs (root 0.7.0 + vscode 0.8.0
+  with migration notes), addon 0.7.0 + ext/lsp 0.8.0. Original scope: language-reference directive section rewritten, Unity-differences
+  page updated, CHANGELOGs, addon 0.7.0 + ext/lsp 0.8.0, migration notes (loud).
+- **D8 ✅ Gates (final green 2026-07-04):** guitkx_build 42/0, contract 63 goldens, core 114,
+  style 25, router 18+37, update, demos 30/30, guitkx ALL PASSED (incl. the 4-deep runtime
+  proof), TS 174/174, ext + docs builds. GATE FIND (fixed `5517e52`): the module-member re-emit
+  dropped `-> Type` hints (cascading `:=` inference failures through five demo files — the
+  demos hang) and deleted `##` member docs; both formatters fixed, damaged files restored +
+  re-swept, corpus case `module_docs_and_hint` pins it (the old corpus was blind — its expected
+  outputs came from the same lossy emitter). Pristine-clone replay = CI on the PR.
+
+- **Accept (phase):** the Unity kitchen-sink patterns (translated to GDScript expressions)
+  compile and render in guitkx; old bare-markup bodies error with the migration message; hooks
+  in a body error; `.guitkx` files format to spaces-2 on save; suites green.
 
 ---
 

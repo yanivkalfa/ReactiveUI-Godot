@@ -3,8 +3,8 @@
 ## The component-tree router showcase. The route table (V.routes/route/outlet/nav_link) takes
 ## vnode/callback props rather than markup children, so the table lives as an embedded { expression }
 ## inside DemoRouterInner; DemoRouter just provides the router context.
-component DemoRouter() {
-	return (
-		{ V.router({ "initial": "/" }, [V.fc(DemoRouterInner.render)]) }
-	)
+component DemoRouter {
+  return (
+    { V.router({ "initial": "/" }, [V.fc(DemoRouterInner.render)]) }
+  )
 }

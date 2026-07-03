@@ -1,6 +1,8 @@
 component X(ready: bool = false) {
-	if not ready:
-		return ( <Label text="early" /> )
-	var y = 2
-	return ( <Button text="late" /> )
+  if not ready:
+    return ( <Label text="early" /> )
+  var y = 2
+  return (
+    <Button text="late" />
+  )
 }

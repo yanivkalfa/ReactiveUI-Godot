@@ -9,7 +9,7 @@
 		{
 			"code": "GUITKX0150",
 			"len": 16,
-			"off": 67,
+			"off": 82,
 			"severity": 1
 		}
 	],
@@ -18,14 +18,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":50,\"attrs\":[],\"children\":[{\"at\":60,\"attrs\":[],\"children\":[{\"at\":67,\"t\":\"text\",\"value\":\"Count: {n} items\"}],\"line\":4,\"t\":\"el\",\"tag\":\"label\"},{\"at\":95,\"attrs\":[],\"children\":[{\"at\":102,\"code\":\"n\",\"t\":\"expr\",\"vat\":104},{\"at\":108,\"t\":\"text\",\"value\":\"at node start\"}],\"line\":5,\"t\":\"el\",\"tag\":\"label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":53,\"attrs\":[],\"children\":[{\"at\":66,\"attrs\":[],\"children\":[{\"at\":82,\"t\":\"text\",\"value\":\"Count: {n} items\"}],\"line\":4,\"t\":\"el\",\"tag\":\"label\"},{\"at\":120,\"attrs\":[],\"children\":[{\"at\":136,\"code\":\"n\",\"t\":\"expr\",\"vat\":138},{\"at\":150,\"t\":\"text\",\"value\":\"at node start\"}],\"line\":7,\"t\":\"el\",\"tag\":\"label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 141,
-			"start": 47
+			"end": 193,
+			"start": 48
 		}
 	]
 }
