@@ -61,8 +61,10 @@ static func _load_vocabulary() -> Dictionary:
 	var text := FileAccess.get_file_as_string(_VOCAB_PATH)
 	if text.is_empty():
 		# The editor's first-scan window: `res://` reads can come back EMPTY for the whole scan
-		# (field capture 2026-07-03 -- every per-file compile of a cold open failed the read). The
-		# absolute OS path bypasses the res:// indirection, which does read fine mid-scan.
+		# (field capture 2026-07-03 -- every per-file compile of a cold open failed the read). Try
+		# the absolute OS path too: cheap, and it covers environments where only the res://
+		# indirection is unavailable -- though the 4.7 cold-open replay showed BOTH paths fail
+		# inside the scan window itself, so the real safety is the empty-check + hold below.
 		var f := FileAccess.open(ProjectSettings.globalize_path(_VOCAB_PATH), FileAccess.READ)
 		if f != null:
 			text = f.get_as_text()
