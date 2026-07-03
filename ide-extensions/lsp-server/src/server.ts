@@ -60,6 +60,7 @@ import {
   findTag,
   STYLE_KEYS,
   BUILTIN_MEMBERS,
+  VOCABULARY,
 } from "./schema";
 
 const connection = createConnection(ProposedFeatures.all);
@@ -658,7 +659,26 @@ function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
 function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic[] {
   const sc = readSidecar(uriToProjectPath(doc.uri));
   const text = doc.getText();
-  if (!sc || sc.src_hash !== srcHash(text)) return live;
+  if (!sc) return live;
+  if (sc.src_hash !== srcHash(text)) {
+    // T3.3: while the buffer diverges from the last compile, entries for codes the live tier ALSO
+    // computes are dropped (the live tier owns them now), but COMPILER-ONLY codes are kept with a
+    // stale marker instead of vanishing on the first keystroke. Their offsets belong to the old
+    // text -- clamp; the marker tells the user the position is approximate until the next save.
+    const liveSet = new Set(VOCABULARY.live);
+    const stale: Diagnostic[] = [];
+    for (const d of sc.diagnostics) {
+      if (!d.code || liveSet.has(d.code)) continue;
+      const off = d.off >= 0 ? Math.min(text.length, cpToUtf16(text, Math.min(d.off, text.length))) : 0;
+      stale.push({
+        severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
+        range: { start: doc.positionAt(off), end: doc.positionAt(Math.min(text.length, off + Math.max(1, d.len))) },
+        message: `${d.code}: ${d.message} (from the last compile -- position may have shifted; recompiles on save)`,
+        source: "guitkx (compiler, stale)",
+      });
+    }
+    return stale.length ? [...live, ...stale] : live;
+  }
   const liveCodes = new Set<string>();
   const liveCodeLines = new Set<string>();
   for (const d of live) {
@@ -1434,7 +1454,8 @@ function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
     severity: DiagnosticSeverity.Hint,
     tags: [DiagnosticTag.Unnecessary],
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
-    message: "Unreachable code after the component's return — the compiler drops it.",
+    // The code prefix makes the sidecar's compile-time copy dedupe away ((code,line) key -- T3.2/T3.3).
+    message: "GUITKX0114: Unreachable code after the component's return — the compiler drops it.",
     source: "guitkx",
   }));
 }
@@ -1599,7 +1620,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
         const scope = scopes[scopes.length - 1];
         if (scope.has(keySig)) {
           diags.push({
-            severity: DiagnosticSeverity.Warning,
+            severity: DiagnosticSeverity.Error, // T3.2: duplicate keys break reconciliation -- error on both surfaces
             range: { start: doc.positionAt(tag.keyStart), end: doc.positionAt(tag.keyEnd) },
             message: `GUITKX0104: duplicate key '${keySig.slice(2)}' among sibling elements.`,
             source: "guitkx",

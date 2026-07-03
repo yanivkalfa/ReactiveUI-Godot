@@ -40,3 +40,14 @@ test("virtualDoc HOOK_STUBS names are exactly the vocabulary hook list", () => {
     "hook list drifted between vocabulary.json and virtualDoc HOOK_STUBS",
   );
 });
+
+// T3.2/T3.3: the severity table + live-code list are the single source for surface consistency.
+// The GD twin (guitkx_test.gd _test_severity_table) regex-pins every compiler D.make() site to it.
+test("T3.2: severity table covers the live-code list and pins the reconciled severities", () => {
+  const sev = VOCABULARY.severities as Record<string, string>;
+  assert.ok(sev && Object.keys(sev).length >= 30, "severities table present");
+  for (const c of VOCABULARY.live as string[]) assert.ok(sev[c], `live code ${c} missing a severity`);
+  assert.equal(sev["GUITKX0104"], "error"); // duplicate keys break reconciliation
+  assert.equal(sev["GUITKX0114"], "hint"); // unreachable = dimmed dead code
+  assert.equal(sev["GUITKX2203"], "warning"); // hook naming lint
+});

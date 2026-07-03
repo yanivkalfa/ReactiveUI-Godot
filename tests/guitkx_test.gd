@@ -31,6 +31,7 @@ func _run() -> void:
 	_test_t27_diag_ports()
 	_test_t23_uss()
 	_test_t35_parser_bugs()
+	_test_severity_table()
 	_test_p2_markup_features()
 	_test_return_null_guard()
 	_test_jsx_value()
@@ -342,6 +343,29 @@ func _test_t27_diag_ports() -> void:
 	var src121 := "component B() {\n\treturn ( <texture_rect texture=\"res://project.godot\" /> )\n}\n"
 	var r121 := RUIGuitkx.compile(src121, "B")
 	_check_true(not r121["ok"] and _has_code(r121, "GUITKX0121"), "T2.7: wrong-type asset errors 0121 (got %s)" % str(r121["diagnostics"]))
+
+func _test_severity_table() -> void:
+	# T3.2: one severity per code, everywhere -- vocabulary.json `severities` is the single source and
+	# this tripwire pins every D.make() literal in the compiler to it.
+	var vocab: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://addons/reactive_ui/guitkx/vocabulary.json"))
+	var sev_table: Dictionary = vocab.get("severities", {})
+	_check_true(not sev_table.is_empty(), "T3.2: severities table present")
+	var src := FileAccess.get_file_as_string("res://addons/reactive_ui/guitkx/guitkx.gd")
+	var re := RegEx.new()
+	re.compile("D\\.make\\(\"(GUITKX\\d+)\", D\\.(ERROR|WARNING|HINT)")
+	var names := { "ERROR": "error", "WARNING": "warning", "HINT": "hint" }
+	var checked := 0
+	for m in re.search_all(src):
+		var code := m.get_string(1)
+		var sev := str(names[m.get_string(2)])
+		if not sev_table.has(code):
+			_fail("T3.2: %s missing from the severity table" % code)
+			continue
+		_check_true(str(sev_table[code]) == sev, "T3.2: %s severity matches the table (site %s vs table %s)" % [code, sev, sev_table[code]])
+		checked += 1
+	_check_true(checked >= 25, "T3.2: table-driven check saw %d sites" % checked)
+	for lc in vocab.get("live", []):
+		_check_true(sev_table.has(lc), "T3.2: live code %s has a severity" % str(lc))
 
 func _test_t35_parser_bugs() -> void:
 	# T3.5: a commented `#elif` is NOT a ghost branch anymore -- it falls to literal text.

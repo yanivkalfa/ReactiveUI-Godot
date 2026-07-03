@@ -303,7 +303,8 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	var unreach_first := _first_real(body, int(split["m_end"]) + 1, body.length())
 	if unreach_first != -1:
 		var unreach_last := _last_real(body, int(split["m_end"]) + 1, body.length())
-		diags.append(D.make("GUITKX0114", D.WARNING, "unreachable code after the component's markup return -- a component has a single return; later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
+		# T3.2: unreachable code is a HINT (dimmed dead code), matching the live tier's Unnecessary tag.
+		diags.append(D.make("GUITKX0114", D.HINT, "unreachable code after the component's markup return -- a component has a single return; later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
 	var parser := Markup.new()
 	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
@@ -534,6 +535,13 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: 
 			# A loop body must have a single root (like a component) so each iteration yields one keyed
 			# child. Wrap siblings in a fragment <>...</> with distinct keys. (Parity: Unity UITKX0108.)
 			diags.append(D.make("GUITKX0108", D.ERROR, "a @for/@while body must contain exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size(), _cbase(base, int(nodes[1]["at"])), _node_len(nodes[1])))
+		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "frag":
+			# T3.4: fragment loop roots need keys too -- only the named <Fragment key={...}> can carry one.
+			if not _has_key(nodes[0]):
+				diags.append(D.make("GUITKX0106", D.WARNING, "fragment in @for/@while has no `key` -- use <Fragment key={ ... }> so reordered children reconcile correctly", _cbase(base, int(nodes[0]["at"])), 2))
+		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "expr":
+			# T3.4: an expression loop root can't be verified statically -- remind about keys.
+			diags.append(D.make("GUITKX0106", D.WARNING, "expression in @for/@while -- make sure the node it produces carries a stable `key` (e.g. V.fc(..., key))", _cbase(base, int(nodes[0]["at"])), 1))
 		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
 			if not _has_key(nodes[0]):
 				diags.append(D.make("GUITKX0106", D.WARNING, "element in @for/@while has no `key` -- add key= so reordered children reconcile correctly", _cbase(base, int(nodes[0]["at"])), _node_len(nodes[0])))
@@ -564,7 +572,8 @@ static func _check_dup_keys(children: Array, diags: Array, base: int = -1) -> vo
 			var ka := _key_attr(c)
 			var at: int = int(ka.get("at", -1))
 			var alen: int = maxi(1, int(ka.get("end", 0)) - at) if at >= 0 else 1
-			diags.append(D.make("GUITKX0104", D.WARNING, "duplicate key '%s' among sibling elements" % k.substr(2), _cbase(base, at), alen))
+			# T3.2: duplicate keys break reconciliation outright -- ERROR on both surfaces.
+			diags.append(D.make("GUITKX0104", D.ERROR, "duplicate key '%s' among sibling elements" % k.substr(2), _cbase(base, at), alen))
 		seen[k] = true
 
 ## The `key` attribute Dictionary of an element ({} when absent).

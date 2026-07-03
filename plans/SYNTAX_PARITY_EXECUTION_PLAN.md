@@ -379,7 +379,7 @@ CHANGELOG lists every old→new pair; sidecar v2 (T0.2) carries new codes only; 
 (compiler, LSP, tests, fixtures, docs, native editor) for `GUITKX0` and update atomically.
 **Done when.** No code number means different things across the two ecosystems; concordance page live (T6.1).
 
-### T3.2 — Severity + surface consistency per code  · effort: small · Status: ⬜
+### T3.2 — Severity + surface consistency per code  · effort: small · Status: ✅ (vocabulary.json gained `severities` (every code) — the single severity source, pinned by a GD tripwire that regex-scans every `D.make()` literal in the compiler against the table and a TS twin asserting the reconciled trio (0104 error / 0114 hint / 2203 warning); 0104 duplicate-key is now ERROR on both surfaces (breaks reconciliation outright — t12 golden flipped); 0114 unreachable is HINT everywhere and the live message gained its code prefix so the sidecar copy dedupes via the (code,line) key; 0113 error-failing-compile was done in T1.1; 0103 warning-both was already true)
 One table (in `vocabulary.json`) is the single severity source; live tier, sidecar, compiler, dock all
 read it. Fix the known offenders: 0113→0026 = error failing compile (done via T1.1); unreachable 0107 =
 hint everywhere + deduped (kill the double report `server.ts:1414-1422` vs `657-661` — the live tier
@@ -388,7 +388,7 @@ emits it, the sidecar copy is suppressed by identity-dedupe from T3.3); 0103 nam
 **error live, error compile** (Unity IDE = error; be consistent rather than copying Unity's internal
 inconsistency). Every remaining code: assert one severity in a table-driven test.
 
-### T3.3 — Sidecar + dedupe correctness  · effort: small · Status: ⬜
+### T3.3 — Sidecar + dedupe correctness  · effort: small · Status: ✅ ((code,line) dedupe landed in T0.2; NEW: while the buffer diverges from the last compile (hash mismatch), COMPILER-ONLY codes (∉ vocabulary.json `live`) are kept with a "(from the last compile … recompiles on save)" marker and clamped best-effort positions instead of vanishing on the first keystroke — live-computable codes drop because the live tier owns them. **Native-editor live-compile sidecar write: SKIPPED — the involved files (guitkx_editor_view.gd etc.) are the user's uncommitted working set this session; revisit when they land.** The dedupe key stays (code,line) rather than (code,line,message): messages differ legitimately between tiers (live composes its own phrasing), and code+line is what identifies "the same finding")
 **Current.** Dedupe is per-CODE (`server.ts:658-665`) — a live 0104 on element A suppresses the compiler's
 0104 on element B; the sidecar hash gate makes compiler-only codes vanish while typing (`guitkx_codegen.gd:23-28`
 vs `diagsSidecar.ts:19-28`); the native editor's live compile never writes the sidecar (`guitkx_codegen.gd:106`).
@@ -398,7 +398,7 @@ next save; native-editor live compile writes the sidecar (or is documented as in
 decide by reading `guitkx_codegen.gd:106` context, prefer writing).
 **Tests.** Two same-code diags on different lines both visible; typing doesn't erase compiler-only diags.
 
-### T3.4 — Key-checking completion  · effort: small · Status: ⬜
+### T3.4 — Key-checking completion  · effort: small · Status: ✅ (probe finding: the RUNTIME already hoists spread-supplied keys — both `V.h` and `V.fc`/`_key` fall back to `props["key"]` when the key arg is null, so `{...props}`-carried keys reconcile today with no emitter change; a STATIC spread dup-check was deliberately skipped — flagging two siblings spreading the same expr would false-flag the common shared-style-dict pattern (`{...common_style}`), and whether the dict holds a `key` is unknowable statically. 0106 missing-key now also fires for FRAGMENT loop roots (fix: `<Fragment key={...}>`) and EXPRESSION loop roots (reminder wording — unverifiable statically))
 Hoist spread-supplied `key` (`{...props}` carrying `key` — `guitkx.gd:724-730`) into the V-factory key
 arg + include in dup-check; extend missing-key 0106 to fragment/expr loop roots (`guitkx.gd:291-293`).
 (Godot's expression-signature dup detection is already superior — keep; Unity adopts it in its own plan.)

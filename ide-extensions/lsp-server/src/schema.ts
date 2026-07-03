@@ -8,7 +8,14 @@
 
 import vocabulary from "./vocabulary.json";
 
-export const VOCABULARY: { directives: string[]; hooks: string[]; host_tags: Record<string, string>; v_factories: string[] } = vocabulary;
+export const VOCABULARY: {
+  directives: string[];
+  hooks: string[];
+  host_tags: Record<string, string>;
+  v_factories: string[];
+  severities: Record<string, string>; // T3.2: single severity source per code
+  live: string[]; // T3.3: codes the live tier computes (stale sidecar entries for these drop)
+} = vocabulary;
 
 export interface TagInfo {
   tag: string;
