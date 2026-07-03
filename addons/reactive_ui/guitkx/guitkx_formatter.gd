@@ -78,7 +78,7 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 			var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
 			if not ph["ok"]:
 				return source
-			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o)
+			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o, str(ph.get("ret", "")))
 			decl_end = int(ph["next"])
 		"module":
 			var m: Variant = _fmt_module(source, decl["at"], o, diags)
@@ -118,8 +118,11 @@ static func _fmt_component(comp_name: String, params: String, setup: String, nod
 	out += "}\n"
 	return out
 
-static func _fmt_hook(hook_name: String, params: String, body: String, o: Dictionary) -> String:
-	var out := "hook %s%s {\n" % [hook_name, _fmt_params(params)]
+static func _fmt_hook(hook_name: String, params: String, body: String, o: Dictionary, ret_hint: String = "") -> String:
+	# The `-> Type` return hint is part of the signature -- dropping it turned every `var x := use_x(...)`
+	# caller into an inference error once the untyped generated func cascaded (Phase D reformat find).
+	var hint := "" if ret_hint.strip_edges() == "" else " -> %s" % ret_hint.strip_edges()
+	var out := "hook %s%s%s {\n" % [hook_name, _fmt_params(params), hint]
 	var fb := _fmt_setup(body, 1, o)
 	if fb != "":
 		if _has_leading_blank(body): out += "\n"
@@ -158,6 +161,10 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 		if not first:
 			out += "\n"
 		first = false
+		# `#`/`##` doc comments between members belong to the NEXT member. `_first_real` treats them
+		# as non-content, so they hit neither the verbatim fallback nor the re-emit -- the Phase D
+		# reformat sweep silently DELETED real module docs. Re-emit them above their member.
+		out += _member_comments(source, i, int(d["at"]), o)
 		if d["kind"] == "component":
 			var c: Dictionary = Compiler._parse_component_at(source, d["at"], diags)
 			if not c["ok"]:
@@ -168,12 +175,25 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 			var h: Dictionary = Compiler._parse_hook_at(source, d["at"], diags)
 			if not h["ok"]:
 				return null
-			out += _indent_block(_fmt_hook(h["name"], h["params"], h["body"], o), 1, o)
+			out += _indent_block(_fmt_hook(h["name"], h["params"], h["body"], o, str(h.get("ret", ""))), 1, o)
 			i = h["next"]
 		else:
 			return null
+	out += _member_comments(source, i, bclose, o)
 	out += "}\n"
 	return { "text": out, "next": bclose + 1 }
+
+## The comment lines in [from, to) (a member's leading docs / the module's tail), re-anchored at
+## module-member indent.
+static func _member_comments(source: String, from: int, to: int, o: Dictionary) -> String:
+	if to <= from:
+		return ""
+	var out := ""
+	for l in source.substr(from, to - from).split("\n"):
+		var t := (l as String).strip_edges()
+		if t.begins_with("#"):
+			out += _pad(1, o) + t + "\n"
+	return out
 
 # --- markup ---
 

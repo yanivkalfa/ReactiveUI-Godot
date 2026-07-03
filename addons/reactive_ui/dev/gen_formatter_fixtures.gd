@@ -21,6 +21,9 @@ func _initialize() -> void:
 		{ "name": "fragment", "input": "component F(){\nreturn (\n<>\n<Label text=\"a\"/>\n<Label text=\"b\"/>\n</>\n)\n}\n" },
 		{ "name": "hook", "input": "hook use_counter( start:int ){\n\tvar s = useState(start)\n\treturn s\n}\n" },
 		{ "name": "module", "input": "module Widgets {\ncomponent A(){ return (<Label text=\"a\"/>) }\ncomponent B(){ return (<A/>) }\n}\n" },
+		# Phase D reformat finds: module-member `##` docs and `-> Type` hints must survive the re-emit
+		# (both were silently dropped -- the hint loss cascaded := inference errors through callers).
+		{ "name": "module_docs_and_hint", "input": "module Docs {\n## builds the thing.\n## second line.\nhook use_built( n: int ) -> Dictionary {\n\tvar s = useState(n)\n\treturn { \"v\": s }\n}\n\n## renders it.\ncomponent Shown(){ return (<Label text=\"x\"/>) }\n}\n" },
 		{ "name": "classname", "input": "@class_name Fancy\ncomponent Card(title:String){\nreturn (\n<Panel>\n<Label text={title}/>\n</Panel>\n)\n}\n" },
 		{ "name": "hook_return_hint", "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n" },
 		{ "name": "guard_return_null", "input": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (<Label text=\"x\" />)\n}\n" },

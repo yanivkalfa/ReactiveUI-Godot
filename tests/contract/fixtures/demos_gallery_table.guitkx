@@ -1,5 +1,7 @@
 module DemoGalleryTable {
-  hook entries {
+  ## The demo registry — title + render fn for every gallery entry. A `module` (shared data/util),
+  ## consumed by both DemoGallery (the shell) and the demo smoke test.
+  hook entries -> Array {
     return [
       { "title": "Hello", "fn": DemoHello.render },
       { "title": "Counter", "fn": DemoCounter.render },

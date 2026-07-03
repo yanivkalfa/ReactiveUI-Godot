@@ -73,7 +73,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     case "hook": {
       const ph = parseHookAt(source, decl.at);
       if (!ph.ok) return source;
-      out += fmtHook(ph.name, ph.params, ph.body, o);
+      out += fmtHook(ph.name, ph.params, ph.body, o, ph.ret);
       declEnd = ph.next;
       break;
     }
@@ -118,8 +118,9 @@ function fmtComponent(name: string, params: string, setup: string, nodes: Markup
   return out;
 }
 
-function fmtHook(name: string, params: string, body: string, o: FmtOptions): string {
-  let out = `hook ${name}${fmtParams(params)} {\n`;
+function fmtHook(name: string, params: string, body: string, o: FmtOptions, retHint = ""): string {
+  const hint = retHint.trim() === "" ? "" : ` -> ${retHint.trim()}`;
+  let out = `hook ${name}${fmtParams(params)}${hint} {\n`;
   const fb = fmtSetup(body, 1, o);
   if (fb !== "") {
     if (hasLeadingBlank(body)) out += "\n";
@@ -165,6 +166,10 @@ function fmtModule(src: string, mi: number, o: FmtOptions): { text: string; next
     if (d.kind === "" || d.at >= bclose) break;
     if (!first) out += "\n";
     first = false;
+    // `#`/`##` doc comments between members belong to the NEXT member -- realSpan treats them as
+    // non-content, so they hit neither the verbatim fallback nor the re-emit and the Phase D
+    // reformat sweep deleted real module docs. Re-emit them above their member (mirror GD).
+    out += memberComments(src, i, d.at, o);
     if (d.kind === "component") {
       const c = parseComponentAt(src, d.at);
       if (!c.ok) return null;
@@ -173,14 +178,27 @@ function fmtModule(src: string, mi: number, o: FmtOptions): { text: string; next
     } else if (d.kind === "hook") {
       const h = parseHookAt(src, d.at);
       if (!h.ok) return null;
-      out += indentBlock(fmtHook(h.name, h.params, h.body, o), 1, o);
+      out += indentBlock(fmtHook(h.name, h.params, h.body, o, h.ret), 1, o);
       i = h.next;
     } else {
       return null;
     }
   }
+  out += memberComments(src, i, bclose, o);
   out += "}\n";
   return { text: out, next: bclose + 1 };
+}
+
+// The comment lines in [from, to) (a member's leading docs / the module tail), re-anchored at
+// module-member indent. Mirrors guitkx_formatter.gd _member_comments.
+function memberComments(src: string, from: number, to: number, o: FmtOptions): string {
+  if (to <= from) return "";
+  let out = "";
+  for (const l of src.slice(from, to).split("\n")) {
+    const t = l.trim();
+    if (t.startsWith("#")) out += pad(1, o) + t + "\n";
+  }
+  return out;
 }
 
 // --- markup ---
@@ -733,13 +751,14 @@ interface HookParse {
   ok: boolean;
   name: string;
   params: string;
+  ret: string;
   body: string;
   bodyStart: number;
   bodyEnd: number;
   next: number;
 }
 function parseHookAt(src: string, at: number): HookParse {
-  const fail: HookParse = { ok: false, name: "", params: "", body: "", bodyStart: at, bodyEnd: at, next: at };
+  const fail: HookParse = { ok: false, name: "", params: "", ret: "", body: "", bodyStart: at, bodyEnd: at, next: at };
   const n = src.length;
   // Skip the keyword token (recovery-safe; identical for an exact `hook`).
   let i = at;
@@ -758,15 +777,19 @@ function parseHookAt(src: string, at: number): HookParse {
     i = pc + 1;
   }
   i = skipWsOnly(src, i);
-  // optional `-> ReturnHint` between the params and the body (mirror _parse_hook_at)
+  // optional `-> ReturnHint` between the params and the body (mirror _parse_hook_at). Captured:
+  // dropping it from the formatter output made every `var x := use_x(...)` caller an inference
+  // error once the untyped generated func cascaded (Phase D reformat find).
+  let ret = "";
   if (i + 1 < n && src[i] === "-" && src[i + 1] === ">") {
-    i += 2;
+    const rh = i + 2;
     while (i < n && src[i] !== "{") i++;
+    ret = src.slice(rh, i).trim();
   }
   if (src[i] !== "{") return fail;
   const bclose = findMatching(src, i);
   if (bclose === -1) return fail;
-  return { ok: true, name, params, body: src.slice(i + 1, bclose), bodyStart: i + 1, bodyEnd: bclose, next: bclose + 1 };
+  return { ok: true, name, params, ret, body: src.slice(i + 1, bclose), bodyStart: i + 1, bodyEnd: bclose, next: bclose + 1 };
 }
 
 // The markup (return-window) spans of every component in the document (top-level or module member) —

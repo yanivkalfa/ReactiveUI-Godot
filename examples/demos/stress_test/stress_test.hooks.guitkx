@@ -1,5 +1,8 @@
 module DemoStressHooks {
-  hook make_boxes(count: int, w: float, h: float) {
+  ## The stress-test simulation hook + physics — the .guitkx hook-file analogue of
+  ## StressTest.hooks.uitkx (`useStressTestLoop`). Generates N bouncing boxes and, while
+  ## `running`, ticks them every frame (re-rendering all of them) and measures avg FPS.
+  hook make_boxes(count: int, w: float, h: float) -> Array {
     var rng := RandomNumberGenerator.new()
     rng.seed = 42
     var out: Array = []
@@ -17,7 +20,7 @@ module DemoStressHooks {
     return out
   }
 
-  hook step_boxes(boxes: Array, dt: float, w: float, h: float) {
+  hook step_boxes(boxes: Array, dt: float, w: float, h: float) -> Array {
     var next: Array = []
     for b in boxes:
       var nx: float = b["x"] + b["vx"] * dt
@@ -32,7 +35,8 @@ module DemoStressHooks {
     return next
   }
 
-  hook use_stress_loop(area_ref: Dictionary, box_count: int, duration: float, running: bool, version: int, set_running: Callable) {
+  ## Returns { boxes, fps, elapsed, frames, finished }.
+  hook use_stress_loop(area_ref: Dictionary, box_count: int, duration: float, running: bool, version: int, set_running: Callable) -> Dictionary {
     var boxes := Hooks.useState([])
     var fps := Hooks.useState(0.0)
     var elapsed := Hooks.useState(0.0)

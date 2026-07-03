@@ -1,5 +1,10 @@
 module DemoStressNativeHooks {
-  hook use_stress_loop(area_ref: Dictionary, box_count: int, duration: float, running: bool, version: int, set_running: Callable) {
+  ## Native counterpart to DemoStressHooks. SAME bouncing-box stress test + physics, but the
+  ## boxes are raw ColorRect nodes created and animated DIRECTLY (no V.color_rect, no vnodes,
+  ## no reconciler) — the engine's native ceiling, for an in-game A/B against the library
+  ## stress test. Only the small FPS/status chrome re-renders each frame; the boxes do not.
+  ## Returns { fps, elapsed, frames, finished }. The boxes live as raw nodes under `area_ref`.
+  hook use_stress_loop(area_ref: Dictionary, box_count: int, duration: float, running: bool, version: int, set_running: Callable) -> Dictionary {
     var fps := Hooks.useState(0.0)
     var elapsed := Hooks.useState(0.0)
     var frames := Hooks.useState(0)

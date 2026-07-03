@@ -45,12 +45,17 @@
     "name": "module"
   },
   {
+    "expected": "module Docs {\n  ## builds the thing.\n  ## second line.\n  hook use_built(n: int) -> Dictionary {\n    var s = useState(n)\n    return { \"v\": s }\n  }\n\n  ## renders it.\n  component Shown {\n    return (\n      <Label text=\"x\" />\n    )\n  }\n}\n",
+    "input": "module Docs {\n## builds the thing.\n## second line.\nhook use_built( n: int ) -> Dictionary {\n\tvar s = useState(n)\n\treturn { \"v\": s }\n}\n\n## renders it.\ncomponent Shown(){ return (<Label text=\"x\"/>) }\n}\n",
+    "name": "module_docs_and_hint"
+  },
+  {
     "expected": "@class_name Fancy\n\ncomponent Card(title:String) {\n  return (\n    <Panel>\n      <Label text={ title } />\n    </Panel>\n  )\n}\n",
     "input": "@class_name Fancy\ncomponent Card(title:String){\nreturn (\n<Panel>\n<Label text={title}/>\n</Panel>\n)\n}\n",
     "name": "classname"
   },
   {
-    "expected": "hook use_thing(n: int) {\n  var s = useState(n)\n  return s\n}\n",
+    "expected": "hook use_thing(n: int) -> Array {\n  var s = useState(n)\n  return s\n}\n",
     "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n",
     "name": "hook_return_hint"
   },
