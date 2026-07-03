@@ -98,13 +98,56 @@ static func _write_fp_marker() -> void:
 		f.store_string(compiler_fingerprint())
 		f.close()
 
+## T1.5: the PascalCase component names resolvable in this project -- each .guitkx's binding
+## (@class_name override, else its first declaration's name) plus every global script class.
+## Passed into compile() so `<UnknownComp/>` errors with a did-you-mean instead of emitting a
+## call to a class that does not exist.
+static func known_component_names(guitkx_paths: Array) -> Array:
+	var names := {}
+	for p in guitkx_paths:
+		var src := FileAccess.get_file_as_string(str(p))
+		var b := _binding_name(src)
+		if b != "":
+			names[b] = true
+	for gc in ProjectSettings.get_global_class_list():
+		names[str(gc.get("class", ""))] = true
+	names.erase("")
+	return names.keys()
+
+## The class name a .guitkx compiles to: the @class_name override, else the first declaration's name.
+static func _binding_name(src: String) -> String:
+	var cn := src.find("@class_name")
+	if cn != -1:
+		var le := src.find("\n", cn)
+		if le == -1:
+			le = src.length()
+		var raw := src.substr(cn + 11, le - cn - 11)
+		var hash_at := raw.find("#")
+		if hash_at != -1:
+			raw = raw.substr(0, hash_at)
+		var v := raw.strip_edges()
+		if v != "":
+			return v
+	var d: Dictionary = Compiler._find_decl(src, 0)
+	if d["kind"] == "":
+		return ""
+	var i: int = int(d["at"])
+	while i < src.length() and (src[i] >= "a" and src[i] <= "z"):
+		i += 1   # the decl keyword
+	while i < src.length() and (src[i] == " " or src[i] == "\t"):
+		i += 1
+	var s := i
+	while i < src.length() and (src[i] == "_" or (src[i] >= "a" and src[i] <= "z") or (src[i] >= "A" and src[i] <= "Z") or (src[i] >= "0" and src[i] <= "9")):
+		i += 1
+	return src.substr(s, i - s)
+
 ## Compile one .guitkx and write its sibling .gd. Returns { ok, path, gd_path?, diagnostics?/error? }.
-static func compile_file(guitkx_path: String) -> Dictionary:
+static func compile_file(guitkx_path: String, known_components: Array = []) -> Dictionary:
 	if not FileAccess.file_exists(guitkx_path):
 		return { "ok": false, "path": guitkx_path, "error": "file not found" }
 	var src := FileAccess.get_file_as_string(guitkx_path)
 	var basename := guitkx_path.get_file().get_basename()
-	var r: Dictionary = Compiler.compile(src, basename)
+	var r: Dictionary = Compiler.compile(src, basename, known_components)
 	write_diags_sidecar(guitkx_path, src, r["diagnostics"])
 	# Surface boundary: derive 0-based line/col from each offset ONCE, here, where the source is at
 	# hand -- downstream consumers (plugin.gd dock lines, tests) read d.line/d.col without the source.
@@ -137,10 +180,14 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	var compiled: Array = []
 	var errors: Array = []
 	var force := compiler_changed()
-	for path in find_all(root):
+	var all_paths := find_all(root)
+	# T1.5: resolve the project's component-class universe ONCE per pass so every file's PascalCase
+	# tags are checked against it.
+	var known := known_component_names(all_paths)
+	for path in all_paths:
 		if not force and not is_stale(path):
 			continue
-		var r := compile_file(path)
+		var r := compile_file(path, known)
 		if r["ok"]:
 			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"] })
 		else:

@@ -10,6 +10,7 @@ import { scanDeclarations, WorkspaceIndex, componentTagAt, vetoGuitkxDeclared } 
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
 import { formatGuitkx, markupWindows, missingReturnComponents } from "../formatGuitkx";
+import { windowStructureDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
@@ -305,6 +306,43 @@ test("T1.3: module members still index (the compiler compiles them)", () => {
   const idx = new WorkspaceIndex();
   idx.reindex("file:///t/M.guitkx", "module M {\n\tcomponent A() { return ( <Label /> ) }\n\thook use_y() { return 2 }\n}\n");
   assert.ok(idx.has("M") && idx.has("A") && idx.has("use_y"), "module + both members indexed");
+});
+
+// T1.5 (G5): the live tier used to compute markup parse errors then DISCARD them, and never
+// checked lowercase tags at all -- `return <s></a>` squiggled nothing while typing.
+test("T1.5: window parse errors surface live (<s></a> -> GUITKX0302)", () => {
+  const src = "component S() {\n\treturn ( <s></a> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  assert.ok(d.some((x) => x.code === "GUITKX0302"), `got ${JSON.stringify(d)}`);
+});
+
+test("T1.5: unknown lowercase tag fires live with a did-you-mean", () => {
+  const src = 'component T() {\n\treturn ( <vbox><lable text="x" /></vbox> )\n}\n';
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0105");
+  assert.ok(hit && /did you mean <label>/.test(hit.message), `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.end), "lable");
+});
+
+test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed offsets)", () => {
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { <lable /> }</vbox> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0105");
+  assert.ok(hit, `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.end), "lable");
+});
+
+test("T1.5: a broken @if body's parse error surfaces live (bodies are opaque to the window parse)", () => {
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { <Broken> }</vbox> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0301");
+  assert.ok(hit, `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.start + 7), "<Broken");
+});
+
+test("T1.5: PascalCase tags and known factories stay clean in the vocabulary check", () => {
+  const src = "component P() {\n\treturn ( <vbox><Card /><label text=\"ok\" /></vbox> )\n}\n";
+  assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
 });
 
 // Error-recovery: a near-miss keyword at a real declaration position is treated as that declaration

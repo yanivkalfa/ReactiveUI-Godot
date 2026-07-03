@@ -25,6 +25,7 @@ func _run() -> void:
 	_test_p1_error_gates()
 	_test_t13_single_decl()
 	_test_t14_last_return()
+	_test_t15_unknown_tags()
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
@@ -239,7 +240,7 @@ func _test_t14_last_return() -> void:
 	# as the window (the compile fails overall because 2102 is an error).
 	var early_src := "component S(weird: bool = false) {\n" + \
 		"\tif weird:\n\t\treturn <s></a>\n" + \
-		"\treturn (\n\t\t<panel_container><label text=\"ok\" /></panel_container>\n\t)\n}\n"
+		"\treturn (\n\t\t<vbox><label text=\"ok\" /></vbox>\n\t)\n}\n"
 	var early := RUIGuitkx.compile(early_src, "S")
 	_check_true(not early["ok"], "T1.4: conditional markup return fails the compile")
 	_check_diag_at(early, "GUITKX2102", early_src, "return <s></a>", "T1.4: 2102 lands on the conditional markup return")
@@ -273,6 +274,42 @@ func _test_t14_last_return() -> void:
 	var expr_src := "component E(items: Array = []) {\n\treturn ( { items.map(func(i): return <label text={ str(i) } />) } )\n}\n"
 	var expr := RUIGuitkx.compile(expr_src, "E")
 	_check_true(bool(expr["ok"]), "T1.4: {expr} root still compiles (got %s)" % str(expr["diagnostics"]))
+
+func _test_t15_unknown_tags() -> void:
+	# T1.5 (G5): a lowercase tag must be a real V.* factory -- it compiles to a verbatim V.<tag>()
+	# call, so an unknown one was a guaranteed nonexistent-method failure at runtime.
+	var src := "component T() {\n\treturn ( <vbox><lable text=\"x\" /></vbox> )\n}\n"
+	var r := RUIGuitkx.compile(src, "T")
+	_check_true(not r["ok"], "T1.5: unknown lowercase tag fails the compile")
+	_check_diag_at(r, "GUITKX0105", src, "lable", "T1.5: 0105 lands on the tag name")
+	_check_true("did you mean <label>" in str(_diag(r, "GUITKX0105").get("message", "")), "T1.5: did-you-mean suggests label (got %s)" % str(_diag(r, "GUITKX0105")))
+
+	# the user's G5 repro: `<s></a>` -- mismatched close, fails, both tags implicated by the parser.
+	var g5 := "component S() {\n\treturn ( <s></a> )\n}\n"
+	var rg5 := RUIGuitkx.compile(g5, "S")
+	_check_true(not rg5["ok"] and _has_code(rg5, "GUITKX0302"), "T1.5/G5: <s></a> mismatched close fails (got %s)" % str(rg5["diagnostics"]))
+
+	# PascalCase components: checked only when the caller supplies known_components.
+	var pc_src := "component P() {\n\treturn ( <vbox><Cardd /></vbox> )\n}\n"
+	_check_true(bool(RUIGuitkx.compile(pc_src, "P")["ok"]), "T1.5: PascalCase unchecked without a known set")
+	var rp := RUIGuitkx.compile(pc_src, "P", ["Card", "Row"])
+	_check_true(not rp["ok"], "T1.5: unknown PascalCase fails with a known set")
+	_check_diag_at(rp, "GUITKX0105", pc_src, "Cardd", "T1.5: PascalCase 0105 position")
+	_check_true("did you mean <Card>" in str(_diag(rp, "GUITKX0105").get("message", "")), "T1.5: suggests Card")
+	_check_true(bool(RUIGuitkx.compile("component P2() {\n\treturn ( <vbox><Card /></vbox> )\n}\n", "P2", ["Card"])["ok"]), "T1.5: known PascalCase passes")
+
+	# module-local members are always known, regardless of the external set.
+	var mod_src := "module W {\n\tcomponent Card() { return ( <label text=\"c\" /> ) }\n\tcomponent Row() { return ( <hbox><Card /></hbox> ) }\n}\n"
+	_check_true(bool(RUIGuitkx.compile(mod_src, "W", ["SomethingElse"])["ok"]), "T1.5: module-local <Card/> resolves")
+
+	# unknown tag nested inside a JSX-value {expr} -- the emit-only path.
+	var ex_src := "component E(open: bool = false) {\n\treturn ( <vbox>{ open and <lable text=\"x\" /> }</vbox> )\n}\n"
+	var re := RUIGuitkx.compile(ex_src, "E")
+	_check_true(not re["ok"] and _has_code(re, "GUITKX0105"), "T1.5: unknown tag inside {expr} caught (got %s)" % str(re["diagnostics"]))
+
+	# codegen integration: known_component_names resolves sibling bindings + @class_name overrides.
+	var names: Array = Codegen.known_component_names([])
+	_check_true(names is Array, "T1.5: known_component_names runs headless (global classes only)")
 
 func _test_t13_single_decl() -> void:
 	# T1.3: content after the single top-level declaration errors (Unity UITKX2105 parity) --

@@ -41,8 +41,15 @@ static func _load_vocabulary() -> Dictionary:
 	push_error("[guitkx] vocabulary.json missing or invalid -- the compiler cannot classify tags/hooks without it")
 	return { "host_tags": {}, "hooks": [], "v_factories": [], "directives": [] }
 
-static func compile(source: String, basename: String = "Component") -> Dictionary:
+## `known_components`: PascalCase class names resolvable as components in this project (sibling
+## .guitkx bindings + global script classes) -- the plugin/codegen supplies them so <UnknownComp/>
+## errors (T1.5). Empty (headless/test callers) = the PascalCase check is skipped; lowercase tags
+## are always checked against the vocabulary.
+static func compile(source: String, basename: String = "Component", known_components: Array = []) -> Dictionary:
 	var diags: Array = []
+	var known := {}
+	for kc in known_components:
+		known[str(kc)] = true
 	# 1. Preamble: optional `@class_name X` (other directives skipped for the skeleton).
 	var class_name_override := ""
 	var i := 0
@@ -68,11 +75,11 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 	var r: Dictionary
 	match decl["kind"]:
 		"component":
-			r = _compile_component(source, decl["at"], class_name_override, basename, diags)
+			r = _compile_component(source, decl["at"], class_name_override, basename, diags, known)
 		"hook":
 			r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
 		"module":
-			r = _compile_module(source, decl["at"], class_name_override, basename, diags)
+			r = _compile_module(source, decl["at"], class_name_override, basename, diags, known)
 		_:
 			var near := _nearest_decl_keyword(source, i)
 			if near.has("word"):
@@ -165,7 +172,7 @@ static func _edit_distance(a: String, b: String) -> int:
 		prev = curr.duplicate()
 	return prev[lb]
 
-static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
+static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}) -> Dictionary:
 	var pc := _parse_component_at(source, ci, diags)
 	if not pc["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
@@ -178,7 +185,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
-	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"])
+	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known)
 	# T1.1: errors appended DURING emit (GUITKX0113 undesugarable control-flow, nested-body parse
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
@@ -454,7 +461,7 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 
 ## module Name { component A {…} component B {…} hook use_x {…} } -> one class with one static func
 ## per declaration. Intra-module <A/> resolves to the bare sibling static func (V.fc(A, …)). [§4]
-static func _compile_module(source: String, mi: int, class_name_override: String, basename: String, diags: Array) -> Dictionary:
+static func _compile_module(source: String, mi: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}) -> Dictionary:
 	var n := source.length()
 	var j := mi + 6   # "module"
 	j = _skip_ws_only(source, j)
@@ -529,7 +536,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
 	for c in comps:
 		out += "# component %s\n" % c["name"]
-		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"])
+		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"], known)
 		out += "\n"
 	for h in hooks:
 		out += "# hook %s\n" % h["name"]
@@ -755,17 +762,17 @@ static func unreachable_line_ranges(source: String) -> Array:
 # "lambdas can't hold multi-statement return control-flow" limit AND the helper-method
 # locals-capture problem -- the block is inline in render() and sees all setup locals. The
 # runtime `V._norm` flattens the `@for` arrays and drops the null `@if` misses for free.
-static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1) -> String:
+static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}) -> String:
 	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
-	out += _emit_func("render", params, setup, root, {}, [], diags, base)
+	out += _emit_func("render", params, setup, root, {}, [], diags, base, known)
 	return out
 
 # Emit one `static func <name>(props, children) -> RUIVNode:` from params + setup + a markup root.
 # `module_comps` maps intra-module component names -> true so <Foo/> emits V.fc(Foo, ...) (bare
 # sibling static func) rather than the single-file V.fc(Foo.render, ...).
-static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1) -> String:
+static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1, known: Dictionary = {}) -> String:
 	var out := "static func %s(props: Dictionary, children: Array) -> RUIVNode:\n" % func_name
 	for p in _parse_params(params):
 		if p["default"] != "":
@@ -780,7 +787,7 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 	# render-level statements that can't see lambda-local vars. [audit #17]
 	# base: absolute source offset of index 0 of the string the CURRENT node offsets are relative to
 	# (swapped around every nested re-parse via _swap_base, so emit-time diagnostics carry positions).
-	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false, "base": base }
+	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false, "base": base, "known_components": known }
 	var root_expr := _emit_expr(root, ctx)
 	if root["t"] == "for" or root["t"] == "while":
 		root_expr = "V.fragment(%s)" % root_expr   # a root-level loop yields an Array -> wrap
@@ -837,6 +844,30 @@ static func _all_text_children(children: Array) -> bool:
 			return false
 	return true
 
+## T1.5: report an unknown tag (GUITKX0105) at the tag name, with a did-you-mean when a factory,
+## host alias, module member, or known component is within edit distance 2 (Unity parity).
+static func _unknown_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
+	if not (ctx.has("diags") and ctx["diags"] is Array):
+		return
+	var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
+	if at >= 0:
+		at += 1   # nd.at is the `<`; anchor the squiggle on the name
+	var candidates: Array = V_FACTORIES.duplicate()
+	candidates.append_array(HOST_TAGS.keys())
+	candidates.append_array((ctx.get("module_comps", {}) as Dictionary).keys())
+	candidates.append_array((ctx.get("known_components", {}) as Dictionary).keys())
+	var best := ""
+	var best_d := 3
+	for c in candidates:
+		var d := _edit_distance(tag.to_lower(), str(c).to_lower())
+		if d < best_d:
+			best_d = d
+			best = str(c)
+	var msg := "unknown element <%s>" % tag
+	if best != "":
+		msg += " -- did you mean <%s>?" % best
+	(ctx["diags"] as Array).append(D.make("GUITKX0105", D.ERROR, msg, at, tag.length()))
+
 ## Swap ctx["base"] (the absolute offset of the current offset-domain's index 0), returning the old
 ## value so callers restore it after a nested re-parse. See the T0.2 note at the top of the file.
 static func _swap_base(ctx: Dictionary, base: int) -> int:
@@ -864,9 +895,21 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	if tag[0] >= "a" and tag[0] <= "z":
 		is_host = true
 		factory = tag   # lowercase/snake tag IS the V factory name
+		# T1.5 (G5): a lowercase tag must BE a real V.* factory -- it is emitted verbatim as V.<tag>(),
+		# so an unknown one used to become a nonexistent-method call in the generated .gd. This is the
+		# single chokepoint every element passes through (main tree, control-flow bodies, {expr}-nested).
+		if not V_FACTORIES.has(tag):
+			_unknown_tag(ctx, nd, tag)
 	elif HOST_TAGS.has(tag):
 		is_host = true
 		factory = HOST_TAGS[tag]
+	else:
+		# PascalCase component reference: resolvable only with project knowledge -- the plugin passes
+		# the known component classes (sibling .guitkx bindings + global script classes) into
+		# compile(); an empty known-set (headless/test callers) skips the check.
+		var known: Dictionary = ctx.get("known_components", {})
+		if not known.is_empty() and not (ctx.get("module_comps", {}) as Dictionary).has(tag) and not known.has(tag):
+			_unknown_tag(ctx, nd, tag)
 	# build the props dict + pull out key. `{...spread}` attrs are merged left-to-right (later wins),
 	# order-preserving relative to explicit props, via V._spread_all([...]). No spread -> plain literal
 	# (unchanged hot path).

@@ -35,6 +35,7 @@ import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
+import { windowStructureDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
 import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig } from "./formatGuitkx";
 import { parseMarkup } from "./markup";
@@ -1452,7 +1453,18 @@ function declarationDiagnostics(doc: TextDocument): Diagnostic[] {
 function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   const src = doc.getText();
   const diags: Diagnostic[] = [];
-  for (const w of markupWindows(src)) scanWindowDiagnostics(src, doc, w.start, w.end, diags);
+  const wins = markupWindows(src);
+  // T1.5 (G5): markup parse errors (0301/0302/...) and unknown lowercase tags (0105) fire LIVE --
+  // they used to be computed and discarded, so `return <s></a>` squiggled nothing until save.
+  for (const d of windowStructureDiags(src, wins)) {
+    diags.push({
+      severity: DiagnosticSeverity.Error,
+      range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },
+      message: d.message,
+      source: "guitkx",
+    });
+  }
+  for (const w of wins) scanWindowDiagnostics(src, doc, w.start, w.end, diags);
   return diags;
 }
 
@@ -1582,7 +1594,10 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
         scope.add(keySig);
       }
       // unknown-element did-you-mean: PascalCase tag that is neither a host element nor an indexed
-      // component, but is a near-miss of one (lowercase tags are host factories — never flagged).
+      // component, but is a near-miss of one. Lowercase tags are vocabulary-checked in liveMarkup.ts
+      // (T1.5); the PascalCase check stays SUGGESTION-GATED until T4.5 feeds .guitkx declarations
+      // into the analyzer -- ungated it would false-flag hand-written .gd component classes, which
+      // only the compiler (via the plugin's known_components) can see today.
       if (/^[A-Z]/.test(tag.tagName) && !findTag(tag.tagName) && !index.has(tag.tagName)) {
         const sugg = closestTag(tag.tagName);
         if (sugg) {
