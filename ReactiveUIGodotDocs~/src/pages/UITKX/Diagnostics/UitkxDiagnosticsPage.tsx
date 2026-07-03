@@ -58,28 +58,28 @@ const parserRows: DiagRow[] = [
   { code: 'GUITKX0303', sev: 'Error', title: 'Missing block / unexpected EOF', fix: <>A <code>component</code>, <code>hook</code>, <code>module</code>, directive, or <code>@match</code> is missing its <code>{'{ ... }'}</code> body (or the file ended mid-tag). Close the block.</> },
   { code: 'GUITKX0304', sev: 'Error', title: 'Unclosed brace / paren', fix: <>An unclosed <code>{'{expr}'}</code>, <code>(...)</code> param list, <code>return (</code>, directive body, or <code>@match</code> body. Balance the delimiters.</> },
   { code: 'GUITKX0305', sev: 'Warning', title: 'Unknown @directive', fix: <>Valid directives: <code>@if</code>, <code>@else</code>, <code>@for</code>, <code>@while</code>, <code>@match</code>, <code>@case</code>, <code>@default</code> (and the file directives <code>@class_name</code>, <code>@extends</code>, <code>@use</code>).</> },
-  { code: 'GUITKX0306', sev: 'Error', title: 'Directive shape error', fix: <>A directive expects <code>(...)</code>, or an <code>@match</code> body expects <code>@case (...) {'{ }'}</code> / <code>@default {'{ }'}</code> arms. Fix the directive header.</> },
+  { code: 'GUITKX2506', sev: 'Error', title: 'Directive shape error', fix: <>A directive expects <code>(...)</code>, or an <code>@match</code> body expects <code>@case (...) {'{ }'}</code> / <code>@default {'{ }'}</code> arms. Fix the directive header.</> },
 ]
 
-/* ── Structural / semantic diagnostics (GUITKX0102–0113) ─────────────── */
+/* ── Structural / semantic diagnostics (GUITKX2101–0113) ─────────────── */
 const structuralRows: DiagRow[] = [
-  { code: 'GUITKX0102', sev: 'Error', title: 'No declaration / no markup return', fix: <>The file has no <code>component</code>, <code>hook</code>, or <code>module</code> declaration, or a <code>component</code> has no <code>return ( ... )</code> (only <code>return null</code>). Add the declaration / return.</> },
+  { code: 'GUITKX2101', sev: 'Error', title: 'No declaration / no markup return', fix: <>The file has no <code>component</code>, <code>hook</code>, or <code>module</code> declaration, or a <code>component</code> has no <code>return ( ... )</code> (only <code>return null</code>). Add the declaration / return.</> },
   { code: 'GUITKX0103', sev: 'Warning', title: 'component name differs from file name', fix: <>Rename the <code>component</code> to match the file (a <code>Foo.guitkx</code> should declare <code>component Foo()</code>), or rename the file.</> },
   { code: 'GUITKX0104', sev: 'Warning', title: 'Duplicate sibling key', fix: <>Ensure each sibling element has a unique <code>key</code> value.</> },
   { code: 'GUITKX0106', sev: 'Warning', title: 'Loop element missing key', fix: <>An element inside <code>@for</code> / <code>@while</code> has no <code>key</code>. Add <code>key={'{...}'}</code> with a stable unique identifier so reordered children reconcile correctly.</> },
   { code: 'GUITKX0108', sev: 'Error', title: 'Multiple root elements', fix: <>A component must return exactly one root element. Wrap siblings in a container (<code>{'<VBox>'}</code>, <code>{'<HBox>'}</code>) or a fragment (<code>{'<>…</>'}</code>).</> },
-  { code: 'GUITKX0110', sev: 'Error', title: 'Invalid module', fix: <>A <code>module</code> has no component / hook declarations, or a <code>module</code> is nested inside another. Give the module content, and keep modules top-level.</> },
-  { code: 'GUITKX0112', sev: 'Error', title: 'Duplicate declaration in module', fix: <>Two declarations in the same <code>module</code> share a name. Rename one.</> },
-  { code: 'GUITKX0113', sev: 'Error', title: 'Statement used in an embedded expression', fix: <>A statement (e.g. a control-flow directive) cannot be lowered inside an embedded <code>{'{expr}'}</code> / JSX-value. Lift it to the top-level markup return, or use <code>.map()</code> for lists.</> },
+  { code: 'GUITKX2504', sev: 'Error', title: 'Invalid module', fix: <>A <code>module</code> has no component / hook declarations, or a <code>module</code> is nested inside another. Give the module content, and keep modules top-level.</> },
+  { code: 'GUITKX2505', sev: 'Error', title: 'Duplicate declaration in module', fix: <>Two declarations in the same <code>module</code> share a name. Rename one.</> },
+  { code: 'GUITKX0026', sev: 'Error', title: 'Statement used in an embedded expression', fix: <>A statement (e.g. a control-flow directive) cannot be lowered inside an embedded <code>{'{expr}'}</code> / JSX-value. Lift it to the top-level markup return, or use <code>.map()</code> for lists.</> },
 ]
 
-/* ── Language-server diagnostics (GUITKX0105, GUITKX0107) ────────────── */
+/* ── Language-server diagnostics (GUITKX0105, GUITKX0109) ────────────── */
 // Editor-only: emitted live by the language server (VS Code / VS 2022 extension).
 // They have no compile-time equivalent and are never written to the sibling
 // <file>.guitkx.diags.json — the compiler only knows about parser/structural codes.
 const languageServerRows: DiagRow[] = [
   { code: 'GUITKX0105', sev: 'Error', title: 'Unknown element (did-you-mean)', fix: <>A PascalCase tag (<code>{'<Labl>'}</code>) matches no host element or project component, but is a near-miss of a known one. Rename it to the suggestion (<code>{'<Label>'}</code>), or define / import the component. Host tags come from the schema; component tags come from the project&apos;s <code>.guitkx</code> index.</> },
-  { code: 'GUITKX0107', sev: 'Error', title: 'Unknown attribute on host element', fix: <>An attribute is not a valid property, signal handler, or structural attr of the host element&apos;s Godot class (checked against the bundled ClassDB dump; a suggestion is offered on a near-miss). Fix the spelling, or move it onto a <em>component</em> tag — components accept arbitrary props. Native <code>on_&lt;signal&gt;</code> handlers and <code>style</code> / <code>classes</code> / <code>key</code> / <code>ref</code> are always allowed.</> },
+  { code: 'GUITKX0109', sev: 'Error', title: 'Unknown attribute on host element', fix: <>An attribute is not a valid property, signal handler, or structural attr of the host element&apos;s Godot class (checked against the bundled ClassDB dump; a suggestion is offered on a near-miss). Fix the spelling, or move it onto a <em>component</em> tag — components accept arbitrary props. Native <code>on_&lt;signal&gt;</code> handlers and <code>style</code> / <code>classes</code> / <code>key</code> / <code>ref</code> are always allowed.</> },
 ]
 
 /* ── Runtime hook validation (GUITKX0013) ────────────────────────────── */

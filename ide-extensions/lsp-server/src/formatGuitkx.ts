@@ -619,7 +619,7 @@ export function markupWindows(src: string): { start: number; end: number }[] {
 
 // Components whose CLOSED body contains no markup return at all — `splitReturn` found neither
 // `return (` nor `return <` (a lone `return null` guard doesn't count). The compiler fails these with
-// GUITKX0102 on save (guitkx.gd _split_return); this is the live mirror so the editor flags it while
+// GUITKX2101 on save (guitkx.gd _split_return); this is the live mirror so the editor flags it while
 // typing instead of staying silent until the sidecar lands. The walk is the same recovering walk as
 // markupWindows (a typo'd header still gets its body checked); hooks never have markup returns and
 // modules recurse, so only real components report — never helper funcs. An UNCLOSED `return (` (the
@@ -788,7 +788,7 @@ interface ReturnSplit {
   markupEnd: number;
 }
 // `"unclosed"` = a markup return exists but its `(` never closes (the compiler's GUITKX0304, and the
-// half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX0102).
+// half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX2101).
 // Distinguished so the live missing-return diagnostic can't fire on an in-progress paren.
 //
 // T1.4 (Unity useLastReturn parity): the window is the LAST top-level markup return. "Top-level"

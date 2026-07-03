@@ -358,7 +358,7 @@ sibling `.gd` — flag before implementing.
 
 ## Phase 3 — Diagnostics parity + renumbering
 
-### T3.1 — Renumber GUITKX codes to the Unity concordance  · effort: medium · Status: ⬜
+### T3.1 — Renumber GUITKX codes to the Unity concordance  · effort: medium · Status: ✅ (final concordance, DC.cs-verified: **0102→2101** (missing return; 2102-malformed already shipped in T1.4), **0107→0109** (unknown attribute, Unity 0109), **0114→0107** (unreachable, Unity 0107 — swept 0107→0109 FIRST to avoid collision), **0113→0026** (undesugarable-in-expression, Unity 0026), **0306→2506** (Godot's 0306 means directive-syntax error while Unity's is AtExprNotSupported — different meanings may not share a number, so Godot-reserved), **0110→2504 / 0112→2505** (module structure — Unity has no decl-container module, so 25xx per the plan's fallback). Kept: 0013-0016, 0018, 0019, 0026-new, 0103-0106, 0108, 0109-new, 0111, 0120, 0121, 0150, 0300-0305, 2100, 2102, 2105, 2203, 2210. Swept atomically over compiler, both parsers, vocabulary (severities+live) ×2, LSP src+tests, GD tests, and the docs-site diagnostic pages; goldens + markup-cases REGENERATED (only t05/t16 changed — the 2101 rename); CHANGELOGs deliberately untouched (history), release-notes pair list goes in the version-bump changelog at publish; ships as MINOR per plan)
 Single mechanical pass, `vocabulary.json.messages` is the one place numbers live after T0.3. **Verify
 each Unity meaning against `U/ide-extensions~/language-lib/Diagnostics/DiagnosticCodes.cs` before
 renaming — the table below is the intent, DC.cs is the authority.**

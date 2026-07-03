@@ -320,7 +320,7 @@ class MarkupParser {
   private readParen(i: number, end: number): { text: string; next: number } {
     i = this.skipWs(i, end);
     if (i >= end || this.src[i] !== "(") {
-      this.fail("GUITKX0306", "directive expects `(...)`", i);
+      this.fail("GUITKX2506", "directive expects `(...)`", i);
       return { text: "", next: end };
     }
     const close = findMatching(this.src, i);
@@ -423,7 +423,7 @@ class MarkupParser {
         defaultBodyAt = db.at;
         j = db.next;
       } else {
-        this.fail("GUITKX0306", "@match body expects @case (...) { } or @default { }", j);
+        this.fail("GUITKX2506", "@match body expects @case (...) { } or @default { }", j);
         return { node: null, next: end };
       }
     }

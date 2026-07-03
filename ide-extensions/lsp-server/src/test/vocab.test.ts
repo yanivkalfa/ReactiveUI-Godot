@@ -48,6 +48,6 @@ test("T3.2: severity table covers the live-code list and pins the reconciled sev
   assert.ok(sev && Object.keys(sev).length >= 30, "severities table present");
   for (const c of VOCABULARY.live as string[]) assert.ok(sev[c], `live code ${c} missing a severity`);
   assert.equal(sev["GUITKX0104"], "error"); // duplicate keys break reconciliation
-  assert.equal(sev["GUITKX0114"], "hint"); // unreachable = dimmed dead code
+  assert.equal(sev["GUITKX0107"], "hint"); // unreachable = dimmed dead code
   assert.equal(sev["GUITKX2203"], "warning"); // hook naming lint
 });

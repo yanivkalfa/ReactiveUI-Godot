@@ -49,7 +49,7 @@ export function nearestDeclKeyword(src: string): { word: string; kw: string; sta
   return null;
 }
 
-// GUITKX0300 (`@class_name` value) + GUITKX0102 (misspelled / missing declaration).
+// GUITKX0300 (`@class_name` value) + GUITKX2101 (misspelled / missing declaration).
 export function declarationDiags(src: string): DeclDiag[] {
   const out: DeclDiag[] = [];
 
@@ -109,15 +109,15 @@ export function declarationDiags(src: string): DeclDiag[] {
       out.push({
         start: near.start,
         end: near.end,
-        code: "GUITKX0102",
-        message: `GUITKX0102: unknown declaration '${near.word}' — did you mean '${near.kw}'?`,
+        code: "GUITKX2101",
+        message: `GUITKX2101: unknown declaration '${near.word}' — did you mean '${near.kw}'?`,
       });
     } else {
       out.push({
         start: 0,
         end: Math.min(src.length, 1),
-        code: "GUITKX0102",
-        message: "GUITKX0102: no `component`, `hook`, or `module` declaration found.",
+        code: "GUITKX2101",
+        message: "GUITKX2101: no `component`, `hook`, or `module` declaration found.",
       });
     }
   }

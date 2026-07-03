@@ -1455,7 +1455,7 @@ function unreachableDiagnostics(doc: TextDocument): Diagnostic[] {
     tags: [DiagnosticTag.Unnecessary],
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
     // The code prefix makes the sidecar's compile-time copy dedupe away ((code,line) key -- T3.2/T3.3).
-    message: "GUITKX0114: Unreachable code after the component's return — the compiler drops it.",
+    message: "GUITKX0107: Unreachable code after the component's return — the compiler drops it.",
     source: "guitkx",
   }));
 }
@@ -1492,7 +1492,7 @@ function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   return diags;
 }
 
-// Live missing-markup-return check [GUITKX0102]: a component whose closed body has no `return ( ... )`
+// Live missing-markup-return check [GUITKX2101]: a component whose closed body has no `return ( ... )`
 // used to be SILENT while typing — no markup window means every window-scoped tier skips it, and
 // buildVirtualDoc just emits `pass` — so the error only appeared post-save via the compiler sidecar
 // (pinned to line 0). Message text mirrors guitkx.gd _split_return so the sidecar copy dedupes away.
@@ -1500,7 +1500,7 @@ function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
   return missingReturnComponents(doc.getText()).map((r) => ({
     severity: DiagnosticSeverity.Error,
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
-    message: "GUITKX0102: component has no `return ( ... )` (only `return null`?)",
+    message: "GUITKX2101: component has no `return ( ... )` (only `return null`?)",
     source: "guitkx",
   }));
 }
@@ -1655,7 +1655,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
           diags.push({
             severity: DiagnosticSeverity.Error,
             range: { start: doc.positionAt(a.start), end: doc.positionAt(a.end) },
-            message: `GUITKX0107: unknown attribute '${a.name}' on <${tag.tagName}>` + (sugg ? `. Did you mean '${sugg}'?` : "."),
+            message: `GUITKX0109: unknown attribute '${a.name}' on <${tag.tagName}>` + (sugg ? `. Did you mean '${sugg}'?` : "."),
             source: "guitkx",
           });
         }

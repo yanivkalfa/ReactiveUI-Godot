@@ -182,12 +182,12 @@ func _test_ctrl_flow_in_lambda() -> void:
 	var res_for := RUIGuitkx.compile(src_for, "CFF")
 	_check_true(res_for["ok"] and "items).map(func(x)" in str(res_for["gd"]), "@for in expression lowers to .map")
 
-	# @match inside a JSX-value can't be an expression -> GUITKX0113, and since T1.1 an emit-time
+	# @match inside a JSX-value can't be an expression -> GUITKX0026, and since T1.1 an emit-time
 	# error FAILS the compile (no diagnostic with error severity may coexist with ok:true).
 	var src_m := "component CFM(x: int = 0) {\n" + \
 		"\treturn ( <VBox>{ true and <>@match (x) { @case (0) { <Label/> } }</> }</VBox> )\n}\n"
 	var res_m := RUIGuitkx.compile(src_m, "CFM")
-	_check_true(_has_code(res_m, "GUITKX0113"), "@match in expression emits GUITKX0113")
+	_check_true(_has_code(res_m, "GUITKX0026"), "@match in expression emits GUITKX0026")
 	_check_true(not res_m["ok"], "T1.1: emit-time 0113 fails the compile")
 	_check_true(res_m["gd"] == "", "T1.1: failed compile ships no generated code")
 
@@ -198,7 +198,7 @@ func _test_module_dup_across_kinds() -> void:
 		"hook Foo() { return 1 }\n}\n"
 	var res := RUIGuitkx.compile(src, "M")
 	_check_true(not res["ok"], "module component+hook same name rejected")
-	_check_true(_has_code(res, "GUITKX0112"), "duplicate-decl diagnostic emitted")
+	_check_true(_has_code(res, "GUITKX2505"), "duplicate-decl diagnostic emitted")
 
 func _test_p1_error_gates() -> void:
 	# T1.2: malformed markup inside an @if body -> the INNER parser's error code, positioned exactly
@@ -275,7 +275,7 @@ func _test_t14_last_return() -> void:
 	# G9: a body that is ONLY an @for block (no return at all) must error missing-return.
 	var g9_src := "component G9() {\n\t@for (i in 25) {\n\t\t<label text={ str(i) } />\n\t}\n}\n"
 	var g9 := RUIGuitkx.compile(g9_src, "G9")
-	_check_true(not g9["ok"] and _has_code(g9, "GUITKX0102"), "T1.4/G9: @for-only body errors missing-return (got %s)" % str(g9["diagnostics"]))
+	_check_true(not g9["ok"] and _has_code(g9, "GUITKX2101"), "T1.4/G9: @for-only body errors missing-return (got %s)" % str(g9["diagnostics"]))
 
 	# A `{expr}` root stays legal (LooksLikeMarkupRoot accepts `{`).
 	var expr_src := "component E(items: Array = []) {\n\treturn ( { items.map(func(i): return <label text={ str(i) } />) } )\n}\n"
@@ -464,7 +464,7 @@ func _test_p2_markup_features() -> void:
 	_check_true(bool(rfk["ok"]), "T2.2: Fragment key compiles (got %s)" % str(rfk["diagnostics"]))
 	_check_true(", str(i))" in str(rfk["gd"]), "T2.2: fragment key threads to V.fragment's 2nd arg")
 	var rfb := RUIGuitkx.compile("component FB() {\n\treturn ( <Fragment visible><label text=\"x\" /></Fragment> )\n}\n", "FB")
-	_check_true(not rfb["ok"] and _has_code(rfb, "GUITKX0107"), "T2.2: non-key Fragment attr errors (got %s)" % str(rfb["diagnostics"]))
+	_check_true(not rfb["ok"] and _has_code(rfb, "GUITKX0109"), "T2.2: non-key Fragment attr errors (got %s)" % str(rfb["diagnostics"]))
 
 	# T2.4: mid-text braces are LITERAL + 0150 migration warning; node-start {expr} still interpolates.
 	var src_t := "component T(n: int = 3) {\n\treturn ( <label>Count: {n} items</label> )\n}\n"
@@ -744,17 +744,17 @@ func _test_decl_validation() -> void:
 	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint, anchored at the typo'd word
 	var typo_src := "componeent X() { return ( <Label /> ) }\n"
 	var typo := RUIGuitkx.compile(typo_src, "X")
-	_check_true(not typo["ok"] and str(_diag(typo, "GUITKX0102").get("message", "")).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
-	_check_diag_at(typo, "GUITKX0102", typo_src, "componeent", "misspelled keyword")
+	_check_true(not typo["ok"] and str(_diag(typo, "GUITKX2101").get("message", "")).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
+	_check_diag_at(typo, "GUITKX2101", typo_src, "componeent", "misspelled keyword")
 	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
 	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
 	_check_true(not badtag["ok"] and _has_code(badtag, "GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
 	# BUG-V5 (T1.4 semantics): code after the LAST top-level markup return is flagged unreachable
-	# (GUITKX0114 warning) at the dead code; the compile still succeeds.
+	# (GUITKX0107 warning) at the dead code; the compile still succeeds.
 	var unreach_src := "component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n}\n"
 	var unreach := RUIGuitkx.compile(unreach_src, "U")
 	_check_true(bool(unreach["ok"]), "unreachable code is a warning, not an error (got %s)" % str(unreach["diagnostics"]))
-	_check_diag_at(unreach, "GUITKX0114", unreach_src, "var x = 5", "unreachable-after-return")
+	_check_diag_at(unreach, "GUITKX0107", unreach_src, "var x = 5", "unreachable-after-return")
 
 # The stale-.gd disease: a sibling .gd that is NEWER than its source but was produced by an OLD
 # compiler must still be regenerated. Guards guitkx_codegen's compiler-version staleness mechanism —
@@ -860,7 +860,7 @@ func _test_hook() -> void:
 	_check_true(mr["ok"], "module Name { ... } now compiles (got %s)" % str(mr["diagnostics"]))
 	# empty / no declaration is rejected
 	var er := RUIGuitkx.compile("@class_name Foo\n# just a comment\n", "Foo")
-	_check_true(not er["ok"] and _has_code(er, "GUITKX0102"), "no-declaration rejected with GUITKX0102")
+	_check_true(not er["ok"] and _has_code(er, "GUITKX2101"), "no-declaration rejected with GUITKX2101")
 
 func _test_match() -> void:
 	var src := "component Status(state: String = \"idle\") {\n" + \

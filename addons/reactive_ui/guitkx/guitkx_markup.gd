@@ -283,7 +283,7 @@ func _parse_directive(at: int, end: int) -> Dictionary:
 func _read_paren(i: int, end: int) -> Dictionary:
 	i = _skip_ws(i, end)
 	if i >= end or _src[i] != "(":
-		_fail("GUITKX0306", "directive expects `(...)`", i)
+		_fail("GUITKX2506", "directive expects `(...)`", i)
 		return { "text": "", "next": end }
 	var close := L.find_matching(_src, i)
 	if close == -1 or close >= end:
@@ -377,7 +377,7 @@ func _parse_match(at: int, end: int) -> Dictionary:
 			default_body_at = db["at"]
 			j = db["next"]
 		else:
-			_fail("GUITKX0306", "@match body expects @case (...) { } or @default { }", j)
+			_fail("GUITKX2506", "@match body expects @case (...) { } or @default { }", j)
 			return { "node": null, "next": end }
 	return { "node": { "t": "match", "at": at, "subject": p["text"], "cases": cases, "default_body": default_body, "default_body_at": default_body_at }, "next": bclose + 1 }
 

@@ -226,9 +226,9 @@ test("virtualDoc: one outlier-shallow setup line does not shift the rest (first-
 
 // The LSP "floor": a misspelled declaration keyword used to make the whole file go dark (no markup
 // window -> no analysis, no diagnostics). declarationDiags reports it live instead of silence.
-test("declarationDiags flags a misspelled `component` keyword (GUITKX0102)", () => {
+test("declarationDiags flags a misspelled `component` keyword (GUITKX2101)", () => {
   const d = declarationDiags("@class_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(d.some((x) => x.code === "GUITKX0102" && /did you mean 'component'/.test(x.message)), `got ${JSON.stringify(d)}`);
+  assert.ok(d.some((x) => x.code === "GUITKX2101" && /did you mean 'component'/.test(x.message)), `got ${JSON.stringify(d)}`);
 });
 
 test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
@@ -238,12 +238,12 @@ test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
 
 test("declarationDiags: a fully typo'd header still reports something, never silence", () => {
   const d = declarationDiags("@clasaas_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX0102"), `got ${JSON.stringify(d)}`);
+  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX2101"), `got ${JSON.stringify(d)}`);
 });
 
 // G3: a component whose closed body has NO markup return used to be silent live (no markup window →
 // every window tier skips it; the virtual doc just emits `pass`) — only the post-save sidecar showed it.
-test("missingReturnComponents flags a component with no markup return (live GUITKX0102)", () => {
+test("missingReturnComponents flags a component with no markup return (live GUITKX2101)", () => {
   const src = "component NoRet() {\n\tvar a = useState(0)\n}\n";
   const hits = missingReturnComponents(src);
   assert.equal(hits.length, 1, `got ${JSON.stringify(hits)}`);

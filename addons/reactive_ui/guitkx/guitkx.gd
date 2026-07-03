@@ -126,9 +126,9 @@ static func compile(source: String, basename: String = "Component", known_compon
 		_:
 			var near := _nearest_decl_keyword(source, i)
 			if near.has("word"):
-				diags.append(D.make("GUITKX0102", D.ERROR, "unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]], near["at"], (near["word"] as String).length()))
+				diags.append(D.make("GUITKX2101", D.ERROR, "unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]], near["at"], (near["word"] as String).length()))
 			else:
-				diags.append(D.make("GUITKX0102", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
+				diags.append(D.make("GUITKX2101", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
 			return { "ok": false, "gd": "", "diagnostics": diags }
 	# Invariant (T1.1): an error-severity diagnostic can NEVER coexist with ok:true, no matter which
 	# code path appended it (validation, emit, or a future one) -- broken output must not ship.
@@ -240,7 +240,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
 	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known, uss_path)
-	# T1.1: errors appended DURING emit (GUITKX0113 undesugarable control-flow, nested-body parse
+	# T1.1: errors appended DURING emit (GUITKX0026 undesugarable control-flow, nested-body parse
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
@@ -304,7 +304,7 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if unreach_first != -1:
 		var unreach_last := _last_real(body, int(split["m_end"]) + 1, body.length())
 		# T3.2: unreachable code is a HINT (dimmed dead code), matching the live tier's Unnecessary tag.
-		diags.append(D.make("GUITKX0114", D.HINT, "unreachable code after the component's markup return -- a component has a single return; later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
+		diags.append(D.make("GUITKX0107", D.HINT, "unreachable code after the component's markup return -- a component has a single return; later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
 	var parser := Markup.new()
 	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
@@ -716,7 +716,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 			if not c["ok"]:
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			if module_comps.has(c["name"]) or c["name"] in module_hooks:
-				diags.append(D.make("GUITKX0112", D.ERROR, "duplicate declaration `%s` in module `%s`" % [c["name"], mod_name], c["name_at"], (c["name"] as String).length()))
+				diags.append(D.make("GUITKX2505", D.ERROR, "duplicate declaration `%s` in module `%s`" % [c["name"], mod_name], c["name_at"], (c["name"] as String).length()))
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			module_comps[c["name"]] = true
 			comps.append(c)
@@ -726,16 +726,16 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 			if not h["ok"]:
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			if module_comps.has(h["name"]) or h["name"] in module_hooks:
-				diags.append(D.make("GUITKX0112", D.ERROR, "duplicate declaration `%s` in module `%s`" % [h["name"], mod_name], h["name_at"], (h["name"] as String).length()))
+				diags.append(D.make("GUITKX2505", D.ERROR, "duplicate declaration `%s` in module `%s`" % [h["name"], mod_name], h["name_at"], (h["name"] as String).length()))
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			module_hooks.append(h["name"])
 			hooks.append(h)
 			i = h["next"]
 		else:
-			diags.append(D.make("GUITKX0110", D.ERROR, "nested `module` is not allowed", d["at"], 6))
+			diags.append(D.make("GUITKX2504", D.ERROR, "nested `module` is not allowed", d["at"], 6))
 			return { "ok": false, "gd": "", "diagnostics": diags }
 	if comps.is_empty() and hooks.is_empty():
-		diags.append(D.make("GUITKX0110", D.ERROR, "module `%s` has no component or hook declarations" % mod_name, mi, 6))
+		diags.append(D.make("GUITKX2504", D.ERROR, "module `%s` has no component or hook declarations" % mod_name, mi, 6))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	# T1.1: validate every member BEFORE emitting anything -- a hard error in ANY member (e.g.
 	# GUITKX0108 multi-root in a loop body) fails the whole module, exactly like a single-file compile.
@@ -762,7 +762,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		if not _has_statement(hb):
 			out += "\tpass\n"
 		out += "\n"
-	# T1.1: emit-time errors (GUITKX0113, nested-body parse errors) fail the module compile as well.
+	# T1.1: emit-time errors (GUITKX0026, nested-body parse errors) fail the module compile as well.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	return { "ok": true, "gd": out, "diagnostics": diags }
@@ -855,7 +855,7 @@ static func _split_return(body: String) -> Dictionary:
 			if meol == -1:
 				meol = n
 			return { "error": D.make("GUITKX2102", D.ERROR, "`return` must return markup using `return ( <...> )`", malformed_at, maxi(1, meol - malformed_at)), "bad": bad }
-		return { "error": D.make("GUITKX0102", D.ERROR, "component has no `return ( ... )` (only `return null`?)"), "bad": bad }
+		return { "error": D.make("GUITKX2101", D.ERROR, "component has no `return ( ... )` (only `return null`?)"), "bad": bad }
 	var setup := body.substr(0, int(chosen["at"]))
 	if chosen["shape"] == "paren":
 		return { "setup": setup, "markup_src": body, "m_start": int(chosen["p"]) + 1, "m_end": int(chosen["close"]), "chosen_at": int(chosen["at"]), "bad": bad }
@@ -1089,7 +1089,7 @@ static func _emit_fragment(nd: Dictionary, ctx: Dictionary) -> String:
 			key_expr = _attr_value_code(a, ctx)
 			continue
 		if ctx.has("diags") and ctx["diags"] is Array:
-			(ctx["diags"] as Array).append(D.make("GUITKX0107", D.ERROR, "<%s> accepts only `key` -- move '%s' onto a real element" % [str(nd.get("named", "Fragment")), a["name"]], _cbase(int(ctx.get("base", -1)), int(a.get("at", -1))), maxi(1, (a["name"] as String).length())))
+			(ctx["diags"] as Array).append(D.make("GUITKX0109", D.ERROR, "<%s> accepts only `key` -- move '%s' onto a real element" % [str(nd.get("named", "Fragment")), a["name"]], _cbase(int(ctx.get("base", -1)), int(a.get("at", -1))), maxi(1, (a["name"] as String).length())))
 	var children := _emit_children_array(nd["children"], ctx)
 	if key_expr != "":
 		return "V.fragment(%s, %s)" % [children, key_expr]
@@ -1378,7 +1378,7 @@ static func _expr_ctrl_unsupported(ctx: Dictionary, what: String, nd: Dictionary
 	var msg := "%s cannot be used inside an embedded {expression} / JSX-value (it can't be lowered to an expression). Lift it to the top-level markup return, or use .map() for lists." % what
 	if ctx.has("diags") and ctx["diags"] is Array:
 		var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
-		(ctx["diags"] as Array).append(D.make("GUITKX0113", D.ERROR, msg, at, 6))
+		(ctx["diags"] as Array).append(D.make("GUITKX0026", D.ERROR, msg, at, 6))
 	return "null"
 
 ## Re-indent a setup block into the generated func body. DEPTH-based (not raw-character-based): a tab
