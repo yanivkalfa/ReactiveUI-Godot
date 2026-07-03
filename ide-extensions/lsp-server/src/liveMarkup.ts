@@ -6,9 +6,10 @@
 //     DISCARDED -- publish the parser's own code/message/offset.
 //  2. Lowercase tags are emitted verbatim as `V.<tag>()` calls, so an unknown one is a guaranteed
 //     runtime failure -- check them against the shared vocabulary (deterministic, no project
-//     knowledge needed). PascalCase component tags stay with the compiler's known_components check
-//     and the (suggestion-gated) index probe in server.ts until T4.5 feeds .guitkx declarations
-//     into the analyzer -- firing ungated here would false-flag hand-written .gd components.
+//     knowledge needed). PascalCase component tags check against the knownComponents universe the
+//     server passes in (indexed .guitkx bindings + the project's .gd class_names) -- ungated by
+//     T4.5, which made the same universe real for the analyzer via virtual libraries; a hand-
+//     written .gd component is in the universe, so it can no longer false-flag.
 //
 // The AST walk mirrors guitkx.gd _validate_node/_cbase: control-flow bodies are raw substrings that
 // re-parse with offsets relative to their own start, composed via the node's body_at.
@@ -27,8 +28,17 @@ export interface LiveMarkupDiag {
   severity?: "warning"; // absent = error
 }
 
-/** Parse errors + unknown lowercase tags for every markup window of a document. */
-export function windowStructureDiags(src: string, windows: { start: number; end: number }[]): LiveMarkupDiag[] {
+/** Parse errors + unknown tags for every markup window of a document. Lowercase tags check
+ *  against the shared vocabulary unconditionally; PascalCase component tags check against
+ *  `knownComponents` (the merged universe the server maintains: indexed `.guitkx` bindings +
+ *  the project's `.gd` `class_name`s) when it is non-null — `null` keeps the PascalCase check
+ *  off, so an early keystroke before the workspace scan finishes never false-flags. T4.5
+ *  unlocked this: the same universe now also feeds the analyzer as virtual libraries. */
+export function windowStructureDiags(
+  src: string,
+  windows: { start: number; end: number }[],
+  knownComponents: Set<string> | null = null
+): LiveMarkupDiag[] {
   const out: LiveMarkupDiag[] = [];
   for (const w of windows) {
     const pr = parseMarkup(src, w.start, w.end);
@@ -36,13 +46,13 @@ export function windowStructureDiags(src: string, windows: { start: number; end:
       const at = Math.max(w.start, pr.error_at);
       out.push({ start: at, end: Math.min(w.end, at + 1), code: pr.error_code, message: `${pr.error_code}: ${pr.error_msg}` });
     }
-    walkTags(pr.nodes, 0, out);
+    walkTags(pr.nodes, 0, out, knownComponents);
   }
   return out;
 }
 
 // `base` composes nested-body offsets (0 for the window parse, whose `at`s are already absolute).
-function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDiag[]): void {
+function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDiag[], known: Set<string> | null = null): void {
   for (const nd of nodes) {
     if (!nd) continue;
     switch (nd.t) {
@@ -55,14 +65,24 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
             code: "GUITKX0105",
             message: `GUITKX0105: unknown element <${nd.tag}>${suggestTag(nd.tag)}`,
           });
+        } else if (known !== null && /^[A-Z]/.test(nd.tag) && !known.has(nd.tag)) {
+          // A PascalCase tag that is neither an indexed .guitkx binding nor a project
+          // `class_name` — the compile would fail its known_components check the same way.
+          const at = base + nd.at + 1;
+          out.push({
+            start: at,
+            end: at + nd.tag.length,
+            code: "GUITKX0105",
+            message: `GUITKX0105: unknown component <${nd.tag}>${suggestComponent(nd.tag, known)}`,
+          });
         }
         attrHookChecks(nd.attrs, base, out);
-        walkTags(nd.children, base, out);
+        walkTags(nd.children, base, out, known);
         break;
       }
       case "frag":
         attrHookChecks(nd.attrs ?? [], base, out);
-        walkTags(nd.children, base, out);
+        walkTags(nd.children, base, out, known);
         break;
       case "expr":
         // T2.5 (Unity 0016): a hook CALL inside a markup expression runs per-render out of hook
@@ -89,16 +109,16 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
         }
         break;
       case "if":
-        for (const br of nd.branches) walkBody(br.body_markup, base + br.body_at, out);
-        if (nd.else_body !== null) walkBody(nd.else_body, base + nd.else_body_at, out);
+        for (const br of nd.branches) walkBody(br.body_markup, base + br.body_at, out, known);
+        if (nd.else_body !== null) walkBody(nd.else_body, base + nd.else_body_at, out, known);
         break;
       case "for":
       case "while":
-        walkLoopBody(nd.body_markup, base + nd.body_at, out);
+        walkLoopBody(nd.body_markup, base + nd.body_at, out, known);
         break;
       case "match":
-        for (const c of nd.cases) walkBody(c.body_markup, base + c.body_at, out);
-        if (nd.default_body !== null) walkBody(nd.default_body, base + nd.default_body_at, out);
+        for (const c of nd.cases) walkBody(c.body_markup, base + c.body_at, out, known);
+        if (nd.default_body !== null) walkBody(nd.default_body, base + nd.default_body_at, out, known);
         break;
     }
   }
@@ -106,7 +126,7 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
 
 // T5.3: the loop-root key checks (GUITKX0106) now fire LIVE too, mirroring _validate_body -- they
 // were sidecar-only. Only the missing-key family; the multi-root 0108 stays with scanWindowDiagnostics.
-function walkLoopBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): void {
+function walkLoopBody(bodySrc: string, base: number, out: LiveMarkupDiag[], known: Set<string> | null = null): void {
   const pr = parseMarkup(bodySrc, 0, bodySrc.length);
   if (pr.error !== "") {
     const at = base + Math.max(0, pr.error_at);
@@ -135,10 +155,10 @@ function walkLoopBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): voi
       });
     }
   }
-  walkTags(pr.nodes, base, out);
+  walkTags(pr.nodes, base, out, known);
 }
 
-function walkBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): void {
+function walkBody(bodySrc: string, base: number, out: LiveMarkupDiag[], known: Set<string> | null = null): void {
   const pr = parseMarkup(bodySrc, 0, bodySrc.length);
   // Directive bodies are OPAQUE to the enclosing window parse (raw text), so a malformed body is
   // invisible to it -- report the inner parser's error here, exactly like the compiler's
@@ -148,7 +168,7 @@ function walkBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): void {
     out.push({ start: at, end: at + 1, code: pr.error_code, message: `${pr.error_code}: ${pr.error_msg}` });
     return;
   }
-  walkTags(pr.nodes, base, out);
+  walkTags(pr.nodes, base, out, known);
 }
 
 function attrHookChecks(attrs: { kind: string; value: string; vat: number }[], base: number, out: LiveMarkupDiag[]): void {
@@ -266,6 +286,20 @@ function suggestTag(tag: string): string {
   let best = "";
   let bestD = 3;
   for (const c of candidates) {
+    const d = editDistance(tag.toLowerCase(), c.toLowerCase());
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return best ? ` -- did you mean <${best}>?` : "";
+}
+
+// Nearest known component/class for a PascalCase miss (same distance profile as suggestTag).
+function suggestComponent(tag: string, known: Set<string>): string {
+  let best = "";
+  let bestD = 3;
+  for (const c of known) {
     const d = editDistance(tag.toLowerCase(), c.toLowerCase());
     if (d < bestD) {
       bestD = d;
