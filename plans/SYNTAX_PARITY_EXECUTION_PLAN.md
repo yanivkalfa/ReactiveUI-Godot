@@ -61,7 +61,11 @@
 - **Cross-repo lesson (do not repeat):** a GA change is NOT live in the extension until (a) GA version
   bumped + published to npm, (b) `RG/ide-extensions/lsp-server/package.json` dep + lockfile bumped,
   (c) extension version bumped (publish gates are version-keyed per target), (d) Publish workflow run.
-  Phase 4 tasks each end with that chain.
+  **Revised 2026-07-03 (user decision):** Phase 4 publishes ONCE, at end of phase, user-gated — not
+  per task. Each T4.x is a per-task commit with Rust-level tests; cross-repo integration is verified
+  against a locally built napi artifact (`file:`/copied `.node`) BEFORE the single publish chain runs.
+  Rationale: npm versions are immutable — one fully-tested release beats six intermediates; commits
+  stay per-task so bisectability is unchanged.
 
 **Status legend.** ⬜ todo · 🟨 in progress · ✅ done · 🔷 needs a user decision (recommendation given).
 
@@ -423,7 +427,7 @@ All in BOTH parsers + contract fixtures (matrix rows 3, 10, 17, 22 + §5.1 items
 
 ---
 
-## Phase 4 — Analyzer-side parity (GA repo; each task ends with publish → bundle chain)
+## Phase 4 — Analyzer-side parity (GA repo; per-task commits, ONE user-gated publish chain at end of phase)
 
 ### T4.1 — Godot-native message golden table  · effort: medium · Status: ⬜
 **Current.** GA's messages are recognizably not Godot's; the repo even holds two INCONSISTENT recorded
