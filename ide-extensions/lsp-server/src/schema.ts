@@ -101,7 +101,10 @@ export interface DirectiveInfo {
 
 export const PREAMBLE_DIRECTIVES: DirectiveInfo[] = [
   { label: "@class_name", insert: "@class_name ", detail: "Override the generated class name." },
-  { label: "@uss", insert: '@uss "', detail: "Associate a Theme/StyleBox resource path (reserved)." },
+  // T2.3: implemented -- preloads the Theme and applies it to the component's root element
+  // (theme prop) unless one is set explicitly. Component files only; one per file.
+  { label: "@uss", insert: '@uss "', detail: 'Preload a Theme for the root element: @uss "res://theme.tres" (Unity @uss parity).' },
+  { label: "@theme", insert: '@theme "', detail: 'Godot-idiomatic alias of @uss: preload a Theme for the root element.' },
 ];
 
 export const CONTROL_FLOW: DirectiveInfo[] = [

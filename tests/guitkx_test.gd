@@ -29,6 +29,7 @@ func _run() -> void:
 	_test_t25_hook_contexts()
 	_test_t26_naming()
 	_test_t27_diag_ports()
+	_test_t23_uss()
 	_test_p2_markup_features()
 	_test_return_null_guard()
 	_test_jsx_value()
@@ -340,6 +341,32 @@ func _test_t27_diag_ports() -> void:
 	var src121 := "component B() {\n\treturn ( <texture_rect texture=\"res://project.godot\" /> )\n}\n"
 	var r121 := RUIGuitkx.compile(src121, "B")
 	_check_true(not r121["ok"] and _has_code(r121, "GUITKX0121"), "T2.7: wrong-type asset errors 0121 (got %s)" % str(r121["diagnostics"]))
+
+func _test_t23_uss() -> void:
+	# T2.3 (Unity @uss): preloads a Theme and applies it to the root element's `theme` prop.
+	var src := "@uss \"res://tests/assets/test_theme.tres\"\ncomponent T() {\n\treturn ( <vbox><label text=\"x\" /></vbox> )\n}\n"
+	var r := RUIGuitkx.compile(src, "T")
+	_check_true(bool(r["ok"]), "T2.3: @uss compiles (got %s)" % str(r["diagnostics"]))
+	_check(str(r["gd"]), "const __THEME := preload(\"res://tests/assets/test_theme.tres\")", "T2.3: theme preload emitted")
+	_check(str(r["gd"]), "\"theme\": __THEME", "T2.3: root element receives the theme prop")
+
+	# @theme alias behaves identically.
+	var ra := RUIGuitkx.compile("@theme \"res://tests/assets/test_theme.tres\"\ncomponent T2() {\n\treturn ( <vbox><label text=\"x\" /></vbox> )\n}\n", "T2")
+	_check_true(bool(ra["ok"]) and "__THEME" in str(ra["gd"]), "T2.3: @theme alias works")
+
+	# an explicit root theme wins -- no injection.
+	var re3 := RUIGuitkx.compile("@uss \"res://tests/assets/test_theme.tres\"\ncomponent T3(t: Theme = null) {\n\treturn ( <vbox theme={ t }><label text=\"x\" /></vbox> )\n}\n", "T3")
+	_check_true(bool(re3["ok"]) and not ("__THEME }" in str(re3["gd"])) and str(re3["gd"]).count("\"theme\"") == 1, "T2.3: explicit theme not overridden")
+
+	# missing path -> 0120; wrong type -> 0121; hook file -> 2210; two directives -> 2210.
+	var rm := RUIGuitkx.compile("@uss \"res://no/such/theme.tres\"\ncomponent T4() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T4")
+	_check_true(not rm["ok"] and _has_code(rm, "GUITKX0120"), "T2.3: missing theme errors 0120 (got %s)" % str(rm["diagnostics"]))
+	var rt2 := RUIGuitkx.compile("@uss \"res://project.godot\"\ncomponent T5() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T5")
+	_check_true(not rt2["ok"] and _has_code(rt2, "GUITKX0121"), "T2.3: non-Theme errors 0121 (got %s)" % str(rt2["diagnostics"]))
+	var rh2 := RUIGuitkx.compile("@uss \"res://tests/assets/test_theme.tres\"\nhook use_x() {\n\treturn 1\n}\n", "use_x")
+	_check_true(not rh2["ok"] and _has_code(rh2, "GUITKX2210"), "T2.3: @uss in a hook file errors 2210 (got %s)" % str(rh2["diagnostics"]))
+	var rd := RUIGuitkx.compile("@uss \"res://tests/assets/test_theme.tres\"\n@uss \"res://tests/assets/test_theme.tres\"\ncomponent T6() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T6")
+	_check_true(not rd["ok"] and _has_code(rd, "GUITKX2210"), "T2.3: second @uss errors (got %s)" % str(rd["diagnostics"]))
 
 func _test_t26_naming() -> void:
 	# T2.6 (Unity 2100): component names are PascalCase -- they become the generated class_name.

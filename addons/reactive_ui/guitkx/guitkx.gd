@@ -50,6 +50,8 @@ static func compile(source: String, basename: String = "Component", known_compon
 	var known := {}
 	for kc in known_components:
 		known[str(kc)] = true
+	var uss_path := ""
+	var uss_at := -1
 	# 1. Preamble: optional `@class_name X` (other directives skipped for the skeleton).
 	var class_name_override := ""
 	var i := 0
@@ -69,6 +71,32 @@ static func compile(source: String, basename: String = "Component", known_compon
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			i = le
 			continue
+		# T2.3 (Unity @uss): `@uss "res://theme.tres"` preloads a Theme and applies it to the
+		# component's root element (theme prop) unless one is set explicitly. `@theme` is the
+		# Godot-idiomatic alias. One per file; component files only (2210, like Unity).
+		if source.substr(i, 4) == "@uss" or source.substr(i, 6) == "@theme":
+			var dlen := 4 if source.substr(i, 4) == "@uss" else 6
+			var le2 := source.find("\n", i)
+			if le2 == -1: le2 = n
+			var raw2 := source.substr(i + dlen, le2 - i - dlen)
+			var h2 := raw2.find("#")
+			if h2 != -1:
+				raw2 = raw2.substr(0, h2)
+			var val := raw2.strip_edges()
+			if val.length() < 2 or not ((val.begins_with("\"") and val.ends_with("\"")) or (val.begins_with("'") and val.ends_with("'"))):
+				diags.append(D.make("GUITKX0300", D.ERROR, "`@uss` expects a quoted resource path, e.g. @uss \"res://theme.tres\"", i, le2 - i))
+				return { "ok": false, "gd": "", "diagnostics": diags }
+			if uss_path != "":
+				diags.append(D.make("GUITKX2210", D.ERROR, "only one `@uss`/`@theme` per file -- a root control holds a single Theme", i, le2 - i))
+				return { "ok": false, "gd": "", "diagnostics": diags }
+			uss_path = val.substr(1, val.length() - 2)
+			uss_at = i
+			if not FileAccess.file_exists(uss_path):
+				diags.append(D.make("GUITKX0120", D.ERROR, "asset not found: %s" % uss_path, i, le2 - i))
+			elif not ResourceLoader.exists(uss_path, "Theme"):
+				diags.append(D.make("GUITKX0121", D.ERROR, "asset is not a Theme: %s" % uss_path, i, le2 - i))
+			i = le2
+			continue
 		break
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
 	var decl := _find_decl(source, i)
@@ -82,9 +110,12 @@ static func compile(source: String, basename: String = "Component", known_compon
 				jle = int(decl["at"])
 			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content before the `%s` declaration" % decl["kind"], lead_junk, maxi(1, jle - lead_junk)))
 	var r: Dictionary
+	# T2.3 (Unity UITKX2210): @uss applies to component files only.
+	if uss_path != "" and decl["kind"] != "component" and decl["kind"] != "":
+		diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` applies to component files -- a %s has no root element to theme" % decl["kind"], uss_at, 4))
 	match decl["kind"]:
 		"component":
-			r = _compile_component(source, decl["at"], class_name_override, basename, diags, known)
+			r = _compile_component(source, decl["at"], class_name_override, basename, diags, known, uss_path)
 		"hook":
 			r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
 		"module":
@@ -181,10 +212,17 @@ static func _edit_distance(a: String, b: String) -> int:
 		prev = curr.duplicate()
 	return prev[lb]
 
-static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}) -> Dictionary:
+static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, uss_path: String = "") -> Dictionary:
 	var pc := _parse_component_at(source, ci, diags)
 	if not pc["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
+	# T2.3: apply the @uss theme to the root element (unless it sets `theme` itself) by synthesizing
+	# a `theme={ __THEME }` attribute; _emit adds the `const __THEME := preload(...)`.
+	if uss_path != "":
+		if (pc["root"] as Dictionary).get("t", "") != "el":
+			diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` needs a single root ELEMENT to receive the theme -- this component's root is a %s" % str((pc["root"] as Dictionary).get("t", "?")), int((pc["root"] as Dictionary).get("at", -1)) + int(pc["body_at"]), 1))
+		elif not _has_attr(pc["root"], "theme"):
+			(pc["root"]["attrs"] as Array).append({ "name": "theme", "kind": "expr", "value": "__THEME", "at": -1, "vat": -1, "end": -1 })
 	_error_on_trailing(source, int(pc["next"]), "component", diags)
 	_validate_unused_params(pc["params"], int(pc.get("params_at", -1)), source.substr(int(pc["body_at"]), int(pc["next"]) - 1 - int(pc["body_at"])), diags)
 	if class_name_override == "" and pc["name"] != basename:
@@ -195,7 +233,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
-	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known)
+	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known, uss_path)
 	# T1.1: errors appended DURING emit (GUITKX0113 undesugarable control-flow, nested-body parse
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
@@ -953,10 +991,12 @@ static func unreachable_line_ranges(source: String) -> Array:
 # "lambdas can't hold multi-statement return control-flow" limit AND the helper-method
 # locals-capture problem -- the block is inline in render() and sees all setup locals. The
 # runtime `V._norm` flattens the `@for` arrays and drops the null `@if` misses for free.
-static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}) -> String:
+static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}, uss_path: String = "") -> String:
 	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
+	if uss_path != "":
+		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)   # T2.3 @uss
 	out += _emit_func("render", params, setup, root, {}, [], diags, base, known)
 	return out
 
