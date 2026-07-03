@@ -979,6 +979,21 @@ test("live PascalCase 0105 fires only against a known-components universe (T4.5 
   );
 });
 
+test("live 0105 exempts vocabulary host tags from the component-universe check (0.6.0 field regression)", () => {
+  // Host tags are PascalCase too -- with an armed universe that (correctly) does not contain
+  // them, <HBox>/<Button>/<Label> and vocabulary aliases like <VBoxContainer> must stay clean;
+  // the 0.6.0 storm was this branch checking only `known` and never findTag().
+  const src = 'component C {\n\treturn ( <HBox><Button text="b" /><Label text="l" /><VBoxContainer /></HBox> )\n}\n';
+  const known = new Set(["SomeComp"]);
+  const d = windowStructureDiags(src, markupWindows(src), known);
+  assert.ok(!d.some((x) => x.code === "GUITKX0105"), `host tags stay clean against an armed universe: ${JSON.stringify(d)}`);
+  // A typo'd host tag still flags -- and the suggestion pool now includes host tags themselves.
+  const typo = "component C {\n\treturn ( <HBoxx /> )\n}\n";
+  const hit = windowStructureDiags(typo, markupWindows(typo), known).find((x) => x.code === "GUITKX0105");
+  assert.ok(hit, "a typo'd host tag still flags against the universe");
+  assert.ok(hit!.message.includes("did you mean <HBox>"), `host-tag suggestion expected: ${hit!.message}`);
+});
+
 test("T4.5 e2e: a fed virtual library resolves the binding; a typo still flags", () => {
   const az = new AnalyzerAdapter();
   az.upsertLibrary(
