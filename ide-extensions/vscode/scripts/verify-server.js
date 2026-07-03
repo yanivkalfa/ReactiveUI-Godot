@@ -29,11 +29,16 @@ if (missing.length) {
   process.exit(1);
 }
 
-// The vocabulary must be the CURRENT one — a stale copy resurrects already-fixed diagnostic behavior.
+// The vocabulary must be the CURRENT one — a stale copy resurrects already-fixed diagnostic
+// behavior. Compared SEMANTICALLY (parse + canonical stringify): tsc re-emits the JSON into out/
+// with normalized formatting, so byte-equality with src would false-flag every fresh bundle.
 const srcVocab = path.join(serverSrc, "src", "vocabulary.json");
-if (fs.existsSync(srcVocab) && fs.readFileSync(srcVocab, "utf8") !== fs.readFileSync(path.join(dest, "vocabulary.json"), "utf8")) {
-  console.error("[verify-server] ./server/vocabulary.json differs from lsp-server/src/vocabulary.json — rebundle before packaging.");
-  process.exit(1);
+if (fs.existsSync(srcVocab)) {
+  const canon = (p) => JSON.stringify(JSON.parse(fs.readFileSync(p, "utf8")));
+  if (canon(srcVocab) !== canon(path.join(dest, "vocabulary.json"))) {
+    console.error("[verify-server] ./server/vocabulary.json differs from lsp-server/src/vocabulary.json — rebundle before packaging.");
+    process.exit(1);
+  }
 }
 
 // Staleness: any lsp-server/out file newer than the bundle means ./server predates the last server
