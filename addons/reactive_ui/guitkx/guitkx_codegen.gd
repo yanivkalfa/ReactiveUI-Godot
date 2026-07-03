@@ -45,12 +45,19 @@ static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: A
 		f.store_string(JSON.stringify({ "v": 2, "src_hash": src_hash(src), "diagnostics": entries }))
 		f.close()
 
-## True if the sibling .gd is missing or older than the .guitkx source.
+## True if the sibling .gd is missing or older than the .guitkx source. A zero mtime (the editor
+## scan-window flake) counts as STALE -- erring toward a compile attempt is safe (the empty-read
+## hold in compile_file guards it), while trusting `0 > 0` once let a stale demo survive a cold
+## open uncompiled (field capture 2026-07-03).
 static func is_stale(guitkx_path: String) -> bool:
 	var gd_path := gd_path_for(guitkx_path)
 	if not FileAccess.file_exists(gd_path):
 		return true
-	return FileAccess.get_modified_time(guitkx_path) > FileAccess.get_modified_time(gd_path)
+	var src_t := FileAccess.get_modified_time(guitkx_path)
+	var gd_t := FileAccess.get_modified_time(gd_path)
+	if src_t == 0 or gd_t == 0:
+		return true
+	return src_t > gd_t
 
 # --- Compiler-version staleness ----------------------------------------------------------------
 # is_stale()'s mtime check cannot see a COMPILER change: after a `git pull` updates the .guitkx
@@ -175,6 +182,18 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 	if not FileAccess.file_exists(guitkx_path):
 		return { "ok": false, "path": guitkx_path, "error": "file not found" }
 	var src := FileAccess.get_file_as_string(guitkx_path)
+	if src.is_empty():
+		# 0.6.2: an EMPTY read of an existing file is the editor scan-window flake (the same
+		# failure the vocabulary and fingerprint reads had) -- NEVER a compile input: compiling
+		# "" fails and T1.1 would delete the sibling .gd of a perfectly healthy file. Same hold
+		# semantics as an unreadable vocabulary: keep outputs, land in held[], let the retry
+		# sweep pick it up. (A genuinely empty .guitkx has nothing to compile anyway.)
+		if not _env_hold:
+			_env_hold = true
+			push_warning("[guitkx] %s read back empty (editor scan window?) -- holding, outputs kept, retrying" % guitkx_path)
+		return { "ok": false, "env_error": true, "path": guitkx_path, "diagnostics": [
+			{ "code": "GUITKX2507", "severity": 0, "message": "source read came back empty (editor scan window) -- retrying", "offset": -1, "length": 0 },
+		] }
 	var basename := guitkx_path.get_file().get_basename()
 	var r: Dictionary = Compiler.compile(src, basename, known_components)
 	if bool(r.get("env_error", false)):
@@ -211,7 +230,20 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 		return { "ok": false, "path": guitkx_path, "error": "cannot write %s (err %d)" % [gd_path, FileAccess.get_open_error()] }
 	f.store_string(r["gd"])
 	f.close()
-	return { "ok": true, "path": guitkx_path, "gd_path": gd_path, "diagnostics": r["diagnostics"] }
+	# 0.6.2: parse the generated script IMMEDIATELY on a throwaway GDScript -- Unity parity: uitkx's
+	# generated C# fails the Roslyn compile in the console at once, while a generated .gd otherwise
+	# parses only when something first loads it, so an unknown identifier in an expression stayed
+	# invisible until play. GDScript.new() (not ResourceLoader) keeps the resource cache clean; the
+	# class_name line is stripped so the throwaway cannot collide with the scanned global class.
+	var chk := GDScript.new()
+	var chk_src: String = r["gd"]
+	if chk_src.begins_with("class_name "):
+		chk_src = chk_src.substr(chk_src.find("\n") + 1)
+	chk.source_code = chk_src
+	var gd_parse_ok := chk.reload() == OK
+	if not gd_parse_ok:
+		push_error("[guitkx] %s: the generated %s has GDScript errors (see the parser messages above) -- likely an unknown identifier or type error in an expression; fix the .guitkx source" % [guitkx_path, gd_path.get_file()])
+	return { "ok": true, "path": guitkx_path, "gd_path": gd_path, "diagnostics": r["diagnostics"], "gd_parse_ok": gd_parse_ok }
 
 ## Compile every stale .guitkx under `root`. Returns { compiled:[...], errors:[...], held:[paths] }.
 ## `held` = files skipped because the compiler ENVIRONMENT wasn't ready (env_error: unreadable
