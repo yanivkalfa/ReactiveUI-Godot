@@ -4,6 +4,40 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-07-03
+
+**Cold-open recovery.** A real-project field capture showed a cold Godot open holding every
+`.guitkx` compile behind `GUITKX2507` ("vocabulary.json could not be loaded") for hours: in a
+repo with `node_modules`/docs trees the editor's first filesystem scan — during which ALL
+`FileAccess` reads return empty — runs for minutes, and nothing retried without a user edit.
+An earlier upgrade sweep in that state had also consumed the force-recompile marker while
+compiling nothing, leaving old-compiler sidecars ("unknown element `<HBox>`" on every host tag)
+pinned forever.
+
+### Fixed
+- **The vocabulary is embedded in the compiler** (`guitkx_vocabulary.gen.gd`, generated from
+  `vocabulary.json` by `dev/gen_vocabulary.gd`, drift-tested in `guitkx_test.gd`): production
+  no longer file-reads at all, so the scan window cannot hold compiles. `vocabulary.json` stays
+  the single source of truth, shared byte-identical with the LSP.
+- **Held compiles auto-retry:** if a sweep ever does meet a not-ready environment, the plugin
+  re-runs it every 2 s until it recovers — "retrying on the next compile" no longer waits for a
+  user edit or an editor focus change.
+- **The per-file `GUITKX2507` wall is gone:** environment-held files are announced once per
+  episode, never one red dock line per file per sweep (`compile_all` now returns them as
+  `held`, separate from `errors`).
+- **The compiler-changed force-recompile survives the scan window:** the fingerprint marker is
+  refreshed only when the forced sweep actually ran, and the fingerprint itself now reports
+  "unknowable" when a source reads back empty — a scan-window read can neither consume the
+  pending force nor persist a garbage fingerprint. Previously an upgrade followed by a cold
+  open could strand outputs and sidecars written by the old compiler.
+- **`.gdignore`** added to `ide-extensions/`, `ReactiveUIGodotDocs~/`, `plans/`, `research/`:
+  the editor no longer scans `node_modules`/docs trees (first scan: minutes → seconds), and the
+  codegen sweep skips them too.
+
+### IDE
+- VS Code extension **0.7.1**: pressing Enter after a closing tag (`</VBox>`) no longer indents
+  one level too deep. Language server unchanged (0.7.0).
+
 ## [0.6.0] — 2026-07-03
 
 **Early markup returns — the Unity way** (the minor bump: a new language capability).

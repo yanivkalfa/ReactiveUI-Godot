@@ -186,6 +186,60 @@ addon 0.6.0 / ext 0.7.0 bumps.
 
 ---
 
+## Phase R — cold-open recovery (round-2 field triage, 2026-07-03 evening) — branch `fix/cold-open-recovery`, addon **0.6.1** + ext **0.7.1**
+
+> Round-2 field test (ext 0.7.0 + addon 0.6.0) surfaced no new language bugs — every symptom
+> traced to the COLD-OPEN pipeline. A zombie editor session (pre-Phase-C compiler still in
+> memory, empty host-tag table) force-swept all 43 files at 1:13 PM, stamped every sidecar with
+> bogus 0105 host-tag storms, consumed the fingerprint marker while compiling nothing, and left
+> 38 generated .gd deleted (→ app.gd "DemoGallery not declared"); the editor then held every
+> compile behind GUITKX2507 for hours because this repo's node_modules/docs trees keep the
+> editor's first scan — during which ALL FileAccess reads return empty, even the fingerprint's
+> own source reads — running for minutes, and nothing retried without a user edit.
+
+### R0 ✅ Embed the vocabulary as a generated const (kills the 2507 class) — landed `5edebe7`
+`dev/gen_vocabulary.gd` → `guitkx_vocabulary.gen.gd` (`const DATA`), preloaded by `guitkx.gd`:
+production never file-reads — if the compiler script loads, its vocabulary exists. The
+`_VOCAB_PATH` test seam keeps the historical file-read + env machinery exercisable;
+`vocabulary.json` stays the single source of truth (LSP untouched), drift-tested in
+`guitkx_test.gd`.
+
+### R1 ✅ Auto-retry while held — landed `5edebe7`
+`plugin.gd`: a sweep returning `held` files schedules a 2s one-shot retry (announced once per
+episode, bound method so a freed plugin drops the connection) until a sweep runs unheld.
+
+### R2 ✅ Held ≠ errors (the 42-line wall) — landed `5edebe7`
+`compile_all` returns `held[]` separate from `errors[]`; `plugin.gd` prints nothing per held
+file — the loader's one-per-episode hold warning is the only announcement.
+
+### R3 ✅ Fingerprint marker survives held sweeps AND the scan window — landed `5edebe7`
+`_write_fp_marker()` only when `held` is empty, and `compiler_fingerprint()` returns
+unknowable ("") on any empty source read — forces the sweep (safe direction) but never
+persists garbage. The test run itself caught the second half: the `--editor --quit` process
+hashed empty reads and persisted a garbage marker. `.gen.gd` joined `_COMPILER_SOURCES`.
+
+### R4 ✅ `.gdignore` the non-Godot trees — landed `5edebe7`
+`ide-extensions/`, `ReactiveUIGodotDocs~/`, `plans/`, `research/` (NOT `tests/` — CI loads
+scripts from there). Editor first scan: minutes → seconds; `find_all` already honors
+`.gdignore`, so codegen sweeps skip them too.
+
+### R5 ✅ Enter-after-`</Tag>` over-indent (ext 0.7.1) — landed `5edebe7`
+`language-configuration.json` increaseIndentPattern branch `([^/]>\s*$)` matched closing tags;
+now `(^(?!\s*</).*[^/]>\s*$)` (regex case-table verified; multi-line opening tags and `/>`
+self-closers unchanged).
+
+- **Verified NOT bugs this round:** live 2101 fires on every missing-return shape (repro-proven
+  on the exact field buffer, on both 0.6.1 and 0.7.0) — it anchors at the `component Name`
+  declaration head; live 2508 fires on `@for (i in 2: int5)`. Both were buried under the
+  zombie-sidecar noise. The LSP server is untouched this phase (stays 0.7.0).
+- **Accept (phase):** cold open of this repo compiles everything with zero red lines (or, if
+  the environment is ever held, recovers by itself within seconds); Enter after `</VBox>`
+  aligns with the opening tag; full suites green (guitkx_build 42/0, contract 63, core 114,
+  style 25, router 18+37, update, demos 30, guitkx incl. `_test_cold_open_recovery`; TS
+  173/173).
+
+---
+
 ## Non-goals / parked
 - **Setup markup as a value** (`var x = <Label/>` — Unity's bare-JSX ranges): natural C-follow-up,
   not in C's acceptance. Track after C lands.

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1] - 2026-07-03
+- **Enter after a closing tag no longer over-indents.** The increase-indent rule matched any
+  line ending in `>` — `</VBox>` included — so a new line after a closing tag gained an extra
+  level; it now aligns with the tag itself. Opening tags, multi-line opening tags, and `/>`
+  self-closers indent exactly as before.
+- Pairs with addon **0.6.1** (root CHANGELOG): the compiler vocabulary is embedded in the addon
+  and held compiles auto-retry, so the `GUITKX2507` cold-open wall — and the stale
+  "unknown element" sidecar squiggles it pinned in VS Code — can no longer occur.
+
 ## [0.7.0] - 2026-07-03
 - **Early markup returns** (pairs with addon 0.6.0): `if not ready: return ( <Label /> )` is
   legal guitkx now, React-style — and the guard's markup gets FULL live intelligence: parse
