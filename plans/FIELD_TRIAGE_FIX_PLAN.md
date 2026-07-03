@@ -17,7 +17,7 @@
 
 ## Phase A — live tier (`ide-extensions/lsp-server`)
 
-### A1 ⬜ 0105 flags PascalCase host tags (`<HBox>`, `<Button>`, `<Label>`) — **S**
+### A1 ✅ 0105 flags PascalCase host tags (`<HBox>`, `<Button>`, `<Label>`) — **S** — landed `1a3be5b`
 - **Root cause:** the live PascalCase branch (`liveMarkup.ts:68-77`) checks only the `known`
   component universe and never consults `VOCABULARY.host_tags`; `known` (`server.ts:1564`) is
   built from index bindings + `class_name`s only — host tags are PascalCase too, so every one
@@ -31,7 +31,7 @@
   tests never pitted a host tag against an armed universe — `core.test.ts:343-346, 961-980`.)
 - **Accept:** examples/demos project shows zero 0105 on vocabulary tags.
 
-### A2 ⬜ Early markup return leaks raw markup into the virtual GDScript doc — **M**
+### A2 ✅ Early markup return leaks raw markup into the virtual GDScript doc — **M** — landed `bfb12a9`
 - **Root cause:** `virtualDoc.ts` splices the setup span verbatim (`emitDeclFunc` → 
   `emitVerbatimBlock:383-426`, no neutralization; only `emitExpr:365` calls `neutralizeMarkup`).
   `splitReturn:497-554` latches the **last** top-level markup return, so an earlier
@@ -44,7 +44,12 @@
 - **Accept:** `return <s></a>` mid-setup produces **no** embedded-GDScript noise; existing
   embedded-diagnostic offset tests stay green.
 
-### A3 ⬜ 2101 masked by any earlier markup-shaped return — **S**
+### A3 ✅ 2101 masked by any earlier markup-shaped return — **S** — folded into A4 (`af86a25`)
+> **Landing note:** deeper analysis dissolved the standalone fix. When the "early" markup return
+> is the LAST one, it *is* the window — the live markup diagnostics (0302 mismatched close, 0105
+> unknown element) fire on it, which is the correct signal, not 2101. Nested-only markup returns
+> already 2101 live, and now pair with live 2102 exactly like the compiler. What actually made
+> return-shape problems invisible with Godot closed was 2102 being sidecar-only — A4's fix.
 - **Root cause:** live `missingReturnComponents` (`formatGuitkx.ts:628/638`) reports only when
   `splitReturn === null` — i.e. *no markup return anywhere*. An early `return <s></a>` satisfies
   it, so deleting the final return shows nothing.
@@ -52,7 +57,7 @@
   top-level statement-position markup return; interior ones don't count).
 - **Accept:** file with only an early `return <s></a>` and no final `return (...)` → live 2101.
 
-### A4 ⬜ 2102 live + honest wording (both sides) — **S**
+### A4 ✅ 2102 live + honest wording (both sides) — **S** — landed `af86a25`
 - **Root cause:** 2102 is compiler-only (in `vocabulary.json` severities, absent from `live`),
   so with the Godot editor closed it never appears, updates, or clears. Its message ("a
   component's setup cannot `return` before the final markup return") overstates the rule —
@@ -66,7 +71,7 @@
 - **Accept:** early markup return squiggles live with the new wording and clears on fix, Godot
   closed throughout.
 
-### A5 ⬜ `@for`/`@if`/`@match`/`@while` header grammar — live — **M**
+### A5 ✅ `@for`/`@if`/`@match`/`@while` header grammar — live — **M** — landed `aa5a98c` (code **GUITKX2508**; t05 promotion skipped — that fixture pins an unrelated declaration-typo divergence)
 - **Root cause:** no header validation exists anywhere. Live checks parens only
   (`markup.ts:316-342`); `@for (i in 2: int5)` passes silently.
 - **Fix:** live grammar check: `@for` header must be `<ident> [, <ident>] in <expr>`; `@if`/
@@ -75,7 +80,7 @@
   Validate the *expr* part via the embedded-analyzer seam where practical, not regex-only.
 - **Accept:** `@for (i in 2: int5)` and `@for (garbage)` flag live; all demo headers stay clean.
 
-### A6 ⬜ Stale sidecar pile-up — **S/M**
+### A6 ✅ Stale sidecar pile-up — **S/M** — landed `da5ac42`
 - **Root cause:** on `src_hash` divergence, `mergeCompilerSidecar` (`server.ts:735-757`)
   re-publishes every compiler-only diag each keystroke with clamped offsets (many collapse to
   EOF), and nothing refreshes the sidecar until a Godot-editor recompile
@@ -86,7 +91,7 @@
 - **Accept:** editing with Godot closed → no drifting squiggles; reopen Godot + save → real
   sidecar diagnostics return positioned.
 
-### A7 ⬜ Packaging hardening: `vscode:prepublish` — **S**
+### A7 ✅ Packaging hardening: `vscode:prepublish` — **S** — landed `8eb9e15` + `86ac96b` (prepublish VERIFIES rather than rebundles — CI bundles per `--target`, an unconditional rebundle would clobber it; vocabulary compared semantically since tsc re-emits JSON normalized)
 - **Root cause:** `vscode/package.json:78` prepublish runs only the extension `tsc`; only
   `npm run package` refreshes `server/`. On-disk `vscode/server/` is stale (missing
   `vocabulary.json`, `liveMarkup.js`, …) — a local `vsce publish`/`package` outside `npm run
@@ -101,7 +106,11 @@
 
 ## Phase B — Godot addon side (`addons/reactive_ui`)
 
-### B1 ⬜ Vocabulary loader: scan-window read failures are deafening — **S/M**
+### B1 ✅ Vocabulary loader: scan-window read failures are deafening — **S/M** — landed `06ed4e3` + `9d58277`
+> **Replay result (pristine-clone cold open):** 2 warning lines total (was ~250 red), 0 "Parse
+> JSON failed", outputs kept, clean exit. Both the res:// AND globalized-path reads fail inside
+> the 4.7 scan window — the empty-check + once-per-episode hold is the real safety; the absolute-
+> path read stays as best-effort. Self-heal on the first post-scan compile (recovery line).
 - **Root cause:** during the editor's first filesystem scan, `FileAccess.get_file_as_string`
   on `res://…/vocabulary.json` returns **empty** (file itself is valid — byte-verified);
   `_load_vocabulary` (`guitkx.gd:55-56`) feeds "" straight to `JSON.parse_string` → Godot's own
@@ -118,7 +127,7 @@
   and, if the globalize fallback works in-scan, a successful first compile.
 - **Accept:** cold editor open of a fresh clone is quiet and self-heals; no `.gd` deletions.
 
-### B2 ⬜ Compiler-side `@for` header validation — **S/M**
+### B2 ✅ Compiler-side `@for` header validation — **S/M** — landed `aa5a98c` (same commit as A5, GD+TS lockstep; golden `t20_bad_for_header` pins it)
 - **Root cause:** `_parse_loop` → `_read_paren` (`guitkx_markup.gd:283-292`) captures the header
   raw; statement lowering emits it **verbatim** (`guitkx.gd:1327-1336` → `for i in 2: int5:`),
   so garbage becomes invalid GDScript caught only by Godot at load. `_split_for_header:1398`
@@ -188,3 +197,9 @@ addon 0.6.0 / ext 0.7.0 bumps.
 ## Status log
 - 2026-07-03 — plan created from the field-triage investigation (root causes verified by two
   code sweeps + byte/API checks). No fixes started.
+- 2026-07-03 — **Phases A + B COMPLETE** on `fix/live-tier-field-triage` (per-task commits,
+  GD+TS same-commit where both sides changed). Gates: lsp 171/171 unit + contract + e2e smoke;
+  full Godot suite in a PRISTINE CLONE (guitkx_build, contract 62 goldens, core/style/router×2/
+  update, demos 30/30, guitkx) — the clone also served as the B1 cold-open replay; extension
+  build + bundle + verify. Release: addon **0.5.1**, extension + language server **0.6.1**.
+  Phase C (early markup returns, the Unity way) remains the next wave on its own branch.
