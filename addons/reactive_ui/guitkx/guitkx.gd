@@ -65,13 +65,14 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		break
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
 	var decl := _find_decl(source, i)
+	var r: Dictionary
 	match decl["kind"]:
 		"component":
-			return _compile_component(source, decl["at"], class_name_override, basename, diags)
+			r = _compile_component(source, decl["at"], class_name_override, basename, diags)
 		"hook":
-			return _compile_hook(source, decl["at"], class_name_override, basename, diags)
+			r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
 		"module":
-			return _compile_module(source, decl["at"], class_name_override, basename, diags)
+			r = _compile_module(source, decl["at"], class_name_override, basename, diags)
 		_:
 			var near := _nearest_decl_keyword(source, i)
 			if near.has("word"):
@@ -79,6 +80,12 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 			else:
 				diags.append(D.make("GUITKX0102", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
 			return { "ok": false, "gd": "", "diagnostics": diags }
+	# Invariant (T1.1): an error-severity diagnostic can NEVER coexist with ok:true, no matter which
+	# code path appended it (validation, emit, or a future one) -- broken output must not ship.
+	if r.get("ok", false) and D.has_error(r.get("diagnostics", [])):
+		r["ok"] = false
+		r["gd"] = ""
+	return r
 
 ## Find the first top-level declaration keyword (skipping strings/comments).
 static func _find_decl(source: String, from: int) -> Dictionary:
@@ -171,6 +178,10 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
 	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"])
+	# T1.1: errors appended DURING emit (GUITKX0113 undesugarable control-flow, nested-body parse
+	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
+	if D.has_error(diags):
+		return { "ok": false, "gd": "", "diagnostics": diags }
 	return { "ok": true, "gd": gd, "diagnostics": diags }
 
 ## Parse ONE component declaration at `ci`. Returns { ok, name, params, setup, root, next }
@@ -307,6 +318,9 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: 
 	var parser := Markup.new()
 	var pr := parser.parse(body_src, 0, body_src.length())
 	if pr["error"] != "":
+		# T1.2: a malformed control-flow body is a compile ERROR carrying the inner parser's own code
+		# and position -- never a silent skip (Unity parity: codegen fails on every parser error).
+		diags.append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
 		return
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
 	if is_loop:
@@ -515,10 +529,15 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	if comps.is_empty() and hooks.is_empty():
 		diags.append(D.make("GUITKX0110", D.ERROR, "module `%s` has no component or hook declarations" % mod_name, mi, 6))
 		return { "ok": false, "gd": "", "diagnostics": diags }
+	# T1.1: validate every member BEFORE emitting anything -- a hard error in ANY member (e.g.
+	# GUITKX0108 multi-root in a loop body) fails the whole module, exactly like a single-file compile.
+	for c in comps:
+		_validate(c["setup"], c["root"], diags, c["body_at"])
+	if D.has_error(diags):
+		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls := class_name_override if class_name_override != "" else mod_name
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
 	for c in comps:
-		_validate(c["setup"], c["root"], diags, c["body_at"])
 		out += "# component %s\n" % c["name"]
 		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"])
 		out += "\n"
@@ -531,6 +550,9 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		if not _has_statement(hb):
 			out += "\tpass\n"
 		out += "\n"
+	# T1.1: emit-time errors (GUITKX0113, nested-body parse errors) fail the module compile as well.
+	if D.has_error(diags):
+		return { "ok": false, "gd": "", "diagnostics": diags }
 	return { "ok": true, "gd": out, "diagnostics": diags }
 
 # --- body splitter: find the top-level `return ( ... )` ---
@@ -835,7 +857,11 @@ static func _emit_body(body_src: String, ctx: Dictionary, base: int = -1) -> Str
 	var parser := Markup.new()
 	var pr := parser.parse(body_src, 0, body_src.length())
 	if pr["error"] != "":
-		return "null  # body parse error: %s" % pr["error"]
+		# T1.2: reachable only for bodies validation never re-parses (control flow nested in a JSX-value
+		# {expr}); append the parser's diagnostic so the T1.1 post-emit gate fails the compile.
+		if ctx.has("diags") and ctx["diags"] is Array:
+			(ctx["diags"] as Array).append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
+		return "null"
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
 	if nodes.is_empty():
 		return "null"
@@ -960,7 +986,6 @@ static func _expr_ctrl_unsupported(ctx: Dictionary, what: String, nd: Dictionary
 	if ctx.has("diags") and ctx["diags"] is Array:
 		var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
 		(ctx["diags"] as Array).append(D.make("GUITKX0113", D.ERROR, msg, at, 6))
-	push_warning("[guitkx] GUITKX0113: " + msg)
 	return "null"
 
 ## Re-indent a setup block into the generated func body. DEPTH-based (not raw-character-based): a tab
@@ -1090,7 +1115,13 @@ static func _splice_expr_markup(expr: String, ctx: Dictionary) -> String:
 		var rs: int = r["start"]
 		if rs < prev:
 			continue   # nested inside an already-emitted range
-		var markup := _emit_markup_substring(expr, rs, r["end"], ctx)
+		var re: int = r["end"]
+		if re == -1:
+			# T1.2: unbalanced markup owns the rest of the expression; parsing it below yields the
+			# markup parser's own precise error (e.g. 0301 unclosed tag) instead of emitting the raw
+			# text as (invalid) GDScript.
+			re = expr.length()
+		var markup := _emit_markup_substring(expr, rs, re, ctx)
 		var op: String = r["op"]
 		if op == "and" or op == "&&":
 			# desugar `LHS and <A/>` -> `(V.a() if (LHS) else null)`
@@ -1102,7 +1133,7 @@ static func _splice_expr_markup(expr: String, ctx: Dictionary) -> String:
 		else:
 			out += expr.substr(prev, rs - prev)
 			out += markup
-		prev = r["end"]
+		prev = re
 	out += expr.substr(prev)
 	return out
 
@@ -1117,6 +1148,10 @@ static func _emit_markup_substring(src: String, start: int, end: int, ctx: Dicti
 	var parser := Markup.new()
 	var pr := parser.parse(src, start, end)
 	if pr["error"] != "":
+		# T1.2: markup nested inside an embedded {expr} has no validation pass at all -- this is its
+		# only parse; surface the error (offsets are relative to src[0] = the expr string ctx.base maps).
+		if ctx.has("diags") and ctx["diags"] is Array:
+			(ctx["diags"] as Array).append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(int(ctx.get("base", -1)), maxi(0, int(pr["error_at"]))), 1))
 		return "null"
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
 	if nodes.is_empty():

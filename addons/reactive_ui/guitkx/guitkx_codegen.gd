@@ -114,6 +114,12 @@ static func compile_file(guitkx_path: String) -> Dictionary:
 			d["line"] = lc["line"]
 			d["col"] = lc["col"]
 	if not r["ok"]:
+		# T1.1: never leave a stale sibling .gd (from an older successful compile) next to a broken
+		# .guitkx -- the editor would silently keep running code that no longer matches the source.
+		var stale_gd := gd_path_for(guitkx_path)
+		if FileAccess.file_exists(stale_gd):
+			DirAccess.remove_absolute(stale_gd)
+			push_error("[guitkx] %s no longer compiles -- removed stale %s (fix the errors to regenerate it)" % [guitkx_path, stale_gd])
 		return { "ok": false, "path": guitkx_path, "diagnostics": r["diagnostics"] }
 	var gd_path := gd_path_for(guitkx_path)
 	var f := FileAccess.open(gd_path, FileAccess.WRITE)

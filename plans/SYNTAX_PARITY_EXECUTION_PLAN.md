@@ -180,7 +180,7 @@ completion, no false unknown-tag).
 
 ## Phase 1 — Silent mis-compiles + data loss
 
-### T1.1 — Error gate runs after `_emit` and inside `_compile_module`  · effort: small · Status: ⬜
+### T1.1 — Error gate runs after `_emit` and inside `_compile_module`  · effort: small · Status: ✅ (gates: post-emit in `_compile_component`, validate-all-then-gate + post-emit in `_compile_module`, PLUS a final invariant enforcement in `compile()` itself — ok:true can never coexist with an error diag no matter which path appended it; `compile_file` now DELETES a stale sibling .gd on failed compile (push_error announces it) and regenerates on fix; 0113's legacy push_warning removed — it fails the compile through all 4 surfaces now)
 **Current.** Gate at `guitkx.gd:156-163` returns before `_emit` (line 162) is ever consulted — any
 error appended DURING emit (GUITKX0113 at `guitkx.gd:896-901`, jsx-scan errors) cannot fail the compile;
 `_compile_module` (`guitkx.gd:475-491`) has no gate at all (module-member multi-root compiles fine).
@@ -193,7 +193,7 @@ choose delete + push_error).
 with 2 roots ⇒ `ok:false`. Contract fixture each.
 **Done when.** No diagnostic with error severity ever coexists with `ok:true`.
 
-### T1.2 — Silent-`null` emissions become diagnostics  · effort: small · Status: ⬜
+### T1.2 — Silent-`null` emissions become diagnostics  · effort: small · Status: ✅ (all 3 sites — `_validate_body`, `_emit_body`, `_emit_markup_substring` — append the INNER parser's own code/message/offset via base-threading; bonus 4th silent path found by the new test: `jsx_scan.find_markup_ranges` dropped UNBALANCED nested markup entirely, so `{ open and <Broken> }` emitted raw `<Broken>` as GDScript — now reported as `{end:-1}` ranges that `_splice_expr_markup` routes through the markup parser for its precise 0301; offset-precision asserted by `_check_diag_at` in `_test_p1_error_gates`)
 **Current.** Malformed markup inside a branch/loop/nested-expr emits `null  # body parse error` with
 zero diagnostics (`guitkx.gd:283-284, 784-785, 1053-1054`).
 **Target.** Each of the three sites appends an error diag (code `GUITKX0302`-family or `0300` with the

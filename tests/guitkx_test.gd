@@ -22,6 +22,7 @@ func _run() -> void:
 	_test_ctrl_flow_in_lambda()
 	_test_module()
 	_test_module_dup_across_kinds()
+	_test_p1_error_gates()
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
@@ -171,11 +172,14 @@ func _test_ctrl_flow_in_lambda() -> void:
 	var res_for := RUIGuitkx.compile(src_for, "CFF")
 	_check_true(res_for["ok"] and "items).map(func(x)" in str(res_for["gd"]), "@for in expression lowers to .map")
 
-	# @match inside a JSX-value can't be an expression -> diagnostic + degrade (no invalid codegen).
+	# @match inside a JSX-value can't be an expression -> GUITKX0113, and since T1.1 an emit-time
+	# error FAILS the compile (no diagnostic with error severity may coexist with ok:true).
 	var src_m := "component CFM(x: int = 0) {\n" + \
 		"\treturn ( <VBox>{ true and <>@match (x) { @case (0) { <Label/> } }</> }</VBox> )\n}\n"
 	var res_m := RUIGuitkx.compile(src_m, "CFM")
 	_check_true(_has_code(res_m, "GUITKX0113"), "@match in expression emits GUITKX0113")
+	_check_true(not res_m["ok"], "T1.1: emit-time 0113 fails the compile")
+	_check_true(res_m["gd"] == "", "T1.1: failed compile ships no generated code")
 
 func _test_module_dup_across_kinds() -> void:
 	# [audit #7] component + hook with the SAME name in a module must fail (would emit duplicate funcs).
@@ -185,6 +189,39 @@ func _test_module_dup_across_kinds() -> void:
 	var res := RUIGuitkx.compile(src, "M")
 	_check_true(not res["ok"], "module component+hook same name rejected")
 	_check_true(_has_code(res, "GUITKX0112"), "duplicate-decl diagnostic emitted")
+
+func _test_p1_error_gates() -> void:
+	# T1.2: malformed markup inside an @if body -> the INNER parser's error code, positioned exactly
+	# on the broken tag, and (T1.1) ok:false. Previously: silent `null  # body parse error` emission.
+	var src_if := "component B() {\n" + \
+		"\treturn (\n\t\t<VBox>\n\t\t\t@if (true) { <Broken> }\n\t\t</VBox>\n\t)\n}\n"
+	var r := RUIGuitkx.compile(src_if, "B")
+	_check_true(not r["ok"], "T1.2: broken @if body fails the compile")
+	_check_diag_at(r, "GUITKX0301", src_if, "<Broken>", "T1.2: 0301 lands on the unclosed tag in the @if body")
+
+	# T1.2: broken markup in a @for body.
+	var src_for := "component F(xs: Array = []) {\n" + \
+		"\treturn ( <VBox>@for (x in xs) { <Row };&& }</VBox> )\n}\n"
+	var r2 := RUIGuitkx.compile(src_for, "F")
+	_check_true(not r2["ok"], "T1.2: broken @for body fails the compile")
+
+	# T1.2: broken markup nested inside a JSX-value {expr} -- no validation pass ever reaches it,
+	# so the emit-time parse is its only chance to be seen.
+	var src_ex := "component C(open: bool = false) {\n" + \
+		"\treturn ( <VBox>{ open and <Broken> }</VBox> )\n}\n"
+	var r3 := RUIGuitkx.compile(src_ex, "C")
+	_check_true(not r3["ok"], "T1.2: broken nested-expr markup fails the compile")
+	_check_diag_at(r3, "GUITKX0301", src_ex, "<Broken>", "T1.2: nested-expr 0301 lands on the broken tag")
+
+	# T1.1: a module member whose loop body has 2 roots (validation ERROR 0108) fails the module --
+	# previously _compile_module had no gate at all and shipped the broken class.
+	var src_mod := "module M2 {\n" + \
+		"\tcomponent A() {\n" + \
+		"\t\treturn ( <VBox>@for (i in 3) { <Label key={ str(i) } /> <Label key={ str(i) + \"b\" } /> }</VBox> )\n" + \
+		"\t}\n}\n"
+	var r4 := RUIGuitkx.compile(src_mod, "M2")
+	_check_true(not r4["ok"], "T1.1: module-member validation error fails the module compile")
+	_check_true(_has_code(r4, "GUITKX0108"), "T1.1: the member's 0108 is the reported error")
 
 func _test_return_null_guard() -> void:
 	# [audit #19] `return null` as a conditional guard before the real markup return must compile.
@@ -559,6 +596,20 @@ func _test_codegen() -> void:
 	_check(gd_src, "class_name Fixture", "sibling .gd named from the file")
 	_check(gd_src, "V.label(", "sibling .gd compiled the markup")
 	_check_true(not Codegen.is_stale(gx), "not stale right after compile")
+	# T1.1: a file that STOPS compiling must not leave its stale sibling .gd behind (the editor would
+	# keep running code that no longer matches the source). compile_file deletes it.
+	var f_bad := FileAccess.open(gx, FileAccess.WRITE)
+	f_bad.store_string("component Fixture() {\n\treturn ( <Broken> )\n}\n")
+	f_bad.close()
+	var r_bad := Codegen.compile_file(gx)
+	_check_true(not r_bad["ok"], "broken rewrite fails to compile")
+	_check_true(not FileAccess.file_exists(gd), "stale sibling .gd deleted on failed compile")
+	# fix it again -> the .gd comes back
+	var f_fix := FileAccess.open(gx, FileAccess.WRITE)
+	f_fix.store_string(src)
+	f_fix.close()
+	_check_true(Codegen.compile_file(gx)["ok"], "fixed file compiles again")
+	_check_true(FileAccess.file_exists(gd), "sibling .gd regenerated after the fix")
 	# delete the .gd -> stale again (missing-file branch)
 	DirAccess.remove_absolute(gd)
 	_check_true(Codegen.is_stale(gx), "stale again after sibling .gd removed")
