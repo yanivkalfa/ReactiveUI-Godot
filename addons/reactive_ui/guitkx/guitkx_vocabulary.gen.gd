@@ -109,6 +109,8 @@ const DATA: Dictionary = {
 		"GUITKX2506",
 		"GUITKX2508",
 		"GUITKX2100",
+		"GUITKX2103",
+		"GUITKX2104",
 		"GUITKX2105",
 		"GUITKX2203",
 		"GUITKX0106"
@@ -141,6 +143,8 @@ const DATA: Dictionary = {
 		"GUITKX2100": "error",
 		"GUITKX2101": "error",
 		"GUITKX2102": "error",
+		"GUITKX2103": "error",
+		"GUITKX2104": "error",
 		"GUITKX2105": "error",
 		"GUITKX2203": "warning",
 		"GUITKX2210": "error",
