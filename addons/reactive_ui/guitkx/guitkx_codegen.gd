@@ -115,29 +115,39 @@ static func known_component_names(guitkx_paths: Array) -> Array:
 	return names.keys()
 
 ## The class name a .guitkx compiles to: the @class_name override, else the first declaration's name.
+## The override scan mirrors compile()'s preamble loop (ws/comment-skipped, file start only) -- a
+## naive whole-file find() would let a COMMENT mentioning @class_name shadow the real binding and
+## produce false unknown-component errors in sibling files.
 static func _binding_name(src: String) -> String:
-	var cn := src.find("@class_name")
-	if cn != -1:
-		var le := src.find("\n", cn)
-		if le == -1:
-			le = src.length()
-		var raw := src.substr(cn + 11, le - cn - 11)
-		var hash_at := raw.find("#")
-		if hash_at != -1:
-			raw = raw.substr(0, hash_at)
-		var v := raw.strip_edges()
-		if v != "":
-			return v
+	var n := src.length()
+	var i := 0
+	var override := ""
+	while i < n:
+		i = Compiler._skip_ws_and_comments(src, i)
+		if src.substr(i, 11) == "@class_name":
+			var le := src.find("\n", i)
+			if le == -1:
+				le = n
+			var raw := src.substr(i + 11, le - i - 11)
+			var hash_at := raw.find("#")
+			if hash_at != -1:
+				raw = raw.substr(0, hash_at)
+			override = raw.strip_edges()
+			i = le
+			continue
+		break
+	if override != "":
+		return override
 	var d: Dictionary = Compiler._find_decl(src, 0)
 	if d["kind"] == "":
 		return ""
-	var i: int = int(d["at"])
-	while i < src.length() and (src[i] >= "a" and src[i] <= "z"):
+	i = int(d["at"])
+	while i < n and (src[i] >= "a" and src[i] <= "z"):
 		i += 1   # the decl keyword
-	while i < src.length() and (src[i] == " " or src[i] == "\t"):
+	while i < n and (src[i] == " " or src[i] == "\t"):
 		i += 1
 	var s := i
-	while i < src.length() and (src[i] == "_" or (src[i] >= "a" and src[i] <= "z") or (src[i] >= "A" and src[i] <= "Z") or (src[i] >= "0" and src[i] <= "9")):
+	while i < n and (src[i] == "_" or (src[i] >= "a" and src[i] <= "z") or (src[i] >= "A" and src[i] <= "Z") or (src[i] >= "0" and src[i] <= "9")):
 		i += 1
 	return src.substr(s, i - s)
 

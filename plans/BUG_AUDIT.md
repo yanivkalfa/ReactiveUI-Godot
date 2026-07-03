@@ -190,7 +190,7 @@ real virtual doc (`buildVirtualDoc` dump + `gdscript check`) before fixing, same
 The language-level companion — the full `.uitkx`↔`.guitkx` divergence matrix these bugs sit inside,
 with the prioritized alignment plan — is [`UITKX_GUITKX_SYNTAX_PARITY.md`](UITKX_GUITKX_SYNTAX_PARITY.md).
 
-### G5 — unknown tag + mismatched close pair produce **zero** diagnostics  ·  status: **to do**
+### G5 — unknown tag + mismatched close pair produce **zero** diagnostics  ·  status: **FIXED** (T1.5, branch `feat/syntax-parity`: unknown lowercase tags error GUITKX0105 with did-you-mean at compile (checked at `_emit_element`, the chokepoint all paths cross) AND live (`liveMarkup.ts`); markup parse errors — the `</a>` mismatch 0302 — now surface live instead of being discarded, and fail the compile (T1.1/T1.2); PascalCase components are checked against the plugin-supplied `known_components`. The specific repro line now reports GUITKX2102 at its exact position because a conditional markup return is itself illegal — see G6/T1.4)
 **Repro.** `return <s></a>` inside a component body. `s` is not a built-in element, not a custom
 component; `</a>` doesn't even match `<s>`. **Observed:** no live diagnostic, no compile error.
 **Expected:** an unknown-tag error (the Unity `.uitkx` side errors via PropsResolver) AND a
@@ -200,7 +200,7 @@ enforced or its failure is swallowed by markup-window recovery (F3's structural 
 repro is also an *early* return followed by more setup statements — the grammar may not even parse it
 as the component return (see G6), in which case the markup dodges markup validation entirely.
 
-### G6 — statements after an early `return` are not flagged/dimmed as unreachable  ·  status: **to do**
+### G6 — statements after an early `return` are not flagged/dimmed as unreachable  ·  status: **markup half FIXED** (T1.4: the language question is answered — an early/conditional MARKUP return is illegal `.guitkx` (GUITKX2102, exact position; the final top-level return is the component's output, Unity useLastReturn parity), so nothing after it is silently dropped anymore; code after the CHOSEN return is GUITKX0114 (hint + dimming in T3.1/T3.2). Remaining half = GDScript-level unreachable dimming after plain `return` in setup → T4.4 (analyzer UNREACHABLE_CODE + DiagnosticTags across napi))
 **Repro.** Same file: `return <s></a>` on line 7, followed by more setup statements (`var toggle = …`).
 **Observed:** the lines after the return render at full brightness, no unreachable-code report.
 **Expected:** Godot itself reports/dims unreachable code after `return`; VS Code dims any range whose
@@ -240,7 +240,7 @@ to parse, while attribute-expression windows are still checked against that brok
 (bind `toggle` to an error-typed seam rather than dropping the statement), and/or suppress
 `UNDEFINED_IDENTIFIER` for names whose declaring setup line carries a syntax error.
 
-### G9 — component with `@for` markup but no `return (` is not flagged missing-return  ·  status: **to do**
+### G9 — component with `@for` markup but no `return (` is not flagged missing-return  ·  status: **compile half FIXED** (T1.4: contract fixture t16_for_only_no_return pins GUITKX0102 on the exact repro shape, and every compile error now reaches the editor via the structured sidecar/dock (T0.2) and deletes the stale sibling .gd (T1.1). Remaining half = the LIVE `missingReturnComponents()` walk still satisfies itself on the loose `@for` block → T5.3)
 **Repro.** A component whose body is only:
 ```
 @for (i in 25) {
