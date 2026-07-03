@@ -22,6 +22,7 @@ const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
 var _efs: EditorFileSystem
 var _busy := false
+var _busy_since := 0
 # path -> the joined diagnostic string last reported for it, so we push_error/push_warning only when a
 # file's diagnostics actually CHANGE (Godot's dock never clears; re-pushing on every focus-in = spam).
 var _last_diags: Dictionary = {}
@@ -104,9 +105,20 @@ func _on_fs_changed() -> void:
 	_compile_all()
 
 func _compile_all() -> void:
-	if _efs == null or _busy:
+	if _efs == null:
 		return
+	if _busy:
+		# A sweep that CRASHED mid-run (a script error anywhere below) never clears _busy, and
+		# without a deadline that silences the plugin for the REST OF THE SESSION with zero
+		# output -- indistinguishable from "nothing to do" (field capture 2026-07-04: repeated
+		# saves, repeated restarts, never a compile). Treat a >30s busy as dead and sweep again:
+		# a crash now costs one 30s outage, not the session -- and the resumed sweep re-hits
+		# (and re-prints) the crash, so the cause stays visible in the Output.
+		if Time.get_ticks_msec() - _busy_since < 30_000:
+			return
+		push_warning("[guitkx] the previous sweep never finished (crashed mid-run?) -- resuming sweeps")
 	_busy = true
+	_busy_since = Time.get_ticks_msec()
 	var res: Dictionary = Codegen.compile_all("res://")
 	for entry in res["compiled"]:
 		_efs.update_file(entry["gd_path"])
