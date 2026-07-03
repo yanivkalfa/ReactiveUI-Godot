@@ -9,7 +9,7 @@
 import { skipNoncode, skipString, findMatching, keywordAt } from "./scanner";
 import { findDecl } from "./declScan";
 import { SourceMap } from "./sourceMap";
-import { neutralizeMarkup } from "./jsxScan";
+import { neutralizeMarkup, neutralizeSetupMarkup } from "./jsxScan";
 
 export interface VirtualDoc {
   text: string;
@@ -129,10 +129,14 @@ function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: 
   for (const name of propVars) ctx.gen += `\tvar ${name} = props.get("${name}")\n`;
   const split = splitReturn(ctx.src, body.start, body.start + body.text.length);
 
-  // setup verbatim (mapped, one line at a time so the per-line indent never shifts an expr offset)
+  // setup verbatim (mapped, one line at a time so the per-line indent never shifts an expr offset).
+  // A2: markup inside setup — an early/demoted markup return like `return <s></a>`, which
+  // splitReturn leaves in the setup span — is neutralized first (length+newline-preserving), so
+  // the analyzer never parses raw `<Tag>` as GDScript (the 0.6.0 field noise spray: SYNTAX +
+  // UNDEFINED_IDENTIFIER + STANDALONE_EXPRESSION on the markup island).
   const setupHasStmt = split.setupEnd > body.start && hasStatement(ctx.src.slice(body.start, split.setupEnd));
   if (split.setupEnd > body.start) {
-    emitVerbatimBlock(ctx, body.start, split.setupEnd, 1);
+    emitVerbatimBlock(ctx, body.start, split.setupEnd, 1, neutralizeSetupMarkup(ctx.src.slice(body.start, split.setupEnd)));
   }
   // scope-aware markup
   const emitted = emitMarkup(ctx, split.markupStart, split.markupEnd, 1);
@@ -380,8 +384,11 @@ function mapInline(ctx: Ctx, srcStart: number, text: string): string {
 // dropped entirely (the old all-or-nothing length guard). Instead we map each non-blank line's CODE
 // (everything after the common prefix) on its own span. Line-ending agnostic: a trailing CR is stripped
 // from both the generated text and the mapped length, so CRLF .guitkx files round-trip exactly.
-function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number): void {
-  const text = ctx.src.slice(start, end);
+// `override`, when given, replaces the emitted CONTENT (it must be length- and newline-preserving,
+// e.g. neutralizeSetupMarkup's output) while all offsets/mapping still track the real source — the
+// same contract emitExpr uses for neutralized expressions, applied block-wide.
+function emitVerbatimBlock(ctx: Ctx, start: number, end: number, indent: number, override?: string): void {
+  const text = override !== undefined && override.length === end - start ? override : ctx.src.slice(start, end);
   const rawLines = text.split("\n");
   // Depth-based reindent (mirror guitkx.gd _reindent_setup): normalise mixed tabs/spaces so the
   // virtual .gd is valid GDScript. A line indented `\t  ` (tab + 2 spaces) renders like `\t\t` but is

@@ -15,7 +15,7 @@
 // re-parse with offsets relative to their own start, composed via the node's body_at.
 
 import { parseMarkup, MarkupNode } from "./markup";
-import { VOCABULARY } from "./schema";
+import { VOCABULARY, HOST_TAGS, findTag } from "./schema";
 import { editDistance } from "./declScan";
 import { skipNoncode, keywordAt, isIdent } from "./scanner";
 import { indentUnit, indentDepth } from "./formatGuitkx";
@@ -65,9 +65,11 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
             code: "GUITKX0105",
             message: `GUITKX0105: unknown element <${nd.tag}>${suggestTag(nd.tag)}`,
           });
-        } else if (known !== null && /^[A-Z]/.test(nd.tag) && !known.has(nd.tag)) {
-          // A PascalCase tag that is neither an indexed .guitkx binding nor a project
-          // `class_name` — the compile would fail its known_components check the same way.
+        } else if (known !== null && /^[A-Z]/.test(nd.tag) && !findTag(nd.tag) && !known.has(nd.tag)) {
+          // A PascalCase tag that is neither a vocabulary host tag (findTag — the same predicate
+          // hover and the scan tier use, so the three tiers can never disagree on what a host
+          // element is) nor an indexed .guitkx binding nor a project `class_name` — the compile
+          // would fail its known_components check the same way.
           const at = base + nd.at + 1;
           out.push({
             start: at,
@@ -108,18 +110,38 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
           });
         }
         break;
-      case "if":
+      case "if": {
+        for (const br of nd.branches) {
+          const ihe = headerError("if", br.cond);
+          if (ihe !== "") {
+            out.push({ start: base + nd.at, end: base + nd.at + 3, code: "GUITKX2508", message: `GUITKX2508: ${ihe}` });
+            break;
+          }
+        }
         for (const br of nd.branches) walkBody(br.body_markup, base + br.body_at, out, known);
         if (nd.else_body !== null) walkBody(nd.else_body, base + nd.else_body_at, out, known);
         break;
+      }
       case "for":
-      case "while":
+      case "while": {
+        const lhe = headerError(nd.t, nd.header);
+        if (lhe !== "") out.push({ start: base + nd.at, end: base + nd.at + 1 + nd.t.length, code: "GUITKX2508", message: `GUITKX2508: ${lhe}` });
         walkLoopBody(nd.body_markup, base + nd.body_at, out, known);
         break;
-      case "match":
+      }
+      case "match": {
+        let mhe = headerError("match", nd.subject);
+        if (mhe === "") {
+          for (const c of nd.cases) {
+            mhe = headerError("case", c.value);
+            if (mhe !== "") break;
+          }
+        }
+        if (mhe !== "") out.push({ start: base + nd.at, end: base + nd.at + 6, code: "GUITKX2508", message: `GUITKX2508: ${mhe}` });
         for (const c of nd.cases) walkBody(c.body_markup, base + c.body_at, out, known);
         if (nd.default_body !== null) walkBody(nd.default_body, base + nd.default_body_at, out, known);
         break;
+      }
     }
   }
 }
@@ -182,6 +204,47 @@ function attrHookChecks(attrs: { kind: string; value: string; vat: number }[], b
       });
     }
   }
+}
+
+// A5 (0.6.0 field triage): directive-header grammar -- mirrors guitkx.gd _header_error (change
+// BOTH or neither). Headers are captured raw by the parser and were validated NOWHERE (the
+// compiler even emits them verbatim into GDScript), so `@for (i in 2: int5)` passed every tier
+// silently and only Godot's own parser choked on the generated .gd at load time. Deliberately
+// shallow: the expression's SEMANTICS stay the analyzer's job; this catches shapes a single
+// expression can never contain. "" = well-formed.
+function headerError(kind: string, header: string): string {
+  const h = header.trim();
+  if (kind === "for") {
+    const sep = h.indexOf(" in ");
+    if (sep === -1) return "malformed `@for` header -- expected `(<identifier> in <expression>)`";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(h.slice(0, sep).trim())) return "malformed `@for` header -- expected `(<identifier> in <expression>)`";
+    const iter = h.slice(sep + 4).trim();
+    if (iter === "" || topLevelColon(iter)) return "malformed `@for` header -- the part after `in` is not a single expression";
+    return "";
+  }
+  if (h === "" || topLevelColon(h)) return `malformed \`@${kind}\` header -- expected a single expression`;
+  return "";
+}
+
+// An unbracketed `:` at depth 0 -- legal nowhere in a single GDScript expression (dict colons sit
+// inside `{}`, typed-lambda colons inside `()`), so it marks statement garbage like `2: int5`.
+function topLevelColon(s: string): boolean {
+  let depth = 0;
+  let i = 0;
+  const n = s.length;
+  while (i < n) {
+    const j = skipNoncode(s, i);
+    if (j !== i) {
+      i = j;
+      continue;
+    }
+    const c = s[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === ":" && depth <= 0) return true;
+    i++;
+  }
+  return false;
 }
 
 // Token-boundary hook-call detection -- a `my_useState(` look-alike or `obj.useState(` member call
@@ -295,11 +358,13 @@ function suggestTag(tag: string): string {
   return best ? ` -- did you mean <${best}>?` : "";
 }
 
-// Nearest known component/class for a PascalCase miss (same distance profile as suggestTag).
+// Nearest known component/class OR host tag for a PascalCase miss (same distance profile as
+// suggestTag) — a typo'd host element (`<Buttonn>`) is the common case, so host tags belong in
+// the candidate pool even though findTag already exempts exact matches.
 function suggestComponent(tag: string, known: Set<string>): string {
   let best = "";
   let bestD = 3;
-  for (const c of known) {
+  for (const c of [...known, ...HOST_TAGS.map((t) => t.tag)]) {
     const d = editDistance(tag.toLowerCase(), c.toLowerCase());
     if (d < bestD) {
       bestD = d;

@@ -52,6 +52,12 @@ if (!fs.existsSync(path.join(serverSrc, "out", "server.js"))) {
 fs.rmSync(dest, { recursive: true, force: true });
 // flatten out/*.js to ./server/*.js so extension.ts can require ./server/server.js
 copyDir(path.join(serverSrc, "out"), dest);
+// A7: the vocabulary must ride along — schema.js require()s it at runtime, so a bundle without it
+// is a server that dies on MODULE_NOT_FOUND at startup (a 0.5.x-era layout shipped exactly that).
+if (!fs.existsSync(path.join(dest, "vocabulary.json"))) {
+  console.error("[bundle-server] out/vocabulary.json missing — the lsp-server build must emit it (tsconfig resolveJsonModule include). Rebuild ../lsp-server.");
+  process.exit(1);
+}
 // runtime deps the server needs at execution time
 const deps = ["vscode-languageserver", "vscode-languageserver-textdocument", "vscode-languageserver-protocol", "vscode-jsonrpc", "vscode-languageserver-types"];
 for (const dep of deps) {

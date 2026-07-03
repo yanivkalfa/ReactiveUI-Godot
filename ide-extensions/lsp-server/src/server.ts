@@ -37,7 +37,7 @@ import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, earlyMarkupReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
 import { parseMarkup } from "./markup";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
@@ -668,6 +668,7 @@ function publishDiagnosticsFor(doc: TextDocument): void {
     ...structuralDiagnostics(doc),
     ...markupDiagnostics(doc),
     ...missingReturnDiagnostics(doc),
+    ...earlyMarkupReturnDiagnostics(doc),
     ...unclosedReturnDiagnostics(doc),
     ...unreachableDiagnostics(doc),
     ...embeddedDiagnostics(doc),
@@ -737,23 +738,31 @@ function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic
   const text = doc.getText();
   if (!sc) return live;
   if (sc.src_hash !== srcHash(text)) {
-    // T3.3: while the buffer diverges from the last compile, entries for codes the live tier ALSO
-    // computes are dropped (the live tier owns them now), but COMPILER-ONLY codes are kept with a
-    // stale marker instead of vanishing on the first keystroke. Their offsets belong to the old
-    // text -- clamp; the marker tells the user the position is approximate until the next save.
+    // T3.3 → A6 (0.6.0 field triage): while the buffer diverges from the last compile, entries for
+    // codes the live tier ALSO computes are dropped (the live tier owns them). Compiler-only codes
+    // used to be re-published per entry with offsets CLAMPED into the edited text — after a few
+    // keystrokes they piled up at drifted/EOF positions and never cleared, because a recompile
+    // needs the Godot editor. They now collapse into ONE file-level Information note naming the
+    // codes; the positioned squiggles return when a recompile refreshes the sidecar.
     const liveSet = new Set(VOCABULARY.live);
-    const stale: Diagnostic[] = [];
+    let staleCount = 0;
+    const staleCodes: string[] = [];
     for (const d of sc.diagnostics) {
       if (!d.code || liveSet.has(d.code)) continue;
-      const off = d.off >= 0 ? Math.min(text.length, cpToUtf16(text, Math.min(d.off, text.length))) : 0;
-      stale.push({
-        severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
-        range: { start: doc.positionAt(off), end: doc.positionAt(Math.min(text.length, off + Math.max(1, d.len))) },
-        message: `${d.code}: ${d.message} (from the last compile -- position may have shifted; recompiles on save)`,
-        source: "guitkx (compiler, stale)",
-      });
+      staleCount++;
+      if (!staleCodes.includes(d.code)) staleCodes.push(d.code);
     }
-    return stale.length ? [...live, ...stale] : live;
+    if (staleCount === 0) return live;
+    const firstLineLen = (text.indexOf("\n") + 1 || text.length + 1) - 1;
+    return [
+      ...live,
+      {
+        severity: DiagnosticSeverity.Information,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: Math.max(1, firstLineLen) } },
+        message: `${staleCount} compiler diagnostic(s) from the last compile (${staleCodes.join(", ")}) are stale while the buffer is edited -- they re-anchor when the Godot editor next compiles this file`,
+        source: "guitkx (compiler, stale)",
+      },
+    ];
   }
   const liveCodes = new Set<string>();
   const liveCodeLines = new Set<string>();
@@ -1583,6 +1592,21 @@ function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
     severity: DiagnosticSeverity.Error,
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
     message: "GUITKX2101: component has no `return ( ... )` (only `return null`?)",
+    source: "guitkx",
+  }));
+}
+
+// A4 (0.6.0 field triage): early/conditional markup returns -- the compiler's GUITKX2102 -- now
+// fire LIVE. They were compiler-only: with the Godot editor closed the only trace was a stale
+// sidecar entry at a drifting offset, so fixing (or introducing) one changed nothing on screen.
+// Message matches guitkx.gd _split_return/_bad_return, and GUITKX2102 joined vocabulary `live`,
+// so sidecar copies dedupe when fresh and drop when stale like every live-owned code.
+function earlyMarkupReturnDiagnostics(doc: TextDocument): Diagnostic[] {
+  return earlyMarkupReturns(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message:
+      "GUITKX2102: an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup",
     source: "guitkx",
   }));
 }

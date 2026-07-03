@@ -4,6 +4,52 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] — 2026-07-03
+
+**The field-triage release** — every defect from the first real-project test of 0.5.0 + extension
+0.6.0, root-caused and fixed compiler + live tier in lockstep (`plans/FIELD_TRIAGE_FIX_PLAN.md`).
+
+### Fixed
+- **Live `GUITKX0105` no longer flags host elements.** The live PascalCase component check
+  consulted only the project universe and never the vocabulary, so `<HBox>`/`<Button>`/`<Label>`
+  (and every alias like `<VBoxContainer>`) lit up as "unknown component" the moment the workspace
+  scan finished. Host tags are now exempt via the same predicate hover uses, and a typo'd host
+  tag suggests the host tag itself (`<HBoxx>` → did you mean `<HBox>`?).
+- **Markup in setup no longer sprays analyzer noise.** An early markup return (`return <s></a>`
+  before the final one) leaked verbatim into the embedded-GDScript document — four bogus
+  diagnostics on the line (syntax error, undefined identifier, standalone expression,
+  unreachable). Setup-embedded markup is neutralized length- and newline-preservingly; the
+  statement stays a real `return null`, so the correct Unity-parity unreachable-after-return dim
+  survives.
+- **`GUITKX2102` fires live and says what it means.** Early/conditional markup returns were
+  compiler-only — with the Godot editor closed they appeared only as a stale sidecar entry at a
+  drifting offset, never updating as you typed. The check now runs live (2102 joined the
+  vocabulary `live` list), and the message is honest on both sides: only returning **markup**
+  early is banned — `return null` guards and plain value returns were always legal.
+- **Stale compiler diagnostics collapse instead of drifting.** While the buffer diverges from the
+  last compile, compiler-only sidecar entries used to re-publish on every keystroke with clamped
+  offsets, piling up at shifted positions until a Godot recompile. They collapse into one
+  file-level note naming the codes, and re-anchor on the next compile.
+- **The cold-open error wall is gone.** During the editor's first filesystem scan, `res://` reads
+  of `vocabulary.json` come back empty for the whole scan window, and every per-file compile
+  logged three red lines (~250 on this repo). The loader never parses an empty read (which alone
+  removes Godot's own "Parse JSON failed" line), tries the absolute OS path as a best-effort
+  fallback, and logs ONE hold notice per episode plus one recovery line. Generated outputs are
+  kept throughout (0.5.0's guard). A pristine-clone cold open now prints two warning lines total.
+
+### Added
+- **`GUITKX2508` — directive-header grammar (compiler + live, identical rule).**
+  `@for (i in 2: int5)` used to pass every tier silently; only Godot's own parser choked on the
+  generated `for i in 2: int5:`. Headers are validated now: `@for` needs
+  `<identifier> in <expression>`, and `@if`/`@while`/`@match`/`@case` need a single expression
+  (an unbracketed `:` can never be one). Contract fixture `t20_bad_for_header` pins it.
+
+### IDE
+- VS Code extension **0.6.1** / language server **0.6.1** — see `ide-extensions/vscode/CHANGELOG.md`.
+- `vsce` packaging is guarded: prepublish verifies the bundled server is complete and current
+  (a local `vsce publish` without a fresh bundle could ship a server missing `vocabulary.json` —
+  dead on startup with MODULE_NOT_FOUND).
+
 ## [0.5.0] — 2026-07-03
 
 **The `.uitkx` syntax & diagnostics parity release.** `.guitkx` now matches Unity

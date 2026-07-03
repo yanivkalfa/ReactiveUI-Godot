@@ -151,6 +151,10 @@ static func _binding_name(src: String) -> String:
 		i += 1
 	return src.substr(s, i - s)
 
+## B1 (0.6.0 field triage): one hold notice per environment-not-ready EPISODE, not one red line per
+## file per sweep -- the per-file GUITKX2507 env_error result still records the hold for callers.
+static var _env_hold := false
+
 ## Compile one .guitkx and write its sibling .gd. Returns { ok, path, gd_path?, diagnostics?/error? }.
 static func compile_file(guitkx_path: String, known_components: Array = []) -> Dictionary:
 	if not FileAccess.file_exists(guitkx_path):
@@ -163,8 +167,13 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 		# filesystem scan). NOT a source regression: keep the existing sibling .gd AND the last
 		# sidecar; the next pass self-heals once the vocabulary loads. Deleting here is exactly
 		# how a transient tooling state once wiped every generated demo .gd on a fresh CI clone.
-		push_error("[guitkx] compiler not ready for %s (vocabulary.json unreadable) -- keeping existing outputs, will retry" % guitkx_path)
+		if not _env_hold:
+			_env_hold = true
+			push_warning("[guitkx] compiler not ready (vocabulary.json unreadable) -- keeping existing outputs for every affected file, retrying; further files are silent until it recovers")
 		return { "ok": false, "env_error": true, "path": guitkx_path, "diagnostics": r["diagnostics"] }
+	if _env_hold:
+		_env_hold = false
+		print("[guitkx] compiler environment recovered -- compiles resume")
 	write_diags_sidecar(guitkx_path, src, r["diagnostics"])
 	# Surface boundary: derive 0-based line/col from each offset ONCE, here, where the source is at
 	# hand -- downstream consumers (plugin.gd dock lines, tests) read d.line/d.col without the source.
