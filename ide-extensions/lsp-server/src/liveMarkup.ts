@@ -131,8 +131,12 @@ function attrHookChecks(attrs: { kind: string; value: string; vat: number }[], b
 }
 
 // Token-boundary hook-call detection -- a `my_useState(` look-alike or `obj.useState(` member call
-// is NOT a hook call. Mirrors guitkx.gd _expr_calls_hook.
+// is NOT a hook call. Mirrors guitkx.gd _expr_calls_hook / _find_hook_call.
 function exprCallsHook(code: string): boolean {
+  return findHookCall(code) !== -1;
+}
+
+function findHookCall(code: string): number {
   let i = 0;
   const n = code.length;
   while (i < n) {
@@ -143,12 +147,12 @@ function exprCallsHook(code: string): boolean {
     }
     if (i === 0 || (!isIdent(code[i - 1]) && code[i - 1] !== ".")) {
       for (const h of VOCABULARY.hooks) {
-        if (keywordAt(code, i, h) && isCallAt(code, i + h.length)) return true;
+        if (keywordAt(code, i, h) && isCallAt(code, i + h.length)) return i;
       }
     }
     i++;
   }
-  return false;
+  return -1;
 }
 
 function isCallAt(s: string, at: number): boolean {
@@ -173,10 +177,15 @@ export function hookContextDiags(src: string, spans: { start: number; end: numbe
       }
       const d = indentDepth(l, unit);
       while (stack.length && stack[stack.length - 1].depth >= d) stack.pop();
-      if (exprCallsHook(l)) {
+      const callAt = findHookCall(l);
+      if (callAt !== -1) {
         let kind = "";
         if (stack.length) kind = stack[stack.length - 1].kind;
-        else if (t.includes(":")) kind = blockOpenerKind(t.slice(0, t.indexOf(":") + 1)); // single-line `if c: use_y()`
+        else if (l.includes(":") && l.indexOf(":") < callAt) {
+          // single-line `if x: use_y()` / `var f = func(): use_y()` -- the opener must PRECEDE the
+          // call, else `useEffect(func(): ...)` (outer call, legal) would false-flag.
+          kind = blockOpenerKind(t.slice(0, t.indexOf(":") + 1));
+        }
         if (kind !== "") {
           let code = "GUITKX0013";
           let what = "conditionally (inside an if/else block)";

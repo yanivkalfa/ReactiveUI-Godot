@@ -186,6 +186,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if not pc["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	_error_on_trailing(source, int(pc["next"]), "component", diags)
+	_validate_unused_params(pc["params"], int(pc.get("params_at", -1)), source.substr(int(pc["body_at"]), int(pc["next"]) - 1 - int(pc["body_at"])), diags)
 	if class_name_override == "" and pc["name"] != basename:
 		diags.append(D.make("GUITKX0103", D.WARNING, "component `%s` differs from file name `%s`" % [pc["name"], basename], pc["name_at"], (pc["name"] as String).length()))
 	_validate(pc["setup"], pc["root"], diags, pc["body_at"])
@@ -219,6 +220,7 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if not (comp_name[0] >= "A" and comp_name[0] <= "Z"):
 		diags.append(D.make("GUITKX2100", D.ERROR, "component name `%s` must be PascalCase" % comp_name, ns, comp_name.length()))
 	var params := ""
+	var params_at := -1
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":
 		var pc := L.find_matching(source, j)
@@ -226,6 +228,7 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in component params", j, 1))
 			return { "ok": false }
 		params = source.substr(j + 1, pc - j - 1)
+		params_at = j + 1
 		j = pc + 1
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
@@ -270,13 +273,14 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		return { "ok": false }
 	# window_nodes = ALL window nodes incl. comments (T2.1) -- the formatter re-emits them in order;
 	# root = the single render root the emitter compiles.
-	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "setup": split["setup"], "root": render_roots[0], "window_nodes": pr["nodes"], "body_at": body_at, "next": bclose + 1 }
+	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "params_at": params_at, "setup": split["setup"], "root": render_roots[0], "window_nodes": pr["nodes"], "body_at": body_at, "next": bclose + 1 }
 
 # --- semantic validation (warnings; they don't fail the compile) ---
 # `base` = absolute offset (in the original source) of index 0 of the string the node offsets/setup
 # offsets are relative to (-1 = unknown -> diagnostics fall back to whole-file).
 static func _validate(setup: String, root: Dictionary, diags: Array, base: int = -1) -> void:
 	_validate_hooks(setup, diags, base)
+	_validate_effect_deps(setup, diags, base)
 	_validate_node(root, diags, base)
 
 ## Compose a child base: rebase `rel` (an offset within the current string) onto `base`.
@@ -303,12 +307,15 @@ static func _validate_hooks(setup: String, diags: Array, base_off: int = -1) -> 
 		var d := _indent_depth(s, unit)
 		while not stack.is_empty() and int(stack[-1]["depth"]) >= d:
 			stack.pop_back()
-		if _expr_calls_hook(s):
+		var call_at := _find_hook_call(s)
+		if call_at != -1:
 			var kind := ""
 			if not stack.is_empty():
 				kind = str(stack[-1]["kind"])
-			elif ":" in t:
-				kind = _block_opener_kind(t.substr(0, t.find(":") + 1))   # single-line `if x: use_y()`
+			elif ":" in s and s.find(":") < call_at:
+				# single-line `if x: use_y()` / `var f = func(): use_y()` -- the opener must PRECEDE
+				# the call, else `useEffect(func(): ...)` (outer call, legal) would false-flag.
+				kind = _block_opener_kind(t.substr(0, t.find(":") + 1))
 			if kind != "":
 				var code := "GUITKX0013"
 				var what := "conditionally (inside an if/else block)"
@@ -329,6 +336,67 @@ static func _validate_hooks(setup: String, diags: Array, base_off: int = -1) -> 
 				stack.append({ "depth": d, "kind": kind2 })
 		off += s.length() + 1
 
+## T2.7 (Unity UITKX0111): a declared component parameter never referenced in the body (setup or
+## markup). Underscore-prefixed names are deliberately-unused by GDScript convention and stay quiet.
+static func _validate_unused_params(params: String, params_at: int, body: String, diags: Array) -> void:
+	if params.strip_edges() == "":
+		return
+	for p in _parse_params(params):
+		var name := str(p["name"])
+		if name == "" or name.begins_with("_"):
+			continue
+		if _find_ident(body, name) == -1:
+			var at := _find_ident(params, name)
+			diags.append(D.make("GUITKX0111", D.WARNING, "component parameter `%s` is never used" % name, (params_at + at) if (params_at >= 0 and at >= 0) else -1, name.length()))
+
+## First token-boundary occurrence of identifier `name` in `s` (strings/comments skipped), or -1.
+static func _find_ident(s: String, name: String) -> int:
+	var i := 0
+	var n := s.length()
+	while i < n:
+		var j := L.skip_noncode(s, i)
+		if j != i:
+			i = j
+			continue
+		if (i == 0 or not L._is_ident(s[i - 1])) and L.keyword_at(s, i, name):
+			return i
+		i += 1
+	return -1
+
+## T2.7 (Unity UITKX0018, source-gen-only there too): an effect hook called with ONLY a callback --
+## no dependency array -- runs on every render; almost always a mistake. Warning at the call.
+static func _validate_effect_deps(setup: String, diags: Array, base_off: int = -1) -> void:
+	var i := 0
+	var n := setup.length()
+	while i < n:
+		var j := L.skip_noncode(setup, i)
+		if j != i:
+			i = j
+			continue
+		var boundary := i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != ".")
+		var hooks_member := i >= 6 and setup.substr(i - 6, 6) == "Hooks."   # Hooks.useEffect counts
+		if boundary or hooks_member:
+			var matched := ""
+			for h in ["useEffect", "useLayoutEffect"]:
+				if L.keyword_at(setup, i, h):
+					matched = h
+					break
+			if matched != "":
+				var p := i + matched.length()
+				while p < n and (setup[p] == " " or setup[p] == "\t"):
+					p += 1
+				if p < n and setup[p] == "(":
+					var close := L.find_matching(setup, p)
+					if close != -1:
+						var inner := setup.substr(p + 1, close - p - 1)
+						if inner.strip_edges() != "" and _split_top_commas(inner).size() == 1:
+							diags.append(D.make("GUITKX0018", D.WARNING, "%s has no dependency array -- it will run on every render; pass [] (or deps) as the second argument" % matched, _cbase(base_off, i), matched.length()))
+						i = close + 1
+						continue
+				i += matched.length()
+				continue
+		i += 1
+
 ## Classify a `...:`-terminated line as a hook-blocking block opener ("" = not one, e.g. a dict key).
 static func _block_opener_kind(t: String) -> String:
 	for kw in ["if", "elif", "else", "for", "while", "match"]:
@@ -341,6 +409,10 @@ static func _block_opener_kind(t: String) -> String:
 ## Token-boundary hook-call detection (a `my_useState(` look-alike or `obj.useState(` member call is
 ## NOT a hook call). Shared by setup-line scanning and markup {expr} checks (0016).
 static func _expr_calls_hook(code: String) -> bool:
+	return _find_hook_call(code) != -1
+
+## Offset of the first token-boundary hook CALL in `code`, or -1.
+static func _find_hook_call(code: String) -> int:
 	var i := 0
 	var n := code.length()
 	while i < n:
@@ -351,9 +423,9 @@ static func _expr_calls_hook(code: String) -> bool:
 		if i == 0 or (not L._is_ident(code[i - 1]) and code[i - 1] != "."):
 			for h in HOOK_NAMES:
 				if L.keyword_at(code, i, h) and _is_call_at(code, i + h.length()):
-					return true
+					return i
 		i += 1
-	return false
+	return -1
 
 static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 	if nd == null or not (nd is Dictionary):
@@ -362,9 +434,20 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 		"el", "frag":
 			# T2.5 (Unity 0016): a hook CALL inside a markup attribute expression runs per-render out
 			# of hook order -- using a hook RESULT there is fine, only the call is flagged.
+			# T2.7 (Unity 0120/0121): a `res://` STRING literal in an asset-taking attribute must
+			# exist and load as the expected resource type.
 			for a in nd.get("attrs", []):
-				if (a as Dictionary).get("kind", "") == "expr" and _expr_calls_hook(str(a["value"])):
-					diags.append(D.make("GUITKX0016", D.ERROR, "hook called inside a markup expression -- call it in setup and reference the result", _cbase(base, int(a.get("vat", -1))), maxi(1, str(a["value"]).length())))
+				var ad := a as Dictionary
+				if ad.get("kind", "") == "expr" and _expr_calls_hook(str(ad["value"])):
+					diags.append(D.make("GUITKX0016", D.ERROR, "hook called inside a markup expression -- call it in setup and reference the result", _cbase(base, int(ad.get("vat", -1))), maxi(1, str(ad["value"]).length())))
+				elif ad.get("kind", "") == "str" and str(ad.get("name", "")) in ["texture", "icon", "theme"] and str(ad["value"]).begins_with("res://"):
+					var ap := str(ad["value"])
+					if not FileAccess.file_exists(ap):
+						diags.append(D.make("GUITKX0120", D.ERROR, "asset not found: %s" % ap, _cbase(base, int(ad.get("vat", -1))), ap.length()))
+					else:
+						var want := "Theme" if str(ad["name"]) == "theme" else "Texture2D"
+						if not ResourceLoader.exists(ap, want):
+							diags.append(D.make("GUITKX0121", D.ERROR, "asset is not a %s: %s" % [want, ap], _cbase(base, int(ad.get("vat", -1))), ap.length()))
 			_check_dup_keys(nd.get("children", []), diags, base)
 			for c in nd.get("children", []):
 				_validate_node(c, diags, base)
@@ -381,7 +464,11 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 				_validate_body(br["body_markup"], diags, false, _cbase(base, br["body_at"]))
 			if nd["else_body"] != null:
 				_validate_body(nd["else_body"], diags, false, _cbase(base, nd["else_body_at"]))
-		"for", "while":
+		"for":
+			# T2.7 (Unity UITKX0019): the loop binder threads down so `key={ binder }` can warn.
+			var fh := _split_for_header(str(nd["header"]))
+			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]), str(fh.get("var", "")))
+		"while":
 			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]))
 		"match":
 			for c in nd.get("cases", []):
@@ -389,7 +476,7 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 			if nd.get("default_body") != null:
 				_validate_body(nd["default_body"], diags, false, _cbase(base, nd["default_body_at"]))
 
-static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: int = -1) -> void:
+static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: int = -1, binder: String = "") -> void:
 	var parser := Markup.new()
 	var pr := parser.parse(body_src, 0, body_src.length())
 	if pr["error"] != "":
@@ -406,6 +493,12 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: 
 		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
 			if not _has_key(nodes[0]):
 				diags.append(D.make("GUITKX0106", D.WARNING, "element in @for/@while has no `key` -- add key= so reordered children reconcile correctly", _cbase(base, int(nodes[0]["at"])), _node_len(nodes[0])))
+			elif binder != "":
+				# T2.7 (Unity UITKX0019): the loop variable used DIRECTLY as the key -- positional keys
+				# defeat reconciliation on reorder; derive the key from a stable id on the item.
+				var ka := _key_attr(nodes[0])
+				if str(ka.get("kind", "")) == "expr" and str(ka.get("value", "")).strip_edges() == binder:
+					diags.append(D.make("GUITKX0019", D.WARNING, "loop variable `%s` used directly as the key -- use a stable unique identifier from the item instead" % binder, _cbase(base, int(ka.get("at", -1))), maxi(1, int(ka.get("end", 0)) - int(ka.get("at", 0)))))
 	for nx in nodes:
 		_validate_node(nx, diags, base)
 
@@ -469,6 +562,7 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 	# T2.5: rules-of-hooks apply inside hook declaration bodies too (hooks compose hooks -- still
 	# unconditionally, at the top level).
 	_validate_hooks(ph["body"], diags, int(ph["body_at"]))
+	_validate_effect_deps(ph["body"], diags, int(ph["body_at"]))
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls := class_name_override if class_name_override != "" else basename
@@ -594,8 +688,10 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	# GUITKX0108 multi-root in a loop body) fails the whole module, exactly like a single-file compile.
 	for c in comps:
 		_validate(c["setup"], c["root"], diags, c["body_at"])
+		_validate_unused_params(c["params"], int(c.get("params_at", -1)), source.substr(int(c["body_at"]), int(c["next"]) - 1 - int(c["body_at"])), diags)
 	for h in hooks:
 		_validate_hooks(h["body"], diags, int(h["body_at"]))   # T2.5: member hook bodies too
+		_validate_effect_deps(h["body"], diags, int(h["body_at"]))
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls := class_name_override if class_name_override != "" else mod_name

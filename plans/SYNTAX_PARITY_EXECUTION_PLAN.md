@@ -111,7 +111,8 @@ diagnostics — building the dumper against legacy strings would be throwaway wo
 | `<Fragment>` named tag | only `<>` | gap → T2.2 |
 | Node-start-only `{expr}`, text runs past `{` | opposite | converge → T2.4 |
 | Rules-of-hooks 4 contexts (0013-0016) | 1 heuristic | gap → T2.5 |
-| useEffect-deps (0018), iterator-key (0019), ref-arity (0020/0021), unused-param (0111), asset-path (0120/0121) | missing | gap → T2.7 |
+| useEffect-deps (0018), iterator-key (0019), unused-param (0111), asset-path (0120/0121) | shipped (T2.7) | ✅ |
+| ref-arity (0020/0021) | n/a — checks C# `Ref<T>` typed params; Dictionary-props components have none | intentional (T2.7 probe) |
 | Unreachable-code hint (0107) | partial (double, uncoded) | → T1.4/T3.2 |
 | Unknown tag/attr errors in IDE (0105/0109) | gated/partial | → T1.5 |
 | Compile fails on any parser error | does not | → T1.1/T1.2 |
@@ -329,7 +330,7 @@ convention is PascalCase too). Hook name not starting `use_` ⇒ warning 2203 (s
 Unity's `use` prefix, UP evidence DP:575-653). Also fix `_find_decl`'s garbage-skip (matrix row 4):
 non-comment junk before the first decl keyword ⇒ error 2105. Both parsers + fixtures.
 
-### T2.7 — Unity-only diagnostic ports  · effort: medium · Status: ⬜
+### T2.7 — Unity-only diagnostic ports  · effort: medium · Status: ✅ (authority note: 0018/0019/0020/0021 live in the GENERATOR (`SourceGenerator~/Diagnostics/UitkxDiagnostics.cs`, marked "source-gen-only"), not DC.cs — so compile+sidecar IS the Unity-parity surface for them, no live tier owed. Shipped: **0018** warning — `useEffect`/`useLayoutEffect` (incl. `Hooks.`-qualified) with a single argument, `_validate_effect_deps` over setup + hook bodies + module members; **0019** warning — the @for binder used DIRECTLY as `key={ binder }` (a derived `str(binder)` stays clean, matching Unity's direct-use rule; the keyed demo's `key={ id }` migrated to `str(id)` to match every other demo); **0111** warning — component param never token-referenced in the body, `_`-prefixed exempt (GDScript convention), anchored at the param name via new `params_at`; **0120/0121** errors — `res://` string literals in `texture`/`icon`/`theme` attrs checked with FileAccess.file_exists / ResourceLoader.exists(type: Texture2D/Theme). **0020/0021: n/a** (the plan's own probe branch) — they check C# `Ref<T>` typed parameters, which Dictionary-props components structurally lack. Fixing the T2.5 single-line heuristic fell out of the 0018 test: `useEffect(func(): ...)` no longer false-flags 0016 (the opener colon must PRECEDE the hook call; both mirrors))
 Port each check with Godot-appropriate semantics (numbers = Unity's, per §Renumbering; each gets live +
 compile + fixture):
 - **0018** `use_effect` call whose last arg is missing (no deps array) ⇒ warning. Detect via vocabulary
@@ -344,7 +345,7 @@ compile + fixture):
   (`texture`, `icon`, `theme`, `@uss` path — T2.3 shares this) ⇒ error when missing.
 **Done when.** Coverage map shows no "gap" row without a shipped code or an explicit n/a.
 
-### T2.8 — `module` semantics  · effort: decision · Status: 🔷
+### T2.8 — `module` semantics  · effort: decision · Status: ✅ (recommendation applied: **KEEP Godot's declaration-container module** — strictly more useful with no partial classes in GDScript; Unity's verbatim-code module exists to host namespaces/usings, which GDScript doesn't have. Divergence goes on the differences page in T6.1. Flag at PR review if Unity semantics are wanted instead)
 **Divergence.** Unity `module Name { raw C# }` = opaque code container (DP:657-680); Godot
 `module Name { component…/hook… }` = declaration container with structure checks (matrix row 7).
 **Recommendation: KEEP Godot's declaration-container module** (it is strictly more useful with GDScript

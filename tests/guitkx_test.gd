@@ -28,6 +28,7 @@ func _run() -> void:
 	_test_t15_unknown_tags()
 	_test_t25_hook_contexts()
 	_test_t26_naming()
+	_test_t27_diag_ports()
 	_test_p2_markup_features()
 	_test_return_null_guard()
 	_test_jsx_value()
@@ -308,6 +309,37 @@ func _test_t25_hook_contexts() -> void:
 	# hook DECLARATION bodies are validated too (hooks compose hooks -- unconditionally).
 	var rhb := RUIGuitkx.compile("hook use_bad(c: bool = false) {\n\tif c:\n\t\tvar s = useState(0)\n\treturn 1\n}\n", "use_bad")
 	_check_true(not rhb["ok"] and _has_code(rhb, "GUITKX0013"), "T2.5: hook body validated (got %s)" % str(rhb["diagnostics"]))
+
+func _test_t27_diag_ports() -> void:
+	# T2.7 / Unity 0018: an effect hook with only a callback runs every render -- warn.
+	var src18 := "component E() {\n\tuseEffect(func(): print(\"hi\"))\n\treturn ( <label text=\"x\" /> )\n}\n"
+	var r18 := RUIGuitkx.compile(src18, "E")
+	_check_true(bool(r18["ok"]), "T2.7: missing-deps effect still compiles")
+	_check_diag_at(r18, "GUITKX0018", src18, "useEffect", "T2.7: 0018 lands on the call")
+	var ok18 := RUIGuitkx.compile("component E2() {\n\tuseEffect(func(): print(\"hi\"), [])\n\treturn ( <label text=\"x\" /> )\n}\n", "E2")
+	_check_true(bool(ok18["ok"]) and not _has_code(ok18, "GUITKX0018"), "T2.7: deps array satisfies 0018 (got %s)" % str(ok18["diagnostics"]))
+
+	# T2.7 / Unity 0019: the loop variable used DIRECTLY as the key.
+	var src19 := "component K(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label key={ x } text={ str(x) } /> }</vbox> )\n}\n"
+	var r19 := RUIGuitkx.compile(src19, "K")
+	_check_true(bool(r19["ok"]) and _has_code(r19, "GUITKX0019"), "T2.7: direct binder key warns 0019 (got %s)" % str(r19["diagnostics"]))
+	var ok19 := RUIGuitkx.compile("component K2(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label key={ str(x) } text={ str(x) } /> }</vbox> )\n}\n", "K2")
+	_check_true(not _has_code(ok19, "GUITKX0019"), "T2.7: derived key stays clean")
+
+	# T2.7 / Unity 0111: a component parameter never referenced anywhere in the body.
+	var src111 := "component U(used: int = 1, dead: int = 2, _ignored: int = 3) {\n\treturn ( <label text={ str(used) } /> )\n}\n"
+	var r111 := RUIGuitkx.compile(src111, "U")
+	_check_true(bool(r111["ok"]), "T2.7: unused param still compiles")
+	_check_diag_at(r111, "GUITKX0111", src111, "dead", "T2.7: 0111 lands on the unused param")
+	_check_true(str(_diag(r111, "GUITKX0111").get("message", "")).contains("dead"), "T2.7: only `dead` flagged (underscore exempt)")
+
+	# T2.7 / Unity 0120/0121: res:// string literals in asset attributes must exist / match type.
+	var src120 := "component A() {\n\treturn ( <texture_rect texture=\"res://no/such/file.png\" /> )\n}\n"
+	var r120 := RUIGuitkx.compile(src120, "A")
+	_check_true(not r120["ok"] and _has_code(r120, "GUITKX0120"), "T2.7: missing asset errors 0120 (got %s)" % str(r120["diagnostics"]))
+	var src121 := "component B() {\n\treturn ( <texture_rect texture=\"res://project.godot\" /> )\n}\n"
+	var r121 := RUIGuitkx.compile(src121, "B")
+	_check_true(not r121["ok"] and _has_code(r121, "GUITKX0121"), "T2.7: wrong-type asset errors 0121 (got %s)" % str(r121["diagnostics"]))
 
 func _test_t26_naming() -> void:
 	# T2.6 (Unity 2100): component names are PascalCase -- they become the generated class_name.
