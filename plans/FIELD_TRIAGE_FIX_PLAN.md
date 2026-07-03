@@ -282,13 +282,18 @@ immediately.
   IIFE building `List<VNode> __r` where body top-level returns are REWRITTEN
   (`RewriteReturnsForInline(code, "__r")`) to append-and-continue. Fall-through = null/absent.
 - **Hooks rule** (`HooksValidator.cs:60-98`): BodyCode scanned for hook calls → error.
-- **GDScript lowering equivalents (design, this wave)**: `@if/@match` → statement-bodied lambda
-  IIFE `(func(): ...).call()` with REAL returns (fall-through `return null`); loops → loop with
-  a PER-ITERATION body lambda `var __b = (func(): <body verbatim + in-place lowering>).call()`
-  + `if __b != null: __r.append(__b)` — real returns, `return null` skips naturally, no textual
-  return-rewriting needed, per-iteration scoping free. Reuses Phase C's in-place markup-return
-  lowering machinery. NOTE captured-variable divergence (GD lambdas capture by value vs C# by
-  reference) — bodies must be pure producers; document.
+- **GDScript lowering (design v2 — REVISED during D0)**: lambdas are OUT — GD lambdas capture
+  by VALUE, so a lambda-wrapped `@while (i < n) { i += 1 ... }` never terminates and body
+  mutations silently vanish (Unity C# closures capture by REFERENCE; a lambda strategy would
+  diverge observably). Instead, Unity's rewrite technique applied UNIFORMLY: the body's
+  directive-level returns are rewritten in place — `return ( <markup> )` → `<target> = /
+  .append(<lowered>)` + `continue`; `return null` / bare `return` → `continue` — inside an
+  enclosing loop that provides the early-exit: the REAL loop for `@for/@while` (append target),
+  a single-iteration `for __rui_once in 1:` wrapper for `@if/@elif/@else/@match` arms (assign
+  target). Returns inside nested `func():` scopes are NOT rewritten (indent-tracked scope
+  skip); a directive-body `return <value>` that is neither markup nor null → error. Bodies run
+  in the real function scope (mutations behave exactly like Unity). Reuses Phase C's ret-span
+  scan + in-place lowering + `_reindent_block` geometry.
 
 ### Tasks
 - **D0 ✅ Formatter/config parity** — landed (this branch). FmtOptions + guitkx_formatter.gd
