@@ -486,7 +486,7 @@ body as a block — mirror the A4 over-indent recovery pattern).
 
 ## Phase 5 — Single source of truth completion
 
-### T5.1 — TS port of `guitkx_jsx_scan.gd`  · effort: medium · Status: ⬜
+### T5.1 — TS port of `guitkx_jsx_scan.gd`  · effort: medium · Status: ✅ (`jsxScan.ts` — same function/variable names, same boundary set incl. T3.5's `or` and the T1.2 `{end:-1}` unbalanced contract; §5.1 item 1 closed. virtualDoc's `emitExpr` now runs `neutralizeMarkup` over every spliced expression: each markup range becomes `null` PADDED TO THE SAME LENGTH (`<A/>` = 4-char minimum, `null` always fits), so the expression stays valid GDScript for the analyzer AND the 1:1 offset map holds — the G7/G8 syntax-noise source is gone. Same fixture strings tested on both sides)
 **Current.** No TS port (§5.1 item 1) — virtualDoc splices expression blocks verbatim
 (`virtualDoc.ts:344-355`), so nested markup reaches the analyzer as garbage (feeds **G7/G8** noise).
 **Target.** `jsxScan.ts`, byte-identical port discipline (same fn/var names, same fixtures), INCLUDING
@@ -496,12 +496,12 @@ fixtures: every boundary case from `guitkx_jsx_scan.gd` + the two new ones.
 **Done when.** A component using `@if`-ternary markup in an expression island produces ZERO analyzer
 syntax diagnostics from the spliced window, and the contract pending-list drops item 1.
 
-### T5.2 — Typo-recovery + remaining LSP/compiler unifications  · effort: small · Status: ⬜
+### T5.2 — Typo-recovery + remaining LSP/compiler unifications  · effort: small · Status: ✅ (declScan.ts `nearestDeclKind` was already the spec — edit-dist ≤2, length ≥3, `looksLikeDecl` shape gate; the drift was in guitkx.gd `_nearest_decl_keyword` and declarations.ts `nearestDeclKeyword` (both ≤3, no length floor) — both now ≤2/≥3. The directive near-miss (`@clasaas_name`, ≤3) keeps its own threshold: directives are longer tokens with a different false-positive profile. §5.1 sweep: items 1 (jsxScan) and 5 (comment-skip, T3.5) closed; items 2-3 were T0.3; 4/6 were T3.5)
 One shared threshold (edit-dist ≤2, min length 3, shape gate) for decl-keyword recovery in BOTH
 `declScan.ts:43-78` and `guitkx.gd:104-128` (and `declarations.ts:44` hint), table-tested with the same
 fixture list. Sweep §5.1 for any remaining unresolved item and close or file it.
 
-### T5.3 — Live-tier completeness audit  · effort: small · Status: ⬜
+### T5.3 — Live-tier completeness audit  · effort: small · Status: ✅ (audit table — LIVE: 0013-0016 (hookContextDiags), 0104/0108/0109 (scanWindow), 0105/0106/0150/030x/2506 (liveMarkup), 0107 (unreachableRegions + Unnecessary dim), 2100/2105/2203 (declarations), 2101 (missingReturn), 0304 (unclosedReturns). SIDECAR-ONLY with reasons: 0018/0019/0111/0120/0121 (Unity marks these source-gen-only — parity IS sidecar), 0026/2102 (emit-time semantics — need the compiler), 0103 (needs the filename), 2210/2504/2505 (structure errors needing full compile), 0121 (needs ResourceLoader). G9 closed: `missingReturnComponents` on the @for-only body flags live (the T1.4 splitReturn rewrite fixed the walk) — pinned by test. 0106 now fires live for element AND fragment loop roots (walkLoopBody), added to vocabulary `live`)
 After Phases 1–3, table-audit: every compiler-emitted code either (a) has a live equivalent, or (b) is
 documented sidecar-only with a reason. Close the known one — **G9**: `missingReturnComponents()`
 (`formatGuitkx.ts:586-625`) must flag a component whose body is only an `@for` block (the loop-markup

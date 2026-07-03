@@ -42,7 +42,8 @@ export function nearestDeclKeyword(src: string): { word: string; kw: string; sta
         const d = editDistance(word.toLowerCase(), kw);
         if (d < bestD) { bestD = d; best = kw; }
       }
-      return best && bestD <= 3 ? { word, kw: best, start: s, end: i } : null;
+      // T5.2: ONE shared threshold with declScan.ts nearestDeclKind -- edit-dist <= 2, length >= 3.
+      return best && bestD <= 2 && word.length >= 3 ? { word, kw: best, start: s, end: i } : null;
     }
     i++;
   }

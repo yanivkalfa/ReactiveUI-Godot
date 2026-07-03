@@ -94,7 +94,7 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
         break;
       case "for":
       case "while":
-        walkBody(nd.body_markup, base + nd.body_at, out);
+        walkLoopBody(nd.body_markup, base + nd.body_at, out);
         break;
       case "match":
         for (const c of nd.cases) walkBody(c.body_markup, base + c.body_at, out);
@@ -102,6 +102,40 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
         break;
     }
   }
+}
+
+// T5.3: the loop-root key checks (GUITKX0106) now fire LIVE too, mirroring _validate_body -- they
+// were sidecar-only. Only the missing-key family; the multi-root 0108 stays with scanWindowDiagnostics.
+function walkLoopBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): void {
+  const pr = parseMarkup(bodySrc, 0, bodySrc.length);
+  if (pr.error !== "") {
+    const at = base + Math.max(0, pr.error_at);
+    out.push({ start: at, end: at + 1, code: pr.error_code, message: `${pr.error_code}: ${pr.error_msg}` });
+    return;
+  }
+  const nodes = pr.nodes.filter((x) => x && x.t !== "comment");
+  if (nodes.length === 1) {
+    const nd = nodes[0]!;
+    const hasKey = (attrs?: { name: string }[]): boolean => (attrs ?? []).some((a) => a.name === "key");
+    if (nd.t === "el" && !hasKey(nd.attrs)) {
+      out.push({
+        start: base + nd.at,
+        end: base + nd.at + 1 + nd.tag.length,
+        code: "GUITKX0106",
+        message: "GUITKX0106: element in @for/@while has no `key` -- add key= so reordered children reconcile correctly",
+        severity: "warning",
+      });
+    } else if (nd.t === "frag" && !hasKey(nd.attrs)) {
+      out.push({
+        start: base + nd.at,
+        end: base + nd.at + 2,
+        code: "GUITKX0106",
+        message: "GUITKX0106: fragment in @for/@while has no `key` -- use <Fragment key={ ... }> so reordered children reconcile correctly",
+        severity: "warning",
+      });
+    }
+  }
+  walkTags(pr.nodes, base, out);
 }
 
 function walkBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): void {

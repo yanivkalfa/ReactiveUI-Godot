@@ -193,7 +193,8 @@ static func _nearest_decl_keyword(source: String, from: int) -> Dictionary:
 				if d < best_d:
 					best_d = d
 					best = kw
-			if best != "" and best_d <= 3:
+			# T5.2: ONE shared threshold with declScan.ts nearestDeclKind -- edit-dist <= 2, length >= 3.
+			if best != "" and best_d <= 2 and word.length() >= 3:
 				return { "word": word, "kw": best, "at": s }
 			return {}
 		i += 1

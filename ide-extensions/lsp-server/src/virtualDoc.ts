@@ -9,6 +9,7 @@
 import { skipNoncode, skipString, findMatching, keywordAt } from "./scanner";
 import { findDecl } from "./declScan";
 import { SourceMap } from "./sourceMap";
+import { neutralizeMarkup } from "./jsxScan";
 
 export interface VirtualDoc {
   text: string;
@@ -349,6 +350,10 @@ function emitMatchArms(ctx: Ctx, start: number, end: number, indent: number): vo
 }
 
 // Emit `var _eN = (<expr>)` at `indent`, mapping the expr text verbatim.
+// T5.1: markup NESTED inside the expression (`open and <Panel/>`, `xs.map(func(x): return <Row/>)`)
+// used to be spliced raw -- the analyzer parsed `<` as an operator and sprayed syntax noise over the
+// island (the G7/G8 noise source). jsxScan.neutralizeMarkup replaces each markup range with `null`
+// padded to the SAME length, so the expression stays valid GDScript and the 1:1 offset map holds.
 function emitExpr(ctx: Ctx, start: number, end: number, indent: number): void {
   const text = ctx.src.slice(start, end);
   const trimmed = text.replace(/^\s+/, "");
@@ -357,7 +362,7 @@ function emitExpr(ctx: Ctx, start: number, end: number, indent: number): void {
   const prefix = `${"\t".repeat(indent)}var _e${ctx.counter++} = (`;
   ctx.gen += prefix;
   const gs = ctx.gen.length;
-  ctx.gen += trimmed;
+  ctx.gen += neutralizeMarkup(trimmed);
   ctx.map.addSpan(start + lead, gs, trimmed.length);
   ctx.gen += ")\n";
 }
