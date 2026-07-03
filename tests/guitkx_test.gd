@@ -24,6 +24,7 @@ func _run() -> void:
 	_test_module_dup_across_kinds()
 	_test_p1_error_gates()
 	_test_t13_single_decl()
+	_test_t14_last_return()
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
@@ -223,6 +224,55 @@ func _test_p1_error_gates() -> void:
 	var r4 := RUIGuitkx.compile(src_mod, "M2")
 	_check_true(not r4["ok"], "T1.1: module-member validation error fails the module compile")
 	_check_true(_has_code(r4, "GUITKX0108"), "T1.1: the member's 0108 is the reported error")
+
+func _test_t14_last_return() -> void:
+	# T1.4 (Unity useLastReturn parity): the LAST top-level markup return is the component's output.
+	# Two top-level returns -> the first is GUITKX2102 (it would return before the markup return in
+	# the generated .gd -- Unity's C# compiler catches that; Godot must catch it at compile).
+	var two_src := "component U2() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n"
+	var two := RUIGuitkx.compile(two_src, "U2")
+	_check_true(not two["ok"], "T1.4: early top-level return fails the compile")
+	_check_diag_at(two, "GUITKX2102", two_src, "return ( <Label /> )", "T1.4: 2102 lands on the demoted first return")
+
+	# The slicing repro shape: a markup return INSIDE an if: block is a statement -- GDScript setup
+	# cannot contain markup, so it is 2102 at that line; the later top-level return still compiles
+	# as the window (the compile fails overall because 2102 is an error).
+	var early_src := "component S(weird: bool = false) {\n" + \
+		"\tif weird:\n\t\treturn <s></a>\n" + \
+		"\treturn (\n\t\t<panel_container><label text=\"ok\" /></panel_container>\n\t)\n}\n"
+	var early := RUIGuitkx.compile(early_src, "S")
+	_check_true(not early["ok"], "T1.4: conditional markup return fails the compile")
+	_check_diag_at(early, "GUITKX2102", early_src, "return <s></a>", "T1.4: 2102 lands on the conditional markup return")
+
+	# A PLAIN parenthesized return inside a setup lambda is legal GDScript -- never flagged.
+	var lambda_src := "component L() {\n" + \
+		"\tvar f = func():\n\t\treturn (1 + 2)\n" + \
+		"\treturn ( <Label text={ str(f.call()) } /> )\n}\n"
+	var lam := RUIGuitkx.compile(lambda_src, "L")
+	_check_true(bool(lam["ok"]), "T1.4: lambda `return (expr)` is not hijacked nor flagged (got %s)" % str(lam["diagnostics"]))
+	_check_true("1 + 2" in str(lam["gd"]), "T1.4: lambda body stays in setup verbatim")
+
+	# Unity 2102 fallback: a top-level return that is not `return (`/`return <`/`return null`.
+	var malformed_src := "component M() {\n\treturn V.label({})\n}\n"
+	var mal := RUIGuitkx.compile(malformed_src, "M")
+	_check_true(not mal["ok"], "T1.4: malformed top-level return fails")
+	_check_diag_at(mal, "GUITKX2102", malformed_src, "return V.label({})", "T1.4: malformed-return 2102 position")
+
+	# Unity LooksLikeMarkupRoot parity: `return ( plain_expr )` is 2102 -- the window must hold
+	# an element, fragment, @directive, or {expr}.
+	var plain_src := "component P() {\n\treturn ( 1 + 2 )\n}\n"
+	var plain := RUIGuitkx.compile(plain_src, "P")
+	_check_true(not plain["ok"] and _has_code(plain, "GUITKX2102"), "T1.4: non-markup return window is 2102 (got %s)" % str(plain["diagnostics"]))
+
+	# G9: a body that is ONLY an @for block (no return at all) must error missing-return.
+	var g9_src := "component G9() {\n\t@for (i in 25) {\n\t\t<label text={ str(i) } />\n\t}\n}\n"
+	var g9 := RUIGuitkx.compile(g9_src, "G9")
+	_check_true(not g9["ok"] and _has_code(g9, "GUITKX0102"), "T1.4/G9: @for-only body errors missing-return (got %s)" % str(g9["diagnostics"]))
+
+	# A `{expr}` root stays legal (LooksLikeMarkupRoot accepts `{`).
+	var expr_src := "component E(items: Array = []) {\n\treturn ( { items.map(func(i): return <label text={ str(i) } />) } )\n}\n"
+	var expr := RUIGuitkx.compile(expr_src, "E")
+	_check_true(bool(expr["ok"]), "T1.4: {expr} root still compiles (got %s)" % str(expr["diagnostics"]))
 
 func _test_t13_single_decl() -> void:
 	# T1.3: content after the single top-level declaration errors (Unity UITKX2105 parity) --
@@ -449,8 +499,9 @@ func _test_decl_validation() -> void:
 	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
 	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
 	_check_true(not badtag["ok"] and _has_code(badtag, "GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
-	# BUG-V5: code after the markup return is flagged unreachable (GUITKX0114 warning) at the dead code
-	var unreach_src := "component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n"
+	# BUG-V5 (T1.4 semantics): code after the LAST top-level markup return is flagged unreachable
+	# (GUITKX0114 warning) at the dead code; the compile still succeeds.
+	var unreach_src := "component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n}\n"
 	var unreach := RUIGuitkx.compile(unreach_src, "U")
 	_check_true(bool(unreach["ok"]), "unreachable code is a warning, not an error (got %s)" % str(unreach["diagnostics"]))
 	_check_diag_at(unreach, "GUITKX0114", unreach_src, "var x = 5", "unreachable-after-return")

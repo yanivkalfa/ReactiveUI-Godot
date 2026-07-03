@@ -218,8 +218,18 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	var body := source.substr(j + 1, bclose - j - 1)
 	var body_at := j + 1   # absolute offset of body[0] in `source`; rebases body-relative offsets
 	var split := _split_return(body)
+	# T1.4: demoted returns (early top-level ones, and markup-shaped statement-level ones) are errors
+	# regardless of whether a final markup return was also found.
+	for b in split.get("bad", []):
+		diags.append(D.make("GUITKX2102", D.ERROR, b["msg"], body_at + int(b["at"]), maxi(1, int(b["to"]) - int(b["at"]))))
 	if split.has("error"):
 		diags.append(D.rebase(split["error"], body_at))
+		return { "ok": false }
+	# T1.4 (Unity LooksLikeMarkupRoot parity): the chosen return's content must BE markup -- an
+	# element, `<>` fragment, @directive, or `{expr}` -- not a plain parenthesized value.
+	var mfirst := _first_real(body, int(split["m_start"]), int(split["m_end"]))
+	if mfirst == -1 or not (body[mfirst] == "<" or body[mfirst] == "@" or body[mfirst] == "{"):
+		diags.append(D.make("GUITKX2102", D.ERROR, "`return` must return markup (an element, `<>` fragment, @directive, or `{expr}`)", body_at + int(split.get("chosen_at", int(split["m_start"]))), 6))
 		return { "ok": false }
 	# BUG-V5: any real code after the markup return is unreachable (the compiler drops it).
 	var unreach_first := _first_real(body, int(split["m_end"]) + 1, body.length())
@@ -535,9 +545,40 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	return { "ok": true, "gd": out, "diagnostics": diags }
 
-# --- body splitter: find the top-level `return ( ... )` ---
+# --- body splitter: choose the LAST top-level markup return (T1.4, Unity useLastReturn parity) ---
+# "Top-level" is the GDScript equivalent of Unity's brace-depth-0: the `return` is the FIRST token on
+# its line AND the line's indent depth is <= the body's anchor depth (the same anchor rule as
+# _reindent_setup, so the split agrees with emission). Everything before the chosen return is setup;
+# statement-level returns (inside if:/for:/lambdas) are legal GDScript and stay there UNLESS they are
+# markup-shaped -- GDScript setup can never contain markup, so those are collected in `bad` and the
+# caller reports GUITKX2102. Earlier TOP-LEVEL candidates also land in `bad`: they would make the
+# chosen markup return unreachable in the generated .gd (Unity's C# compiler catches that for it;
+# Godot must catch it here).
+#
+# Returns { setup, markup_src, m_start, m_end, chosen_at, bad } on success or { error: Diag, bad }
+# -- `bad` = [{ at, to, msg }] is ALWAYS processed by the caller, even alongside an error.
 static func _split_return(body: String) -> Dictionary:
 	var n := body.length()
+	# indent geometry (unit + anchor) over the body's lines -- mirrored in formatGuitkx.ts/virtualDoc.ts.
+	var lines: Array = Array(body.split("\n"))
+	var unit := _indent_unit(lines)
+	var anchor := -1
+	var anchor_any := -1
+	for l in lines:
+		var t := (l as String).strip_edges()
+		if t == "":
+			continue
+		var d := _indent_depth(l as String, unit)
+		if anchor_any == -1:
+			anchor_any = d
+		if not t.begins_with("#"):
+			anchor = d
+			break
+	if anchor == -1:
+		anchor = anchor_any
+	var bad: Array = []
+	var chosen := {}           # { at, p, shape ("paren"|"bare"), close }
+	var malformed_at := -1     # first top-level `return <other>` (not (, <, null) -- Unity 2102 fallback
 	var i := 0
 	while i < n:
 		var k := L.skip_noncode(body, i)
@@ -547,23 +588,72 @@ static func _split_return(body: String) -> Dictionary:
 		if L.keyword_at(body, i, "return"):
 			var p := i + 6
 			p = _skip_ws_only(body, p)
+			# position class: first token on its line at depth <= anchor == top-level
+			var ls := 0 if i == 0 else body.rfind("\n", i - 1) + 1
+			var lead := body.substr(ls, i - ls)
+			var top_level := lead.strip_edges() == "" and _indent_depth(lead, unit) <= anchor
+			var eol := body.find("\n", i)
+			if eol == -1:
+				eol = n
 			if p < n and body[p] == "(":
 				var close := L.find_matching(body, p)
 				if close == -1:
-					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
-				var setup := body.substr(0, i)
-				return { "setup": setup, "markup_src": body, "m_start": p + 1, "m_end": close }
+					# an unclosed `(` swallows the rest of the body -- nothing after it can be scanned
+					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1), "bad": bad }
+				if top_level:
+					if not chosen.is_empty():
+						bad.append(_bad_return(chosen, body, n))
+					chosen = { "at": i, "p": p, "shape": "paren", "close": close }
+				elif _paren_holds_markup(body, p + 1, close):
+					bad.append({ "at": i, "to": eol, "msg": "a conditional/early `return` cannot return markup (setup is plain GDScript) -- return null and branch with @if/@match in the markup" })
+				i = close + 1
+				continue
 			elif p < n and body[p] == "<":
-				# bare `return <Tag.../>;`
-				var setup2 := body.substr(0, i)
-				return { "setup": setup2, "markup_src": body, "m_start": p, "m_end": n }
+				# bare `return <Tag.../>` -- markup by construction (`<` cannot start a GDScript expression)
+				if top_level:
+					if not chosen.is_empty():
+						bad.append(_bad_return(chosen, body, n))
+					chosen = { "at": i, "p": p, "shape": "bare", "close": -1 }
+				else:
+					bad.append({ "at": i, "to": eol, "msg": "a conditional/early `return` cannot return markup (setup is plain GDScript) -- return null and branch with @if/@match in the markup" })
+				i = eol
+				continue
 			elif L.keyword_at(body, p, "null"):
-				# `return null` may be a CONDITIONAL guard (e.g. `if not ready: return null`); keep
-				# scanning for a later markup return rather than failing the whole compile. [audit]
+				# `return null` is the sanctioned CONDITIONAL guard (top-level or nested); skip it.
 				i = p + 4
 				continue
+			elif top_level and malformed_at == -1:
+				malformed_at = i
+			i = eol if top_level else i + 6
+			continue
 		i += 1
-	return { "error": D.make("GUITKX0102", D.ERROR, "component has no `return ( ... )` (only `return null`?)") }
+	if chosen.is_empty():
+		if malformed_at != -1:
+			var meol := body.find("\n", malformed_at)
+			if meol == -1:
+				meol = n
+			return { "error": D.make("GUITKX2102", D.ERROR, "`return` must return markup using `return ( <...> )`", malformed_at, maxi(1, meol - malformed_at)), "bad": bad }
+		return { "error": D.make("GUITKX0102", D.ERROR, "component has no `return ( ... )` (only `return null`?)"), "bad": bad }
+	var setup := body.substr(0, int(chosen["at"]))
+	if chosen["shape"] == "paren":
+		return { "setup": setup, "markup_src": body, "m_start": int(chosen["p"]) + 1, "m_end": int(chosen["close"]), "chosen_at": int(chosen["at"]), "bad": bad }
+	return { "setup": setup, "markup_src": body, "m_start": int(chosen["p"]), "m_end": n, "chosen_at": int(chosen["at"]), "bad": bad }
+
+## A demoted earlier-top-level candidate -> `bad` entry (it would return before the final markup
+## return, making the component's output unreachable in the generated .gd).
+static func _bad_return(cand: Dictionary, body: String, n: int) -> Dictionary:
+	var at: int = int(cand["at"])
+	var to: int = body.find("\n", at)
+	if to == -1:
+		to = n
+	return { "at": at, "to": to, "msg": "a component's setup cannot `return` before the final markup return -- use a `return null` guard or branch with @if in the markup" }
+
+## True when a parenthesized return's content [from,to) starts with markup (`<` element or `@`
+## directive) -- neither can begin a legal GDScript expression, so this never false-flags a plain
+## parenthesized value like `return (x + 1)` in a setup lambda.
+static func _paren_holds_markup(body: String, from: int, to: int) -> bool:
+	var f := _first_real(body, from, to)
+	return f != -1 and (body[f] == "<" or body[f] == "@")
 
 ## T1.3: any real (non-ws, non-comment) content after the single top-level declaration is an error
 ## (Unity UITKX2105 parity: "Invalid top-level statement after function-style component declaration").

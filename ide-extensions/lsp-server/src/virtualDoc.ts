@@ -478,7 +478,27 @@ interface ReturnSplit {
   markupEnd: number;
 }
 
+// T1.4 (Unity useLastReturn parity): the window is the LAST top-level markup return, mirroring
+// guitkx.gd _split_return / formatGuitkx.ts splitReturn -- first token on its line, line depth <=
+// the body's anchor depth. Statement-level returns (in if:/lambdas) stay in the analyzed setup.
 function splitReturn(src: string, start: number, end: number): ReturnSplit {
+  const lines = src.slice(start, end).split("\n");
+  const unit = indentUnit(lines);
+  let anchor = -1;
+  let anchorAny = -1;
+  for (const raw of lines) {
+    const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const t = l.trim();
+    if (t === "") continue;
+    const d = indentDepth(l, unit);
+    if (anchorAny === -1) anchorAny = d;
+    if (!t.startsWith("#")) {
+      anchor = d;
+      break;
+    }
+  }
+  if (anchor === -1) anchor = anchorAny;
+  let chosen: ReturnSplit | null = null;
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -489,18 +509,35 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit {
     if (keywordAt(src, i, "return")) {
       let p = i + 6;
       while (p < end && /\s/.test(src[p])) p++;
+      const ls = Math.max(start, src.lastIndexOf("\n", i - 1) + 1);
+      const lead = src.slice(ls, i);
+      const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
+      let eol = src.indexOf("\n", i);
+      if (eol === -1 || eol > end) eol = end;
       if (src[p] === "(") {
         const close = findMatching(src, p);
         // A half-typed `return (`: keep analysing the setup ABOVE the return (empty markup window)
         // instead of abandoning the whole body — mid-keystroke intelligence stays alive.
-        if (close === -1) return { setupEnd: i, markupStart: end, markupEnd: end };
-        return { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        if (close === -1 || close >= end) return { setupEnd: i, markupStart: end, markupEnd: end };
+        if (topLevel) chosen = { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        i = close + 1;
+        continue;
       }
-      if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
+      if (src[p] === "<") {
+        if (topLevel) chosen = { setupEnd: i, markupStart: p, markupEnd: end };
+        i = eol;
+        continue;
+      }
+      if (keywordAt(src, p, "null")) {
+        i = p + 4;
+        continue;
+      }
+      i = topLevel ? eol : i + 6;
+      continue;
     }
     i++;
   }
-  return { setupEnd: end, markupStart: end, markupEnd: end };
+  return chosen ?? { setupEnd: end, markupStart: end, markupEnd: end };
 }
 
 function readWord(src: string, i: number): string {

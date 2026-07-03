@@ -2,14 +2,14 @@
 	"diagnostics": [
 		{
 			"code": "GUITKX0103",
-			"len": 1,
+			"len": 10,
 			"off": 10,
 			"severity": 1
 		},
 		{
 			"code": "GUITKX2102",
 			"len": 33,
-			"off": 52,
+			"off": 26,
 			"severity": 0
 		}
 	],
@@ -18,14 +18,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":107,\"attrs\":[{\"at\":115,\"end\":126,\"kind\":\"str\",\"name\":\"text\",\"value\":\"late\",\"vat\":121}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Button\"}]"
+			"tree": "[{\"at\":81,\"attrs\":[{\"at\":88,\"end\":104,\"kind\":\"str\",\"name\":\"text\",\"value\":\"last wins\",\"vat\":94}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"label\"}]"
 		}
 	],
 	"ok": false,
 	"windows": [
 		{
-			"end": 130,
-			"start": 106
+			"end": 108,
+			"start": 80
 		}
 	]
 }

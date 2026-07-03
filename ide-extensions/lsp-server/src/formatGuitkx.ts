@@ -703,7 +703,29 @@ interface ReturnSplit {
 // `"unclosed"` = a markup return exists but its `(` never closes (the compiler's GUITKX0304, and the
 // half-typed `return (` while editing); `null` = NO markup return anywhere in the body (GUITKX0102).
 // Distinguished so the live missing-return diagnostic can't fire on an in-progress paren.
+//
+// T1.4 (Unity useLastReturn parity): the window is the LAST top-level markup return. "Top-level"
+// mirrors guitkx.gd _split_return exactly -- the `return` is the first token on its line AND the
+// line's indent depth is <= the body's anchor depth (same anchor rule as reanchor/_reindent_setup).
+// Statement-level returns (inside if:/lambdas) are setup code, never windows -- the compiler
+// classifies the markup-shaped ones as GUITKX2102.
 function splitReturn(src: string, start: number, end: number): ReturnSplit | "unclosed" | null {
+  const lines = src.slice(start, end).split("\n");
+  const unit = indentUnit(lines);
+  let anchor = -1;
+  let anchorAny = -1;
+  for (const l of lines) {
+    const t = l.trim();
+    if (t === "") continue;
+    const d = indentDepth(l, unit);
+    if (anchorAny === -1) anchorAny = d;
+    if (!t.startsWith("#")) {
+      anchor = d;
+      break;
+    }
+  }
+  if (anchor === -1) anchor = anchorAny;
+  let chosen: ReturnSplit | null = null;
   let i = start;
   while (i < end) {
     const k = skipNoncode(src, i);
@@ -714,22 +736,37 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit | "un
     if (keywordAt(src, i, "return")) {
       let p = i + 6;
       while (p < end && /\s/.test(src[p])) p++;
+      const ls = Math.max(start, src.lastIndexOf("\n", i - 1) + 1);
+      const lead = src.slice(ls, i);
+      const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
+      let eol = src.indexOf("\n", i);
+      if (eol === -1 || eol > end) eol = end;
       if (src[p] === "(") {
         const close = findMatching(src, p);
-        if (close === -1) return "unclosed";
-        return { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        // close >= end: the `)` lives beyond the body -- inside the sliced body the compiler sees
+        // no close at all, so mirror its GUITKX0304 verdict.
+        if (close === -1 || close >= end) return "unclosed";
+        if (topLevel) chosen = { setupEnd: i, markupStart: p + 1, markupEnd: close };
+        i = close + 1;
+        continue;
       }
-      if (src[p] === "<") return { setupEnd: i, markupStart: p, markupEnd: end };
+      if (src[p] === "<") {
+        if (topLevel) chosen = { setupEnd: i, markupStart: p, markupEnd: end };
+        i = eol;
+        continue;
+      }
       // `return null` may be a CONDITIONAL guard (e.g. `if not ready: return null`); keep scanning
       // for a later markup return rather than bailing to verbatim. Mirrors guitkx.gd _split_return. [audit]
       if (keywordAt(src, p, "null")) {
         i = p + 4;
         continue;
       }
+      i = topLevel ? eol : i + 6;
+      continue;
     }
     i++;
   }
-  return null;
+  return chosen;
 }
 
 // --- helpers ---
