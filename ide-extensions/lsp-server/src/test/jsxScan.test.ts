@@ -87,12 +87,27 @@ test("T5.3/G9: a component whose body is only an @for block flags missing-return
 test("T5.3: keyless loop roots (element and fragment) fire GUITKX0106 live", () => {
   const { windowStructureDiags } = require("../liveMarkup");
   const { markupWindows } = require("../formatGuitkx");
-  const el = "component K(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label text={ str(x) } /> }</vbox> )\n}\n";
+  const el = "component K(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { return ( <label text={ str(x) } /> ) }</vbox> )\n}\n";
   const d1 = windowStructureDiags(el, markupWindows(el));
   assert.ok(d1.some((x: { code: string }) => x.code === "GUITKX0106"), JSON.stringify(d1));
-  const frag = "component K2(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <Fragment><label text={ str(x) } /></Fragment> }</vbox> )\n}\n";
+  const frag = "component K2(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { return ( <Fragment><label text={ str(x) } /></Fragment> ) }</vbox> )\n}\n";
   const d2 = windowStructureDiags(frag, markupWindows(frag));
   assert.ok(d2.some((x: { code: string }) => x.code === "GUITKX0106"), JSON.stringify(d2));
-  const keyed = "component K3(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label key={ str(x) } text={ str(x) } /> }</vbox> )\n}\n";
+  const keyed = "component K3(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { return ( <label key={ str(x) } text={ str(x) } /> ) }</vbox> )\n}\n";
   assert.equal(windowStructureDiags(keyed, markupWindows(keyed)).filter((x: { code: string }) => x.code === "GUITKX0106").length, 0);
+});
+
+// Phase D: the live tier mirrors _validate_body's new-grammar diagnostics.
+test("Phase D: legacy bare-markup body fires GUITKX2103 live; hook in body prep fires GUITKX2104; prep-code body is clean", () => {
+  const { windowStructureDiags } = require("../liveMarkup");
+  const { markupWindows } = require("../formatGuitkx");
+  const legacy = "component L(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label text={ str(x) } /> }</vbox> )\n}\n";
+  const d1 = windowStructureDiags(legacy, markupWindows(legacy));
+  assert.ok(d1.some((x: { code: string }) => x.code === "GUITKX2103"), JSON.stringify(d1));
+  const hook = "component H() {\n\treturn ( <vbox>@if (true) {\n\t\tvar s = useState(0)\n\t\treturn ( <label text={ str(s[0]) } /> )\n\t} </vbox> )\n}\n";
+  const d2 = windowStructureDiags(hook, markupWindows(hook));
+  assert.ok(d2.some((x: { code: string }) => x.code === "GUITKX2104"), JSON.stringify(d2));
+  const prep = "component P(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) {\n\t\tvar t := str(x)\n\t\tif x == null:\n\t\t\treturn null\n\t\treturn ( <label key={ t } text={ t } /> )\n\t} </vbox> )\n}\n";
+  const d3 = windowStructureDiags(prep, markupWindows(prep));
+  assert.equal(d3.length, 0, `prep-code body must be clean, got ${JSON.stringify(d3)}`);
 });

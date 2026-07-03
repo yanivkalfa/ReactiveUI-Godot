@@ -18,7 +18,7 @@ import { parseMarkup, MarkupNode } from "./markup";
 import { VOCABULARY, HOST_TAGS, findTag } from "./schema";
 import { editDistance } from "./declScan";
 import { skipNoncode, keywordAt, isIdent } from "./scanner";
-import { indentUnit, indentDepth } from "./formatGuitkx";
+import { indentUnit, indentDepth, splitBody } from "./formatGuitkx";
 
 export interface LiveMarkupDiag {
   start: number;
@@ -146,51 +146,88 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
   }
 }
 
-// T5.3: the loop-root key checks (GUITKX0106) now fire LIVE too, mirroring _validate_body -- they
-// were sidecar-only. Only the missing-key family; the multi-root 0108 stays with scanWindowDiagnostics.
+// Phase D: a directive body is CODE (prep + directive-level returns) -- mirrors guitkx.gd
+// _validate_body (change BOTH or neither). Live coverage: the pre-0.7 bare-markup grammar ->
+// GUITKX2103; hook calls in body code -> GUITKX2104; each markup return parses (inner parser
+// errors surface, T1.2), needs EXACTLY ONE root (0108), gets the loop key checks (0106) when the
+// directive is a loop, and recurses through walkTags for tag/hook/header checks.
 function walkLoopBody(bodySrc: string, base: number, out: LiveMarkupDiag[], known: Set<string> | null = null): void {
-  const pr = parseMarkup(bodySrc, 0, bodySrc.length);
-  if (pr.error !== "") {
-    const at = base + Math.max(0, pr.error_at);
-    out.push({ start: at, end: at + 1, code: pr.error_code, message: `${pr.error_code}: ${pr.error_msg}` });
-    return;
-  }
-  const nodes = pr.nodes.filter((x) => x && x.t !== "comment");
-  if (nodes.length === 1) {
-    const nd = nodes[0]!;
-    const hasKey = (attrs?: { name: string }[]): boolean => (attrs ?? []).some((a) => a.name === "key");
-    if (nd.t === "el" && !hasKey(nd.attrs)) {
-      out.push({
-        start: base + nd.at,
-        end: base + nd.at + 1 + nd.tag.length,
-        code: "GUITKX0106",
-        message: "GUITKX0106: element in @for/@while has no `key` -- add key= so reordered children reconcile correctly",
-        severity: "warning",
-      });
-    } else if (nd.t === "frag" && !hasKey(nd.attrs)) {
-      out.push({
-        start: base + nd.at,
-        end: base + nd.at + 2,
-        code: "GUITKX0106",
-        message: "GUITKX0106: fragment in @for/@while has no `key` -- use <Fragment key={ ... }> so reordered children reconcile correctly",
-        severity: "warning",
-      });
-    }
-  }
-  walkTags(pr.nodes, base, out, known);
+  walkDirectiveBody(bodySrc, base, out, known, true);
 }
 
 function walkBody(bodySrc: string, base: number, out: LiveMarkupDiag[], known: Set<string> | null = null): void {
-  const pr = parseMarkup(bodySrc, 0, bodySrc.length);
-  // Directive bodies are OPAQUE to the enclosing window parse (raw text), so a malformed body is
-  // invisible to it -- report the inner parser's error here, exactly like the compiler's
-  // _validate_body does since T1.2.
-  if (pr.error !== "") {
-    const at = base + Math.max(0, pr.error_at);
-    out.push({ start: at, end: at + 1, code: pr.error_code, message: `${pr.error_code}: ${pr.error_msg}` });
+  walkDirectiveBody(bodySrc, base, out, known, false);
+}
+
+function walkDirectiveBody(bodySrc: string, base: number, out: LiveMarkupDiag[], known: Set<string> | null, isLoop: boolean): void {
+  const sp = splitBody(bodySrc);
+  if (sp.error) {
+    const at = base + Math.max(0, sp.error.at);
+    out.push({ start: at, end: at + 1, code: sp.error.code, message: `${sp.error.code}: ${sp.error.message}` });
     return;
   }
-  walkTags(pr.nodes, base, out, known);
+  if (sp.legacy_at !== -1) {
+    out.push({
+      start: base + sp.legacy_at,
+      end: base + sp.legacy_at + 1,
+      code: "GUITKX2103",
+      message: "GUITKX2103: a directive body returns its markup -- write `return ( <markup> )` (directive bodies are code blocks since 0.7, Unity parity)",
+    });
+    return;
+  }
+  const hasKey = (attrs?: { name: string }[]): boolean => (attrs ?? []).some((a) => a.name === "key");
+  for (const part of sp.parts) {
+    if (part.t === "gd") {
+      const seg = bodySrc.slice(part.from, part.to);
+      const h = findHookCall(seg);
+      if (h !== -1) {
+        out.push({
+          start: base + part.from + h,
+          end: base + part.from + h + 1,
+          code: "GUITKX2104",
+          message: "GUITKX2104: hook called inside a directive body -- hooks must run unconditionally in component setup; call it there and reference the result",
+        });
+      }
+      continue;
+    }
+    if (!part.markup) continue;
+    const pr = parseMarkup(bodySrc, part.m_start, part.m_end);
+    if (pr.error !== "") {
+      const at = base + Math.max(0, pr.error_at);
+      out.push({ start: at, end: at + 1, code: pr.error_code, message: `${pr.error_code}: ${pr.error_msg}` });
+      return;
+    }
+    const nodes = pr.nodes.filter((x) => x && x.t !== "comment");
+    if (nodes.length !== 1) {
+      out.push({
+        start: base + part.m_start,
+        end: base + part.m_start + 1,
+        code: "GUITKX0108",
+        message: `GUITKX0108: a directive-body \`return\` must return exactly one root element (got ${nodes.length}) -- wrap siblings in a fragment <>...</>`,
+      });
+    }
+    const root = nodes[0];
+    if (isLoop && part.rewrite && root) {
+      if (root.t === "el" && !hasKey(root.attrs)) {
+        out.push({
+          start: base + root.at,
+          end: base + root.at + 1 + root.tag.length,
+          code: "GUITKX0106",
+          message: "GUITKX0106: element returned in @for/@while has no `key` -- add key= so reordered children reconcile correctly",
+          severity: "warning",
+        });
+      } else if (root.t === "frag" && !hasKey(root.attrs)) {
+        out.push({
+          start: base + root.at,
+          end: base + root.at + 2,
+          code: "GUITKX0106",
+          message: "GUITKX0106: fragment returned in @for/@while has no `key` -- use <Fragment key={ ... }> so reordered children reconcile correctly",
+          severity: "warning",
+        });
+      }
+    }
+    walkTags(pr.nodes, base, out, known);
+  }
 }
 
 function attrHookChecks(attrs: { kind: string; value: string; vat: number }[], base: number, out: LiveMarkupDiag[]): void {

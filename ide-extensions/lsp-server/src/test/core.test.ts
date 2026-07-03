@@ -325,7 +325,7 @@ test("T1.5: unknown lowercase tag fires live with a did-you-mean", () => {
 });
 
 test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed offsets)", () => {
-  const src = "component B() {\n\treturn ( <vbox>@if (true) { <lable /> }</vbox> )\n}\n";
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { return ( <lable /> ) }</vbox> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0105");
   assert.ok(hit, `got ${JSON.stringify(d)}`);
@@ -333,7 +333,7 @@ test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed 
 });
 
 test("T1.5: a broken @if body's parse error surfaces live (bodies are opaque to the window parse)", () => {
-  const src = "component B() {\n\treturn ( <vbox>@if (true) { <Broken> }</vbox> )\n}\n";
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { return ( <Broken> ) }</vbox> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0301");
   assert.ok(hit, `got ${JSON.stringify(d)}`);

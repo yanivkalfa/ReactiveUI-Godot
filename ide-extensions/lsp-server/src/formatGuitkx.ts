@@ -7,7 +7,7 @@
 import { parseMarkup, MarkupNode, Attr } from "./markup";
 import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
 import { findDecl } from "./declScan";
-import { findElementEnd } from "./jsxScan";
+import { findElementEnd, markupAt } from "./jsxScan";
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 
@@ -321,13 +321,244 @@ function fmtMatch(nd: Extract<MarkupNode, { t: "match" }>, indent: number, o: Fm
   return out;
 }
 
-// Re-parse a raw control-flow body string and format its nodes; verbatim re-indent fallback on error.
+// --- Phase D: directive-body splitter (mirrors guitkx.gd _split_body -- change BOTH or neither) ---
+// A directive body is CODE: prep statements + directive-level returns. Every directive-level return
+// is classified (paren-markup / bare markup / value / null / void); returns inside nested `func():`
+// scopes (indent-tracked) belong to the lambda (`rewrite: false` -- markup lowers, `return` stays).
+// Markup at statement position outside a return = the pre-0.7 grammar -> `legacy_at` (GUITKX2103).
+export type BodyPart =
+  | { t: "gd"; from: number; to: number }
+  | { t: "ret"; at: number; end: number; m_start: number; m_end: number; shape: "paren" | "bare" | "value" | "null" | "void"; depth: number; markup: boolean; rewrite: boolean };
+export interface BodySplit {
+  parts: BodyPart[];
+  rets: number;
+  legacy_at: number;
+  unit: number;
+  anchor: number;
+  error?: { code: string; message: string; at: number };
+}
+
+export function splitBody(body: string): BodySplit {
+  const n = body.length;
+  const lines = body.split("\n");
+  const unit = indentUnit(lines);
+  let anchor = -1;
+  let anchorAny = -1;
+  for (const l of lines) {
+    const t = l.trim();
+    if (t === "") continue;
+    const d = indentDepth(l, unit);
+    if (anchorAny === -1) anchorAny = d;
+    if (!t.startsWith("#")) {
+      anchor = d;
+      break;
+    }
+  }
+  if (anchor === -1) anchor = anchorAny;
+  if (anchor === -1) anchor = 0;
+  // per-line lambda floor: innermost enclosing func-header depth (-1 = not inside a lambda)
+  const lineStart: number[] = [0];
+  for (let ci = 0; ci < n; ci++) if (body[ci] === "\n") lineStart.push(ci + 1);
+  const floors: number[] = [];
+  const fstack: number[] = [];
+  for (const l of lines) {
+    const t = l.trim();
+    if (t === "" || t.startsWith("#")) {
+      floors.push(fstack.length === 0 ? -1 : fstack[fstack.length - 1]);
+      continue;
+    }
+    const d = indentDepth(l, unit);
+    while (fstack.length > 0 && d <= fstack[fstack.length - 1]) fstack.pop();
+    floors.push(fstack.length === 0 ? -1 : fstack[fstack.length - 1]);
+    if (lineOpensFunc(l)) fstack.push(d);
+  }
+  const parts: BodyPart[] = [];
+  let rets = 0;
+  let legacyAt = -1;
+  let cursor = 0;
+  let lineIdx = 0;
+  let bdepth = 0;
+  let i = 0;
+  const pushRet = (ret: Extract<BodyPart, { t: "ret" }>): void => {
+    if (ret.at > cursor) parts.push({ t: "gd", from: cursor, to: ret.at });
+    parts.push(ret);
+    cursor = ret.end;
+  };
+  while (i < n) {
+    const k = skipNoncode(body, i);
+    if (k !== i) {
+      i = k;
+      continue;
+    }
+    while (lineIdx + 1 < lineStart.length && lineStart[lineIdx + 1] <= i) lineIdx++;
+    const ls = lineStart[lineIdx];
+    const prefix = body.slice(ls, i);
+    const atStmt = prefix.trim() === "" && bdepth <= 0;
+    const inLambda = floors[lineIdx] !== -1;
+    const c = body[i];
+    if (c === "(" || c === "[" || c === "{") {
+      bdepth++;
+      i++;
+      continue;
+    }
+    if (c === ")" || c === "]" || c === "}") {
+      bdepth--;
+      i++;
+      continue;
+    }
+    if (c === "<" && markupAt(body, i, n)) {
+      if (atStmt && !inLambda && legacyAt === -1) legacyAt = i;
+      const ee = findElementEnd(body, i, n);
+      i = ee === -1 ? n : ee;
+      continue;
+    }
+    if (c === "@" && atStmt && !inLambda && (keywordAt(body, i + 1, "if") || keywordAt(body, i + 1, "for") || keywordAt(body, i + 1, "while") || keywordAt(body, i + 1, "match"))) {
+      if (legacyAt === -1) legacyAt = i;
+      i++;
+      continue;
+    }
+    if (!keywordAt(body, i, "return")) {
+      i++;
+      continue;
+    }
+    let p = i + 6;
+    while (p < n && (body[p] === " " || body[p] === "\t")) p++;
+    let depth = indentDepth(prefix, unit);
+    const pt = prefix.trim();
+    if (pt !== "" && pt.endsWith(":")) depth += 1;
+    if (inLambda) {
+      if (p < n && body[p] === "(") {
+        const lc = findMatching(body, p);
+        if (lc === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed `(` after return", at: p } };
+        if (parenHoldsMarkup(body, p + 1, lc)) pushRet({ t: "ret", at: i, end: lc + 1, m_start: p + 1, m_end: lc, shape: "paren", depth, markup: true, rewrite: false });
+        i = lc + 1;
+        continue;
+      }
+      if (p < n && body[p] === "<") {
+        const lb = findElementEnd(body, p, n);
+        if (lb === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed markup in a `return`", at: p } };
+        pushRet({ t: "ret", at: i, end: lb, m_start: p, m_end: lb, shape: "bare", depth, markup: true, rewrite: false });
+        i = lb;
+        continue;
+      }
+      i = p;
+      continue;
+    }
+    rets++;
+    if (p >= n || body[p] === "\n") {
+      pushRet({ t: "ret", at: i, end: p, m_start: p, m_end: p, shape: "void", depth, markup: false, rewrite: true });
+      i = p;
+      continue;
+    }
+    if (body[p] === "(") {
+      const pc = findMatching(body, p);
+      if (pc === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed `(` after return", at: p } };
+      pushRet({ t: "ret", at: i, end: pc + 1, m_start: p + 1, m_end: pc, shape: "paren", depth, markup: parenHoldsMarkup(body, p + 1, pc), rewrite: true });
+      i = pc + 1;
+      continue;
+    }
+    if (body[p] === "<") {
+      const bb = findElementEnd(body, p, n);
+      if (bb === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed markup in a `return`", at: p } };
+      pushRet({ t: "ret", at: i, end: bb, m_start: p, m_end: bb, shape: "bare", depth, markup: true, rewrite: true });
+      i = bb;
+      continue;
+    }
+    const se = stmtEnd(body, p);
+    const vt = body.slice(p, se).trim();
+    const vshape = vt === "null" ? "null" : vt === "" ? "void" : "value";
+    pushRet({ t: "ret", at: i, end: se, m_start: p, m_end: se, shape: vshape, depth, markup: false, rewrite: true });
+    i = se;
+  }
+  if (cursor < n) parts.push({ t: "gd", from: cursor, to: n });
+  return { parts, rets, legacy_at: legacyAt, unit, anchor };
+}
+
+// True when the line opens a lambda scope (a `func` token outside strings/comments).
+function lineOpensFunc(l: string): boolean {
+  let i = 0;
+  const n = l.length;
+  while (i < n) {
+    const j = skipNoncode(l, i);
+    if (j !== i) {
+      i = j;
+      continue;
+    }
+    if (keywordAt(l, i, "func")) return true;
+    i++;
+  }
+  return false;
+}
+
+// End of the statement starting at `from`: first newline at bracket depth 0, or the body end.
+function stmtEnd(body: string, from: number): number {
+  let i = from;
+  const n = body.length;
+  let depth = 0;
+  while (i < n) {
+    const j = skipNoncode(body, i);
+    if (j !== i) {
+      i = j;
+      continue;
+    }
+    const c = body[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === "\n" && depth <= 0) return i;
+    i++;
+  }
+  return n;
+}
+
+// Phase D: format one directive body -- CODE segments re-anchored with the WHOLE body's geometry,
+// each markup return re-emitted as `return (` + recursively formatted markup + `)` at its own
+// relative depth. Mirrors guitkx_formatter.gd _fmt_body (the corpus pins byte parity). Legacy or
+// unsplittable bodies re-anchor verbatim (never corrupt).
 function fmtBody(bodySrc: string, indent: number, o: FmtOptions): string {
-  const pr = parseMarkup(bodySrc, 0, bodySrc.length);
-  if (pr.error !== "") return reanchor(bodySrc, indent, o);
-  const nodes = pr.nodes.filter((x) => x != null);
+  const sp = splitBody(bodySrc);
+  if (sp.error || sp.legacy_at !== -1) return reanchor(bodySrc, indent, o);
   let out = "";
-  for (const nx of nodes) out += fmtNode(nx, indent, o);
+  for (const part of sp.parts) {
+    if (part.t === "gd") {
+      const seg = bodySrc.slice(part.from, part.to);
+      if (seg.trim() !== "") out += reanchorRel(seg, indent, sp.unit, sp.anchor, o);
+      continue;
+    }
+    const lvl = indent + Math.max(0, part.depth - sp.anchor);
+    const p = pad(lvl, o);
+    if (part.shape === "null") {
+      out += p + "return null\n";
+      continue;
+    }
+    if (part.shape === "void") {
+      out += p + "return\n";
+      continue;
+    }
+    const payload = bodySrc.slice(part.m_start, part.m_end);
+    if (!part.markup) {
+      out += part.shape === "paren" ? `${p}return ( ${collapseSpaces(payload.trim())} )\n` : `${p}return ${collapseSpaces(payload.trim())}\n`;
+      continue;
+    }
+    const pr = parseMarkup(bodySrc, part.m_start, part.m_end);
+    if (pr.error !== "") {
+      out += p + bodySrc.slice(part.at, part.end).trim() + "\n";
+      continue;
+    }
+    out += p + "return (\n";
+    for (const nx of pr.nodes.filter((x) => x != null)) out += fmtNode(nx!, lvl + 1, o);
+    out += p + ")\n";
+  }
+  return out;
+}
+
+// Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line).
+function reanchorRel(code: string, indent: number, unit: number, anchor: number, o: FmtOptions): string {
+  let out = "";
+  for (const l of code.split("\n")) {
+    if (l.trim() === "") continue;
+    const level = indent + Math.max(0, indentDepth(l, unit) - anchor);
+    out += pad(level, o) + collapseSpaces(stripLeadingWs(l)) + "\n";
+  }
   return out;
 }
 
