@@ -1,9 +1,9 @@
 component T20() {
 	return (
 		<vbox>
-			@for (i in 2: int5) {
+			@for (i in 2: int5) { return (
 				<label key={ str(i) } text="x" />
-			}
+			) }
 		</vbox>
 	)
 }

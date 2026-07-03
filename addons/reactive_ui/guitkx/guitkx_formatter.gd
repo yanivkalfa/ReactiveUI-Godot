@@ -315,15 +315,62 @@ static func _fmt_match(nd: Dictionary, indent: int, o: Dictionary) -> String:
 	return out
 
 # Re-parse a raw control-flow body string and format its nodes; verbatim re-indent fallback on error.
+## Phase D: a directive body is CODE (prep statements + directive-level returns). GDScript
+## segments re-anchor with the WHOLE body's indent geometry (a segment after a return must not
+## re-anchor on its own first line); each markup return re-emits as `return (` + recursively
+## formatted markup + `)` at the return's own relative depth. Legacy/unsplittable bodies are
+## re-anchored verbatim (never corrupt -- the compiler reports GUITKX2103, not the formatter).
 static func _fmt_body(body_src: String, indent: int, o: Dictionary) -> String:
-	var parser := Markup.new()
-	var pr := parser.parse(body_src, 0, body_src.length())
-	if pr["error"] != "":
+	var sp: Dictionary = Compiler._split_body(body_src)
+	if sp.has("error") or int(sp["legacy_at"]) != -1:
 		return _reanchor(body_src, indent, o)
-	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
+	var unit: int = int(sp["unit"])
+	var anchor: int = int(sp["anchor"])
 	var out := ""
-	for nx in nodes:
-		out += _fmt_node(nx, indent, o)
+	for part in (sp["parts"] as Array):
+		var pd := part as Dictionary
+		if pd["t"] == "gd":
+			var seg := body_src.substr(int(pd["from"]), int(pd["to"]) - int(pd["from"]))
+			if seg.strip_edges() != "":
+				out += _reanchor_rel(seg, indent, unit, anchor, o)
+			continue
+		var lvl: int = indent + maxi(0, int(pd["depth"]) - anchor)
+		var pad := _pad(lvl, o)
+		var shape := str(pd["shape"])
+		if shape == "null":
+			out += pad + "return null\n"
+			continue
+		if shape == "void":
+			out += pad + "return\n"
+			continue
+		var payload := body_src.substr(int(pd["m_start"]), int(pd["m_end"]) - int(pd["m_start"]))
+		if not bool(pd.get("markup", false)):
+			if shape == "paren":
+				out += pad + "return ( %s )\n" % _collapse_spaces(payload.strip_edges())
+			else:
+				out += pad + "return %s\n" % _collapse_spaces(payload.strip_edges())
+			continue
+		var parser := Markup.new()
+		var pr := parser.parse(body_src, int(pd["m_start"]), int(pd["m_end"]))
+		if pr["error"] != "":
+			# broken markup in this return: keep the authored span (the compiler reports the error)
+			out += pad + body_src.substr(int(pd["at"]), int(pd["end"]) - int(pd["at"])).strip_edges() + "\n"
+			continue
+		out += pad + "return (\n"
+		for nx in (pr["nodes"] as Array).filter(func(x): return x != null):
+			out += _fmt_node(nx, lvl + 1, o)
+		out += pad + ")\n"
+	return out
+
+## Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line).
+static func _reanchor_rel(code: String, indent: int, unit: int, anchor: int, o: Dictionary) -> String:
+	var out := ""
+	for l in code.split("\n"):
+		var t := (l as String).strip_edges()
+		if t == "":
+			continue
+		var level: int = indent + maxi(0, Compiler._indent_depth(l as String, unit) - anchor)
+		out += _pad(level, o) + _collapse_spaces(Compiler._strip_leading_ws(l as String)) + "\n"
 	return out
 
 # --- embedded GDScript (setup) — structure-preserving base-indent normalization only ---

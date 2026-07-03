@@ -10,9 +10,9 @@ component GuitkxCounter(start: int = 0) {
 		<VBox style={ {"separation": 8} }>
 			<Label text={ "Count: %d" % count } />
 			<Button text="+1" onClick={ func(): set_count.call(count + 1) } />
-			@if (count > 5) {
+			@if (count > 5) { return (
 				<Label text="High five!" />
-			}
+			) }
 		</VBox>
 	)
 }

@@ -41,9 +41,9 @@ component DemoStress() {
 				<Button text={ "Running…" if running[0] else ("Restart" if loop["finished"] else "Start") } onClick={ start } />
 			</HBox>
 			<Control ref={ area_ref } clip_contents style={ {"expand_h": true, "expand_v": true, "min_height": 320} }>
-				@for (b in boxes) {
+				@for (b in boxes) { return (
 					<ColorRect key={ b["id"] } position={ Vector2(b["x"], b["y"]) } size={ Vector2(b["size"], b["size"]) } color={ b["color"] } />
-				}
+				) }
 			</Control>
 		</DemoBox>
 	)

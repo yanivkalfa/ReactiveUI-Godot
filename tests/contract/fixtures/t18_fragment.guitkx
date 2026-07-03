@@ -5,11 +5,11 @@ component NamedFragment(xs: Array = []) {
 				<label text="a" />
 				<label text="b" />
 			</Fragment>
-			@for (i in 3) {
+			@for (i in 3) { return (
 				<Fragment key={ str(i) }>
 					<label text={ str(i) } />
 				</Fragment>
-			}
+			) }
 		</vbox>
 	)
 }

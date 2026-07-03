@@ -6,10 +6,10 @@ component Comments() {
 			   note */
 			<label {/* attr note */} text="a" />
 			<!-- html-style -->
-			@if (true) {
+			@if (true) { return (
 				// inside a body
 				<label text="b" />
-			}
+			) }
 		</vbox>
 	)
 }

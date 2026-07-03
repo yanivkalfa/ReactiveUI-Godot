@@ -1,7 +1,7 @@
 component X(c: bool = true) {
 	return (
 		<VBox>
-			@if (c) { <Label text="a" /> }
+			@if (c) { return ( <Label text="a" /> ) }
 			#elif (false) { <Label text="b" /> }
 		</VBox>
 	)

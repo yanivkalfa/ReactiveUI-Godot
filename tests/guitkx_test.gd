@@ -164,7 +164,7 @@ func _test_ctrl_flow_in_lambda() -> void:
 	# render-level `if/for` statements that can't see the lambda's locals (`it`).
 	var src := "component CFL(items: Array = []) {\n" + \
 		"\treturn (\n\t\t<VBox>\n" + \
-		"\t\t\t{ items.map(func(it): return <>@if (it.ok) { <Label text={ it.name } /> }</>) }\n" + \
+		"\t\t\t{ items.map(func(it): return <>@if (it.ok) { return ( <Label text={ it.name } /> ) }</>) }\n" + \
 		"\t\t</VBox>\n\t)\n}\n"
 	var res := RUIGuitkx.compile(src, "CFL")
 	if not res["ok"]:
@@ -179,14 +179,14 @@ func _test_ctrl_flow_in_lambda() -> void:
 
 	# @for inside a JSX-value lowers to .map (also lambda-safe).
 	var src_for := "component CFF(items: Array = []) {\n" + \
-		"\treturn ( <VBox>{ true and <>@for (x in items) { <Label text={ x } /> }</> }</VBox> )\n}\n"
+		"\treturn ( <VBox>{ true and <>@for (x in items) { return ( <Label text={ x } /> ) }</> }</VBox> )\n}\n"
 	var res_for := RUIGuitkx.compile(src_for, "CFF")
 	_check_true(res_for["ok"] and "items).map(func(x)" in str(res_for["gd"]), "@for in expression lowers to .map")
 
 	# @match inside a JSX-value can't be an expression -> GUITKX0026, and since T1.1 an emit-time
 	# error FAILS the compile (no diagnostic with error severity may coexist with ok:true).
 	var src_m := "component CFM(x: int = 0) {\n" + \
-		"\treturn ( <VBox>{ true and <>@match (x) { @case (0) { <Label/> } }</> }</VBox> )\n}\n"
+		"\treturn ( <VBox>{ true and <>@match (x) { @case (0) { return ( <Label/> ) } }</> }</VBox> )\n}\n"
 	var res_m := RUIGuitkx.compile(src_m, "CFM")
 	_check_true(_has_code(res_m, "GUITKX0026"), "@match in expression emits GUITKX0026")
 	_check_true(not res_m["ok"], "T1.1: emit-time 0113 fails the compile")
@@ -205,14 +205,14 @@ func _test_p1_error_gates() -> void:
 	# T1.2: malformed markup inside an @if body -> the INNER parser's error code, positioned exactly
 	# on the broken tag, and (T1.1) ok:false. Previously: silent `null  # body parse error` emission.
 	var src_if := "component B() {\n" + \
-		"\treturn (\n\t\t<VBox>\n\t\t\t@if (true) { <Broken> }\n\t\t</VBox>\n\t)\n}\n"
+		"\treturn (\n\t\t<VBox>\n\t\t\t@if (true) { return ( <Broken> ) }\n\t\t</VBox>\n\t)\n}\n"
 	var r := RUIGuitkx.compile(src_if, "B")
 	_check_true(not r["ok"], "T1.2: broken @if body fails the compile")
 	_check_diag_at(r, "GUITKX0301", src_if, "<Broken>", "T1.2: 0301 lands on the unclosed tag in the @if body")
 
 	# T1.2: broken markup in a @for body.
 	var src_for := "component F(xs: Array = []) {\n" + \
-		"\treturn ( <VBox>@for (x in xs) { <Row };&& }</VBox> )\n}\n"
+		"\treturn ( <VBox>@for (x in xs) { return ( <Row };&& ) }</VBox> )\n}\n"
 	var r2 := RUIGuitkx.compile(src_for, "F")
 	_check_true(not r2["ok"], "T1.2: broken @for body fails the compile")
 
@@ -228,7 +228,7 @@ func _test_p1_error_gates() -> void:
 	# previously _compile_module had no gate at all and shipped the broken class.
 	var src_mod := "module M2 {\n" + \
 		"\tcomponent A() {\n" + \
-		"\t\treturn ( <VBox>@for (i in 3) { <Label key={ str(i) } /> <Label key={ str(i) + \"b\" } /> }</VBox> )\n" + \
+		"\t\treturn ( <VBox>@for (i in 3) { return ( <Label key={ str(i) } /> <Label key={ str(i) + \"b\" } /> ) }</VBox> )\n" + \
 		"\t}\n}\n"
 	var r4 := RUIGuitkx.compile(src_mod, "M2")
 	_check_true(not r4["ok"], "T1.1: module-member validation error fails the module compile")
@@ -296,7 +296,7 @@ func _test_t14_last_return() -> void:
 	_check_true(not plain["ok"] and _has_code(plain, "GUITKX2102"), "T1.4: non-markup return window is 2102 (got %s)" % str(plain["diagnostics"]))
 
 	# G9: a body that is ONLY an @for block (no return at all) must error missing-return.
-	var g9_src := "component G9() {\n\t@for (i in 25) {\n\t\t<label text={ str(i) } />\n\t}\n}\n"
+	var g9_src := "component G9() {\n\t@for (i in 25) {\n\t\treturn ( <label text={ str(i) } /> )\n\t}\n}\n"
 	var g9 := RUIGuitkx.compile(g9_src, "G9")
 	_check_true(not g9["ok"] and _has_code(g9, "GUITKX2101"), "T1.4/G9: @for-only body errors missing-return (got %s)" % str(g9["diagnostics"]))
 
@@ -346,10 +346,10 @@ func _test_t27_diag_ports() -> void:
 	_check_true(bool(ok18["ok"]) and not _has_code(ok18, "GUITKX0018"), "T2.7: deps array satisfies 0018 (got %s)" % str(ok18["diagnostics"]))
 
 	# T2.7 / Unity 0019: the loop variable used DIRECTLY as the key.
-	var src19 := "component K(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label key={ x } text={ str(x) } /> }</vbox> )\n}\n"
+	var src19 := "component K(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { return ( <label key={ x } text={ str(x) } /> ) }</vbox> )\n}\n"
 	var r19 := RUIGuitkx.compile(src19, "K")
 	_check_true(bool(r19["ok"]) and _has_code(r19, "GUITKX0019"), "T2.7: direct binder key warns 0019 (got %s)" % str(r19["diagnostics"]))
-	var ok19 := RUIGuitkx.compile("component K2(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { <label key={ str(x) } text={ str(x) } /> }</vbox> )\n}\n", "K2")
+	var ok19 := RUIGuitkx.compile("component K2(xs: Array = []) {\n\treturn ( <vbox>@for (x in xs) { return ( <label key={ str(x) } text={ str(x) } /> ) }</vbox> )\n}\n", "K2")
 	_check_true(not _has_code(ok19, "GUITKX0019"), "T2.7: derived key stays clean")
 
 	# T2.7 / Unity 0111: a component parameter never referenced anywhere in the body.
@@ -392,7 +392,7 @@ func _test_severity_table() -> void:
 
 func _test_t35_parser_bugs() -> void:
 	# T3.5: a commented `#elif` is NOT a ghost branch anymore -- it falls to literal text.
-	var src06 := "component X(c: bool = true) {\n\treturn (\n\t\t<vbox>\n\t\t\t@if (c) { <label text=\"a\" /> }\n\t\t\t#elif (false) { <label text=\"b\" /> }\n\t\t</vbox>\n\t)\n}\n"
+	var src06 := "component X(c: bool = true) {\n\treturn (\n\t\t<vbox>\n\t\t\t@if (c) { return ( <label text=\"a\" /> ) }\n\t\t\t#elif (false) { <label text=\"b\" /> }\n\t\t</vbox>\n\t)\n}\n"
 	var r06 := RUIGuitkx.compile(src06, "X")
 	_check_true(bool(r06["ok"]) and not ("elif false" in str(r06["gd"])), "T3.5: #elif is not a ghost branch (got %s)" % str(r06["diagnostics"]))
 
@@ -482,7 +482,7 @@ func _test_p2_markup_features() -> void:
 	var rf := RUIGuitkx.compile(src_f, "F")
 	_check_true(bool(rf["ok"]), "T2.2: <Fragment> compiles (got %s)" % str(rf["diagnostics"]))
 	_check(str(rf["gd"]), "V.fragment([", "T2.2: named fragment emits V.fragment")
-	var src_fk := "component FK() {\n\treturn ( <vbox>@for (i in 3) { <Fragment key={ str(i) }><label text={ str(i) } /></Fragment> }</vbox> )\n}\n"
+	var src_fk := "component FK() {\n\treturn ( <vbox>@for (i in 3) { return ( <Fragment key={ str(i) }><label text={ str(i) } /></Fragment> ) }</vbox> )\n}\n"
 	var rfk := RUIGuitkx.compile(src_fk, "FK")
 	_check_true(bool(rfk["ok"]), "T2.2: Fragment key compiles (got %s)" % str(rfk["diagnostics"]))
 	_check_true(", str(i))" in str(rfk["gd"]), "T2.2: fragment key threads to V.fragment's 2nd arg")
@@ -588,7 +588,7 @@ func _test_formatter() -> void:
 		"  return (\n" + \
 		"<VBox>\n" + \
 		"<Label text={ name }/>\n" + \
-		"@if (s[0] > 0) { <Label text=\"big\" /> }\n" + \
+		"@if (s[0] > 0) { return ( <Label text=\"big\" /> ) }\n" + \
 		"</VBox>\n" + \
 		"  )\n" + \
 		"}\n"
@@ -729,7 +729,7 @@ func _test_diagnostics() -> void:
 	_check_diag_at(dk, "GUITKX0104", dk_src, "key=\"x\"", "duplicate-key")
 	_check_true(int(_diag(dk, "GUITKX0104").get("offset", -1)) > dk_src.find("key=\"x\""), "GUITKX0104 anchors to the SECOND duplicate, not the first")
 	# loop child missing key — flagged at the element
-	var lk_src := "component LK(items: Array = []) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) { <Label text={ it } /> }\n\t\t</VBox>\n\t)\n}\n"
+	var lk_src := "component LK(items: Array = []) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) { return ( <Label text={ it } /> ) }\n\t\t</VBox>\n\t)\n}\n"
 	var lk := RUIGuitkx.compile(lk_src, "LK")
 	_check_diag_at(lk, "GUITKX0106", lk_src, "<Label text={ it }", "keyless-loop-child")
 	# a clean component emits no warnings
@@ -740,7 +740,7 @@ func _test_loop_single_root() -> void:
 	# BUG-V3: a @for/@while body with >1 sibling root is a hard error (single-root; parity Unity UITKX0108)
 	var multi := RUIGuitkx.compile("component M(n: int = 3) {\n" + \
 		"\treturn (\n\t\t<VBox>\n" + \
-		"\t\t\t@for (i in n) {\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t}\n" + \
+		"\t\t\t@for (i in n) {\n\t\t\t\treturn (\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t\t)\n\t\t\t}\n" + \
 		"\t\t</VBox>\n\t)\n}\n", "M")
 	_check_true(not multi["ok"] and _has_code(multi, "GUITKX0108"), "loop body with 2 roots fails with GUITKX0108 (got %s)" % str(multi["diagnostics"]))
 	_check_true(int(_diag(multi, "GUITKX0108").get("offset", -1)) >= 0, "GUITKX0108 carries a position even through the nested loop-body re-parse")
@@ -751,7 +751,7 @@ func _test_loop_single_root() -> void:
 	# valid: a fragment root wrapping distinctly-keyed siblings inside the loop compiles cleanly
 	var okc := RUIGuitkx.compile("component OK(n: int = 3) {\n" + \
 		"\treturn (\n\t\t<VBox>\n" + \
-		"\t\t\t@for (i in n) {\n\t\t\t\t<>\n\t\t\t\t\t<Label key={ \"a\" + str(i) } />\n\t\t\t\t\t<Label key={ \"b\" + str(i) } />\n\t\t\t\t</>\n\t\t\t}\n" + \
+		"\t\t\t@for (i in n) {\n\t\t\t\treturn (\n\t\t\t\t<>\n\t\t\t\t\t<Label key={ \"a\" + str(i) } />\n\t\t\t\t\t<Label key={ \"b\" + str(i) } />\n\t\t\t\t</>\n\t\t\t\t)\n\t\t\t}\n" + \
 		"\t\t</VBox>\n\t)\n}\n", "OK")
 	_check_true(okc["ok"], "loop with fragment-wrapped distinct-key siblings compiles (got %s)" % str(okc["diagnostics"]))
 
@@ -890,9 +890,9 @@ func _test_match() -> void:
 		"\treturn (\n" + \
 		"\t\t<VBox>\n" + \
 		"\t\t\t@match (state) {\n" + \
-		"\t\t\t\t@case (\"loading\") { <Label text=\"Loading...\" /> }\n" + \
-		"\t\t\t\t@case (\"done\") { <Label text=\"Done!\" /> }\n" + \
-		"\t\t\t\t@default { <Label text=\"Idle\" /> }\n" + \
+		"\t\t\t\t@case (\"loading\") { return ( <Label text=\"Loading...\" /> ) }\n" + \
+		"\t\t\t\t@case (\"done\") { return ( <Label text=\"Done!\" /> ) }\n" + \
+		"\t\t\t\t@default { return ( <Label text=\"Idle\" /> ) }\n" + \
 		"\t\t\t}\n" + \
 		"\t\t</VBox>\n" + \
 		"\t)\n}\n"
@@ -1060,8 +1060,8 @@ func _test_control_flow() -> void:
 	var src := "component List2(items: Array = [], show_header: bool = true) {\n" + \
 		"\treturn (\n" + \
 		"\t\t<VBox>\n" + \
-		"\t\t\t@if (show_header) { <Label text=\"Header\" /> }\n" + \
-		"\t\t\t@for (it in items) { <Label text={ str(it) } /> }\n" + \
+		"\t\t\t@if (show_header) { return ( <Label text=\"Header\" /> ) }\n" + \
+		"\t\t\t@for (it in items) { return ( <Label text={ str(it) } /> ) }\n" + \
 		"\t\t</VBox>\n" + \
 		"\t)\n}\n"
 	var r := RUIGuitkx.compile(src, "List2")

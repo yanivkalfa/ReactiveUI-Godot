@@ -12,9 +12,9 @@ component DemoEffectOrder {
 				<Button text="+ row" onClick={ func(): n[1].call(n[0] + 1) } />
 			</HBox>
 			<VBox style={ {"separation": 2} }>
-				@for (i in n[0]) {
+				@for (i in n[0]) { return (
 					<DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
-				}
+				) }
 			</VBox>
 			<Label
 				text="Effect log (add/remove rows — cleanup runs on unmount):"

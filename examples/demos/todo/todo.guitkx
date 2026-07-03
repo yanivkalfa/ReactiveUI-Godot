@@ -26,9 +26,9 @@ component DemoTodo() {
 			</HBox>
 			<Label text={ "%d item(s) — keys preserve row identity on add/remove" % items[0].size() } style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
 			<VBox style={ {"separation": 4} }>
-				@for (it in items[0]) {
+				@for (it in items[0]) { return (
 					<DemoTodoRow key={ it["id"] } item={ it } onRemove={ remove } />
-				}
+				) }
 			</VBox>
 		</DemoBox>
 	)

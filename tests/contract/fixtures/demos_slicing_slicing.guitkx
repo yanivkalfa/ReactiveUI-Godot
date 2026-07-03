@@ -15,9 +15,9 @@ component DemoSlicing() {
 			<Label text="With slicing ON, big updates spread over frames (commit stays atomic)." style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
 			<Scroll style={ {"min_height": 200} }>
 				<VBox style={ {"separation": 2} }>
-					@for (i in 25) {
+					@for (i in 25) { return (
 						<Label key={ str(i) } text={ "row %d  (rev %d)" % [i, rev[0]] } />
-					}
+					) }
 				</VBox>
 			</Scroll>
 		</DemoBox>

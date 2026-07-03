@@ -11,22 +11,22 @@ component DemoDirectives(items: Array = ["alpha", "beta"], mode: int = 1) {
 			   comment */
 			<!-- html-style comment -->
 			<label {/* attr-list comment */} text="every directive lives here" />
-			@if (mode == 1) { <label text="one" /> } @elif (mode == 2) { <label text="two" /> } @else { <label text="other" /> }
-			@for (it in items) {
+			@if (mode == 1) { return ( <label text="one" /> ) } @elif (mode == 2) { return ( <label text="two" /> ) } @else { return ( <label text="other" /> ) }
+			@for (it in items) { return (
 				<label key={ str(it) } text={ str(it) } />
-			}
-			@for (i in 3) {
+			) }
+			@for (i in 3) { return (
 				<Fragment key={ str(i) }>
 					<label text={ "row %d" % i } />
 				</Fragment>
-			}
-			@while (false) {
+			) }
+			@while (false) { return (
 				<label key="never" text="unreached" />
-			}
+			) }
 			@match (mode) {
-				@case (1) { <label text="case one" /> }
-				@case (2) { <label text="case two" /> }
-				@default { <label text="default" /> }
+				@case (1) { return ( <label text="case one" /> ) }
+				@case (2) { return ( <label text="case two" /> ) }
+				@default { return ( <label text="default" /> ) }
 			}
 			<vbox {...style_base} key="spread-key" />
 			{ count[0] }

@@ -10,19 +10,24 @@
     "name": "attrs"
   },
   {
-    "expected": "component Status(state:int) {\n  return (\n    <VBox>\n      @if (state == 0) {\n        <Label text=\"idle\" />\n      } @elif (state == 1) {\n        <Label text=\"run\" />\n      } @else {\n        <Label text=\"done\" />\n      }\n    </VBox>\n  )\n}\n",
-    "input": "component Status(state:int){\nreturn (\n<VBox>\n@if (state == 0) { <Label text=\"idle\"/> } @elif (state == 1) { <Label text=\"run\"/> } @else { <Label text=\"done\"/> }\n</VBox>\n)\n}\n",
+    "expected": "component Status(state:int) {\n  return (\n    <VBox>\n      @if (state == 0) {\n        return (\n          <Label text=\"idle\" />\n        )\n      } @elif (state == 1) {\n        return (\n          <Label text=\"run\" />\n        )\n      } @else {\n        return (\n          <Label text=\"done\" />\n        )\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component Status(state:int){\nreturn (\n<VBox>\n@if (state == 0) { return (<Label text=\"idle\"/>) } @elif (state == 1) { return (<Label text=\"run\"/>) } @else { return (<Label text=\"done\"/>) }\n</VBox>\n)\n}\n",
     "name": "if_elif_else"
   },
   {
-    "expected": "component L(items:Array) {\n  return (\n    <VBox>\n      @for (it in items) {\n        <Label text={ str(it) } key={ it } />\n      }\n    </VBox>\n  )\n}\n",
-    "input": "component L(items:Array){\nreturn (\n<VBox>\n@for (it in items) { <Label text={str(it)} key={it}/> }\n</VBox>\n)\n}\n",
+    "expected": "component L(items:Array) {\n  return (\n    <VBox>\n      @for (it in items) {\n        return (\n          <Label text={ str(it) } key={ it } />\n        )\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component L(items:Array){\nreturn (\n<VBox>\n@for (it in items) { return (<Label text={str(it)} key={it}/>) }\n</VBox>\n)\n}\n",
     "name": "for_loop"
   },
   {
-    "expected": "component M(x:int) {\n  return (\n    <VBox>\n      @match (x) {\n        @case (0) {\n          <Label text=\"zero\" />\n        }\n        @default {\n          <Label text=\"other\" />\n        }\n      }\n    </VBox>\n  )\n}\n",
-    "input": "component M(x:int){\nreturn (\n<VBox>\n@match (x) { @case (0) { <Label text=\"zero\"/> } @default { <Label text=\"other\"/> } }\n</VBox>\n)\n}\n",
+    "expected": "component M(x:int) {\n  return (\n    <VBox>\n      @match (x) {\n        @case (0) {\n          return (\n            <Label text=\"zero\" />\n          )\n        }\n        @default {\n          return (\n            <Label text=\"other\" />\n          )\n        }\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component M(x:int){\nreturn (\n<VBox>\n@match (x) { @case (0) { return (<Label text=\"zero\"/>) } @default { return (<Label text=\"other\"/>) } }\n</VBox>\n)\n}\n",
     "name": "match"
+  },
+  {
+    "expected": "component P(items:Array) {\n  return (\n    <VBox>\n      @for (it in items) {\n        var label := \"row %s\" % it\n        if it == null:\n        return null\n        return (\n          <Label key={ str(it) } text={ label } />\n        )\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component P(items:Array){\nreturn (\n<VBox>\n@for (it in items) {\nvar label := \"row %s\" % it\nif it == null:\nreturn null\nreturn (<Label key={str(it)} text={label}/>)\n}\n</VBox>\n)\n}\n",
+    "name": "body_prep_code"
   },
   {
     "expected": "component F {\n  return (\n    <>\n      <Label text=\"a\" />\n      <Label text=\"b\" />\n    </>\n  )\n}\n",
