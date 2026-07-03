@@ -23,29 +23,59 @@ const D = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 ## Language vocabulary — SINGLE SOURCE OF TRUTH is vocabulary.json (T0.3), shared verbatim with the
 ## LSP (schema.ts/virtualDoc.ts consume the byte-identical copy shipped in the extension; tests on
 ## both sides enforce the sync, and a reflection tripwire pins v_factories to core/v.gd's statics).
-static var _VOCAB: Dictionary = _load_vocabulary()
+##
+## Loaded LAZILY at first use and RETRIED while empty — never in a static initializer: during the
+## editor's FIRST filesystem scan, static init runs before `res://` reads are reliable, the read
+## came back empty, every tag in every file misclassified as unknown (GUITKX0105), and the
+## fail-loud pipeline stale-deleted every generated .gd (the CI demos regression). `compile()`
+## additionally refuses to run against an empty vocabulary — an `env_error`, never a source error.
+static var _VOCAB: Dictionary = {}
+## Test seam: where the vocabulary is read from. Tests point it at a bogus path to simulate the
+## unreadable-vocabulary environment; production code never changes it.
+static var _VOCAB_PATH := "res://addons/reactive_ui/guitkx/vocabulary.json"
+
+static func vocab() -> Dictionary:
+	if _VOCAB.is_empty():
+		_VOCAB = _load_vocabulary()
+	return _VOCAB
+
 ## PascalCase/markup tag -> V.* host factory (the analog of uitkx's reflected V map). A tag here =
 ## host element; anything else PascalCase = component.
-static var HOST_TAGS: Dictionary = _VOCAB["host_tags"]
-## The auto-prefixable hook names (bare useX( -> Hooks.useX(), camelCase.
-static var HOOK_NAMES: Array = _VOCAB["hooks"]
+static func host_tags() -> Dictionary:
+	return vocab().get("host_tags", {})
+
+## The auto-prefixable hook names (bare useX( -> Hooks.useX()), camelCase.
+static func hook_names() -> Array:
+	return vocab().get("hooks", [])
+
 ## Public V.* factory names (lowercase-tag namespace) — reserved for T1.5 unknown-tag validation.
-static var V_FACTORIES: Array = _VOCAB["v_factories"]
+static func v_factories() -> Array:
+	return vocab().get("v_factories", [])
 
 static func _load_vocabulary() -> Dictionary:
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://addons/reactive_ui/guitkx/vocabulary.json"))
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(_VOCAB_PATH))
 	if parsed is Dictionary and (parsed as Dictionary).has("host_tags") and (parsed as Dictionary).has("hooks"):
 		return parsed
 	# assert() is stripped from release exports, so fail LOUDLY but non-fatally: the compiler is
-	# editor tooling and must never crash a game that accidentally loads this script.
+	# editor tooling and must never crash a game that accidentally loads this script. Returning {}
+	# (not a keyed fallback) keeps vocab() retrying on the next call — self-healing as soon as the
+	# file becomes readable again.
 	push_error("[guitkx] vocabulary.json missing or invalid -- the compiler cannot classify tags/hooks without it")
-	return { "host_tags": {}, "hooks": [], "v_factories": [], "directives": [] }
+	return {}
 
 ## `known_components`: PascalCase class names resolvable as components in this project (sibling
 ## .guitkx bindings + global script classes) -- the plugin/codegen supplies them so <UnknownComp/>
 ## errors (T1.5). Empty (headless/test callers) = the PascalCase check is skipped; lowercase tags
 ## are always checked against the vocabulary.
 static func compile(source: String, basename: String = "Component", known_components: Array = []) -> Dictionary:
+	if vocab().is_empty():
+		# The compiler ITSELF is not ready (vocabulary unreadable — e.g. the editor's first-scan
+		# environment). `env_error` distinguishes this from a source error: callers must keep any
+		# existing sibling .gd and the previous sidecar (a transient tooling state is not a source
+		# regression); the next call self-heals once the read succeeds.
+		return { "ok": false, "env_error": true, "gd": "", "diagnostics": [
+			D.make("GUITKX2507", D.ERROR, "compiler environment not ready: vocabulary.json could not be loaded -- retrying on the next compile", 0, 0),
+		] }
 	var diags: Array = []
 	var known := {}
 	for kc in known_components:
@@ -467,7 +497,7 @@ static func _find_hook_call(code: String) -> int:
 			i = j
 			continue
 		if i == 0 or (not L._is_ident(code[i - 1]) and code[i - 1] != "."):
-			for h in HOOK_NAMES:
+			for h in hook_names():
 				if L.keyword_at(code, i, h) and _is_call_at(code, i + h.length()):
 					return i
 		i += 1
@@ -1120,8 +1150,8 @@ static func _unknown_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
 	var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
 	if at >= 0:
 		at += 1   # nd.at is the `<`; anchor the squiggle on the name
-	var candidates: Array = V_FACTORIES.duplicate()
-	candidates.append_array(HOST_TAGS.keys())
+	var candidates: Array = v_factories().duplicate()
+	candidates.append_array(host_tags().keys())
 	candidates.append_array((ctx.get("module_comps", {}) as Dictionary).keys())
 	candidates.append_array((ctx.get("known_components", {}) as Dictionary).keys())
 	var best := ""
@@ -1166,11 +1196,11 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 		# T1.5 (G5): a lowercase tag must BE a real V.* factory -- it is emitted verbatim as V.<tag>(),
 		# so an unknown one used to become a nonexistent-method call in the generated .gd. This is the
 		# single chokepoint every element passes through (main tree, control-flow bodies, {expr}-nested).
-		if not V_FACTORIES.has(tag):
+		if not v_factories().has(tag):
 			_unknown_tag(ctx, nd, tag)
-	elif HOST_TAGS.has(tag):
+	elif host_tags().has(tag):
 		is_host = true
-		factory = HOST_TAGS[tag]
+		factory = host_tags()[tag]
 	else:
 		# PascalCase component reference: resolvable only with project knowledge -- the plugin passes
 		# the known component classes (sibling .guitkx bindings + global script classes) into
@@ -1683,7 +1713,7 @@ static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 		# (a preceding `.` is a non-identifier boundary, so guard against it explicitly). [audit]
 		if i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != "."):
 			var matched := ""
-			for h in HOOK_NAMES:
+			for h in hook_names():
 				if h in skip:
 					continue
 				if L.keyword_at(setup, i, h) and _is_call_at(setup, i + h.length()):

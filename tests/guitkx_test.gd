@@ -597,10 +597,10 @@ func _test_formatter_options() -> void:
 
 func _test_vocabulary() -> void:
 	# T0.3: vocabulary.json is the single source of truth. The compiler tables must come from it…
-	_check_true(RUIGuitkx.HOST_TAGS.get("VBoxContainer", "") == "vbox" and RUIGuitkx.HOST_TAGS.size() >= 39,
-		"HOST_TAGS loaded from vocabulary.json (aliases included, got %d)" % RUIGuitkx.HOST_TAGS.size())
-	_check_true("useState" in RUIGuitkx.HOOK_NAMES and RUIGuitkx.HOOK_NAMES.size() == 23,
-		"HOOK_NAMES loaded from vocabulary.json (got %d)" % RUIGuitkx.HOOK_NAMES.size())
+	_check_true(RUIGuitkx.host_tags().get("VBoxContainer", "") == "vbox" and RUIGuitkx.host_tags().size() >= 39,
+		"host_tags() loaded from vocabulary.json (aliases included, got %d)" % RUIGuitkx.host_tags().size())
+	_check_true("useState" in RUIGuitkx.hook_names() and RUIGuitkx.hook_names().size() == 23,
+		"hook_names() loaded from vocabulary.json (got %d)" % RUIGuitkx.hook_names().size())
 	# …and v_factories must mirror the REAL public V API (reflection tripwire: adding/removing a
 	# static func on core/v.gd without updating vocabulary.json fails here with the exact diff).
 	var v_script: Script = preload("res://addons/reactive_ui/core/v.gd")
@@ -610,7 +610,7 @@ func _test_vocabulary() -> void:
 		if not mname.begins_with("_") and not (mname in reflected):
 			reflected.append(mname)
 	reflected.sort()
-	var vocab: Array = (RUIGuitkx.V_FACTORIES as Array).duplicate()
+	var vocab: Array = (RUIGuitkx.v_factories() as Array).duplicate()
 	vocab.sort()
 	_check_true(str(reflected) == str(vocab),
 		"vocabulary.v_factories mirrors core/v.gd public statics\n  reflected: %s\n  vocabulary: %s" % [str(reflected), str(vocab)])
@@ -922,6 +922,20 @@ func _test_codegen() -> void:
 	_check(gd_src, "class_name Fixture", "sibling .gd named from the file")
 	_check(gd_src, "V.label(", "sibling .gd compiled the markup")
 	_check_true(not Codegen.is_stale(gx), "not stale right after compile")
+	# The env guard: an UNREADABLE VOCABULARY is a tooling state, not a source regression — the
+	# compile must refuse (env_error + GUITKX2507) and compile_file must PRESERVE the sibling .gd
+	# and the sidecar (during the editor's first filesystem scan this exact state once wiped every
+	# generated demo .gd on a fresh CI clone). The lazy loader then self-heals on the next call.
+	var sidecar_before := FileAccess.get_file_as_string(gx + ".diags.json")
+	RUIGuitkx._VOCAB = {}
+	RUIGuitkx._VOCAB_PATH = "res://addons/reactive_ui/guitkx/__no_such_vocabulary__.json"
+	var r_env := Codegen.compile_file(gx)
+	_check_true(not r_env["ok"] and bool(r_env.get("env_error", false)), "unreadable vocabulary is an env_error: " + str(r_env))
+	_check_true(str((r_env["diagnostics"] as Array)[0]["code"]) == "GUITKX2507", "env_error carries GUITKX2507")
+	_check_true(FileAccess.file_exists(gd), "sibling .gd PRESERVED on env_error (never stale-deleted)")
+	_check_true(FileAccess.get_file_as_string(gx + ".diags.json") == sidecar_before, "sidecar untouched on env_error")
+	RUIGuitkx._VOCAB_PATH = "res://addons/reactive_ui/guitkx/vocabulary.json"
+	_check_true(Codegen.compile_file(gx)["ok"], "vocabulary self-heals on the next compile (lazy retry)")
 	# T1.1: a file that STOPS compiling must not leave its stale sibling .gd behind (the editor would
 	# keep running code that no longer matches the source). compile_file deletes it.
 	var f_bad := FileAccess.open(gx, FileAccess.WRITE)

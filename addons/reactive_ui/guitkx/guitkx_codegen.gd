@@ -158,6 +158,13 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 	var src := FileAccess.get_file_as_string(guitkx_path)
 	var basename := guitkx_path.get_file().get_basename()
 	var r: Dictionary = Compiler.compile(src, basename, known_components)
+	if bool(r.get("env_error", false)):
+		# The compiler environment isn't ready (vocabulary unreadable — e.g. the editor's first
+		# filesystem scan). NOT a source regression: keep the existing sibling .gd AND the last
+		# sidecar; the next pass self-heals once the vocabulary loads. Deleting here is exactly
+		# how a transient tooling state once wiped every generated demo .gd on a fresh CI clone.
+		push_error("[guitkx] compiler not ready for %s (vocabulary.json unreadable) -- keeping existing outputs, will retry" % guitkx_path)
+		return { "ok": false, "env_error": true, "path": guitkx_path, "diagnostics": r["diagnostics"] }
 	write_diags_sidecar(guitkx_path, src, r["diagnostics"])
 	# Surface boundary: derive 0-based line/col from each offset ONCE, here, where the source is at
 	# hand -- downstream consumers (plugin.gd dock lines, tests) read d.line/d.col without the source.

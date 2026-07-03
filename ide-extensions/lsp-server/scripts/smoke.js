@@ -103,13 +103,13 @@ function fail(m) {
   if (!dLoop.some((x) => x.message.includes("GUITKX0108"))) fail("live loop single-root diagnostic missing: " + JSON.stringify(dLoop));
   console.log("loop single-root diagnostic OK (live GUITKX0108)");
 
-  // live missing-return rule (GUITKX0102) — a component without `return ( ... )` used to be silent
+  // live missing-return rule (GUITKX2101) — a component without `return ( ... )` used to be silent
   const uriNr = "file:///tmp/NoRet.guitkx";
   notify("textDocument/didOpen", { textDocument: { uri: uriNr, languageId: "guitkx", version: 1, text: "component NoRet() {\n\tvar a = useState(0)\n}\n" } });
   await new Promise((r) => setTimeout(r, 400));
   const dNr = diagnostics[uriNr] || [];
-  if (!dNr.some((x) => x.message.includes("GUITKX0102") && x.message.includes("return"))) fail("live missing-return diagnostic missing: " + JSON.stringify(dNr));
-  console.log("missing-return diagnostic OK (live GUITKX0102)");
+  if (!dNr.some((x) => x.message.includes("GUITKX2101") && x.message.includes("return"))) fail("live missing-return diagnostic missing: " + JSON.stringify(dNr));
+  console.log("missing-return diagnostic OK (live GUITKX2101)");
 
   // go-to-definition: <A/> in module member B resolves to component A's declaration
   const uri4 = "file:///tmp/Mod.guitkx";
