@@ -200,7 +200,7 @@ enforced or its failure is swallowed by markup-window recovery (F3's structural 
 repro is also an *early* return followed by more setup statements — the grammar may not even parse it
 as the component return (see G6), in which case the markup dodges markup validation entirely.
 
-### G6 — statements after an early `return` are not flagged/dimmed as unreachable  ·  status: **markup half FIXED** (T1.4: the language question is answered — an early/conditional MARKUP return is illegal `.guitkx` (GUITKX2102, exact position; the final top-level return is the component's output, Unity useLastReturn parity), so nothing after it is silently dropped anymore; code after the CHOSEN return is GUITKX0114 (hint + dimming in T3.1/T3.2). Remaining half = GDScript-level unreachable dimming after plain `return` in setup → T4.4 (analyzer UNREACHABLE_CODE + DiagnosticTags across napi))
+### G6 — statements after an early `return` are not flagged/dimmed as unreachable  ·  status: **FIXED** (markup half: T1.4 — an early/conditional MARKUP return is illegal `.guitkx` (GUITKX2102, exact position; the final top-level return is the component's output, Unity useLastReturn parity); code after the CHOSEN return is GUITKX0107 (hint + Unnecessary dimming, T3.1/T3.2). GDScript half: T4.4 — GA's UNREACHABLE_CODE (already shipped in the flow dataflow) now crosses the napi surface with `tags: [1]` (Unnecessary), the RG adapter forwards tags, and an analyzer UNREACHABLE_CODE inside a markup 0107 region dedupes away (one report per range). e2e pinned on the local 0.5.5 core; live in the editor once the `@gdscript-analyzer/core` dep bumps)
 **Repro.** Same file: `return <s></a>` on line 7, followed by more setup statements (`var toggle = …`).
 **Observed:** the lines after the return render at full brightness, no unreachable-code report.
 **Expected:** Godot itself reports/dims unreachable code after `return`; VS Code dims any range whose
@@ -211,7 +211,7 @@ Also decide the *language* question first: is an early markup return even legal 
 right fix is a GUITKX diagnostic on the early return itself, plus unreachable dimming for plain-GDScript
 early returns in setup.
 
-### G7 — typo'd `func` keyword (`fsunc():`) accepted; the whole lambda body escapes checking  ·  status: **to do**
+### G7 — typo'd `func` keyword (`fsunc():`) accepted; the whole lambda body escapes checking  ·  status: **FIXED** (the silence had TWO stacked causes: (1) virtualDoc swallowed/garbled the window — fixed by T3.5's unclosed-return behavior + T5.1's length-preserving `neutralizeMarkup`; (2) nothing then remained silent in GA — re-run on the 0.5.5 core: `var f = fsunc():` yields `GDSCRIPT_SYNTAX: Expected "get" or "set" in a property accessor.` (GA's var-decl grammar reads the trailing colon as a property-accessor opener — not Godot's wording for this shape, but an ERROR where there was silence, the G7 criterion) and the body statements are analyzed. No false UNDEFINED on later uses of the name (see G8))
 **Repro.**
 ```gdscript
 var toggle = fsunc():
@@ -229,7 +229,7 @@ malformed line *and* its indented block wholesale (check `emitVerbatimBlock` int
 trailing-`:` line that isn't a recognized block opener) — or setup-window syntax diagnostics are
 filtered before publish. Whichever it is, a syntax-broken setup line must not silence its whole block.
 
-### G8 — false `UNDEFINED_IDENTIFIER` on `{ toggle }` when the declaring line is the broken G7 lambda  ·  status: **to do**
+### G8 — false `UNDEFINED_IDENTIFIER` on `{ toggle }` when the declaring line is the broken G7 lambda  ·  status: **FIXED** (root-caused in GA: an unclosed paren suppresses the pre-pass's synthetic newlines, so the broken lambda's inline body swallows the rest of the function — the swallowed use then resolved BEFORE the declaration's binding was pushed. GA `dba20a3` makes a declaration's name visible to its own initializer (seam-typed `Unknown`), which kills the cascade for ANY recovery shape and fixes the legal `var f = func(): f.call()` self-capture FP too; pinned by the golden-module test (syntax error present, UNDEFINED absent) + the RG e2e (gated on core 0.5.5). Separately, `vetoGuitkxDeclared` — which never covered this case but hid OTHER typos — is deleted in favor of real virtual libraries (T4.5))
 **Repro.** With G7's `var toggle = fsunc():` in setup, `onClick={ toggle }` reports
 `UNDEFINED_IDENTIFIER: The identifier "toggle" is not declared in the current scope…` — but `toggle`
 IS declared (the broken lambda). **Observed:** this is the *only* analyzer diagnostic in the file —

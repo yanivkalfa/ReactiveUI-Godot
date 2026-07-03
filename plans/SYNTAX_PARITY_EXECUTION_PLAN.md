@@ -77,7 +77,7 @@
 | 1 | Silent mis-compiles + data loss (P0 correctness) | patch | No known input compiles with wrong output and zero diagnostics |
 | 2 | Missing Unity features (superset mandate) | **minor** (new syntax) | Feature map below shows no "gap" rows |
 | 3 | Diagnostics parity + renumbering | **minor** (breaking codes) | Concordance published; severities consistent across surfaces |
-| 4 | Analyzer-side message/behavior parity (GA repo) | GA minor + RG bundle patch | Message golden table green; dimming works |
+| 4 | Analyzer-side message/behavior parity (GA repo) — **✅ code-complete** (GA branch `feat/godot-native-diagnostics`, 5 commits; RG halves in `854132d`; publish chain user-gated) | GA patch (@gdscript-analyzer/core 0.x: features=patch) + RG bundle patch | Golden table green (50 tests); dimming e2e-pinned vs the local 0.5.5 core, live in-editor after the dep bump |
 | 5 | Single-source-of-truth completion (LSP ≡ compiler) | patch | Zero contract-test diffs; G7/G8 e2e green |
 | 6 | Docs + demos batch | patch | Doc checklist empty |
 
@@ -429,7 +429,7 @@ All in BOTH parsers + contract fixtures (matrix rows 3, 10, 17, 22 + §5.1 items
 
 ## Phase 4 — Analyzer-side parity (GA repo; per-task commits, ONE user-gated publish chain at end of phase)
 
-### T4.1 — Godot-native message golden table  · effort: medium · Status: ⬜
+### T4.1 — Godot-native message golden table  · effort: medium · Status: ✅ (GA `d316175`. 45+ probes on the REAL 4.7.stable binary (`--check-only`; warning texts via per-code error promotion in project.godot) → every 1:1 template reworded verbatim + pinned by `crates/gdscript-hir/src/godot_messages_tests.rs` (50 tests incl. negatives where Godot is silent). The ADR-0008 "contradiction" dissolved: Godot prints BOTH phrasings per method miss (member-check + call-check lines); GA emits the kind-matching one. Probes also exposed and fixed two inverted behaviors: UNASSIGNED_VARIABLE tracks UNTYPED no-init locals (typed are zero-initialized — q11/r35), ENUM_VARIABLE_WITHOUT_DEFAULT is member-only and gated on the enum lacking a 0 value (r46/r47/r48). Corpus 138 projects: 0 parse errors/panics, no new codes)
 **Current.** GA's messages are recognizably not Godot's; the repo even holds two INCONSISTENT recorded
 native phrasings for the same probe (`docs/src/adr/0008:9` "Function \"casll()\" not found in base
 Callable" vs `infer.rs:3040-3041` "Cannot find member … in base …"). No test pins any message.
@@ -442,25 +442,25 @@ as a golden table; reword GA's templates to match Godot's phrasing wherever a co
 extra precision as a suffix only if it doesn't fight the phrasing); reconcile ADR-0008's contradiction in
 the ADR text. Corpus run must stay diff-clean vs baseline (message text isn't in the corpus key — verify).
 
-### T4.2 — Humanize parse-error tokens  · effort: small · Status: ⬜
+### T4.2 — Humanize parse-error tokens  · effort: small · Status: ✅ (GA `14f9383`. `SyntaxKind::display_name()` over the cstree static-text table (`":"`, `"in"`, `"Literal"`, `"Indent"` — Godot's own quoting, probed); `expect()` emits `Expected ":".`, with `expect_after`/`expect_closing` carrying Godot's verbatim contextual wordings at the probed sites (if/elif/else/while/for/match/class colons, function/lambda/signal/call closers, for-in and match-arm dual-token texts, annotation/signal names, `Unexpected "Literal" in class body.`); 17 wordings pinned by `syntax_error_messages_match_godot`)
 `expected Colon` / `expected InKw` / `expected RParen` leak Rust Debug enum names
 (`GA/crates/gdscript-syntax/src/parser/parser.rs:324-328`). Add a `display_name()` on the token kind
 (`":"`, `"in"`, `")"`, …) and use Godot's syntax-error phrasing from T4.1's probes. Snapshot tests.
 
-### T4.3 — Arity errors  · effort: medium · Status: ⬜
+### T4.3 — Arity errors  · effort: medium · Status: ✅ (GA `be9a5dc`. `CallSignature` (name, fixed param types, required = default-less count, vararg flag) resolved for own funcs (FuncItem gains `is_vararg` — `...rest` absorbs surplus), inherited engine methods, builtin-receiver methods (new coverage — the closed tables carry full sigs), utilities, and the `@GDScript` layer's min/max. Emits TOO_FEW/TOO_MANY_ARGUMENTS (new ERROR-default catalog codes, Godot-verbatim texts) + the previously-silent definite arg-type mismatch as Godot's `Invalid argument for "f()" function: …`. Callable values/shadowing locals/cross-file/constructors stay silent by design. Corpus gate: ZERO arity or invalid-arg hits across 138 demo projects)
 `check_call_args` deliberately breaks on arity (`infer.rs:2304-2306`) — Godot hard-errors. Emit
 TOO_MANY_ARGUMENTS / TOO_FEW_ARGUMENTS (check the WarningCode catalog for existing names first; ERROR
 default for resolved own/builtin/api functions; SILENT through Unknown seams and variadics — vararg flag
 from the API table). Corpus gate before default-on (the A1 lesson: broad corpus, zero FPs, else demote).
 
-### T4.4 — Unnecessary/Deprecated tags + UNREACHABLE_CODE → dimming  · effort: small/medium · Status: ⬜
+### T4.4 — Unnecessary/Deprecated tags + UNREACHABLE_CODE → dimming  · effort: small/medium · Status: ✅ (UNREACHABLE_CODE turned out ALREADY SHIPPED in GA (flow.rs dataflow + emission + test) — the task collapsed to the tags half. GA `966e006`: the Diagnostic POD gains `tags: Vec<DiagnosticTag>` serialized as the LSP numbers (`tags: [1]`; key omitted when empty → pre-tag wire shape untouched), sourced from the WarningCode catalog (unused/unreachable family → Unnecessary), mapped in gdscript-lsp. RG `854132d`: the adapter forwards tags → VS Code dims embedded dead code (the GDScript half of **G6**), and an analyzer UNREACHABLE_CODE inside a markup-level 0107 region is dropped (one report per range))
 Check `warnings.rs` for UNREACHABLE_CODE; implement if absent (post-`return`/`break`/`continue` statements
 in a block — flow framework likely already computes reachability; verify). Expose LSP DiagnosticTags
 through the napi surface (`Diagnostic` POD gains `tags: Vec<u8>`), map in `analyzerAdapter.ts:65-74`
 (today tags never cross), publish. VS Code then dims embedded-GDScript dead code — the GDScript half of
 **G6**. RG side: dedupe with the markup-level 0107 (one report per range).
 
-### T4.5 — Veto seam → virtual library shims (**G8** root fix)  · effort: medium · Status: ⬜
+### T4.5 — Veto seam → virtual library shims (**G8** root fix)  · effort: medium · Status: ✅ (GA half (`dba20a3`): the plan's "verify name-binds" surfaced the REAL G8 mechanism — the unclosed paren suppresses the pre-pass's synthetic newlines, so the broken lambda's inline body swallows the rest of the function, and the swallowed use resolved BEFORE the binding was pushed. Fixed at the right depth: a declaration's name is now visible to its own initializer (seam-typed) — which also fixes legal `var f = func(): f.call()` (a real FP). RG half (`854132d`): `vetoGuitkxDeclared` DELETED; every indexed .guitkx feeds `class_name <binding>` + VARIADIC member stubs as a virtual library (arity-transparent by construction), retired whenever the real generated sibling .gd exists. e2e: binding resolves + typo flags (green on BOTH cores), G8 no-cascade + tags gated on core 0.5.5. Unlock delivered: live PascalCase 0105 ungated against the merged universe (index bindings + harvested .gd class_names). **G7** re-verified: `fsunc():` now yields a syntax error (GA reads the trailing colon as a property-accessor opener — different wording than Godot's, error presence is the criterion) with no false UNDEFINED)
 **Current.** `vetoGuitkxDeclared` (`workspaceIndex.ts:235-242`) suppresses UNDEFINED_FUNCTION/IDENTIFIER
 for ANY `.guitkx`-indexed name — a typo colliding with a `.guitkx` name is silent (Godot would error).
 **Target.** Feed `.guitkx` declarations INTO the analyzer as generated virtual libraries (the vdoc
@@ -474,7 +474,7 @@ bind Unknown, and add a test).
 did-you-mean; `{ toggle }` with broken lambda initializer ⇒ NO undefined-identifier + a syntax error on
 the lambda line (the **G7+G8** repro end-to-end).
 
-### T4.6 — LSP `Diagnostic.code` + default warning set  · effort: small · Status: ⬜
+### T4.6 — LSP `Diagnostic.code` + default warning set  · effort: small · Status: ✅ (The engine-defaults mechanism turned out fully built in GA (WarningOverride/engine_default/--engine-defaults) but unreachable from the bindings. GA `dba20a3`: `setWarningOverride("engine-defaults"|"strict"|"none")` plumbed through session/napi/wasm. RG `854132d`: the adapter selects engine-defaults at construction (guarded no-op on a pre-0.5.5 core) so the editor never warns where Godot wouldn't, and the `CODE: message` fold is gone — analyzer codes are real LSP `Diagnostic.code`s with a `codeDescription` link to the generated Warning Reference)
 Stop folding codes into message text: set `Diagnostic.code` (+ `codeDescription` linking GA's warnings
 docs) in `analyzerAdapter.ts`/`server.ts:639-644,886`; message becomes Godot-phrased text only (T4.1).
 No-`project.godot` default: match engine defaults instead of promoting UNSAFE_* to WARN
@@ -485,6 +485,10 @@ once virtualDoc stops swallowing the window (T3.5 unclosed-return behavior + T5.
 re-run the G7 repro; if `fsunc():` still yields zero diagnostics, root-cause in GA's parser recovery
 (a lambda-like `name():` header should produce exactly one syntax error and still parse the indented
 body as a block — mirror the A4 over-indent recovery pattern).
+**G7 re-run (2026-07-03, local 0.5.5 core): CLOSED.** `var f = fsunc():` yields `GDSCRIPT_SYNTAX:
+Expected "get" or "set" in a property accessor.` (GA's var-decl grammar legitimately reads a trailing
+colon as the property-accessor opener — not Godot's wording for this shape, but an ERROR where there
+was silence, which is the G7 criterion) and NO false UNDEFINED on later uses of `f`.
 
 ---
 
@@ -545,9 +549,9 @@ Godot-reserved: 25xx. Authority: `U/.../DiagnosticCodes.cs` at implementation ti
 | Bug | Closed by |
 |---|---|
 | **G5** unknown tag + mismatched close silent | T1.5 (+T0.2 positions) |
-| **G6** no unreachable flag/dim after early return | T1.4 (markup) + T4.4 (GDScript dimming) |
-| **G7** `fsunc():` accepted, lambda body unchecked | T5.1 + T3.5 (window survives) + T4.5 note (GA recovery if still silent) |
-| **G8** false UNDEFINED_IDENTIFIER on `{ toggle }` | T4.5 (shims + name-survives-broken-initializer) |
+| **G6** no unreachable flag/dim after early return | ✅ T1.4 (markup) + T4.4 (GDScript dimming — tags cross end-to-end, live once the core dep bumps to 0.5.5) |
+| **G7** `fsunc():` accepted, lambda body unchecked | ✅ T5.1 + T3.5 (window survives) + T4.5 re-run (syntax error fires; see G7 note) |
+| **G8** false UNDEFINED_IDENTIFIER on `{ toggle }` | ✅ T4.5 (initializer-scoped names in GA + virtual libraries replacing the veto in RG; e2e pinned, live once the core dep bumps) |
 | **G9** `@for`-only component, no missing-return | T1.4 fixture + T5.3 |
 
 Update `BUG_AUDIT.md` §4 / `BUG_SPLIT.md` statuses as these land.
