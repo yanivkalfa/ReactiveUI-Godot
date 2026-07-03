@@ -34,9 +34,12 @@ static var V_FACTORIES: Array = _VOCAB["v_factories"]
 
 static func _load_vocabulary() -> Dictionary:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://addons/reactive_ui/guitkx/vocabulary.json"))
-	assert(parsed is Dictionary and (parsed as Dictionary).has("host_tags") and (parsed as Dictionary).has("hooks"),
-		"vocabulary.json missing or invalid — the compiler cannot classify tags/hooks without it")
-	return parsed
+	if parsed is Dictionary and (parsed as Dictionary).has("host_tags") and (parsed as Dictionary).has("hooks"):
+		return parsed
+	# assert() is stripped from release exports, so fail LOUDLY but non-fatally: the compiler is
+	# editor tooling and must never crash a game that accidentally loads this script.
+	push_error("[guitkx] vocabulary.json missing or invalid -- the compiler cannot classify tags/hooks without it")
+	return { "host_tags": {}, "hooks": [], "v_factories": [], "directives": [] }
 
 static func compile(source: String, basename: String = "Component") -> Dictionary:
 	var diags: Array = []
