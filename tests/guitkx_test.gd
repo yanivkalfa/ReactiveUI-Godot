@@ -33,6 +33,7 @@ func _run() -> void:
 	_test_deep_flatten()
 	_test_scanner_fixtures()
 	_test_markup_corpus()
+	_test_vocabulary()
 	_test_formatter()
 	_test_formatter_corpus()
 	_test_formatter_options()
@@ -233,6 +234,26 @@ func _test_formatter_options() -> void:
 	_check_true(no_space.contains("/>") and not no_space.contains(" />"), "wrap path honors insertSpaceBeforeSelfClose=false")
 	var with_space: String = Fmt.format(src, { "singleAttributePerLine": true })["text"]
 	_check_true(with_space.contains(" />"), "wrap path default keeps the space before />")
+
+func _test_vocabulary() -> void:
+	# T0.3: vocabulary.json is the single source of truth. The compiler tables must come from it…
+	_check_true(RUIGuitkx.HOST_TAGS.get("VBoxContainer", "") == "vbox" and RUIGuitkx.HOST_TAGS.size() >= 39,
+		"HOST_TAGS loaded from vocabulary.json (aliases included, got %d)" % RUIGuitkx.HOST_TAGS.size())
+	_check_true("useState" in RUIGuitkx.HOOK_NAMES and RUIGuitkx.HOOK_NAMES.size() == 23,
+		"HOOK_NAMES loaded from vocabulary.json (got %d)" % RUIGuitkx.HOOK_NAMES.size())
+	# …and v_factories must mirror the REAL public V API (reflection tripwire: adding/removing a
+	# static func on core/v.gd without updating vocabulary.json fails here with the exact diff).
+	var v_script: Script = preload("res://addons/reactive_ui/core/v.gd")
+	var reflected: Array = []
+	for m in v_script.get_script_method_list():
+		var mname: String = m["name"]
+		if not mname.begins_with("_") and not (mname in reflected):
+			reflected.append(mname)
+	reflected.sort()
+	var vocab: Array = (RUIGuitkx.V_FACTORIES as Array).duplicate()
+	vocab.sort()
+	_check_true(str(reflected) == str(vocab),
+		"vocabulary.v_factories mirrors core/v.gd public statics\n  reflected: %s\n  vocabulary: %s" % [str(reflected), str(vocab)])
 
 func _test_markup_corpus() -> void:
 	# the SHARED markup-AST corpus also asserted by the TS parseMarkup test — proves guitkx_markup.gd

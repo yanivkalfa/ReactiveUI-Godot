@@ -163,7 +163,7 @@ already expects this shape) + a `docs` note.
 **Done when.** A compiler error in any demo shows file:line:col in the Errors dock, the sidecar carries
 real ranges (no line-0 pins), and all suites are green.
 
-### T0.3 — Shared vocabulary module  · effort: small · Status: ⬜
+### T0.3 — Shared vocabulary module  · effort: small · Status: ✅ (`addons/reactive_ui/guitkx/vocabulary.json` = single source {directives, hooks, host_tags incl the 9 aliases, v_factories}; guitkx.gd loads it (HOST_TAGS/HOOK_NAMES/V_FACTORIES static vars); LSP ships a byte-identical copy (`src/vocabulary.json`, resolveJsonModule) and schema.ts DERIVES alias TagInfos from it — the 9 long-form aliases now get completion/hover/no-false-0105; tripwires: vocab.test.ts (copy sync + schema coverage + HOOK_STUBS names) and guitkx_test.gd `_test_vocabulary` (reflection-pins v_factories to core/v.gd public statics); vocabulary.json added to the compiler fingerprint)
 **Problem.** HOST_TAGS drift (compiler has 9 long-form aliases the LSP lacks — `guitkx.gd:19-29` vs
 `schema.ts:18-51`); hook-prefix list duplicated (`guitkx.gd:373,485,632,1164-1201` vs `virtualDoc.ts:26-50`);
 message templates drift for the same code (matrix §4 last para).

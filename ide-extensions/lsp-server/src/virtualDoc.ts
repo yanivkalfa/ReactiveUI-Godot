@@ -23,7 +23,7 @@ export interface VirtualDoc {
 // go-to-definition chaining (`Hooks.<name>` appears on the stub line — see server.ts hookStubRhsOffset).
 // `params`/`ret` MUST stay byte-identical to the hooks.gd declarations — asserted by the
 // "hook stub signatures match hooks.gd" parity test in core.test.ts.
-const HOOK_STUBS: { name: string; params: string; args: string; ret: string; tuple?: string }[] = [
+export const HOOK_STUBS: { name: string; params: string; args: string; ret: string; tuple?: string }[] = [
   { name: "useState", params: "initial = null", args: "initial", ret: " -> Array", tuple: "Variant, Callable" },
   { name: "useReducer", params: "reducer: Callable, initial = null", args: "reducer, initial", ret: " -> Array", tuple: "Variant, Callable" },
   { name: "useRef", params: "initial = null", args: "initial", ret: " -> Dictionary" },

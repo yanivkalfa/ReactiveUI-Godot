@@ -20,21 +20,23 @@ const Markup = preload("res://addons/reactive_ui/guitkx/guitkx_markup.gd")
 const JsxScan = preload("res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd")
 const D = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
-## PascalCase/markup tag -> V.* host factory. Hand-authored Godot control catalog (the analog of
-## uitkx's reflected V map / s_fallbackMap). A tag here = host element; anything else PascalCase = component.
-const HOST_TAGS := {
-	"Control": "control", "VBox": "vbox", "VBoxContainer": "vbox", "HBox": "hbox", "HBoxContainer": "hbox",
-	"Grid": "grid", "GridContainer": "grid", "Margin": "margin", "MarginContainer": "margin",
-	"Panel": "panel", "PanelContainer": "panel", "Center": "center", "CenterContainer": "center",
-	"Scroll": "scroll", "ScrollContainer": "scroll", "Tabs": "tabs", "TabContainer": "tabs",
-	"Label": "label", "RichText": "rich_text", "RichTextLabel": "rich_text", "ColorRect": "color_rect",
-	"TextureRect": "texture_rect", "HSeparator": "h_separator", "VSeparator": "v_separator",
-	"Button": "button", "CheckBox": "check_box", "CheckButton": "check_button", "OptionButton": "option_button",
-	"MenuButton": "menu_button", "LinkButton": "link_button", "TextureButton": "texture_button",
-	"LineEdit": "line_edit", "TextEdit": "text_edit", "CodeEdit": "code_edit", "SpinBox": "spin_box",
-	"HSlider": "h_slider", "VSlider": "v_slider", "ProgressBar": "progress_bar", "ItemList": "item_list",
-	"Tree": "tree", "TabBar": "tab_bar",
-}
+## Language vocabulary — SINGLE SOURCE OF TRUTH is vocabulary.json (T0.3), shared verbatim with the
+## LSP (schema.ts/virtualDoc.ts consume the byte-identical copy shipped in the extension; tests on
+## both sides enforce the sync, and a reflection tripwire pins v_factories to core/v.gd's statics).
+static var _VOCAB: Dictionary = _load_vocabulary()
+## PascalCase/markup tag -> V.* host factory (the analog of uitkx's reflected V map). A tag here =
+## host element; anything else PascalCase = component.
+static var HOST_TAGS: Dictionary = _VOCAB["host_tags"]
+## The auto-prefixable hook names (bare useX( -> Hooks.useX(), camelCase.
+static var HOOK_NAMES: Array = _VOCAB["hooks"]
+## Public V.* factory names (lowercase-tag namespace) — reserved for T1.5 unknown-tag validation.
+static var V_FACTORIES: Array = _VOCAB["v_factories"]
+
+static func _load_vocabulary() -> Dictionary:
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://addons/reactive_ui/guitkx/vocabulary.json"))
+	assert(parsed is Dictionary and (parsed as Dictionary).has("host_tags") and (parsed as Dictionary).has("hooks"),
+		"vocabulary.json missing or invalid — the compiler cannot classify tags/hooks without it")
+	return parsed
 
 static func compile(source: String, basename: String = "Component") -> Dictionary:
 	var diags: Array = []
@@ -1221,11 +1223,6 @@ static func _find_top(s: String, ch: String) -> int:
 			return i
 		i += 1
 	return -1
-
-const HOOK_NAMES := ["useState", "useReducer", "useRef", "useMemo", "useCallback", "useImperativeHandle",
-	"useEffect", "useLayoutEffect", "createContext", "useContext", "provideContext", "useDeferredValue",
-	"useTransition", "useStableCallback", "useStableFunc", "useStableAction", "useSafeArea", "useSignal",
-	"useSignalKey", "useTween", "useTweenValue", "useAnimate", "useSfx"]
 
 ## Auto-prefix bare hook CALLS to Hooks.* (useState(...) -> Hooks.useState(...)). Single
 ## token-boundary pass that skips strings/comments (via skip_noncode), only matches a hook name at

@@ -65,6 +65,7 @@ const _COMPILER_SOURCES := [
 	"res://addons/reactive_ui/guitkx/guitkx_lexer.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_diag.gd",
+	"res://addons/reactive_ui/guitkx/vocabulary.json",
 ]
 # Machine-local marker (`.godot` is gitignored + regenerated), holding the fingerprint that last
 # generated this project's .gd. A mismatch (or absence) means the compiler moved -> recompile all.
