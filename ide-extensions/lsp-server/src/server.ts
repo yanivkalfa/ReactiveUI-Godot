@@ -647,26 +647,38 @@ function embeddedDiagnostics(doc: TextDocument): Diagnostic[] {
 }
 
 // Surface the compiler's full diagnostic catalog (from the on-save Foo.guitkx.diags.json sidecar) in
-// VS Code without a running editor. Only when the sidecar still matches the buffer (source hash);
-// deduped by code against the precise live tier (live wins). Ranged at line 1 — the compiler emits no
-// char offsets, so these are file-level "compiler says…" entries; the live tier owns precise squiggles.
+// VS Code without a running editor. Only when the sidecar still matches the buffer (source hash).
+// v2 sidecars (T0.2) carry char offsets, so entries get PRECISE ranges via positionAt and are deduped
+// against the live tier by (code, line) — a live GUITKX0104 on element A no longer suppresses the
+// compiler's 0104 on a different line. Position-less entries (off -1, incl. normalized v1 sidecars)
+// anchor to the first line and fall back to code-only dedupe (their line carries no information).
 function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic[] {
   const sc = readSidecar(uriToProjectPath(doc.uri));
   const text = doc.getText();
   if (!sc || sc.src_hash !== srcHash(text)) return live;
   const liveCodes = new Set<string>();
+  const liveCodeLines = new Set<string>();
   for (const d of live) {
     const m = /GUITKX\d+/.exec(d.message);
-    if (m) liveCodes.add(m[0]);
+    if (m) {
+      liveCodes.add(m[0]);
+      liveCodeLines.add(`${m[0]}@${d.range.start.line}`);
+    }
   }
   const firstLineLen = (text.indexOf("\n") + 1 || text.length + 1) - 1;
   const extra: Diagnostic[] = [];
   for (const d of sc.diagnostics) {
-    if (!d.code || liveCodes.has(d.code)) continue;
+    if (!d.code) continue;
+    const positioned = d.off >= 0 && d.off <= text.length;
+    const range = positioned
+      ? { start: doc.positionAt(d.off), end: doc.positionAt(Math.min(text.length, d.off + Math.max(1, d.len))) }
+      : { start: { line: 0, character: 0 }, end: { line: 0, character: Math.max(1, firstLineLen) } };
+    if (positioned ? liveCodeLines.has(`${d.code}@${range.start.line}`) : liveCodes.has(d.code)) continue;
     extra.push({
-      severity: d.severity === "error" ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
-      range: { start: { line: 0, character: 0 }, end: { line: 0, character: Math.max(1, firstLineLen) } },
-      message: d.message,
+      severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
+      range,
+      // v2 messages carry no code prefix (compose it, matching the live tier's style); v1 already do.
+      message: sc.v === 2 ? `${d.code}: ${d.message}` : d.message,
       source: "guitkx (compiler)",
     });
   }

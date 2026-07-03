@@ -8,10 +8,17 @@ extends RefCounted
 ## auto-prefixing (bare use_* -> Hooks.use_*), and the GUITKX#### diagnostics catalog.
 ##
 ## API:  RUIGuitkx.compile(source: String, basename: String) -> { ok, gd, diagnostics }
+##
+## DIAGNOSTICS (T0.2): every entry in `diagnostics` is a structured Dictionary from RUIGuitkxDiag —
+## { code, severity, message, offset, length } with `offset`/`length` in characters into the ORIGINAL
+## .guitkx source (offset -1 = whole file). Render with RUIGuitkxDiag.format(); never string-sniff.
+## Internally, markup-node offsets are relative to the string their parser saw; `base` values thread
+## the absolute position of that string's index 0 so nested re-parses compose (see _cbase).
 
 const L = preload("res://addons/reactive_ui/guitkx/guitkx_lexer.gd")
 const Markup = preload("res://addons/reactive_ui/guitkx/guitkx_markup.gd")
 const JsxScan = preload("res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd")
+const D = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
 ## PascalCase/markup tag -> V.* host factory. Hand-authored Godot control catalog (the analog of
 ## uitkx's reflected V map / s_fallbackMap). A tag here = host element; anything else PascalCase = component.
@@ -46,7 +53,7 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 				cn_raw = cn_raw.substr(0, cn_hash)
 			class_name_override = cn_raw.strip_edges()
 			if not _is_valid_identifier(class_name_override):
-				diags.append("GUITKX0300: `@class_name` value must be a single valid identifier (got '%s')" % class_name_override)
+				diags.append(D.make("GUITKX0300", D.ERROR, "`@class_name` value must be a single valid identifier (got '%s')" % class_name_override, i, le - i))
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			i = le
 			continue
@@ -63,9 +70,9 @@ static func compile(source: String, basename: String = "Component") -> Dictionar
 		_:
 			var near := _nearest_decl_keyword(source, i)
 			if near.has("word"):
-				diags.append("GUITKX0102: unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]])
+				diags.append(D.make("GUITKX0102", D.ERROR, "unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]], near["at"], (near["word"] as String).length()))
 			else:
-				diags.append("GUITKX0102: no `component`, `hook`, or `module` declaration found")
+				diags.append(D.make("GUITKX0102", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
 			return { "ok": false, "gd": "", "diagnostics": diags }
 
 ## Find the first top-level declaration keyword (skipping strings/comments).
@@ -122,7 +129,7 @@ static func _nearest_decl_keyword(source: String, from: int) -> Dictionary:
 					best_d = d
 					best = kw
 			if best != "" and best_d <= 3:
-				return { "word": word, "kw": best }
+				return { "word": word, "kw": best, "at": s }
 			return {}
 		i += 1
 	return {}
@@ -151,15 +158,14 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if not pc["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	if class_name_override == "" and pc["name"] != basename:
-		diags.append("GUITKX0103 (warning): component `%s` differs from file name `%s`" % [pc["name"], basename])
-	_validate(pc["setup"], pc["root"], diags)
+		diags.append(D.make("GUITKX0103", D.WARNING, "component `%s` differs from file name `%s`" % [pc["name"], basename], pc["name_at"], (pc["name"] as String).length()))
+	_validate(pc["setup"], pc["root"], diags, pc["body_at"])
 	# A hard-error diagnostic from validation (e.g. GUITKX0108 in a loop body) fails the compile —
-	# warnings (containing "(warning)") do not.
-	for d in diags:
-		if not (d as String).contains("(warning)"):
-			return { "ok": false, "gd": "", "diagnostics": diags }
+	# warnings/hints do not.
+	if D.has_error(diags):
+		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
-	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags)
+	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"])
 	return { "ok": true, "gd": gd, "diagnostics": diags }
 
 ## Parse ONE component declaration at `ci`. Returns { ok, name, params, setup, root, next }
@@ -173,52 +179,62 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		j += 1
 	var comp_name := source.substr(ns, j - ns)
 	if comp_name == "":
-		diags.append("GUITKX0300: missing component name")
+		diags.append(D.make("GUITKX0300", D.ERROR, "missing component name", j))
 		return { "ok": false }
 	var params := ""
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":
 		var pc := L.find_matching(source, j)
 		if pc == -1:
-			diags.append("GUITKX0304: unclosed `(` in component params")
+			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in component params", j, 1))
 			return { "ok": false }
 		params = source.substr(j + 1, pc - j - 1)
 		j = pc + 1
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
-		diags.append("GUITKX0303: component body `{ ... }` expected")
+		diags.append(D.make("GUITKX0303", D.ERROR, "component body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false }
 	var bclose := L.find_matching(source, j)
 	if bclose == -1:
-		diags.append("GUITKX0304: unclosed component body")
+		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed component body", j, 1))
 		return { "ok": false }
 	var body := source.substr(j + 1, bclose - j - 1)
+	var body_at := j + 1   # absolute offset of body[0] in `source`; rebases body-relative offsets
 	var split := _split_return(body)
 	if split.has("error"):
-		diags.append(split["error"])
+		diags.append(D.rebase(split["error"], body_at))
 		return { "ok": false }
 	# BUG-V5: any real code after the markup return is unreachable (the compiler drops it).
-	if _has_unreachable_after(body, split["m_end"]):
-		diags.append("GUITKX0114 (warning): unreachable code after the component's markup return -- a component has a single return; later statements are ignored")
+	var unreach_first := _first_real(body, int(split["m_end"]) + 1, body.length())
+	if unreach_first != -1:
+		var unreach_last := _last_real(body, int(split["m_end"]) + 1, body.length())
+		diags.append(D.make("GUITKX0114", D.WARNING, "unreachable code after the component's markup return -- a component has a single return; later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
 	var parser := Markup.new()
 	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
-		diags.append(pr["error"])
+		diags.append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], body_at + maxi(0, int(pr["error_at"])), 1))
 		return { "ok": false }
 	var render_roots := (pr["nodes"] as Array).filter(func(nd): return nd != null)
 	if render_roots.size() != 1:
-		diags.append("GUITKX0108: a component must return exactly one root element (got %d)" % render_roots.size())
+		var extra_at: int = int(render_roots[1]["at"]) if render_roots.size() > 1 else int(split["m_start"])
+		diags.append(D.make("GUITKX0108", D.ERROR, "a component must return exactly one root element (got %d)" % render_roots.size(), body_at + extra_at, 1))
 		return { "ok": false }
-	return { "ok": true, "name": comp_name, "params": params, "setup": split["setup"], "root": render_roots[0], "next": bclose + 1 }
+	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "setup": split["setup"], "root": render_roots[0], "body_at": body_at, "next": bclose + 1 }
 
 # --- semantic validation (warnings; they don't fail the compile) ---
-static func _validate(setup: String, root: Dictionary, diags: Array) -> void:
-	_validate_hooks(setup, diags)
-	_validate_node(root, diags)
+# `base` = absolute offset (in the original source) of index 0 of the string the node offsets/setup
+# offsets are relative to (-1 = unknown -> diagnostics fall back to whole-file).
+static func _validate(setup: String, root: Dictionary, diags: Array, base: int = -1) -> void:
+	_validate_hooks(setup, diags, base)
+	_validate_node(root, diags, base)
+
+## Compose a child base: rebase `rel` (an offset within the current string) onto `base`.
+static func _cbase(base: int, rel: int) -> int:
+	return -1 if (base < 0 or rel < 0) else base + rel
 
 ## Rules of hooks (heuristic): a hook call indented deeper than the shallowest setup statement is
 ## inside an if/for/while/match block, i.e. called conditionally. [GUITKX0013]
-static func _validate_hooks(setup: String, diags: Array) -> void:
+static func _validate_hooks(setup: String, diags: Array, base_off: int = -1) -> void:
 	var lines := setup.split("\n")
 	# Compare indentation by DEPTH (levels), not raw character count, so a tab+spaces mix -- which
 	# renders identically to tabs and is thus invisible to the author -- doesn't produce a spurious
@@ -242,13 +258,18 @@ static func _validate_hooks(setup: String, diags: Array) -> void:
 		base = base_any
 	if base == -1:
 		return
+	var off := 0
 	for l in lines:
-		var t := (l as String).strip_edges()
+		var s := l as String
+		var t := s.strip_edges()
 		if t == "" or t.begins_with("#"):
+			off += s.length() + 1
 			continue
-		if _line_calls_hook(l as String) and _indent_depth(l as String, unit) > base:
-			diags.append("GUITKX0013 (warning): hook called conditionally/in a block -- hooks must run unconditionally at the top of setup")
+		if _line_calls_hook(s) and _indent_depth(s, unit) > base:
+			var lead := _leading_ws(s).length()
+			diags.append(D.make("GUITKX0013", D.WARNING, "hook called conditionally/in a block -- hooks must run unconditionally at the top of setup", _cbase(base_off, off + lead), t.length()))
 			return
+		off += s.length() + 1
 
 static func _line_calls_hook(s: String) -> bool:
 	for h in HOOK_NAMES:   # single source of truth (all 23 hooks), camelCase
@@ -256,28 +277,28 @@ static func _line_calls_hook(s: String) -> bool:
 			return true
 	return false
 
-static func _validate_node(nd, diags: Array) -> void:
+static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 	if nd == null or not (nd is Dictionary):
 		return
 	match nd.get("t", ""):
 		"el", "frag":
-			_check_dup_keys(nd.get("children", []), diags)
+			_check_dup_keys(nd.get("children", []), diags, base)
 			for c in nd.get("children", []):
-				_validate_node(c, diags)
+				_validate_node(c, diags, base)
 		"if":
 			for br in nd["branches"]:
-				_validate_body(br["body_markup"], diags, false)
+				_validate_body(br["body_markup"], diags, false, _cbase(base, br["body_at"]))
 			if nd["else_body"] != null:
-				_validate_body(nd["else_body"], diags, false)
+				_validate_body(nd["else_body"], diags, false, _cbase(base, nd["else_body_at"]))
 		"for", "while":
-			_validate_body(nd["body_markup"], diags, true)
+			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]))
 		"match":
 			for c in nd.get("cases", []):
-				_validate_body(c["body_markup"], diags, false)
+				_validate_body(c["body_markup"], diags, false, _cbase(base, c["body_at"]))
 			if nd.get("default_body") != null:
-				_validate_body(nd["default_body"], diags, false)
+				_validate_body(nd["default_body"], diags, false, _cbase(base, nd["default_body_at"]))
 
-static func _validate_body(body_src: String, diags: Array, is_loop: bool) -> void:
+static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: int = -1) -> void:
 	var parser := Markup.new()
 	var pr := parser.parse(body_src, 0, body_src.length())
 	if pr["error"] != "":
@@ -287,14 +308,20 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool) -> voi
 		if nodes.size() > 1:
 			# A loop body must have a single root (like a component) so each iteration yields one keyed
 			# child. Wrap siblings in a fragment <>...</> with distinct keys. (Parity: Unity UITKX0108.)
-			diags.append("GUITKX0108: a @for/@while body must contain exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size())
+			diags.append(D.make("GUITKX0108", D.ERROR, "a @for/@while body must contain exactly one root element (got %d) -- wrap siblings in a fragment <>...</>" % nodes.size(), _cbase(base, int(nodes[1]["at"])), _node_len(nodes[1])))
 		elif nodes.size() == 1 and (nodes[0] as Dictionary).get("t", "") == "el":
 			if not _has_key(nodes[0]):
-				diags.append("GUITKX0106 (warning): element in @for/@while has no `key` -- add key= so reordered children reconcile correctly")
+				diags.append(D.make("GUITKX0106", D.WARNING, "element in @for/@while has no `key` -- add key= so reordered children reconcile correctly", _cbase(base, int(nodes[0]["at"])), _node_len(nodes[0])))
 	for nx in nodes:
-		_validate_node(nx, diags)
+		_validate_node(nx, diags, base)
 
-static func _check_dup_keys(children: Array, diags: Array) -> void:
+## Squiggle width for a node-anchored diagnostic: `<Tag` for elements, 1 char otherwise.
+static func _node_len(nd: Dictionary) -> int:
+	if nd.get("t", "") == "el":
+		return 1 + (nd.get("tag", "") as String).length()
+	return 1
+
+static func _check_dup_keys(children: Array, diags: Array, base: int = -1) -> void:
 	var seen := {}
 	for c in children:
 		if c == null or not (c is Dictionary) or (c as Dictionary).get("t", "") != "el":
@@ -303,8 +330,18 @@ static func _check_dup_keys(children: Array, diags: Array) -> void:
 		if k == "":
 			continue
 		if seen.has(k):
-			diags.append("GUITKX0104 (warning): duplicate key '%s' among sibling elements" % k.substr(2))
+			var ka := _key_attr(c)
+			var at: int = int(ka.get("at", -1))
+			var alen: int = maxi(1, int(ka.get("end", 0)) - at) if at >= 0 else 1
+			diags.append(D.make("GUITKX0104", D.WARNING, "duplicate key '%s' among sibling elements" % k.substr(2), _cbase(base, at), alen))
 		seen[k] = true
+
+## The `key` attribute Dictionary of an element ({} when absent).
+static func _key_attr(el: Dictionary) -> Dictionary:
+	for a in el.get("attrs", []):
+		if a["name"] == "key":
+			return a
+	return {}
 
 static func _has_key(el: Dictionary) -> bool:
 	for a in el.get("attrs", []):
@@ -317,12 +354,13 @@ static func _has_key(el: Dictionary) -> bool:
 ## every iteration, while genuinely-different expressions are left alone. Prefixed "s:"/"e:" so a
 ## string key never false-collides with an expr key. "" = no key.
 static func _literal_key(el: Dictionary) -> String:
-	for a in el.get("attrs", []):
-		if a["name"] == "key":
-			if a["kind"] == "str":
-				return "s:" + str(a["value"])
-			if a["kind"] == "expr":
-				return "e:" + str(a["value"]).strip_edges()
+	var a := _key_attr(el)
+	if a.is_empty():
+		return ""
+	if a["kind"] == "str":
+		return "s:" + str(a["value"])
+	if a["kind"] == "expr":
+		return "e:" + str(a["value"]).strip_edges()
 	return ""
 
 ## hook file: `hook name(params) [-> (...)] { body }` -> a class with one static function. The
@@ -337,14 +375,14 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 		j += 1
 	var hook_name := source.substr(ns, j - ns)
 	if hook_name == "":
-		diags.append("GUITKX0300: missing hook name")
+		diags.append(D.make("GUITKX0300", D.ERROR, "missing hook name", j))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var params := ""
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":
 		var pc := L.find_matching(source, j)
 		if pc == -1:
-			diags.append("GUITKX0304: unclosed `(` in hook params")
+			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in hook params", j, 1))
 			return { "ok": false, "gd": "", "diagnostics": diags }
 		params = source.substr(j + 1, pc - j - 1)
 		j = pc + 1
@@ -360,11 +398,11 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 	# body
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
-		diags.append("GUITKX0303: hook body `{ ... }` expected")
+		diags.append(D.make("GUITKX0303", D.ERROR, "hook body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var bclose := L.find_matching(source, j)
 	if bclose == -1:
-		diags.append("GUITKX0304: unclosed hook body")
+		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed hook body", j, 1))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var body := source.substr(j + 1, bclose - j - 1)
 	var cls := class_name_override if class_name_override != "" else basename
@@ -387,14 +425,14 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 		j += 1
 	var hook_name := source.substr(ns, j - ns)
 	if hook_name == "":
-		diags.append("GUITKX0300: missing hook name")
+		diags.append(D.make("GUITKX0300", D.ERROR, "missing hook name", j))
 		return { "ok": false }
 	var params := ""
 	j = _skip_ws_only(source, j)
 	if j < n and source[j] == "(":
 		var pc := L.find_matching(source, j)
 		if pc == -1:
-			diags.append("GUITKX0304: unclosed `(` in hook params")
+			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in hook params", j, 1))
 			return { "ok": false }
 		params = source.substr(j + 1, pc - j - 1)
 		j = pc + 1
@@ -407,13 +445,13 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 		ret_hint = source.substr(rh, j - rh).strip_edges()
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
-		diags.append("GUITKX0303: hook body `{ ... }` expected")
+		diags.append(D.make("GUITKX0303", D.ERROR, "hook body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false }
 	var bclose := L.find_matching(source, j)
 	if bclose == -1:
-		diags.append("GUITKX0304: unclosed hook body")
+		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed hook body", j, 1))
 		return { "ok": false }
-	return { "ok": true, "name": hook_name, "params": params, "ret": ret_hint, "body": source.substr(j + 1, bclose - j - 1), "next": bclose + 1 }
+	return { "ok": true, "name": hook_name, "name_at": ns, "params": params, "ret": ret_hint, "body": source.substr(j + 1, bclose - j - 1), "body_at": j + 1, "next": bclose + 1 }
 
 ## module Name { component A {…} component B {…} hook use_x {…} } -> one class with one static func
 ## per declaration. Intra-module <A/> resolves to the bare sibling static func (V.fc(A, …)). [§4]
@@ -426,15 +464,15 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		j += 1
 	var mod_name := source.substr(ns, j - ns)
 	if mod_name == "":
-		diags.append("GUITKX0300: `module` requires a name (module Name { ... })")
+		diags.append(D.make("GUITKX0300", D.ERROR, "`module` requires a name (module Name { ... })", j))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
-		diags.append("GUITKX0303: module body `{ ... }` expected")
+		diags.append(D.make("GUITKX0303", D.ERROR, "module body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var bclose := L.find_matching(source, j)
 	if bclose == -1:
-		diags.append("GUITKX0304: unclosed module body")
+		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed module body", j, 1))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var body_end := bclose
 	var comps: Array = []
@@ -451,7 +489,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 			if not c["ok"]:
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			if module_comps.has(c["name"]) or c["name"] in module_hooks:
-				diags.append("GUITKX0112: duplicate declaration `%s` in module `%s`" % [c["name"], mod_name])
+				diags.append(D.make("GUITKX0112", D.ERROR, "duplicate declaration `%s` in module `%s`" % [c["name"], mod_name], c["name_at"], (c["name"] as String).length()))
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			module_comps[c["name"]] = true
 			comps.append(c)
@@ -461,23 +499,23 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 			if not h["ok"]:
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			if module_comps.has(h["name"]) or h["name"] in module_hooks:
-				diags.append("GUITKX0112: duplicate declaration `%s` in module `%s`" % [h["name"], mod_name])
+				diags.append(D.make("GUITKX0112", D.ERROR, "duplicate declaration `%s` in module `%s`" % [h["name"], mod_name], h["name_at"], (h["name"] as String).length()))
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			module_hooks.append(h["name"])
 			hooks.append(h)
 			i = h["next"]
 		else:
-			diags.append("GUITKX0110: nested `module` is not allowed")
+			diags.append(D.make("GUITKX0110", D.ERROR, "nested `module` is not allowed", d["at"], 6))
 			return { "ok": false, "gd": "", "diagnostics": diags }
 	if comps.is_empty() and hooks.is_empty():
-		diags.append("GUITKX0110: module `%s` has no component or hook declarations" % mod_name)
+		diags.append(D.make("GUITKX0110", D.ERROR, "module `%s` has no component or hook declarations" % mod_name, mi, 6))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls := class_name_override if class_name_override != "" else mod_name
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
 	for c in comps:
-		_validate(c["setup"], c["root"], diags)
+		_validate(c["setup"], c["root"], diags, c["body_at"])
 		out += "# component %s\n" % c["name"]
-		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags)
+		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"])
 		out += "\n"
 	for h in hooks:
 		out += "# hook %s\n" % h["name"]
@@ -505,7 +543,7 @@ static func _split_return(body: String) -> Dictionary:
 			if p < n and body[p] == "(":
 				var close := L.find_matching(body, p)
 				if close == -1:
-					return { "error": "GUITKX0304: unclosed `(` after return" }
+					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
 				var setup := body.substr(0, i)
 				return { "setup": setup, "markup_src": body, "m_start": p + 1, "m_end": close }
 			elif p < n and body[p] == "<":
@@ -518,12 +556,7 @@ static func _split_return(body: String) -> Dictionary:
 				i = p + 4
 				continue
 		i += 1
-	return { "error": "GUITKX0102: component has no `return ( ... )` (only `return null`?)" }
-
-## True if there is real (non-whitespace, non-comment) code after `from` (the markup return's `)`), which
-## the compiler silently drops as unreachable. [BUG-V5]
-static func _has_unreachable_after(body: String, from: int) -> bool:
-	return _first_real(body, from + 1, body.length()) != -1
+	return { "error": D.make("GUITKX0102", D.ERROR, "component has no `return ( ... )` (only `return null`?)") }
 
 ## First / last offset of real (non-ws, non-comment) code in [from, to), or -1.
 static func _first_real(s: String, from: int, to: int) -> int:
@@ -612,17 +645,17 @@ static func unreachable_line_ranges(source: String) -> Array:
 # "lambdas can't hold multi-statement return control-flow" limit AND the helper-method
 # locals-capture problem -- the block is inline in render() and sees all setup locals. The
 # runtime `V._norm` flattens the `@for` arrays and drops the null `@if` misses for free.
-static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = []) -> String:
+static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1) -> String:
 	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
-	out += _emit_func("render", params, setup, root, {}, [], diags)
+	out += _emit_func("render", params, setup, root, {}, [], diags, base)
 	return out
 
 # Emit one `static func <name>(props, children) -> RUIVNode:` from params + setup + a markup root.
 # `module_comps` maps intra-module component names -> true so <Foo/> emits V.fc(Foo, ...) (bare
 # sibling static func) rather than the single-file V.fc(Foo.render, ...).
-static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = []) -> String:
+static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1) -> String:
 	var out := "static func %s(props: Dictionary, children: Array) -> RUIVNode:\n" % func_name
 	for p in _parse_params(params):
 		if p["default"] != "":
@@ -635,7 +668,9 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 	# expr_mode: true while emitting a JSX-VALUE substring (markup inside an embedded {expr}/lambda),
 	# where control-flow MUST be lowered to an inline expression (ternary / .map) instead of hoisted
 	# render-level statements that can't see lambda-local vars. [audit #17]
-	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false }
+	# base: absolute source offset of index 0 of the string the CURRENT node offsets are relative to
+	# (swapped around every nested re-parse via _swap_base, so emit-time diagnostics carry positions).
+	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false, "base": base }
 	var root_expr := _emit_expr(root, ctx)
 	if root["t"] == "for" or root["t"] == "while":
 		root_expr = "V.fragment(%s)" % root_expr   # a root-level loop yields an Array -> wrap
@@ -651,7 +686,10 @@ static func _emit_expr(nd: Dictionary, ctx: Dictionary) -> String:
 		"frag":
 			return "V.fragment(%s)" % _emit_children_array(nd["children"], ctx)
 		"expr":
-			return "(%s)" % _splice_expr_markup(nd["code"], ctx)
+			var prev := _swap_base(ctx, _cbase(int(ctx.get("base", -1)), int(nd.get("vat", -1))))
+			var spliced := "(%s)" % _splice_expr_markup(nd["code"], ctx)
+			_swap_base(ctx, prev)
+			return spliced
 		"text":
 			return "V.label({ \"text\": %s })" % _gd_str(nd["value"])
 		"if":
@@ -689,6 +727,13 @@ static func _all_text_children(children: Array) -> bool:
 			return false
 	return true
 
+## Swap ctx["base"] (the absolute offset of the current offset-domain's index 0), returning the old
+## value so callers restore it after a nested re-parse. See the T0.2 note at the top of the file.
+static func _swap_base(ctx: Dictionary, base: int) -> int:
+	var prev: int = int(ctx.get("base", -1))
+	ctx["base"] = base
+	return prev
+
 static func _merge_text_children(children: Array, ctx: Dictionary) -> String:
 	var parts: Array = []
 	for c in children:
@@ -697,7 +742,9 @@ static func _merge_text_children(children: Array, ctx: Dictionary) -> String:
 		if c["t"] == "text":
 			parts.append(_gd_str(c["value"]))
 		else:
+			var prev := _swap_base(ctx, _cbase(int(ctx.get("base", -1)), int(c.get("vat", -1))))
 			parts.append("str(%s)" % _splice_expr_markup(c["code"], ctx))
+			_swap_base(ctx, prev)
 	return " + ".join(parts)
 
 static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
@@ -778,7 +825,8 @@ static func _emit_children_array(children: Array, ctx: Dictionary) -> String:
 # Parse a control-flow branch/loop body (raw markup string) and emit its single root expression
 # (or a fragment of several, or null when empty). Nested control flow recurses through _emit_expr,
 # so its pre-statements land at the caller's current indent (inside the branch/loop).
-static func _emit_body(body_src: String, ctx: Dictionary) -> String:
+# `base` = absolute source offset of body_src[0] (-1 unknown); swapped in for the nested parse.
+static func _emit_body(body_src: String, ctx: Dictionary, base: int = -1) -> String:
 	var parser := Markup.new()
 	var pr := parser.parse(body_src, 0, body_src.length())
 	if pr["error"] != "":
@@ -786,16 +834,22 @@ static func _emit_body(body_src: String, ctx: Dictionary) -> String:
 	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
 	if nodes.is_empty():
 		return "null"
+	var prev := _swap_base(ctx, base)
+	var result: String
 	if nodes.size() == 1:
-		return _emit_expr(nodes[0], ctx)
-	var parts: Array = []
-	for nx in nodes:
-		parts.append(_emit_expr(nx, ctx))
-	return "V.fragment([%s])" % ", ".join(parts)
+		result = _emit_expr(nodes[0], ctx)
+	else:
+		var parts: Array = []
+		for nx in nodes:
+			parts.append(_emit_expr(nx, ctx))
+		result = "V.fragment([%s])" % ", ".join(parts)
+	_swap_base(ctx, prev)
+	return result
 
 static func _emit_if(nd: Dictionary, ctx: Dictionary) -> String:
 	if ctx.get("expr_mode", false):
 		return _emit_if_inline(nd, ctx)
+	var nb: int = int(ctx.get("base", -1))
 	var id := _fresh(ctx)
 	_line(ctx, "var %s = null" % id)
 	var branches: Array = nd["branches"]
@@ -804,13 +858,13 @@ static func _emit_if(nd: Dictionary, ctx: Dictionary) -> String:
 		var kw := "if" if i == 0 else "elif"
 		_line(ctx, "%s %s:" % [kw, br["cond"]])
 		ctx["indent"] += 1
-		var be := _emit_body(br["body_markup"], ctx)
+		var be := _emit_body(br["body_markup"], ctx, _cbase(nb, int(br["body_at"])))
 		_line(ctx, "%s = %s" % [id, be])
 		ctx["indent"] -= 1
 	if nd["else_body"] != null:
 		_line(ctx, "else:")
 		ctx["indent"] += 1
-		var ee := _emit_body(nd["else_body"], ctx)
+		var ee := _emit_body(nd["else_body"], ctx, _cbase(nb, int(nd["else_body_at"])))
 		_line(ctx, "%s = %s" % [id, ee])
 		ctx["indent"] -= 1
 	return id
@@ -819,7 +873,8 @@ static func _emit_loop(nd: Dictionary, ctx: Dictionary, kind: String) -> String:
 	if ctx.get("expr_mode", false):
 		if kind == "for":
 			return _emit_for_inline(nd, ctx)
-		return _expr_ctrl_unsupported(ctx, "@while")   # a while-loop can't be an expression
+		return _expr_ctrl_unsupported(ctx, "@while", nd)   # a while-loop can't be an expression
+	var nb: int = int(ctx.get("base", -1))
 	var id := _fresh(ctx)
 	_line(ctx, "var %s: Array = []" % id)
 	if kind == "for":
@@ -827,14 +882,15 @@ static func _emit_loop(nd: Dictionary, ctx: Dictionary, kind: String) -> String:
 	else:
 		_line(ctx, "while %s:" % nd["header"])
 	ctx["indent"] += 1
-	var be := _emit_body(nd["body_markup"], ctx)
+	var be := _emit_body(nd["body_markup"], ctx, _cbase(nb, int(nd["body_at"])))
 	_line(ctx, "%s.append(%s)" % [id, be])
 	ctx["indent"] -= 1
 	return id
 
 static func _emit_match(nd: Dictionary, ctx: Dictionary) -> String:
 	if ctx.get("expr_mode", false):
-		return _expr_ctrl_unsupported(ctx, "@match")   # a match-statement can't be an expression
+		return _expr_ctrl_unsupported(ctx, "@match", nd)   # a match-statement can't be an expression
+	var nb: int = int(ctx.get("base", -1))
 	var id := _fresh(ctx)
 	_line(ctx, "var %s = null" % id)
 	var cases: Array = nd["cases"]
@@ -845,13 +901,13 @@ static func _emit_match(nd: Dictionary, ctx: Dictionary) -> String:
 	for c in cases:
 		_line(ctx, "%s:" % c["value"])
 		ctx["indent"] += 1
-		var be := _emit_body(c["body_markup"], ctx)
+		var be := _emit_body(c["body_markup"], ctx, _cbase(nb, int(c["body_at"])))
 		_line(ctx, "%s = %s" % [id, be])
 		ctx["indent"] -= 1
 	if nd["default_body"] != null:
 		_line(ctx, "_:")
 		ctx["indent"] += 1
-		var de := _emit_body(nd["default_body"], ctx)
+		var de := _emit_body(nd["default_body"], ctx, _cbase(nb, int(nd["default_body_at"])))
 		_line(ctx, "%s = %s" % [id, de])
 		ctx["indent"] -= 1
 	ctx["indent"] -= 1
@@ -864,13 +920,14 @@ static func _emit_match(nd: Dictionary, ctx: Dictionary) -> String:
 # still on, so nested control-flow inlines too.
 
 static func _emit_if_inline(nd: Dictionary, ctx: Dictionary) -> String:
+	var nb: int = int(ctx.get("base", -1))
 	var branches: Array = nd["branches"]
 	var acc := "null"
 	if nd["else_body"] != null:
-		acc = _emit_body(nd["else_body"], ctx)
+		acc = _emit_body(nd["else_body"], ctx, _cbase(nb, int(nd["else_body_at"])))
 	for i in range(branches.size() - 1, -1, -1):
 		var br: Dictionary = branches[i]
-		var be := _emit_body(br["body_markup"], ctx)
+		var be := _emit_body(br["body_markup"], ctx, _cbase(nb, int(br["body_at"])))
 		acc = "(%s if (%s) else %s)" % [be, br["cond"], acc]
 	return acc
 
@@ -879,8 +936,8 @@ static func _emit_for_inline(nd: Dictionary, ctx: Dictionary) -> String:
 	# or range()); for non-array iterables lift the @for to the top-level markup instead.
 	var split := _split_for_header(str(nd["header"]))
 	if split.is_empty():
-		return _expr_ctrl_unsupported(ctx, "@for (could not parse the loop header)")
-	var be := _emit_body(nd["body_markup"], ctx)
+		return _expr_ctrl_unsupported(ctx, "@for (could not parse the loop header)", nd)
+	var be := _emit_body(nd["body_markup"], ctx, _cbase(int(ctx.get("base", -1)), int(nd["body_at"])))
 	return "(%s).map(func(%s): return %s)" % [split["iter"], split["var"], be]
 
 static func _split_for_header(header: String) -> Dictionary:
@@ -893,11 +950,12 @@ static func _split_for_header(header: String) -> Dictionary:
 		return {}
 	return { "var": v, "iter": it }
 
-static func _expr_ctrl_unsupported(ctx: Dictionary, what: String) -> String:
-	var msg := "GUITKX0113: %s cannot be used inside an embedded {expression} / JSX-value (it can't be lowered to an expression). Lift it to the top-level markup return, or use .map() for lists." % what
+static func _expr_ctrl_unsupported(ctx: Dictionary, what: String, nd: Dictionary = {}) -> String:
+	var msg := "%s cannot be used inside an embedded {expression} / JSX-value (it can't be lowered to an expression). Lift it to the top-level markup return, or use .map() for lists." % what
 	if ctx.has("diags") and ctx["diags"] is Array:
-		(ctx["diags"] as Array).append(msg)
-	push_warning("[guitkx] " + msg)
+		var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
+		(ctx["diags"] as Array).append(D.make("GUITKX0113", D.ERROR, msg, at, 6))
+	push_warning("[guitkx] GUITKX0113: " + msg)
 	return "null"
 
 ## Re-indent a setup block into the generated func body. DEPTH-based (not raw-character-based): a tab
@@ -1007,7 +1065,10 @@ static func _attr_value_code(a: Dictionary, ctx: Dictionary) -> String:
 		"str":
 			return _gd_str(a["value"])
 		"expr":
-			return _splice_expr_markup(a["value"], ctx)
+			var prev := _swap_base(ctx, _cbase(int(ctx.get("base", -1)), int(a.get("vat", -1))))
+			var code := _splice_expr_markup(a["value"], ctx)
+			_swap_base(ctx, prev)
+			return code
 		"bool":
 			return "true"
 	return "null"

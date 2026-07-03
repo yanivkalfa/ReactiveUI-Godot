@@ -813,7 +813,7 @@ test("parseMarkup parses `{...spread}` into a spread-kind attr (name empty, valu
   assert.equal(r.error, "");
   const el = r.nodes[0] as Extract<(typeof r.nodes)[number], { t: "el" }>;
   assert.equal(el.attrs.length, 2);
-  assert.deepStrictEqual(el.attrs[0], { name: "", kind: "spread", value: "base" });
+  assert.deepStrictEqual(el.attrs[0], { name: "", kind: "spread", value: "base", at: 6, vat: 10, end: 15 });
   assert.equal(el.attrs[1].name, "title");
   assert.equal(el.attrs[1].kind, "expr");
 });

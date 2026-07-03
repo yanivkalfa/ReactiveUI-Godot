@@ -18,6 +18,7 @@ extends EditorPlugin
 ##   print a green "resolved" line when a file starts compiling clean again.
 
 const Codegen = preload("res://addons/reactive_ui/guitkx/guitkx_codegen.gd")
+const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
 var _efs: EditorFileSystem
 var _busy := false
@@ -66,14 +67,37 @@ func _compile_all() -> void:
 	_busy = false
 
 # push_error only when THIS file's error set differs from what we last reported for it.
+# One dock line PER diagnostic, "path:LINE:COL: CODE: message" (1-based, from the offsets the
+# compiler threads through every diagnostic since T0.2) -- not a joined array string.
 func _report_error(e: Dictionary) -> void:
 	var path: String = e["path"]
-	var body := str(e.get("diagnostics", e.get("error", "?")))
+	var lines := _diag_lines(path, e.get("diagnostics", []))
+	if lines.is_empty():
+		lines = ["%s: %s" % [path, str(e.get("error", "?"))]]
+	var body := "\n".join(lines)
 	if _last_diags.get(path, "") == "E:" + body:
 		return
 	_last_diags[path] = "E:" + body
-	push_error("[guitkx] %s: %s" % [path, body])
+	for ln in lines:
+		push_error("[guitkx] " + ln)
 
 func _report_warnings(path: String, warnings: Array) -> void:
-	for w in warnings:
-		push_warning("[guitkx] %s: %s" % [path, w])
+	for ln in _diag_lines(path, warnings):
+		push_warning("[guitkx] " + ln)
+
+# Render structured diagnostics to per-line dock strings; line/col were derived at the codegen
+# surface boundary (compile_file), so no source re-read is needed here.
+func _diag_lines(path: String, diags: Array) -> Array:
+	var out: Array = []
+	for d in diags:
+		if d is Dictionary and (d as Dictionary).has("code"):
+			var dd := d as Dictionary
+			var loc := ""
+			if dd.has("line"):
+				loc = "%d:%d: " % [int(dd["line"]) + 1, int(dd.get("col", 0)) + 1]
+			var sev := int(dd.get("severity", Diag.ERROR))
+			var sev_tag := "" if sev == Diag.ERROR else " (%s)" % Diag.severity_name(sev)
+			out.append("%s:%s%s%s: %s" % [path, loc, dd.get("code", ""), sev_tag, dd.get("message", "")])
+		else:
+			out.append("%s: %s" % [path, str(d)])
+	return out

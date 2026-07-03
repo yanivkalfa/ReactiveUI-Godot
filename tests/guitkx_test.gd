@@ -4,6 +4,7 @@ extends SceneTree
 ## load it, mount it through the reconciler, and verify the real Godot node tree.
 
 const Codegen = preload("res://addons/reactive_ui/guitkx/guitkx_codegen.gd")
+const GDiag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
 var _failed := false
 
@@ -173,7 +174,7 @@ func _test_ctrl_flow_in_lambda() -> void:
 	var src_m := "component CFM(x: int = 0) {\n" + \
 		"\treturn ( <VBox>{ true and <>@match (x) { @case (0) { <Label/> } }</> }</VBox> )\n}\n"
 	var res_m := RUIGuitkx.compile(src_m, "CFM")
-	_check_true(str(res_m["diagnostics"]).contains("GUITKX0113"), "@match in expression emits GUITKX0113")
+	_check_true(_has_code(res_m, "GUITKX0113"), "@match in expression emits GUITKX0113")
 
 func _test_module_dup_across_kinds() -> void:
 	# [audit #7] component + hook with the SAME name in a module must fail (would emit duplicate funcs).
@@ -182,7 +183,7 @@ func _test_module_dup_across_kinds() -> void:
 		"hook Foo() { return 1 }\n}\n"
 	var res := RUIGuitkx.compile(src, "M")
 	_check_true(not res["ok"], "module component+hook same name rejected")
-	_check_true(str(res["diagnostics"]).contains("GUITKX0112"), "duplicate-decl diagnostic emitted")
+	_check_true(_has_code(res, "GUITKX0112"), "duplicate-decl diagnostic emitted")
 
 func _test_return_null_guard() -> void:
 	# [audit #19] `return null` as a conditional guard before the real markup return must compile.
@@ -290,19 +291,44 @@ func _test_deep_flatten() -> void:
 	var flat2: Array = V._norm([a, [null, [b, null]], null])
 	_check_true(flat2.size() == 2, "deep _norm drops nested nulls (got %d)" % flat2.size())
 
+# First diagnostic with `code` from a compile() result, or {} — T0.2 structured-diag test helper.
+func _diag(r: Dictionary, code: String) -> Dictionary:
+	for d in r.get("diagnostics", []):
+		if d is Dictionary and (d as Dictionary).get("code", "") == code:
+			return d
+	return {}
+
+func _has_code(r: Dictionary, code: String) -> bool:
+	return not _diag(r, code).is_empty()
+
+## Assert a diagnostic exists AND its offset points exactly at `needle` in `src` (T0.2 precision).
+func _check_diag_at(r: Dictionary, code: String, src: String, needle: String, label: String) -> void:
+	var d := _diag(r, code)
+	_check_true(not d.is_empty(), "%s: %s present (got %s)" % [label, code, str(r.get("diagnostics", []))])
+	if d.is_empty():
+		return
+	var off := int(d.get("offset", -1))
+	_check_true(off >= 0 and src.substr(off, needle.length()) == needle,
+		"%s: %s offset lands on '%s' (offset %d -> '%s')" % [label, code, needle, off, src.substr(maxi(0, off), needle.length())])
+
 func _test_diagnostics() -> void:
-	# rules of hooks: a hook called inside an if-block in setup
-	var roh := RUIGuitkx.compile("component Bad(c: bool = true) {\n\tvar a = useState(0)\n\tif c:\n\t\tvar b = useState(1)\n\treturn ( <Label /> )\n}\n", "Bad")
-	_check_true(str(roh["diagnostics"]).contains("GUITKX0013"), "rules-of-hooks warning (got %s)" % str(roh["diagnostics"]))
-	# duplicate literal keys among siblings
-	var dk := RUIGuitkx.compile("component Dup() {\n\treturn (\n\t\t<VBox>\n\t\t\t<Label key=\"x\" />\n\t\t\t<Label key=\"x\" />\n\t\t</VBox>\n\t)\n}\n", "Dup")
-	_check_true(str(dk["diagnostics"]).contains("GUITKX0104"), "duplicate-key warning (got %s)" % str(dk["diagnostics"]))
-	# loop child missing key
-	var lk := RUIGuitkx.compile("component LK(items: Array = []) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) { <Label text={ it } /> }\n\t\t</VBox>\n\t)\n}\n", "LK")
-	_check_true(str(lk["diagnostics"]).contains("GUITKX0106"), "keyless-loop-child warning (got %s)" % str(lk["diagnostics"]))
+	# rules of hooks: a hook called inside an if-block in setup — flagged AT the offending line
+	var roh_src := "component Bad(c: bool = true) {\n\tvar a = useState(0)\n\tif c:\n\t\tvar b = useState(1)\n\treturn ( <Label /> )\n}\n"
+	var roh := RUIGuitkx.compile(roh_src, "Bad")
+	_check_diag_at(roh, "GUITKX0013", roh_src, "var b = useState(1)", "rules-of-hooks")
+	_check_true(int(_diag(roh, "GUITKX0013").get("severity", -9)) == GDiag.WARNING, "GUITKX0013 is a warning")
+	# duplicate literal keys among siblings — flagged at the SECOND key attribute
+	var dk_src := "component Dup() {\n\treturn (\n\t\t<VBox>\n\t\t\t<Label key=\"x\" />\n\t\t\t<Label key=\"x\" />\n\t\t</VBox>\n\t)\n}\n"
+	var dk := RUIGuitkx.compile(dk_src, "Dup")
+	_check_diag_at(dk, "GUITKX0104", dk_src, "key=\"x\"", "duplicate-key")
+	_check_true(int(_diag(dk, "GUITKX0104").get("offset", -1)) > dk_src.find("key=\"x\""), "GUITKX0104 anchors to the SECOND duplicate, not the first")
+	# loop child missing key — flagged at the element
+	var lk_src := "component LK(items: Array = []) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) { <Label text={ it } /> }\n\t\t</VBox>\n\t)\n}\n"
+	var lk := RUIGuitkx.compile(lk_src, "LK")
+	_check_diag_at(lk, "GUITKX0106", lk_src, "<Label text={ it }", "keyless-loop-child")
 	# a clean component emits no warnings
 	var clean := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
-	_check_true(clean["ok"] and str(clean["diagnostics"]) == "[]", "clean component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+	_check_true(clean["ok"] and (clean["diagnostics"] as Array).is_empty(), "clean component has no diagnostics (got %s)" % str(clean["diagnostics"]))
 
 func _test_loop_single_root() -> void:
 	# BUG-V3: a @for/@while body with >1 sibling root is a hard error (single-root; parity Unity UITKX0108)
@@ -310,11 +336,12 @@ func _test_loop_single_root() -> void:
 		"\treturn (\n\t\t<VBox>\n" + \
 		"\t\t\t@for (i in n) {\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t\t<Label key={ str(i) } />\n\t\t\t}\n" + \
 		"\t\t</VBox>\n\t)\n}\n", "M")
-	_check_true(not multi["ok"] and str(multi["diagnostics"]).contains("GUITKX0108"), "loop body with 2 roots fails with GUITKX0108 (got %s)" % str(multi["diagnostics"]))
+	_check_true(not multi["ok"] and _has_code(multi, "GUITKX0108"), "loop body with 2 roots fails with GUITKX0108 (got %s)" % str(multi["diagnostics"]))
+	_check_true(int(_diag(multi, "GUITKX0108").get("offset", -1)) >= 0, "GUITKX0108 carries a position even through the nested loop-body re-parse")
 	# BUG-V3: duplicate EXPRESSION keys among siblings are caught (not only literal key="..." keys)
 	var dupe := RUIGuitkx.compile("component D() {\n" + \
 		"\treturn (\n\t\t<VBox>\n\t\t\t<Label key={ str(0) } />\n\t\t\t<Label key={ str(0) } />\n\t\t</VBox>\n\t)\n}\n", "D")
-	_check_true(str(dupe["diagnostics"]).contains("GUITKX0104"), "duplicate expr key caught with GUITKX0104 (got %s)" % str(dupe["diagnostics"]))
+	_check_true(_has_code(dupe, "GUITKX0104"), "duplicate expr key caught with GUITKX0104 (got %s)" % str(dupe["diagnostics"]))
 	# valid: a fragment root wrapping distinctly-keyed siblings inside the loop compiles cleanly
 	var okc := RUIGuitkx.compile("component OK(n: int = 3) {\n" + \
 		"\treturn (\n\t\t<VBox>\n" + \
@@ -324,22 +351,26 @@ func _test_loop_single_root() -> void:
 
 func _test_decl_validation() -> void:
 	# BUG-V2: an invalid @class_name value (multiple tokens) is rejected with GUITKX0300
-	var badcn := RUIGuitkx.compile("@class_name Foo Bar\ncomponent X() { return ( <Label /> ) }\n", "X")
-	_check_true(not badcn["ok"] and str(badcn["diagnostics"]).contains("GUITKX0300"), "invalid @class_name rejected (got %s)" % str(badcn["diagnostics"]))
+	var badcn_src := "@class_name Foo Bar\ncomponent X() { return ( <Label /> ) }\n"
+	var badcn := RUIGuitkx.compile(badcn_src, "X")
+	_check_true(not badcn["ok"], "invalid @class_name rejected (got %s)" % str(badcn["diagnostics"]))
+	_check_diag_at(badcn, "GUITKX0300", badcn_src, "@class_name", "invalid @class_name")
 	# a valid @class_name is accepted, and a trailing comment on the directive line is tolerated
 	var okcn := RUIGuitkx.compile("@class_name MyThing  # ok\ncomponent X() { return ( <Label /> ) }\n", "X")
 	_check_true(okcn["ok"], "valid @class_name accepted (got %s)" % str(okcn["diagnostics"]))
-	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint.
-	# NOTE: join the diagnostics rather than str() the Array -- Godot 4.7's Array-to-string escapes
-	# inner single quotes (did you mean \'component\'), which would never match a plain-quote needle.
-	var typo := RUIGuitkx.compile("componeent X() { return ( <Label /> ) }\n", "X")
-	_check_true(not typo["ok"] and "\n".join(typo["diagnostics"]).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
+	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint, anchored at the typo'd word
+	var typo_src := "componeent X() { return ( <Label /> ) }\n"
+	var typo := RUIGuitkx.compile(typo_src, "X")
+	_check_true(not typo["ok"] and str(_diag(typo, "GUITKX0102").get("message", "")).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
+	_check_diag_at(typo, "GUITKX0102", typo_src, "componeent", "misspelled keyword")
 	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
 	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
-	_check_true(not badtag["ok"] and str(badtag["diagnostics"]).contains("GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
-	# BUG-V5: code after the markup return is flagged unreachable (GUITKX0114 warning)
-	var unreach := RUIGuitkx.compile("component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n", "U")
-	_check_true(unreach["ok"] and str(unreach["diagnostics"]).contains("GUITKX0114"), "unreachable code after return warned (got %s)" % str(unreach["diagnostics"]))
+	_check_true(not badtag["ok"] and _has_code(badtag, "GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
+	# BUG-V5: code after the markup return is flagged unreachable (GUITKX0114 warning) at the dead code
+	var unreach_src := "component U() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n"
+	var unreach := RUIGuitkx.compile(unreach_src, "U")
+	_check_true(bool(unreach["ok"]), "unreachable code is a warning, not an error (got %s)" % str(unreach["diagnostics"]))
+	_check_diag_at(unreach, "GUITKX0114", unreach_src, "var x = 5", "unreachable-after-return")
 
 # The stale-.gd disease: a sibling .gd that is NEWER than its source but was produced by an OLD
 # compiler must still be regenerated. Guards guitkx_codegen's compiler-version staleness mechanism —
@@ -377,7 +408,7 @@ func _write_file(path: String, s: String) -> void:
 func _test_indent_robustness() -> void:
 	var mixed := "component X {\n\t\tvar a = useState(0)\n\t  var b = useState(0)\n\treturn ( <Label /> )\n}\n"
 	var r := RUIGuitkx.compile(mixed, "X")
-	_check_true(r["ok"] and not str(r["diagnostics"]).contains("GUITKX0013"), "mixed tab/space setup compiles, no false GUITKX0013 (got %s)" % str(r["diagnostics"]))
+	_check_true(r["ok"] and not _has_code(r, "GUITKX0013"), "mixed tab/space setup compiles, no false GUITKX0013 (got %s)" % str(r["diagnostics"]))
 	var s := GDScript.new()
 	s.source_code = (r["gd"] as String).replace("class_name X\n", "")
 	_check_true(s.reload() == OK, "mixed tab/space setup generates VALID GDScript")
@@ -386,7 +417,7 @@ func _test_indent_robustness() -> void:
 	s2.source_code = (pure_space["gd"] as String).replace("class_name X\n", "")
 	_check_true(s2.reload() == OK, "pure-space setup also generates VALID GDScript")
 	var bad := RUIGuitkx.compile("component X {\n\tvar a = useState(0)\n\tif a[0]:\n\t\tvar b = useState(0)\n\treturn ( <Label /> )\n}\n", "X")
-	_check_true(str(bad["diagnostics"]).contains("GUITKX0013"), "a genuine hook-in-a-block still warns")
+	_check_true(_has_code(bad, "GUITKX0013"), "a genuine hook-in-a-block still warns")
 
 # One outlier-SHALLOW setup line must not shift the rest of the block: with a min-depth anchor,
 # `var b` at column 0 made every OTHER line emit one level too deep (over-indented with no preceding
@@ -445,7 +476,7 @@ func _test_hook() -> void:
 	_check_true(mr["ok"], "module Name { ... } now compiles (got %s)" % str(mr["diagnostics"]))
 	# empty / no declaration is rejected
 	var er := RUIGuitkx.compile("@class_name Foo\n# just a comment\n", "Foo")
-	_check_true(not er["ok"] and str(er["diagnostics"]).contains("GUITKX0102"), "no-declaration rejected with GUITKX0102")
+	_check_true(not er["ok"] and _has_code(er, "GUITKX0102"), "no-declaration rejected with GUITKX0102")
 
 func _test_match() -> void:
 	var src := "component Status(state: String = \"idle\") {\n" + \

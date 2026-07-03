@@ -411,7 +411,7 @@ interface CompParse {
   next: number;
 }
 function parseComponentAt(src: string, at: number): CompParse {
-  const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, root: { t: "text", value: "" }, next: at };
+  const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, root: { t: "text", at: -1, value: "" }, next: at };
   const n = src.length;
   // Skip the declaration keyword TOKEN (not a fixed "component".length) so a recovered typo header
   // (`comssponent Foo {`) parses from the right place. For an exact keyword this is identical.

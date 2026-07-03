@@ -8,6 +8,7 @@ extends RefCounted
 ## the logic here is engine-free (pure FileAccess/DirAccess) so it is unit-testable headlessly.
 
 const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
+const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 
 ## The sibling .gd path for a .guitkx path.
 static func gd_path_for(guitkx_path: String) -> String:
@@ -27,22 +28,21 @@ static func src_hash(s: String) -> int:
 		h = (h * 16777619) & 0xFFFFFFFF
 	return h
 
-## Split a diagnostic string ("GUITKX0104 (warning): ...") into { code, severity, message }.
-static func _parse_diag(s: String) -> Dictionary:
-	var end := 0
-	while end < s.length() and s[end] != " " and s[end] != ":" and s[end] != "(":
-		end += 1
-	return { "code": s.substr(0, end), "severity": "warning" if "(warning)" in s else "error", "message": s }
-
 ## Write the diagnostics sidecar (ALWAYS — even on compile failure), gated by the source hash so the LSP
-## ignores it once the buffer diverges from the last compile.
+## ignores it once the buffer diverges from the last compile. Schema v2 (T0.2): structured entries
+## { code, severity:int (0 err / 1 warn / 2 hint), message (no code prefix), off, len } — `off`/`len`
+## are character offsets into the compiled source (off -1 = whole file), so the LSP ranges precisely
+## via positionAt(). The reader (diagsSidecar.ts) keeps a v1 fallback for sidecars written pre-T0.2.
 static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: Array) -> void:
-	var parsed: Array = []
+	var entries: Array = []
 	for d in diagnostics:
-		parsed.append(_parse_diag(str(d)))
+		entries.append({
+			"code": d.get("code", ""), "severity": int(d.get("severity", Diag.ERROR)),
+			"message": d.get("message", ""), "off": int(d.get("offset", -1)), "len": int(d.get("length", 0)),
+		})
 	var f := FileAccess.open(diags_path_for(guitkx_path), FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({ "src_hash": src_hash(src), "diagnostics": parsed }))
+		f.store_string(JSON.stringify({ "v": 2, "src_hash": src_hash(src), "diagnostics": entries }))
 		f.close()
 
 ## True if the sibling .gd is missing or older than the .guitkx source.
@@ -64,6 +64,7 @@ const _COMPILER_SOURCES := [
 	"res://addons/reactive_ui/guitkx/guitkx_markup.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_lexer.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd",
+	"res://addons/reactive_ui/guitkx/guitkx_diag.gd",
 ]
 # Machine-local marker (`.godot` is gitignored + regenerated), holding the fingerprint that last
 # generated this project's .gd. A mismatch (or absence) means the compiler moved -> recompile all.
@@ -104,6 +105,13 @@ static func compile_file(guitkx_path: String) -> Dictionary:
 	var basename := guitkx_path.get_file().get_basename()
 	var r: Dictionary = Compiler.compile(src, basename)
 	write_diags_sidecar(guitkx_path, src, r["diagnostics"])
+	# Surface boundary: derive 0-based line/col from each offset ONCE, here, where the source is at
+	# hand -- downstream consumers (plugin.gd dock lines, tests) read d.line/d.col without the source.
+	for d in r["diagnostics"]:
+		if d is Dictionary and int((d as Dictionary).get("offset", -1)) >= 0:
+			var lc := Diag.line_col(src, int(d["offset"]))
+			d["line"] = lc["line"]
+			d["col"] = lc["col"]
 	if not r["ok"]:
 		return { "ok": false, "path": guitkx_path, "diagnostics": r["diagnostics"] }
 	var gd_path := gd_path_for(guitkx_path)

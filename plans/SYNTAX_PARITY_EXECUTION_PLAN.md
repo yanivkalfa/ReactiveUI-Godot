@@ -139,7 +139,7 @@ diagnostics — building the dumper against legacy strings would be throwaway wo
 **Deliverables.** Harness + fixtures + goldens + CI wiring (`test.yml` job) + pending-list README.
 **Done when.** CI runs the contract job; non-pending fixtures byte-identical GD↔TS.
 
-### T0.2 — Structured compiler diagnostics `{code, severity, message, line, col}`  · effort: large · Status: ⬜
+### T0.2 — Structured compiler diagnostics `{code, severity, message, line, col}`  · effort: large · Status: ✅ (branch `feat/syntax-parity`; Diag module = `guitkx_diag.gd` `{code,severity,message,offset,length}` + surface-derived line/col; markup nodes carry `at`/`vat`/`body_at` offsets in BOTH parsers; sidecar v2 with v1 fallback; plugin dock = per-diag `path:LINE:COL:` lines; native renderer uses exact offsets; LSP sidecar merge ranges via positionAt + (code,line) dedupe)
 **Problem.** Compiler diagnostics are plain strings; severity is a `"(warning)"` substring sniff
 (`guitkx.gd:33, 158-160`; `guitkx_codegen.gd:31-46`); every downstream surface degrades: sidecar pins
 line 0 (`server.ts:668`), Errors dock prints a joined array with no position (`plugin.gd:69-79`),
