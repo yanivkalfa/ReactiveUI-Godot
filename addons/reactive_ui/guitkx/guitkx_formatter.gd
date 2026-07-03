@@ -71,7 +71,7 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 			var pc: Dictionary = Compiler._parse_component_at(source, decl["at"], diags)
 			if not pc["ok"]:
 				return source
-			out += _fmt_component(pc["name"], pc["params"], pc["setup"], pc["root"], o)
+			out += _fmt_component(pc["name"], pc["params"], pc["setup"], pc["window_nodes"], o)
 			decl_end = int(pc["next"])
 		"hook":
 			var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
@@ -100,7 +100,7 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 
 # --- declarations ---
 
-static func _fmt_component(comp_name: String, params: String, setup: String, root: Dictionary, o: Dictionary) -> String:
+static func _fmt_component(comp_name: String, params: String, setup: String, nodes: Array, o: Dictionary) -> String:
 	var out := "component %s%s {\n" % [comp_name, _fmt_params(params)]
 	var fs := _fmt_setup(setup, 1, o)
 	if fs != "":
@@ -108,7 +108,11 @@ static func _fmt_component(comp_name: String, params: String, setup: String, roo
 		out += fs
 		if _has_trailing_blank(setup): out += "\n"   # keep an authored blank line before `return (`
 	out += _pad(1, o) + "return (\n"
-	out += _fmt_node(root, 2, o)
+	# T2.1: every window node in order -- the render root plus any sibling comments.
+	for nd in nodes:
+		if nd == null:
+			continue
+		out += _fmt_node(nd, 2, o)
 	out += _pad(1, o) + ")\n"
 	out += "}\n"
 	return out
@@ -157,7 +161,7 @@ static func _fmt_module(source: String, mi: int, o: Dictionary, diags: Array) ->
 			var c: Dictionary = Compiler._parse_component_at(source, d["at"], diags)
 			if not c["ok"]:
 				return null
-			out += _indent_block(_fmt_component(c["name"], c["params"], c["setup"], c["root"], o), 1, o)
+			out += _indent_block(_fmt_component(c["name"], c["params"], c["setup"], c["window_nodes"], o), 1, o)
 			i = c["next"]
 		elif d["kind"] == "hook":
 			var h: Dictionary = Compiler._parse_hook_at(source, d["at"], diags)
@@ -178,7 +182,16 @@ static func _fmt_node(nd: Dictionary, indent: int, o: Dictionary) -> String:
 			return _fmt_element(nd, indent, o)
 		"frag":
 			var inner := _fmt_children(nd["children"], indent + 1, o)
+			# T2.2: the named <Fragment> alias keeps the author's spelling + attrs (key/comments).
+			if nd.has("named"):
+				var head := "<%s" % nd["named"]
+				for a in nd.get("attrs", []):
+					head += " " + _fmt_attr(a)
+				return "%s%s>\n%s%s</%s>\n" % [_pad(indent, o), head, inner, _pad(indent, o), nd["named"]]
 			return "%s<>\n%s%s</>\n" % [_pad(indent, o), inner, _pad(indent, o)]
+		"comment":
+			# T2.1: comments are preserved verbatim (re-anchored to the current indent).
+			return "%s%s\n" % [_pad(indent, o), (nd["raw"] as String).strip_edges()]
 		"text":
 			return "%s%s\n" % [_pad(indent, o), (nd["value"] as String).strip_edges()]
 		"expr":
@@ -254,6 +267,8 @@ static func _fmt_attr(a: Dictionary) -> String:
 			return "{...%s}" % (a["value"] as String).strip_edges()
 		"bool":
 			return a["name"]
+		"comment":
+			return str(a["value"])   # T2.1: `{/* ... */}` preserved verbatim
 	return a["name"]
 
 # --- control flow (bodies are raw markup strings; re-parse + format) ---

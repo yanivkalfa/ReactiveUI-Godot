@@ -233,8 +233,9 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		diags.append(D.rebase(split["error"], body_at))
 		return { "ok": false }
 	# T1.4 (Unity LooksLikeMarkupRoot parity): the chosen return's content must BE markup -- an
-	# element, `<>` fragment, @directive, or `{expr}` -- not a plain parenthesized value.
-	var mfirst := _first_real(body, int(split["m_start"]), int(split["m_end"]))
+	# element, `<>` fragment, @directive, or `{expr}` -- not a plain parenthesized value. Markup
+	# comments before the root are skipped, exactly like Unity's TrySkipNonCodeSpan.
+	var mfirst := _first_markup_real(body, int(split["m_start"]), int(split["m_end"]))
 	if mfirst == -1 or not (body[mfirst] == "<" or body[mfirst] == "@" or body[mfirst] == "{"):
 		diags.append(D.make("GUITKX2102", D.ERROR, "`return` must return markup (an element, `<>` fragment, @directive, or `{expr}`)", body_at + int(split.get("chosen_at", int(split["m_start"]))), 6))
 		return { "ok": false }
@@ -248,12 +249,15 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if pr["error"] != "":
 		diags.append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], body_at + maxi(0, int(pr["error_at"])), 1))
 		return { "ok": false }
-	var render_roots := (pr["nodes"] as Array).filter(func(nd): return nd != null)
+	# comments emit nothing, so they are not render roots (T2.1)
+	var render_roots := (pr["nodes"] as Array).filter(func(nd): return nd != null and (nd as Dictionary).get("t", "") != "comment")
 	if render_roots.size() != 1:
 		var extra_at: int = int(render_roots[1]["at"]) if render_roots.size() > 1 else int(split["m_start"])
 		diags.append(D.make("GUITKX0108", D.ERROR, "a component must return exactly one root element (got %d)" % render_roots.size(), body_at + extra_at, 1))
 		return { "ok": false }
-	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "setup": split["setup"], "root": render_roots[0], "body_at": body_at, "next": bclose + 1 }
+	# window_nodes = ALL window nodes incl. comments (T2.1) -- the formatter re-emits them in order;
+	# root = the single render root the emitter compiles.
+	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "setup": split["setup"], "root": render_roots[0], "window_nodes": pr["nodes"], "body_at": body_at, "next": bclose + 1 }
 
 # --- semantic validation (warnings; they don't fail the compile) ---
 # `base` = absolute offset (in the original source) of index 0 of the string the node offsets/setup
@@ -319,6 +323,11 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 			_check_dup_keys(nd.get("children", []), diags, base)
 			for c in nd.get("children", []):
 				_validate_node(c, diags, base)
+		"text":
+			# T2.4 migration warning: braces inside text are LITERAL since the Unity-parity text model
+			# landed -- surface it so a pre-T2.4 `Count: {n}` habit doesn't silently render "{n}".
+			if "{" in str(nd.get("value", "")):
+				diags.append(D.make("GUITKX0150", D.WARNING, "braces inside text are literal -- interpolate with a leading `{expr}` node or a `text={ ... }` attribute instead", _cbase(base, int(nd.get("at", -1))), (str(nd.get("value", "")) as String).length()))
 		"if":
 			for br in nd["branches"]:
 				_validate_body(br["body_markup"], diags, false, _cbase(base, br["body_at"]))
@@ -340,7 +349,7 @@ static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: 
 		# and position -- never a silent skip (Unity parity: codegen fails on every parser error).
 		diags.append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
 		return
-	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
+	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null and (x as Dictionary).get("t", "") != "comment")
 	if is_loop:
 		if nodes.size() > 1:
 			# A loop body must have a single root (like a component) so each iteration yields one keyed
@@ -675,6 +684,35 @@ static func _error_on_trailing(source: String, from: int, kind: String, diags: A
 		le = source.length()
 	diags.append(D.make("GUITKX2105", D.ERROR, "invalid top-level content after the `%s` declaration -- one declaration per file (wrap several in `module Name { ... }`)" % kind, first, maxi(1, le - first)))
 
+## First real char in [from, to) skipping whitespace AND MARKUP comments (`//`, `/* */`, `<!-- -->`)
+## -- for checks over markup windows (Unity's LooksLikeMarkupRoot skips comments the same way).
+## An UNCLOSED comment returns its own start so the markup parser reports it precisely.
+static func _first_markup_real(s: String, from: int, to: int) -> int:
+	var i := from
+	while i < to:
+		var c := s[i]
+		if c == " " or c == "\t" or c == "\n" or c == "\r":
+			i += 1
+			continue
+		if c == "/" and i + 1 < to and s[i + 1] == "/":
+			var le := s.find("\n", i)
+			i = to if (le == -1 or le > to) else le
+			continue
+		if c == "/" and i + 1 < to and s[i + 1] == "*":
+			var bce := s.find("*/", i + 2)
+			if bce == -1 or bce + 2 > to:
+				return i
+			i = bce + 2
+			continue
+		if c == "<" and i + 3 < to and s.substr(i, 4) == "<!--":
+			var hce := s.find("-->", i + 4)
+			if hce == -1 or hce + 3 > to:
+				return i
+			i = hce + 3
+			continue
+		return i
+	return -1
+
 ## First / last offset of real (non-ws, non-comment) code in [from, to), or -1.
 static func _first_real(s: String, from: int, to: int) -> int:
 	var i := from
@@ -801,7 +839,9 @@ static func _emit_expr(nd: Dictionary, ctx: Dictionary) -> String:
 		"el":
 			return _emit_element(nd, ctx)
 		"frag":
-			return "V.fragment(%s)" % _emit_children_array(nd["children"], ctx)
+			return _emit_fragment(nd, ctx)
+		"comment":
+			return "null"   # comments emit nothing (children arrays skip them; defensive for roots)
 		"expr":
 			var prev := _swap_base(ctx, _cbase(int(ctx.get("base", -1)), int(nd.get("vat", -1))))
 			var spliced := "(%s)" % _splice_expr_markup(nd["code"], ctx)
@@ -828,6 +868,25 @@ const TEXT_FACTORIES := {
 	"link_button": true, "menu_button": true, "option_button": true, "rich_text": true,
 }
 
+## T2.2: a fragment node -- `<>...</>` or the named `<Fragment ...>` alias. The named form may carry
+## `key` (V.fragment's second arg, Unity parity) and `{/* comments */}`; any other attribute is an
+## error (Unity silently drops them; silent drops are against this compiler's charter).
+static func _emit_fragment(nd: Dictionary, ctx: Dictionary) -> String:
+	var key_expr := ""
+	for a in nd.get("attrs", []):
+		var kind := str((a as Dictionary).get("kind", ""))
+		if kind == "comment":
+			continue
+		if a["name"] == "key":
+			key_expr = _attr_value_code(a, ctx)
+			continue
+		if ctx.has("diags") and ctx["diags"] is Array:
+			(ctx["diags"] as Array).append(D.make("GUITKX0107", D.ERROR, "<%s> accepts only `key` -- move '%s' onto a real element" % [str(nd.get("named", "Fragment")), a["name"]], _cbase(int(ctx.get("base", -1)), int(a.get("at", -1))), maxi(1, (a["name"] as String).length())))
+	var children := _emit_children_array(nd["children"], ctx)
+	if key_expr != "":
+		return "V.fragment(%s, %s)" % [children, key_expr]
+	return "V.fragment(%s)" % children
+
 static func _has_attr(nd: Dictionary, name: String) -> bool:
 	for a in nd["attrs"]:
 		if a["name"] == name:
@@ -838,7 +897,7 @@ static func _all_text_children(children: Array) -> bool:
 	if children.is_empty():
 		return false
 	for c in children:
-		if c == null:
+		if c == null or c["t"] == "comment":
 			continue
 		if not (c["t"] == "text" or c["t"] == "expr"):
 			return false
@@ -878,7 +937,7 @@ static func _swap_base(ctx: Dictionary, base: int) -> int:
 static func _merge_text_children(children: Array, ctx: Dictionary) -> String:
 	var parts: Array = []
 	for c in children:
-		if c == null:
+		if c == null or c["t"] == "comment":
 			continue
 		if c["t"] == "text":
 			parts.append(_gd_str(c["value"]))
@@ -968,7 +1027,7 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 static func _emit_children_array(children: Array, ctx: Dictionary) -> String:
 	var parts: Array = []
 	for c in children:
-		if c == null:
+		if c == null or c["t"] == "comment":
 			continue
 		parts.append(_emit_expr(c, ctx))
 	if parts.is_empty():
@@ -988,7 +1047,7 @@ static func _emit_body(body_src: String, ctx: Dictionary, base: int = -1) -> Str
 		if ctx.has("diags") and ctx["diags"] is Array:
 			(ctx["diags"] as Array).append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(base, maxi(0, int(pr["error_at"]))), 1))
 		return "null"
-	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
+	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null and (x as Dictionary).get("t", "") != "comment")
 	if nodes.is_empty():
 		return "null"
 	var prev := _swap_base(ctx, base)
@@ -1279,7 +1338,7 @@ static func _emit_markup_substring(src: String, start: int, end: int, ctx: Dicti
 		if ctx.has("diags") and ctx["diags"] is Array:
 			(ctx["diags"] as Array).append(D.make(pr["error_code"], D.ERROR, pr["error_msg"], _cbase(int(ctx.get("base", -1)), maxi(0, int(pr["error_at"]))), 1))
 		return "null"
-	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null)
+	var nodes: Array = (pr["nodes"] as Array).filter(func(x): return x != null and (x as Dictionary).get("t", "") != "comment")
 	if nodes.is_empty():
 		return "null"
 	# Mark this whole subtree as an expression context: control-flow inside it must lower to an

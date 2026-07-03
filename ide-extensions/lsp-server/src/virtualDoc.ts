@@ -195,6 +195,11 @@ function emitMarkup(ctx: Ctx, start: number, end: number, indent: number): boole
     if (c === "{") {
       const close = findMatching(src, i);
       if (close !== -1 && close < end) {
+        // T2.1: a `{/* comment */}` hole is markup commentary, not a GDScript expression.
+        if (src.slice(i + 1, close).trim().startsWith("/*")) {
+          i = close + 1;
+          continue;
+        }
         emitExpr(ctx, i + 1, close, indent);
         any = true;
         i = close + 1;
@@ -232,8 +237,11 @@ function emitTagAttrs(ctx: Ctx, lt: number, end: number, indent: number): { next
       else if (src[i] === "{") {
         const close = findMatching(src, i);
         if (close !== -1 && close < end) {
-          emitExpr(ctx, i + 1, close, indent);
-          emitted = true;
+          // T2.1: skip `{/* comment */}` attribute-list holes (not GDScript).
+          if (!src.slice(i + 1, close).trim().startsWith("/*")) {
+            emitExpr(ctx, i + 1, close, indent);
+            emitted = true;
+          }
           i = close + 1;
         } else i++;
       }

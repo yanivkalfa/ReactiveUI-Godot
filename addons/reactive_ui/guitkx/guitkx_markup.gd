@@ -13,14 +13,20 @@ extends RefCounted
 ## way. This file and the LSP's markup.ts are line-for-line mirrors -- change BOTH or neither.
 ##
 ## Node shapes (the "t" tag discriminates):
-##   { t="el",   at, tag, attrs:[{name,kind,value,at,vat,end}], children:[], line }   kind: "str"|"expr"|"bool"|"spread"
-##   { t="frag", at, children:[] }
+##   { t="el",   at, tag, attrs:[{name,kind,value,at,vat,end}], children:[], line }   kind: "str"|"expr"|"bool"|"spread"|"comment"
+##   { t="frag", at, children:[] }            (+ named, attrs when spelled <Fragment ...> -- T2.2)
 ##   { t="text", at, value }
 ##   { t="expr", at, vat, code }
+##   { t="comment", at, raw }                 (T2.1: `//`, `/* */`, `<!-- -->` -- emit nothing, formatter preserves)
 ##   { t="if",   at, branches:[{cond, body_markup, body_at}], else_body, else_body_at }
 ##   { t="for",  at, header, body_markup, body_at }
 ##   { t="while",at, header, body_markup, body_at }
 ##   { t="match",at, subject, cases:[{value, body_markup, body_at}], default_body, default_body_at }
+##
+## TEXT MODEL (T2.4, Unity parity): a text run stops only at `<` or `@`. `{expr}` interpolation is
+## recognized at NODE START only; braces inside an ongoing text run are LITERAL characters (the
+## compiler warns GUITKX0150 so migrating authors notice). Comments are recognized at node start
+## (`//`, `/*`, `<!--`) and inside attribute lists as `{/* ... */}` only.
 
 const L = preload("res://addons/reactive_ui/guitkx/guitkx_lexer.gd")
 
@@ -61,6 +67,15 @@ func _parse_nodes(start: int, end: int) -> Dictionary:
 			break
 		var c := _src[i]
 		if c == "<":
+			# T2.1: `<!-- ... -->` comment (checked before `</` -- both start with `<`).
+			if i + 3 < end and _src.substr(i, 4) == "<!--":
+				var hce := _src.find("-->", i + 4)
+				if hce == -1 or hce + 3 > end:
+					_fail("GUITKX0304", "unclosed `<!--` comment", i)
+					break
+				nodes.append({ "t": "comment", "at": i, "raw": _src.substr(i, hce + 3 - i) })
+				i = hce + 3
+				continue
 			if i + 1 < end and _src[i + 1] == "/":
 				break   # a closing tag belongs to the caller
 			var r := _parse_element(i, end)
@@ -68,6 +83,21 @@ func _parse_nodes(start: int, end: int) -> Dictionary:
 				break
 			nodes.append(r["node"])
 			i = r["next"]
+		elif c == "/" and i + 1 < end and (_src[i + 1] == "/" or _src[i + 1] == "*"):
+			# T2.1: `// line` / `/* block */` comments at node-start position only -- a `//` inside an
+			# ongoing text run (e.g. a URL) stays text because _parse_text never stops at `/`.
+			if _src[i + 1] == "/":
+				var le := _src.find("\n", i)
+				var stop: int = end if (le == -1 or le > end) else le
+				nodes.append({ "t": "comment", "at": i, "raw": _src.substr(i, stop - i) })
+				i = stop
+			else:
+				var bce := _src.find("*/", i + 2)
+				if bce == -1 or bce + 2 > end:
+					_fail("GUITKX0304", "unclosed `/*` comment", i)
+					break
+				nodes.append({ "t": "comment", "at": i, "raw": _src.substr(i, bce + 2 - i) })
+				i = bce + 2
 		elif c == "@":
 			var r := _parse_directive(i, end)
 			if _err != "":
@@ -147,12 +177,30 @@ func _parse_element(open_i: int, end: int) -> Dictionary:
 func _mk_el(tag: String, attrs: Array, children: Array, line: int, at: int) -> Dictionary:
 	if tag == "":
 		return { "t": "frag", "at": at, "children": children }
+	# T2.2 (Unity parity): <Fragment> is a named alias of <>, resolved case-insensitively at the
+	# resolver level in Unity (PropsResolver). The author's spelling + attrs are kept so the
+	# formatter round-trips and the emitter can honor `key` (V.fragment's second arg).
+	if tag.to_lower() == "fragment":
+		return { "t": "frag", "at": at, "children": children, "named": tag, "attrs": attrs }
 	return { "t": "el", "at": at, "tag": tag, "attrs": attrs, "children": children, "line": line }
 
 func _parse_attribute(start: int, end: int) -> Dictionary:
 	var i := start
 	# spread attribute `{...expr}` (React `{...obj}`): merged into props at codegen. kind "spread".
 	if _src[i] == "{":
+		# T2.1: `{/* comment */}` inside an attribute list (Unity parity). Scanned for `*/` directly
+		# (not find_matching -- comment text may hold unbalanced braces), then the closing `}`.
+		var probe := _skip_ws(i + 1, end)
+		if probe + 1 < end and _src[probe] == "/" and _src[probe + 1] == "*":
+			var ce2 := _src.find("*/", probe + 2)
+			if ce2 == -1 or ce2 + 2 > end:
+				_fail("GUITKX0304", "unclosed comment in attribute list", i)
+				return { "attr": null, "next": end }
+			var after := _skip_ws(ce2 + 2, end)
+			if after >= end or _src[after] != "}":
+				_fail("GUITKX0303", "attribute comment must close with `*/}`", i)
+				return { "attr": null, "next": end }
+			return { "attr": { "name": "", "kind": "comment", "value": _src.substr(i, after + 1 - i), "at": i, "vat": -1, "end": after + 1 }, "next": after + 1 }
 		var sclose := L.find_matching(_src, i)
 		if sclose == -1 or sclose >= end:
 			_fail("GUITKX0304", "unclosed `{` in spread attribute", i)
@@ -196,8 +244,11 @@ func _parse_attribute(start: int, end: int) -> Dictionary:
 	return { "attr": null, "next": end }
 
 func _parse_text(start: int, end: int) -> Dictionary:
+	# T2.4 (Unity MT parity): text stops only at `<` or `@`; braces inside a run are LITERAL text
+	# ({expr} is a node-start construct -- see _parse_nodes). The compiler warns GUITKX0150 on
+	# brace-bearing text so pre-T2.4 interpolation habits surface instead of silently rendering "{n}".
 	var i := start
-	while i < end and _src[i] != "<" and _src[i] != "{":
+	while i < end and _src[i] != "<" and _src[i] != "@":
 		i += 1
 	var raw := _src.substr(start, i - start)
 	if raw.strip_edges() == "":
@@ -319,7 +370,6 @@ func _parse_match(at: int, end: int) -> Dictionary:
 func _skip_ws(i: int, end: int) -> int:
 	while i < end and (_src[i] == " " or _src[i] == "\t" or _src[i] == "\n" or _src[i] == "\r"):
 		i += 1
-	# also skip {/* ... */}-style guitkx comments? guitkx uses GDScript `#` only inside exprs.
 	return i
 
 func _is_tag_char(c: String) -> bool:

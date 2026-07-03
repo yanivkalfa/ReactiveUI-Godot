@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_t13_single_decl()
 	_test_t14_last_return()
 	_test_t15_unknown_tags()
+	_test_p2_markup_features()
 	_test_return_null_guard()
 	_test_jsx_value()
 	_test_diagnostics()
@@ -274,6 +275,55 @@ func _test_t14_last_return() -> void:
 	var expr_src := "component E(items: Array = []) {\n\treturn ( { items.map(func(i): return <label text={ str(i) } />) } )\n}\n"
 	var expr := RUIGuitkx.compile(expr_src, "E")
 	_check_true(bool(expr["ok"]), "T1.4: {expr} root still compiles (got %s)" % str(expr["diagnostics"]))
+
+func _test_p2_markup_features() -> void:
+	# T2.1: all four comment forms parse, emit nothing, and don't count as roots/children.
+	var src := "component C() {\n" + \
+		"\treturn (\n" + \
+		"\t\t// leading note\n" + \
+		"\t\t<vbox>\n" + \
+		"\t\t\t/* block\n\t\t\t   note */\n" + \
+		"\t\t\t<label {/* attr note */} text=\"a\" />\n" + \
+		"\t\t\t<!-- html-style -->\n" + \
+		"\t\t</vbox>\n" + \
+		"\t)\n}\n"
+	var r := RUIGuitkx.compile(src, "C")
+	_check_true(bool(r["ok"]), "T2.1: comments compile (got %s)" % str(r["diagnostics"]))
+	var gd_out := str(r["gd"])
+	_check_true(not ("note" in gd_out) and not ("<!--" in gd_out), "T2.1: comments emit nothing")
+
+	# T2.2: <Fragment> is the named alias of <> (case-insensitive, Unity PropsResolver parity).
+	var src_f := "component F() {\n" + \
+		"\treturn (\n\t\t<Fragment>\n\t\t\t<label text=\"a\" />\n\t\t\t<label text=\"b\" />\n\t\t</Fragment>\n\t)\n}\n"
+	var rf := RUIGuitkx.compile(src_f, "F")
+	_check_true(bool(rf["ok"]), "T2.2: <Fragment> compiles (got %s)" % str(rf["diagnostics"]))
+	_check(str(rf["gd"]), "V.fragment([", "T2.2: named fragment emits V.fragment")
+	var src_fk := "component FK() {\n\treturn ( <vbox>@for (i in 3) { <Fragment key={ str(i) }><label text={ str(i) } /></Fragment> }</vbox> )\n}\n"
+	var rfk := RUIGuitkx.compile(src_fk, "FK")
+	_check_true(bool(rfk["ok"]), "T2.2: Fragment key compiles (got %s)" % str(rfk["diagnostics"]))
+	_check_true(", str(i))" in str(rfk["gd"]), "T2.2: fragment key threads to V.fragment's 2nd arg")
+	var rfb := RUIGuitkx.compile("component FB() {\n\treturn ( <Fragment visible><label text=\"x\" /></Fragment> )\n}\n", "FB")
+	_check_true(not rfb["ok"] and _has_code(rfb, "GUITKX0107"), "T2.2: non-key Fragment attr errors (got %s)" % str(rfb["diagnostics"]))
+
+	# T2.4: mid-text braces are LITERAL + 0150 migration warning; node-start {expr} still interpolates.
+	var src_t := "component T(n: int = 3) {\n\treturn ( <label>Count: {n} items</label> )\n}\n"
+	var rt := RUIGuitkx.compile(src_t, "T")
+	_check_true(bool(rt["ok"]), "T2.4: literal-brace text compiles (got %s)" % str(rt["diagnostics"]))
+	_check_true(_has_code(rt, "GUITKX0150"), "T2.4: 0150 migration warning fires")
+	_check_true("Count: {n} items" in str(rt["gd"]), "T2.4: braces stay literal in emission")
+	var re2 := RUIGuitkx.compile("component E(n: int = 3) {\n\treturn ( <label>{ n } items</label> )\n}\n", "E")
+	_check_true(bool(re2["ok"]) and not _has_code(re2, "GUITKX0150"), "T2.4: node-start expr interpolates without warning (got %s)" % str(re2["diagnostics"]))
+	_check_true("str(n)" in str(re2["gd"]), "T2.4: node-start expr emits interpolation")
+
+	# T2.1+T2.4: formatter round-trips comments and literal-brace text (idempotent, no data loss).
+	const Fmt2 = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var f1: Dictionary = Fmt2.format(src)
+	_check(str(f1["text"]), "// leading note", "T2.1: formatter preserves the leading comment")
+	_check(str(f1["text"]), "{/* attr note */}", "T2.1: formatter preserves the attr comment")
+	_check(str(f1["text"]), "<!-- html-style -->", "T2.1: formatter preserves the html comment")
+	_check_true(str(Fmt2.format(str(f1["text"]))["text"]) == str(f1["text"]), "T2.1: comment formatting is idempotent")
+	var ff: Dictionary = Fmt2.format(src_f)
+	_check(str(ff["text"]), "<Fragment>", "T2.2: formatter keeps the named Fragment spelling")
 
 func _test_t15_unknown_tags() -> void:
 	# T1.5 (G5): a lowercase tag must be a real V.* factory -- it compiles to a verbatim V.<tag>()

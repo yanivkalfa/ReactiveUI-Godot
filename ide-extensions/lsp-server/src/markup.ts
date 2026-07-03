@@ -26,7 +26,7 @@ import { skipString, findMatching, keywordAt } from "./scanner";
 
 export interface Attr {
   name: string;
-  kind: "str" | "expr" | "bool" | "spread";
+  kind: "str" | "expr" | "bool" | "spread" | "comment";
   value: string;
   at: number;
   vat: number;
@@ -34,9 +34,10 @@ export interface Attr {
 }
 export type MarkupNode =
   | { t: "el"; at: number; tag: string; attrs: Attr[]; children: MarkupNode[]; line: number }
-  | { t: "frag"; at: number; children: MarkupNode[] }
+  | { t: "frag"; at: number; children: MarkupNode[]; named?: string; attrs?: Attr[] }
   | { t: "text"; at: number; value: string }
   | { t: "expr"; at: number; vat: number; code: string }
+  | { t: "comment"; at: number; raw: string }
   | { t: "if"; at: number; branches: { cond: string; body_markup: string; body_at: number }[]; else_body: string | null; else_body_at: number }
   | { t: "for"; at: number; header: string; body_markup: string; body_at: number }
   | { t: "while"; at: number; header: string; body_markup: string; body_at: number }
@@ -91,11 +92,39 @@ class MarkupParser {
       if (i >= end) break;
       const c = this.src[i];
       if (c === "<") {
+        // T2.1: `<!-- ... -->` comment (checked before `</` -- both start with `<`).
+        if (i + 3 < end && this.src.slice(i, i + 4) === "<!--") {
+          const hce = this.src.indexOf("-->", i + 4);
+          if (hce === -1 || hce + 3 > end) {
+            this.fail("GUITKX0304", "unclosed `<!--` comment", i);
+            break;
+          }
+          nodes.push({ t: "comment", at: i, raw: this.src.slice(i, hce + 3) });
+          i = hce + 3;
+          continue;
+        }
         if (i + 1 < end && this.src[i + 1] === "/") break; // closing tag belongs to the caller
         const r = this.parseElement(i, end);
         if (this.err !== "") break;
         nodes.push(r.node!);
         i = r.next;
+      } else if (c === "/" && i + 1 < end && (this.src[i + 1] === "/" || this.src[i + 1] === "*")) {
+        // T2.1: `// line` / `/* block */` comments at node-start position only -- a `//` inside an
+        // ongoing text run (e.g. a URL) stays text because parseText never stops at `/`.
+        if (this.src[i + 1] === "/") {
+          const le = this.src.indexOf("\n", i);
+          const stop = le === -1 || le > end ? end : le;
+          nodes.push({ t: "comment", at: i, raw: this.src.slice(i, stop) });
+          i = stop;
+        } else {
+          const bce = this.src.indexOf("*/", i + 2);
+          if (bce === -1 || bce + 2 > end) {
+            this.fail("GUITKX0304", "unclosed `/*` comment", i);
+            break;
+          }
+          nodes.push({ t: "comment", at: i, raw: this.src.slice(i, bce + 2) });
+          i = bce + 2;
+        }
       } else if (c === "@") {
         const r = this.parseDirective(i, end);
         if (this.err !== "") break;
@@ -175,6 +204,10 @@ class MarkupParser {
 
   private mkEl(tag: string, attrs: Attr[], children: MarkupNode[], line: number, at: number): MarkupNode {
     if (tag === "") return { t: "frag", at, children };
+    // T2.2 (Unity parity): <Fragment> is a named alias of <>, resolved case-insensitively at the
+    // resolver level in Unity (PropsResolver). The author's spelling + attrs are kept so the
+    // formatter round-trips and the emitter can honor `key` (V.fragment's second arg).
+    if (tag.toLowerCase() === "fragment") return { t: "frag", at, children, named: tag, attrs };
     return { t: "el", at, tag, attrs, children, line };
   }
 
@@ -182,6 +215,22 @@ class MarkupParser {
     let i = start;
     // spread attribute `{...expr}` (React `{...obj}`): merged into props at codegen. kind "spread".
     if (this.src[i] === "{") {
+      // T2.1: `{/* comment */}` inside an attribute list (Unity parity). Scanned for `*/` directly
+      // (not findMatching -- comment text may hold unbalanced braces), then the closing `}`.
+      const probe = this.skipWs(i + 1, end);
+      if (probe + 1 < end && this.src[probe] === "/" && this.src[probe + 1] === "*") {
+        const ce2 = this.src.indexOf("*/", probe + 2);
+        if (ce2 === -1 || ce2 + 2 > end) {
+          this.fail("GUITKX0304", "unclosed comment in attribute list", i);
+          return { attr: null, next: end };
+        }
+        const after = this.skipWs(ce2 + 2, end);
+        if (after >= end || this.src[after] !== "}") {
+          this.fail("GUITKX0303", "attribute comment must close with `*/}`", i);
+          return { attr: null, next: end };
+        }
+        return { attr: { name: "", kind: "comment", value: this.src.slice(i, after + 1), at: i, vat: -1, end: after + 1 }, next: after + 1 };
+      }
       const sclose = findMatching(this.src, i);
       if (sclose === -1 || sclose >= end) {
         this.fail("GUITKX0304", "unclosed `{` in spread attribute", i);
@@ -233,8 +282,11 @@ class MarkupParser {
   }
 
   private parseText(start: number, end: number): { node: MarkupNode | null; next: number } {
+    // T2.4 (Unity MT parity): text stops only at `<` or `@`; braces inside a run are LITERAL text
+    // ({expr} is a node-start construct -- see parseNodes). The compiler warns GUITKX0150 on
+    // brace-bearing text so pre-T2.4 interpolation habits surface instead of silently rendering "{n}".
     let i = start;
-    while (i < end && this.src[i] !== "<" && this.src[i] !== "{") i++;
+    while (i < end && this.src[i] !== "<" && this.src[i] !== "@") i++;
     const raw = this.src.slice(start, i);
     if (raw.trim() === "") return { node: null, next: i };
     return { node: { t: "text", at: start, value: raw.trim() }, next: i };

@@ -78,5 +78,15 @@
     "name": "module_junk_verbatim",
     "input": "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n}\n",
     "expected": "module M {\n\tcomponent A() { return ( <Label /> ) }\n\tvar oops = 1\n}\n"
+  },
+  {
+    "name": "markup_comments",
+    "input": "component C() {\n\treturn (\n// note\n<VBox>\n/* multi */\n<Label {/* why */} text=\"a\"/>\n<!-- html -->\n</VBox>\n)\n}\n",
+    "expected": "component C {\n\treturn (\n\t\t// note\n\t\t<VBox>\n\t\t\t/* multi */\n\t\t\t<Label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</VBox>\n\t)\n}\n"
+  },
+  {
+    "name": "fragment_named",
+    "input": "component F() {\n\treturn (\n<Fragment>\n<Label text=\"a\"/>\n</Fragment>\n)\n}\n",
+    "expected": "component F {\n\treturn (\n\t\t<Fragment>\n\t\t\t<Label text=\"a\" />\n\t\t</Fragment>\n\t)\n}\n"
   }
 ]

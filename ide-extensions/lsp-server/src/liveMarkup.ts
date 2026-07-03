@@ -22,6 +22,7 @@ export interface LiveMarkupDiag {
   end: number;
   code: string;
   message: string;
+  severity?: "warning"; // absent = error
 }
 
 /** Parse errors + unknown lowercase tags for every markup window of a document. */
@@ -58,6 +59,18 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
       }
       case "frag":
         walkTags(nd.children, base, out);
+        break;
+      case "text":
+        // T2.4 migration warning: braces inside text are LITERAL under the Unity-parity text model.
+        if (nd.value.includes("{")) {
+          out.push({
+            start: base + nd.at,
+            end: base + nd.at + nd.value.length,
+            code: "GUITKX0150",
+            message: "GUITKX0150: braces inside text are literal -- interpolate with a leading `{expr}` node or a `text={ ... }` attribute instead",
+            severity: "warning",
+          });
+        }
         break;
       case "if":
         for (const br of nd.branches) walkBody(br.body_markup, base + br.body_at, out);

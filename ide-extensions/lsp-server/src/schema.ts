@@ -24,6 +24,9 @@ export interface AttrInfo {
 }
 
 const BASE_TAGS: TagInfo[] = [
+  // T2.2: the named alias of `<>...</>` (Unity parity, case-insensitive at the parser). Groups
+  // children without a container node; accepts only `key`.
+  { tag: "Fragment", godotClass: "Fragment", factory: "V.fragment" },
   { tag: "Control", godotClass: "Control", factory: "V.control" },
   { tag: "VBox", godotClass: "VBoxContainer", factory: "V.vbox" },
   { tag: "HBox", godotClass: "HBoxContainer", factory: "V.hbox" },

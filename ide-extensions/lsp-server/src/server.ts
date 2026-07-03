@@ -1458,7 +1458,7 @@ function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   // they used to be computed and discarded, so `return <s></a>` squiggled nothing until save.
   for (const d of windowStructureDiags(src, wins)) {
     diags.push({
-      severity: DiagnosticSeverity.Error,
+      severity: d.severity === "warning" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
       range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },
       message: d.message,
       source: "guitkx",
@@ -1598,7 +1598,7 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
       // (T1.5); the PascalCase check stays SUGGESTION-GATED until T4.5 feeds .guitkx declarations
       // into the analyzer -- ungated it would false-flag hand-written .gd component classes, which
       // only the compiler (via the plugin's known_components) can see today.
-      if (/^[A-Z]/.test(tag.tagName) && !findTag(tag.tagName) && !index.has(tag.tagName)) {
+      if (/^[A-Z]/.test(tag.tagName) && tag.tagName.toLowerCase() !== "fragment" && !findTag(tag.tagName) && !index.has(tag.tagName)) {
         const sugg = closestTag(tag.tagName);
         if (sugg) {
           diags.push({

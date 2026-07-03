@@ -62,7 +62,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     case "component": {
       const pc = parseComponentAt(source, decl.at);
       if (!pc.ok) return source;
-      out += fmtComponent(pc.name, pc.params, pc.setup, pc.root, o);
+      out += fmtComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
       declEnd = pc.next;
       break;
     }
@@ -95,7 +95,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
 
 // --- declarations ---
 
-function fmtComponent(name: string, params: string, setup: string, root: MarkupNode, o: FmtOptions): string {
+function fmtComponent(name: string, params: string, setup: string, nodes: MarkupNode[], o: FmtOptions): string {
   let out = `component ${name}${fmtParams(params)} {\n`;
   const fs = fmtSetup(setup, 1, o);
   if (fs !== "") {
@@ -104,7 +104,11 @@ function fmtComponent(name: string, params: string, setup: string, root: MarkupN
     if (hasTrailingBlank(setup)) out += "\n"; // keep an authored blank line before `return (`
   }
   out += pad(1, o) + "return (\n";
-  out += fmtNode(root, 2, o);
+  // T2.1: every window node in order -- the render root plus any sibling comments.
+  for (const nd of nodes) {
+    if (nd == null) continue;
+    out += fmtNode(nd, 2, o);
+  }
   out += pad(1, o) + ")\n";
   out += "}\n";
   return out;
@@ -160,7 +164,7 @@ function fmtModule(src: string, mi: number, o: FmtOptions): { text: string; next
     if (d.kind === "component") {
       const c = parseComponentAt(src, d.at);
       if (!c.ok) return null;
-      out += indentBlock(fmtComponent(c.name, c.params, c.setup, c.root, o), 1, o);
+      out += indentBlock(fmtComponent(c.name, c.params, c.setup, c.nodes, o), 1, o);
       i = c.next;
     } else if (d.kind === "hook") {
       const h = parseHookAt(src, d.at);
@@ -183,8 +187,17 @@ function fmtNode(nd: MarkupNode, indent: number, o: FmtOptions): string {
       return fmtElement(nd, indent, o);
     case "frag": {
       const inner = fmtChildren(nd.children, indent + 1, o);
+      // T2.2: the named <Fragment> alias keeps the author's spelling + attrs (key/comments).
+      if (nd.named) {
+        let head = `<${nd.named}`;
+        for (const a of nd.attrs ?? []) head += " " + fmtAttr(a);
+        return `${pad(indent, o)}${head}>\n${inner}${pad(indent, o)}</${nd.named}>\n`;
+      }
       return `${pad(indent, o)}<>\n${inner}${pad(indent, o)}</>\n`;
     }
+    case "comment":
+      // T2.1: comments are preserved verbatim (re-anchored to the current indent).
+      return `${pad(indent, o)}${nd.raw.trim()}\n`;
     case "text":
       return `${pad(indent, o)}${nd.value.trim()}\n`;
     case "expr":
@@ -254,6 +267,8 @@ function fmtAttr(a: Attr): string {
       return `{...${a.value.trim()}}`;
     case "bool":
       return a.name;
+    case "comment":
+      return a.value; // T2.1: `{/* ... */}` preserved verbatim
   }
   return a.name;
 }
@@ -431,11 +446,11 @@ interface CompParse {
   setupEnd: number;
   markupStart: number;
   markupEnd: number;
-  root: MarkupNode;
+  nodes: MarkupNode[]; // ALL window nodes incl. comments (T2.1) -- the formatter re-emits them in order
   next: number;
 }
 function parseComponentAt(src: string, at: number): CompParse {
-  const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, root: { t: "text", at: -1, value: "" }, next: at };
+  const fail: CompParse = { ok: false, name: "", params: "", setup: "", setupStart: at, setupEnd: at, markupStart: at, markupEnd: at, nodes: [], next: at };
   const n = src.length;
   // Skip the declaration keyword TOKEN (not a fixed "component".length) so a recovered typo header
   // (`comssponent Foo {`) parses from the right place. For an exact keyword this is identical.
@@ -463,8 +478,9 @@ function parseComponentAt(src: string, at: number): CompParse {
   if (!split || split === "unclosed") return fail;
   const setup = src.slice(bodyStart, split.setupEnd);
   const mr = parseMarkup(src, split.markupStart, split.markupEnd);
-  if (mr.error !== "" || mr.nodes.length !== 1) return fail;
-  return { ok: true, name, params, setup, setupStart: bodyStart, setupEnd: split.setupEnd, markupStart: split.markupStart, markupEnd: split.markupEnd, root: mr.nodes[0], next: bclose + 1 };
+  // exactly one RENDER root; comments are legal window siblings (T2.1)
+  if (mr.error !== "" || mr.nodes.filter((n) => n && n.t !== "comment").length !== 1) return fail;
+  return { ok: true, name, params, setup, setupStart: bodyStart, setupEnd: split.setupEnd, markupStart: split.markupStart, markupEnd: split.markupEnd, nodes: mr.nodes, next: bclose + 1 };
 }
 
 interface HookParse {

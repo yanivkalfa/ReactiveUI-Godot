@@ -56,11 +56,13 @@ function tsDerive(src: string): { windows: { start: number; end: number }[]; mar
       case "el":
         return { ...nd, at: cp(nd.at), attrs: nd.attrs.map(cpAttr), children: nd.children.map(cpNode) };
       case "frag":
-        return { ...nd, at: cp(nd.at), children: nd.children.map(cpNode) };
+        return { ...nd, at: cp(nd.at), children: nd.children.map(cpNode), ...(nd.attrs ? { attrs: nd.attrs.map(cpAttr) } : {}) };
       case "text":
         return { ...nd, at: cp(nd.at) };
       case "expr":
         return { ...nd, at: cp(nd.at), vat: cp(nd.vat) };
+      case "comment":
+        return { ...nd, at: cp(nd.at) };
       case "if":
         return { ...nd, at: cp(nd.at), branches: nd.branches.map((b) => ({ ...b, body_at: cp(b.body_at) })), else_body_at: cp(nd.else_body_at) };
       case "for":

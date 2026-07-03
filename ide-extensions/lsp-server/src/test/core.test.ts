@@ -345,6 +345,19 @@ test("T1.5: PascalCase tags and known factories stay clean in the vocabulary che
   assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
 });
 
+// T2.4: mid-text braces are literal under the Unity text model -- warn live so migrating authors notice.
+test("T2.4: literal braces in text fire the GUITKX0150 migration warning live", () => {
+  const src = "component T(n: int = 3) {\n\treturn ( <vbox><label>Count: {n} items</label></vbox> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0150");
+  assert.ok(hit && hit.severity === "warning", `got ${JSON.stringify(d)}`);
+});
+
+test("T2.1/T2.2: comments and <Fragment> stay clean live", () => {
+  const src = "component C() {\n\treturn (\n\t\t// note\n\t\t<Fragment>\n\t\t\t<label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</Fragment>\n\t)\n}\n";
+  assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
+});
+
 // Error-recovery: a near-miss keyword at a real declaration position is treated as that declaration
 // (analysis-only) so a typo'd header no longer blacks out markup + embedded checks. [declScan]
 test("findDecl recovers a typo'd keyword only at a real declaration shape", () => {
