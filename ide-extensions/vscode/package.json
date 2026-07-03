@@ -2,16 +2,27 @@
   "name": "guitkx",
   "displayName": "GUITKX",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence analyzed headlessly via gdscript-analyzer (no running Godot editor required).",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/yanivkalfa/ReactiveUI-Godot" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yanivkalfa/ReactiveUI-Godot"
+  },
   "engines": {
     "vscode": "^1.75.0"
   },
-  "categories": ["Programming Languages"],
-  "keywords": ["godot", "gdscript", "reactiveui", "guitkx", "jsx"],
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "godot",
+    "gdscript",
+    "reactiveui",
+    "guitkx",
+    "jsx"
+  ],
   "activationEvents": [
     "onLanguage:guitkx",
     "onLanguage:gdscript"
@@ -28,8 +39,13 @@
     "languages": [
       {
         "id": "guitkx",
-        "aliases": ["GUITKX", "guitkx"],
-        "extensions": [".guitkx"],
+        "aliases": [
+          "GUITKX",
+          "guitkx"
+        ],
+        "extensions": [
+          ".guitkx"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -38,8 +54,8 @@
         "editor.defaultFormatter": "ReactiveUITK.guitkx",
         "editor.formatOnSave": true,
         "editor.autoIndent": "full",
-        "editor.tabSize": 2,
-        "editor.insertSpaces": true,
+        "editor.insertSpaces": false,
+        "editor.tabSize": 4,
         "editor.detectIndentation": false
       }
     },
@@ -71,16 +87,6 @@
           "default": true,
           "description": "Analyze plain .gd files with gdscript-analyzer — diagnostics, completion, hover, navigation, project-wide rename, formatting, semantic highlighting, inlay hints, code actions, and document symbols, all headless (no running Godot editor). On by default. Runs ALONGSIDE the godot-tools extension; to avoid duplicate diagnostics, disable godot-tools' language server — or turn this off to keep godot-tools as your .gd LSP."
         }
-      }
-    },
-    "configurationDefaults": {
-      "[guitkx]": {
-        "editor.defaultFormatter": "ReactiveUITK.guitkx",
-        "editor.formatOnSave": true,
-        "editor.autoIndent": "full",
-        "editor.insertSpaces": false,
-        "editor.tabSize": 4,
-        "editor.detectIndentation": false
       }
     }
   },

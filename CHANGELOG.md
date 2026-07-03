@@ -4,6 +4,32 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-07-04
+
+**The watcher now provably notices your saves.** Field capture 2026-07-04: a `.guitkx` saved from
+VS Code was never recompiled — editor focus-in and `filesystem_changed` were the only triggers,
+and neither reliably fires for an external save. Worse, a sweep that found nothing stale printed
+nothing, so "plugin dead" and "nothing to do" were indistinguishable from the Output panel.
+
+### Fixed
+- **Standing watch poll (2s)**: the plugin polls a cheap read-only staleness predicate
+  (`has_stale`) and sweeps the moment any `.guitkx` changes on disk — no focus dance, no editor
+  restart, saves picked up within ~2 seconds.
+- **Same-second saves are seen**: mtimes are whole seconds, so a save landing in the same second
+  as the last compile tied on mtime and was silently skipped until the next edit; mtime ties are
+  now broken by content (the sidecar's `src_hash`), which is deterministic and never busy-loops.
+- **Known-broken files don't churn**: a file whose current content already produced an error
+  sidecar is hash-skipped by the poll — but its persisted errors are **re-surfaced on every
+  sweep**, so a fresh editor session re-reports a still-broken file instead of staying silent
+  (the dock dedup is what prevents spam, never silence).
+- **Sidecars rewrite only when the verdict changes** (the LSP watches them for changes).
+
+### Added
+- **Sweep proof-of-life**: the first sweep of a session always prints
+  `[guitkx] sweep: N .guitkx tracked -- X compiled, Y error(s), Z held`; later sweeps print it
+  whenever they did work. A silent Output after startup now *means* the plugin is not running.
+- A visible heartbeat while the initial sweep waits out the editor's first filesystem scan.
+
 ## [0.7.0] — 2026-07-04
 
 **Directive bodies are code blocks — full Unity convergence (BREAKING).** A directive body
