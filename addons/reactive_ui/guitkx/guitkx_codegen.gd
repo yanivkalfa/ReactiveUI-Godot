@@ -66,6 +66,7 @@ const _COMPILER_SOURCES := [
 	"res://addons/reactive_ui/guitkx/guitkx_jsx_scan.gd",
 	"res://addons/reactive_ui/guitkx/guitkx_diag.gd",
 	"res://addons/reactive_ui/guitkx/vocabulary.json",
+	"res://addons/reactive_ui/guitkx/guitkx_vocabulary.gen.gd",
 ]
 # Machine-local marker (`.godot` is gitignored + regenerated), holding the fingerprint that last
 # generated this project's .gd. A mismatch (or absence) means the compiler moved -> recompile all.
@@ -73,13 +74,18 @@ const _FP_MARKER := "res://.godot/rui_guitkx_compiler.fp"
 static var _fp_cache := ""
 
 ## FNV-1a fingerprint of the compiler pipeline (CRLF-normalised, so line-ending churn does not shift
-## it). Changes whenever the generated .gd output could change.
+## it). Changes whenever the generated .gd output could change. Returns "" — UNKNOWABLE — when any
+## source reads back empty: inside the editor's first-scan window FileAccess reads return empty, and
+## a fingerprint hashed over empty sources once got PERSISTED, making every later healthy session
+## look like a compiler change (caught by _test_cold_open_recovery). Never cached while unknowable.
 static func compiler_fingerprint() -> String:
 	if _fp_cache != "":
 		return _fp_cache
 	var h := 2166136261
 	for p in _COMPILER_SOURCES:
 		var s := FileAccess.get_file_as_string(p).replace("\r", "")
+		if s.is_empty():
+			return ""
 		for idx in s.length():
 			h = (h ^ s.unicode_at(idx)) & 0xFFFFFFFF
 			h = (h * 16777619) & 0xFFFFFFFF
@@ -87,15 +93,24 @@ static func compiler_fingerprint() -> String:
 	return _fp_cache
 
 ## True if the compiler changed since the last full compile (or the marker is absent) -> every .gd
-## is potentially stale and must be regenerated regardless of mtime.
+## is potentially stale and must be regenerated regardless of mtime. An UNKNOWABLE fingerprint
+## (scan window) forces too — the safe direction: a wasted sweep is cheap, stale-compiler outputs
+## surviving an upgrade is the zombie-sidecar capture — and _write_fp_marker will refuse to
+## persist until the sources are actually readable, so the force keeps re-firing.
 static func compiler_changed() -> bool:
+	var fp := compiler_fingerprint()
+	if fp == "":
+		return true
 	var stored := FileAccess.get_file_as_string(_FP_MARKER) if FileAccess.file_exists(_FP_MARKER) else ""
-	return stored.strip_edges() != compiler_fingerprint()
+	return stored.strip_edges() != fp
 
 static func _write_fp_marker() -> void:
+	var fp := compiler_fingerprint()
+	if fp == "":
+		return   # unknowable inside the scan window -- never persist garbage; retry next sweep
 	var f := FileAccess.open(_FP_MARKER, FileAccess.WRITE)
 	if f != null:
-		f.store_string(compiler_fingerprint())
+		f.store_string(fp)
 		f.close()
 
 ## T1.5: the PascalCase component names resolvable in this project -- each .guitkx's binding
@@ -198,13 +213,20 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 	f.close()
 	return { "ok": true, "path": guitkx_path, "gd_path": gd_path, "diagnostics": r["diagnostics"] }
 
-## Compile every stale .guitkx under `root`. Returns { compiled:[gd_paths], errors:[{path,...}] }.
+## Compile every stale .guitkx under `root`. Returns { compiled:[...], errors:[...], held:[paths] }.
+## `held` = files skipped because the compiler ENVIRONMENT wasn't ready (env_error: unreadable
+## vocabulary) — a tooling state, not source errors: callers must not report them per file (the
+## loader's one-per-episode hold line already announced the episode) and should re-run the sweep
+## once the environment recovers instead of waiting for a user edit (plugin.gd's retry timer).
 ## When the compiler pipeline changed since the last run, ALL files are treated as stale (their
 ## previously-generated .gd may encode old-compiler output even though they are newer than the
-## source), then the fingerprint marker is refreshed.
+## source); the fingerprint marker is refreshed ONLY when nothing was held — a held forced sweep
+## compiled nothing, and consuming the marker anyway would let old-compiler outputs and sidecars
+## survive every later sweep (exactly the 2026-07-03 zombie-sidecar field capture).
 static func compile_all(root: String = "res://") -> Dictionary:
 	var compiled: Array = []
 	var errors: Array = []
+	var held: Array = []
 	var force := compiler_changed()
 	var all_paths := find_all(root)
 	# T1.5: resolve the project's component-class universe ONCE per pass so every file's PascalCase
@@ -216,11 +238,13 @@ static func compile_all(root: String = "res://") -> Dictionary:
 		var r := compile_file(path, known)
 		if r["ok"]:
 			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"] })
+		elif bool(r.get("env_error", false)):
+			held.append(path)
 		else:
 			errors.append(r)
-	if force:
+	if force and held.is_empty():
 		_write_fp_marker()
-	return { "compiled": compiled, "errors": errors }
+	return { "compiled": compiled, "errors": errors, "held": held }
 
 ## Recursively collect all .guitkx paths under `dir` (skips Godot's hidden cache dirs).
 static func find_all(dir: String = "res://") -> Array:
