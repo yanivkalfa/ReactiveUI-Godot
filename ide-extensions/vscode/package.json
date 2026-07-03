@@ -75,7 +75,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
+    "vscode:prepublish": "npm run build && node scripts/verify-server.js",
     "build": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "bundle-server": "node scripts/bundle-server.js",
