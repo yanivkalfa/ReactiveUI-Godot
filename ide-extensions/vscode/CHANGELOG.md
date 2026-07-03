@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0] - 2026-07-03
+- **Diagnostic codes renumbered onto the Unity-shared table** (addon 0.5.0): most visibly,
+  unreachable-after-return dimming is now `GUITKX0107` (was 0114), missing-declaration is
+  `GUITKX2101` (was 0102), and duplicate keys (`GUITKX0026`, was 0113) are errors. If you match
+  on code strings anywhere, see the addon CHANGELOG's concordance table.
+- Bundles gdscript-analyzer **0.6.0**: embedded-GDScript diagnostics now use **Godot's own
+  verbatim message texts** (probed against the real 4.7 binary), calls with the wrong number of
+  arguments or a definitely-wrong argument type are errors (`Too many arguments for "one()"
+  call. Expected at most 1 but received 2.`), unused/unreachable code **dims** in the editor,
+  every analyzer diagnostic carries a real code with a link to its reference page, and the
+  warning profile matches the engine's defaults — the editor never warns where Godot wouldn't.
+- Names declared in sibling `.guitkx` files feed the analyzer as virtual libraries: cross-file
+  references resolve on a fresh clone, a typo'd `usse_state` is an error again (the old
+  suppression could hide it), and a broken lambda initializer (`var toggle = fsunc():`) now
+  shows its syntax error instead of a false `UNDEFINED_IDENTIFIER` on later uses.
+- Unknown PascalCase component tags squiggle live with a did-you-mean, checked against the full
+  project (`.guitkx` bindings + `class_name` scripts) once the workspace scan completes.
+
 ## [0.5.5] - 2026-07-02
 - Bundles gdscript-analyzer 0.5.4: a typo'd method on a built-in value — `sliced[1].casll(1)` on a `useState` pair, `s.upper()` on a `String` (a Godot-3 rename), `v.zzz` on a `Vector2` — is now an error with a precise squiggle, exactly where Godot itself errors. Works through plain untyped `var s = useState(0)` locals (the analyzer narrows single-assignment locals to their initializer's type), and Dictionary `d.key` sugar now types as the value and can never false-flag.
 

@@ -952,11 +952,11 @@ test("formatGuitkx preserves `{...spread}` attributes and stays idempotent", () 
   assert.equal(formatGuitkx(out).text, out, "formatting is idempotent over a spread");
 });
 
-// ---- T4.4/T4.5/T4.6 -- the analyzer halves (some assertions need core 0.5.5+, and are gated on
+// ---- T4.4/T4.5/T4.6 -- the analyzer halves (some assertions need core 0.6+ — shipped — and are gated on
 // the new setWarningOverride method so this suite stays green against the registry 0.5.4 too) ----
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const CORE_0_5_5 = typeof (require("@gdscript-analyzer/core").AnalysisHandle.prototype as any).setWarningOverride === "function";
+const CORE_HAS_OVERRIDE = typeof (require("@gdscript-analyzer/core").AnalysisHandle.prototype as any).setWarningOverride === "function";
 
 test("live PascalCase 0105 fires only against a known-components universe (T4.5 ungate)", () => {
   const src = 'component C {\n\treturn ( <Cardz text="x" /> )\n}\n';
@@ -1001,8 +1001,8 @@ test("T4.5 e2e: a fed virtual library resolves the binding; a typo still flags",
   assert.ok(typoCodes.includes("UNDEFINED_IDENTIFIER"), `a typo'd binding still flags: ${typoCodes}`);
 });
 
-test("T4.4 e2e: analyzer DiagnosticTags cross the adapter (core 0.5.5+)", () => {
-  if (!CORE_0_5_5) return; // registry core pre-dates tags; live once the dep bumps
+test("T4.4 e2e: analyzer DiagnosticTags cross the adapter (core 0.6+)", () => {
+  if (!CORE_HAS_OVERRIDE) return; // only a pre-0.6 core lacks these (the pinned dep has them)
   const az = new AnalyzerAdapter();
   const uri = "file:///proj/unused.gd";
   const src = "func f() -> void:\n\tvar unused = 1\n";
@@ -1012,8 +1012,8 @@ test("T4.4 e2e: analyzer DiagnosticTags cross the adapter (core 0.5.5+)", () => 
   assert.deepEqual(unused!.tags, [1], `Unnecessary (1) crosses so the editor dims: ${JSON.stringify(unused)}`);
 });
 
-test("G8 e2e: a broken lambda initializer reports the syntax error, never a cascading UNDEFINED (core 0.5.5+)", () => {
-  if (!CORE_0_5_5) return; // the initializer-scope fix ships with the dep bump
+test("G8 e2e: a broken lambda initializer reports the syntax error, never a cascading UNDEFINED (core 0.6+)", () => {
+  if (!CORE_HAS_OVERRIDE) return; // only a pre-0.6 core lacks the fix (the pinned dep has it)
   const az = new AnalyzerAdapter();
   az.setWorkspaceComplete(true);
   const vUri = "file:///proj/g8.__guitkx_virtual.gd";
@@ -1024,8 +1024,8 @@ test("G8 e2e: a broken lambda initializer reports the syntax error, never a casc
   assert.ok(!codes.includes("UNDEFINED_IDENTIFIER"), `no false UNDEFINED_IDENTIFIER on top (G8): ${codes}`);
 });
 
-test("T4.6 e2e: the engine-defaults profile keeps UNSAFE_* silent (core 0.5.5+)", () => {
-  if (!CORE_0_5_5) return; // the override method ships with the dep bump
+test("T4.6 e2e: the engine-defaults profile keeps UNSAFE_* silent (core 0.6+)", () => {
+  if (!CORE_HAS_OVERRIDE) return; // only a pre-0.6 core lacks the method (the pinned dep has it)
   const az = new AnalyzerAdapter(); // the constructor selects "engine-defaults"
   const uri = "file:///proj/unsafe.gd";
   const src = "func f(n: Node) -> void:\n\tn.some_fn()\n";
