@@ -294,13 +294,13 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	_validate_unused_params(pc["params"], int(pc.get("params_at", -1)), source.substr(int(pc["body_at"]), int(pc["next"]) - 1 - int(pc["body_at"])), diags)
 	if class_name_override == "" and pc["name"] != basename:
 		diags.append(D.make("GUITKX0103", D.WARNING, "component `%s` differs from file name `%s`" % [pc["name"], basename], pc["name_at"], (pc["name"] as String).length()))
-	_validate(pc["setup"], pc["root"], diags, pc["body_at"])
+	_validate(str(pc.get("vsetup", pc["setup"])), pc["root"], diags, pc["body_at"])
 	# A hard-error diagnostic from validation (e.g. GUITKX0108 in a loop body) fails the compile —
 	# warnings/hints do not.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
-	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known, uss_path)
+	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known, uss_path, { "body": pc.get("body", ""), "parts": pc.get("parts", []), "unit": int(pc.get("unit", 1)), "anchor": int(pc.get("anchor", 0)) })
 	# T1.1: errors appended DURING emit (GUITKX0026 undesugarable control-flow, nested-body parse
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
@@ -346,13 +346,37 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	var body := source.substr(j + 1, bclose - j - 1)
 	var body_at := j + 1   # absolute offset of body[0] in `source`; rebases body-relative offsets
 	var split := _split_return(body)
-	# T1.4: demoted returns (early top-level ones, and markup-shaped statement-level ones) are errors
-	# regardless of whether a final markup return was also found.
-	for b in split.get("bad", []):
-		diags.append(D.make("GUITKX2102", D.ERROR, b["msg"], body_at + int(b["at"]), maxi(1, int(b["to"]) - int(b["at"]))))
 	if split.has("error"):
 		diags.append(D.rebase(split["error"], body_at))
 		return { "ok": false }
+	# Phase C (Unity SpliceSetupCodeMarkup parity): EARLY markup returns are LEGAL. Each `ret` part
+	# is parsed and validated here (own parse errors, single-root rule, full node checks) and then
+	# lowered IN PLACE by _emit_func. `vsetup` blanks their spans out of the text handed to the
+	# LINE-based hook/effect validators, so a hook call inside an early return's attr-expr is
+	# caught exactly once by _validate_node (GUITKX0016) instead of false-flagging the
+	# rules-of-hooks line scan.
+	var early: Array = []
+	var vsetup: String = split["setup"]
+	for part in split.get("parts", []):
+		if str(part["t"]) != "ret":
+			continue
+		var eparser := Markup.new()
+		var epr: Dictionary = eparser.parse(body, int(part["m_start"]), int(part["m_end"]))
+		if epr["error"] != "":
+			diags.append(D.make(epr["error_code"], D.ERROR, epr["error_msg"], body_at + maxi(0, int(epr["error_at"])), 1))
+			return { "ok": false }
+		var eroots := (epr["nodes"] as Array).filter(func(nd): return nd != null and (nd as Dictionary).get("t", "") != "comment")
+		if eroots.size() != 1:
+			diags.append(D.make("GUITKX0108", D.ERROR, "a markup `return` must return exactly one root element (got %d)" % eroots.size(), body_at + int(part["m_start"]), 1))
+			return { "ok": false }
+		part["root"] = eroots[0]
+		early.append(part)
+		var bfrom: int = int(part["at"])
+		var bto: int = mini(int(part["end"]), vsetup.length())
+		var blank := ""
+		for bi in range(bfrom, bto):
+			blank += "\n" if vsetup[bi] == "\n" else " "
+		vsetup = vsetup.substr(0, bfrom) + blank + vsetup.substr(bto)
 	# T1.4 (Unity LooksLikeMarkupRoot parity): the chosen return's content must BE markup -- an
 	# element, `<>` fragment, @directive, or `{expr}` -- not a plain parenthesized value. Markup
 	# comments before the root are skipped, exactly like Unity's TrySkipNonCodeSpan.
@@ -360,12 +384,19 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if mfirst == -1 or not (body[mfirst] == "<" or body[mfirst] == "@" or body[mfirst] == "{"):
 		diags.append(D.make("GUITKX2102", D.ERROR, "`return` must return markup (an element, `<>` fragment, @directive, or `{expr}`)", body_at + int(split.get("chosen_at", int(split["m_start"]))), 6))
 		return { "ok": false }
-	# BUG-V5: any real code after the markup return is unreachable (the compiler drops it).
-	var unreach_first := _first_real(body, int(split["m_end"]) + 1, body.length())
+	# BUG-V5 + Phase C: code after an unconditional return is unreachable (the compiler drops what
+	# follows the FINAL return; the runtime never reaches past an unconditional EARLY one, which
+	# also subsumes the after-the-final-return hint -- Unity dims to the closing brace the same way).
+	var dead_from: int = int(split["m_end"]) + 1
+	for part in early:
+		if bool(part.get("top", false)):
+			dead_from = int(part["end"])
+			break
+	var unreach_first := _first_real(body, dead_from, body.length())
 	if unreach_first != -1:
-		var unreach_last := _last_real(body, int(split["m_end"]) + 1, body.length())
+		var unreach_last := _last_real(body, dead_from, body.length())
 		# T3.2: unreachable code is a HINT (dimmed dead code), matching the live tier's Unnecessary tag.
-		diags.append(D.make("GUITKX0107", D.HINT, "unreachable code after the component's markup return -- a component has a single return; later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
+		diags.append(D.make("GUITKX0107", D.HINT, "unreachable code after the component's markup return -- later statements are ignored", body_at + unreach_first, unreach_last - unreach_first + 1))
 	var parser := Markup.new()
 	var pr := parser.parse(split["markup_src"], split["m_start"], split["m_end"])
 	if pr["error"] != "":
@@ -378,8 +409,10 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		diags.append(D.make("GUITKX0108", D.ERROR, "a component must return exactly one root element (got %d)" % render_roots.size(), body_at + extra_at, 1))
 		return { "ok": false }
 	# window_nodes = ALL window nodes incl. comments (T2.1) -- the formatter re-emits them in order;
-	# root = the single render root the emitter compiles.
-	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "params_at": params_at, "setup": split["setup"], "root": render_roots[0], "window_nodes": pr["nodes"], "body_at": body_at, "next": bclose + 1 }
+	# root = the single render root the emitter compiles. `vsetup`/`body`/`parts`/`unit`/`anchor`
+	# are Phase C: blanked-validation setup + the interleaved emission inputs (setup itself stays
+	# byte-exact for the formatter).
+	return { "ok": true, "name": comp_name, "name_at": ns, "params": params, "params_at": params_at, "setup": split["setup"], "vsetup": vsetup, "body": body, "parts": split.get("parts", []), "unit": int(split.get("unit", 1)), "anchor": int(split.get("anchor", 0)), "root": render_roots[0], "window_nodes": pr["nodes"], "body_at": body_at, "next": bclose + 1 }
 
 # --- semantic validation (warnings; they don't fail the compile) ---
 # `base` = absolute offset (in the original source) of index 0 of the string the node offsets/setup
@@ -863,7 +896,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	# T1.1: validate every member BEFORE emitting anything -- a hard error in ANY member (e.g.
 	# GUITKX0108 multi-root in a loop body) fails the whole module, exactly like a single-file compile.
 	for c in comps:
-		_validate(c["setup"], c["root"], diags, c["body_at"])
+		_validate(str(c.get("vsetup", c["setup"])), c["root"], diags, c["body_at"])
 		_validate_unused_params(c["params"], int(c.get("params_at", -1)), source.substr(int(c["body_at"]), int(c["next"]) - 1 - int(c["body_at"])), diags)
 	for h in hooks:
 		_validate_hooks(h["body"], diags, int(h["body_at"]))   # T2.5: member hook bodies too
@@ -874,7 +907,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
 	for c in comps:
 		out += "# component %s\n" % c["name"]
-		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"], known)
+		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"], known, { "body": c.get("body", ""), "parts": c.get("parts", []), "unit": int(c.get("unit", 1)), "anchor": int(c.get("anchor", 0)) })
 		out += "\n"
 	for h in hooks:
 		out += "# hook %s\n" % h["name"]
@@ -893,15 +926,18 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 # --- body splitter: choose the LAST top-level markup return (T1.4, Unity useLastReturn parity) ---
 # "Top-level" is the GDScript equivalent of Unity's brace-depth-0: the `return` is the FIRST token on
 # its line AND the line's indent depth is <= the body's anchor depth (the same anchor rule as
-# _reindent_setup, so the split agrees with emission). Everything before the chosen return is setup;
-# statement-level returns (inside if:/for:/lambdas) are legal GDScript and stay there UNLESS they are
-# markup-shaped -- GDScript setup can never contain markup, so those are collected in `bad` and the
-# caller reports GUITKX2102. Earlier TOP-LEVEL candidates also land in `bad`: they would make the
-# chosen markup return unreachable in the generated .gd (Unity's C# compiler catches that for it;
-# Godot must catch it here).
+# _reindent_setup, so the split agrees with emission). Everything before the chosen return is setup.
 #
-# Returns { setup, markup_src, m_start, m_end, chosen_at, bad } on success or { error: Diag, bad }
-# -- `bad` = [{ at, to, msg }] is ALWAYS processed by the caller, even alongside an error.
+# Phase C (Unity SpliceSetupCodeMarkup parity): EARLY markup returns are LEGAL. Every markup-shaped
+# return before the chosen one -- an earlier top-level markup return, a conditional/nested
+# `return ( <markup> )`, a bare `return <Tag/>` -- becomes a `ret` PART that _emit_func lowers IN
+# PLACE at its own indentation, exactly like Unity splices setup JSX into C#. Plain value returns
+# (`return 5`, `return (x + 1)`) and `return null` guards are ordinary GDScript and stay verbatim.
+#
+# Returns { setup, markup_src, m_start, m_end, chosen_at, unit, anchor, parts } on success or
+# { error: Diag }. `parts` covers [0, chosen_at) in ORDER: { t:"gd", from, to } verbatim segments
+# interleaved with { t:"ret", at, end, m_start, m_end, depth, top } early markup returns (offsets
+# body-relative; `depth` in body indent units so emission is scope-correct; `top` = unconditional).
 static func _split_return(body: String) -> Dictionary:
 	var n := body.length()
 	# indent geometry (unit + anchor) over the body's lines -- mirrored in formatGuitkx.ts/virtualDoc.ts.
@@ -921,8 +957,7 @@ static func _split_return(body: String) -> Dictionary:
 			break
 	if anchor == -1:
 		anchor = anchor_any
-	var bad: Array = []
-	var chosen := {}           # { at, p, shape ("paren"|"bare"), close }
+	var rets: Array = []       # every markup-shaped return, in scan order; the last TOP-LEVEL one is chosen
 	var malformed_at := -1     # first top-level `return <other>` (not (, <, null) -- Unity 2102 fallback
 	var i := 0
 	while i < n:
@@ -933,10 +968,15 @@ static func _split_return(body: String) -> Dictionary:
 		if L.keyword_at(body, i, "return"):
 			var p := i + 6
 			p = _skip_ws_only(body, p)
-			# position class: first token on its line at depth <= anchor == top-level
+			# position class: first token on its line at depth <= anchor == top-level (unconditional)
 			var ls := 0 if i == 0 else body.rfind("\n", i - 1) + 1
-			var lead := body.substr(ls, i - ls)
-			var top_level := lead.strip_edges() == "" and _indent_depth(lead, unit) <= anchor
+			var line_prefix := body.substr(ls, i - ls)
+			var top_level := line_prefix.strip_edges() == "" and _indent_depth(line_prefix, unit) <= anchor
+			# emission depth: the line's depth, +1 when the return hangs off a same-line block opener
+			# (`if x: return ( <X/> )`) so the lowered statements become the opener's body.
+			var depth := _indent_depth(line_prefix, unit)
+			if line_prefix.strip_edges() != "" and line_prefix.strip_edges().ends_with(":"):
+				depth += 1
 			var eol := body.find("\n", i)
 			if eol == -1:
 				eol = n
@@ -944,23 +984,16 @@ static func _split_return(body: String) -> Dictionary:
 				var close := L.find_matching(body, p)
 				if close == -1:
 					# an unclosed `(` swallows the rest of the body -- nothing after it can be scanned
-					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1), "bad": bad }
-				if top_level:
-					if not chosen.is_empty():
-						bad.append(_bad_return(chosen, body, n))
-					chosen = { "at": i, "p": p, "shape": "paren", "close": close }
-				elif _paren_holds_markup(body, p + 1, close):
-					bad.append({ "at": i, "to": eol, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" })
+					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
+				if top_level or _paren_holds_markup(body, p + 1, close):
+					# top-level paren returns are render-return CANDIDATES by position (content is
+					# checked by the caller); nested paren returns count only when they hold markup.
+					rets.append({ "at": i, "m_start": p + 1, "m_end": close, "end": close + 1, "shape": "paren", "top": top_level, "depth": depth })
 				i = close + 1
 				continue
 			elif p < n and body[p] == "<":
 				# bare `return <Tag.../>` -- markup by construction (`<` cannot start a GDScript expression)
-				if top_level:
-					if not chosen.is_empty():
-						bad.append(_bad_return(chosen, body, n))
-					chosen = { "at": i, "p": p, "shape": "bare", "close": -1 }
-				else:
-					bad.append({ "at": i, "to": eol, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" })
+				rets.append({ "at": i, "m_start": p, "m_end": -1, "end": -1, "shape": "bare", "top": top_level, "depth": depth })
 				i = eol
 				continue
 			elif L.keyword_at(body, p, "null"):
@@ -972,26 +1005,43 @@ static func _split_return(body: String) -> Dictionary:
 			i = eol if top_level else i + 6
 			continue
 		i += 1
+	var chosen := {}
+	for r in rets:
+		if bool(r["top"]):
+			chosen = r
 	if chosen.is_empty():
 		if malformed_at != -1:
 			var meol := body.find("\n", malformed_at)
 			if meol == -1:
 				meol = n
-			return { "error": D.make("GUITKX2102", D.ERROR, "`return` must return markup using `return ( <...> )`", malformed_at, maxi(1, meol - malformed_at)), "bad": bad }
-		return { "error": D.make("GUITKX2101", D.ERROR, "component has no `return ( ... )` (only `return null`?)"), "bad": bad }
+			return { "error": D.make("GUITKX2102", D.ERROR, "`return` must return markup using `return ( <...> )`", malformed_at, maxi(1, meol - malformed_at)) }
+		# Conditional markup returns alone don't make a component: without a FINAL top-level markup
+		# return, some render() paths would return nothing (invalid for `-> RUIVNode`), so 2101 stands.
+		return { "error": D.make("GUITKX2101", D.ERROR, "component has no `return ( ... )` (only `return null`?)") }
+	var parts: Array = []
+	var cursor := 0
+	for r in rets:
+		if int(r["at"]) >= int(chosen["at"]):
+			break
+		if r["shape"] == "paren" and not _paren_holds_markup(body, int(r["m_start"]), int(r["m_end"])):
+			# an early top-level VALUE return (`return (x + 1)`) -- plain GDScript, stays verbatim
+			continue
+		if r["shape"] == "bare":
+			var be := JsxScan._find_element_end(body, int(r["m_start"]), int(chosen["at"]))
+			if be == -1:
+				return { "error": D.make("GUITKX0304", D.ERROR, "unclosed markup in an early `return`", int(r["m_start"]), 1) }
+			r["m_end"] = be
+			r["end"] = be
+		if int(r["at"]) > cursor:
+			parts.append({ "t": "gd", "from": cursor, "to": int(r["at"]) })
+		parts.append({ "t": "ret", "at": int(r["at"]), "end": int(r["end"]), "m_start": int(r["m_start"]), "m_end": int(r["m_end"]), "depth": int(r["depth"]), "top": bool(r["top"]) })
+		cursor = int(r["end"])
+	if int(chosen["at"]) > cursor:
+		parts.append({ "t": "gd", "from": cursor, "to": int(chosen["at"]) })
 	var setup := body.substr(0, int(chosen["at"]))
 	if chosen["shape"] == "paren":
-		return { "setup": setup, "markup_src": body, "m_start": int(chosen["p"]) + 1, "m_end": int(chosen["close"]), "chosen_at": int(chosen["at"]), "bad": bad }
-	return { "setup": setup, "markup_src": body, "m_start": int(chosen["p"]), "m_end": n, "chosen_at": int(chosen["at"]), "bad": bad }
-
-## A demoted earlier-top-level candidate -> `bad` entry (it would return before the final markup
-## return, making the component's output unreachable in the generated .gd).
-static func _bad_return(cand: Dictionary, body: String, n: int) -> Dictionary:
-	var at: int = int(cand["at"])
-	var to: int = body.find("\n", at)
-	if to == -1:
-		to = n
-	return { "at": at, "to": to, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" }
+		return { "setup": setup, "markup_src": body, "m_start": int(chosen["m_start"]), "m_end": int(chosen["m_end"]), "chosen_at": int(chosen["at"]), "unit": unit, "anchor": anchor, "parts": parts }
+	return { "setup": setup, "markup_src": body, "m_start": int(chosen["m_start"]), "m_end": n, "chosen_at": int(chosen["at"]), "unit": unit, "anchor": anchor, "parts": parts }
 
 ## True when a parenthesized return's content [from,to) starts with markup (`<` element or `@`
 ## directive) -- neither can begin a legal GDScript expression, so this never false-flags a plain
@@ -1129,34 +1179,77 @@ static func unreachable_line_ranges(source: String) -> Array:
 # "lambdas can't hold multi-statement return control-flow" limit AND the helper-method
 # locals-capture problem -- the block is inline in render() and sees all setup locals. The
 # runtime `V._norm` flattens the `@for` arrays and drops the null `@if` misses for free.
-static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}, uss_path: String = "") -> String:
+static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}, uss_path: String = "", early: Dictionary = {}) -> String:
 	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
 	if uss_path != "":
 		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)   # T2.3 @uss
-	out += _emit_func("render", params, setup, root, {}, [], diags, base, known)
+	out += _emit_func("render", params, setup, root, {}, [], diags, base, known, early)
 	return out
 
 # Emit one `static func <name>(props, children) -> RUIVNode:` from params + setup + a markup root.
 # `module_comps` maps intra-module component names -> true so <Foo/> emits V.fc(Foo, ...) (bare
 # sibling static func) rather than the single-file V.fc(Foo.render, ...).
-static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1, known: Dictionary = {}) -> String:
+# `early` (Phase C) = { body, parts, unit, anchor } from _split_return; when `parts` holds `ret`
+# entries, setup is emitted INTERLEAVED (verbatim GDScript segments + early markup returns lowered
+# in place); otherwise the legacy whole-string path runs, byte-identical to pre-Phase-C output.
+static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1, known: Dictionary = {}, early: Dictionary = {}) -> String:
 	var out := "static func %s(props: Dictionary, children: Array) -> RUIVNode:\n" % func_name
 	for p in _parse_params(params):
 		if p["default"] != "":
 			out += "\tvar %s = props.get(\"%s\", %s)\n" % [p["name"], p["name"], p["default"]]
 		else:
 			out += "\tvar %s = props.get(\"%s\")\n" % [p["name"], p["name"]]
-	var setup_block := _reindent_setup(_apply_hook_aliases(setup, skip_hooks))
-	if setup_block != "":
-		out += setup_block + "\n"
 	# expr_mode: true while emitting a JSX-VALUE substring (markup inside an embedded {expr}/lambda),
 	# where control-flow MUST be lowered to an inline expression (ternary / .map) instead of hoisted
 	# render-level statements that can't see lambda-local vars. [audit #17]
 	# base: absolute source offset of index 0 of the string the CURRENT node offsets are relative to
 	# (swapped around every nested re-parse via _swap_base, so emit-time diagnostics carry positions).
+	# Created BEFORE setup so Phase C early returns lower through the same context (shared __cfN
+	# counter, diags, base -- no identifier collisions between early and final lowering).
 	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false, "base": base, "known_components": known }
+	var has_ret := false
+	for part in early.get("parts", []):
+		if str(part["t"]) == "ret":
+			has_ret = true
+			break
+	if not has_ret:
+		var setup_block := _reindent_setup(_apply_hook_aliases(setup, skip_hooks))
+		if setup_block != "":
+			out += setup_block + "\n"
+	else:
+		# Phase C (Unity SpliceSetupCodeMarkup parity): interleave verbatim GDScript segments with
+		# early markup returns lowered IN PLACE. Each return emits through a FRESH line buffer at
+		# its own scope depth -- its control-flow pre-statements land right before the `return`,
+		# inside whatever block it sits in, never hoisted past a scope boundary (the exact hazard
+		# the hand-lowered t04 experiment demonstrated). Segments share the WHOLE body's indent
+		# geometry: a segment that starts inside an `if` block (after a lowered return) must not
+		# re-anchor on its own first line and dedent the block.
+		var ebody: String = early["body"]
+		var eunit: int = int(early["unit"])
+		var eanchor: int = int(early["anchor"])
+		for part in early["parts"]:
+			if str(part["t"]) == "gd":
+				var seg := ebody.substr(int(part["from"]), int(part["to"]) - int(part["from"]))
+				var seg_block := _reindent_block(_apply_hook_aliases(seg, skip_hooks), eunit, eanchor)
+				if seg_block != "":
+					out += seg_block + "\n"
+				continue
+			var lvl: int = 1 + maxi(0, int(part["depth"]) - eanchor)
+			var saved_lines: Array = ctx["lines"]
+			var saved_indent: int = int(ctx["indent"])
+			ctx["lines"] = []
+			ctx["indent"] = lvl
+			var rexpr := _emit_expr(part["root"], ctx)
+			var rt := str((part["root"] as Dictionary).get("t", ""))
+			if rt == "for" or rt == "while":
+				rexpr = "V.fragment(%s)" % rexpr   # a loop root yields an Array -> wrap
+			for ln in ctx["lines"]:
+				out += ln + "\n"
+			out += "%sreturn %s\n" % ["\t".repeat(lvl), rexpr]
+			ctx["lines"] = saved_lines
+			ctx["indent"] = saved_indent
 	var root_expr := _emit_expr(root, ctx)
 	if root["t"] == "for" or root["t"] == "while":
 		root_expr = "V.fragment(%s)" % root_expr   # a root-level loop yields an Array -> wrap
@@ -1546,6 +1639,27 @@ static func _reindent_setup(code: String) -> String:
 		else:
 			var level: int = 1 + maxi(0, int(depths[i]) - anchor)
 			out_lines.append("\t".repeat(level) + _strip_leading_ws(lines[i] as String))
+	return "\n".join(out_lines)
+
+## Phase C: _reindent_setup with EXTERNAL geometry. Interleaved gd segments must share the WHOLE
+## body's unit+anchor -- a segment that starts inside an `if` block (right after a lowered early
+## return) would otherwise anchor on its own first line and dedent the whole block out of scope.
+static func _reindent_block(code: String, unit: int, anchor: int) -> String:
+	var lines: Array = Array(code.split("\n"))
+	while not lines.is_empty() and (lines[0] as String).strip_edges() == "":
+		lines.pop_front()
+	while not lines.is_empty() and (lines[-1] as String).strip_edges() == "":
+		lines.pop_back()
+	if lines.is_empty():
+		return ""
+	var out_lines: Array = []
+	for l in lines:
+		var t := (l as String).strip_edges()
+		if t == "":
+			out_lines.append("")
+			continue
+		var level: int = 1 + maxi(0, _indent_depth(l as String, unit) - anchor)
+		out_lines.append("\t".repeat(level) + _strip_leading_ws(l as String))
 	return "\n".join(out_lines)
 
 ## True when the block contains at least one real statement line (not blank, not a `#` comment) --

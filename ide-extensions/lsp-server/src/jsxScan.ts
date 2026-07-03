@@ -117,7 +117,8 @@ function markupAt(src: string, i: number, end: number): boolean {
 
 // From a `<` at `open`, the index just past the outermost element close. Tracks tag depth, routing
 // strings/comments + balanced `{…}` attribute/child holes through the lexer. -1 if unbalanced.
-function findElementEnd(src: string, open: number, end: number): number {
+// Exported for Phase C: splitReturnEx bounds a bare early `return <Tag/>`'s markup window with it.
+export function findElementEnd(src: string, open: number, end: number): number {
   let depth = 0;
   let i = open;
   while (i < end) {

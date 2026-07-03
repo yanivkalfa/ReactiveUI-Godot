@@ -234,23 +234,45 @@ func _test_p1_error_gates() -> void:
 	_check_true(_has_code(r4, "GUITKX0108"), "T1.1: the member's 0108 is the reported error")
 
 func _test_t14_last_return() -> void:
-	# T1.4 (Unity useLastReturn parity): the LAST top-level markup return is the component's output.
-	# Two top-level returns -> the first is GUITKX2102 (it would return before the markup return in
-	# the generated .gd -- Unity's C# compiler catches that; Godot must catch it at compile).
+	# T1.4 (Unity useLastReturn parity): the LAST top-level markup return is the component's window.
+	# Phase C: an EARLIER top-level markup return is LEGAL -- lowered in place -- and everything
+	# after it (including the final return) is dimmed unreachable, exactly like Unity's Site-B dim.
 	var two_src := "component U2() {\n\treturn ( <Label /> )\n\tvar x = 5\n\treturn ( <Button /> )\n}\n"
 	var two := RUIGuitkx.compile(two_src, "U2")
-	_check_true(not two["ok"], "T1.4: early top-level return fails the compile")
-	_check_diag_at(two, "GUITKX2102", two_src, "return ( <Label /> )", "T1.4: 2102 lands on the demoted first return")
+	_check_true(bool(two["ok"]), "Phase C: an early top-level markup return compiles (got %s)" % str(two["diagnostics"]))
+	_check_true(_has_code(two, "GUITKX0107"), "Phase C: code after the unconditional early return dims unreachable (got %s)" % str(two["diagnostics"]))
+	_check_true("return V.label" in str(two["gd"]), "Phase C: the early return's markup is lowered in place, got:\n%s" % str(two["gd"]))
 
-	# The slicing repro shape: a markup return INSIDE an if: block is a statement -- GDScript setup
-	# cannot contain markup, so it is 2102 at that line; the later top-level return still compiles
-	# as the window (the compile fails overall because 2102 is an error).
-	var early_src := "component S(weird: bool = false) {\n" + \
+	# Phase C: a markup return INSIDE an if: block is legal and lowered in place -- and its markup
+	# is now REALLY parsed, so mismatched tags get the precise 0302 instead of a blanket 2102.
+	var early_bad_src := "component S(weird: bool = false) {\n" + \
 		"\tif weird:\n\t\treturn <s></a>\n" + \
 		"\treturn (\n\t\t<vbox><label text=\"ok\" /></vbox>\n\t)\n}\n"
-	var early := RUIGuitkx.compile(early_src, "S")
-	_check_true(not early["ok"], "T1.4: conditional markup return fails the compile")
-	_check_diag_at(early, "GUITKX2102", early_src, "return <s></a>", "T1.4: 2102 lands on the conditional markup return")
+	var early_bad := RUIGuitkx.compile(early_bad_src, "S")
+	_check_true(not early_bad["ok"], "Phase C: a BROKEN early markup return still fails the compile")
+	_check_true(_has_code(early_bad, "GUITKX0302"), "Phase C: the early return's markup is parsed for real (0302 mismatched tag, got %s)" % str(early_bad["diagnostics"]))
+
+	# Phase C, the t04 shape: a CONDITIONAL early markup return compiles to scope-correct GDScript
+	# -- its lowered `return` sits INSIDE the `if weird:` block, at the block's indent.
+	var early_src := "component S2(weird: bool = false) {\n" + \
+		"\tif weird:\n\t\treturn ( <label text=\"early\" /> )\n" + \
+		"\treturn (\n\t\t<vbox><label text=\"ok\" /></vbox>\n\t)\n}\n"
+	var early := RUIGuitkx.compile(early_src, "S2")
+	_check_true(bool(early["ok"]), "Phase C: a conditional early markup return compiles (got %s)" % str(early["diagnostics"]))
+	_check_true("\n\t\treturn V.label" in str(early["gd"]), "Phase C: the early return is lowered at ITS OWN indent (inside the if block), got:\n%s" % str(early["gd"]))
+	_check_true(not _has_code(early, "GUITKX0107"), "Phase C: a CONDITIONAL early return dims nothing (got %s)" % str(early["diagnostics"]))
+
+	# Phase C runtime proof: both paths of the compiled guard actually render (the whole point).
+	var sc := GDScript.new()
+	sc.source_code = str(early["gd"]).replace("class_name S2\n", "")
+	var lerr := sc.reload()
+	_check_true(lerr == OK, "Phase C runtime: the lowered .gd parses+compiles (err %s):\n%s" % [str(lerr), str(early["gd"])])
+	if lerr == OK:
+		var inst = sc.new()
+		var r_early = inst.render({ "weird": true }, [])
+		var r_main = inst.render({ "weird": false }, [])
+		_check_true(r_early is RUIVNode and str((r_early as RUIVNode).props.get("text", "")) == "early", "Phase C runtime: weird=true renders the early label (got %s)" % str(r_early))
+		_check_true(r_main is RUIVNode and (r_main as RUIVNode).props.get("text", null) == null, "Phase C runtime: weird=false renders the main vbox root (got %s)" % str(r_main))
 
 	# A PLAIN parenthesized return inside a setup lambda is legal GDScript -- never flagged.
 	var lambda_src := "component L() {\n" + \
