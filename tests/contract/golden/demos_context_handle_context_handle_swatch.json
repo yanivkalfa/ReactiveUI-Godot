@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":223,\"attrs\":[{\"at\":230,\"end\":302,\"kind\":\"str\",\"name\":\"text\",\"value\":\"   ● this label reads the accent straight from the context handle\",\"vat\":236},{\"at\":303,\"end\":330,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": c}\",\"vat\":311}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}]"
+			"tree": "[{\"at\":226,\"attrs\":[{\"at\":239,\"end\":311,\"kind\":\"str\",\"name\":\"text\",\"value\":\"   ● this label reads the accent straight from the context handle\",\"vat\":245},{\"at\":318,\"end\":345,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": c}\",\"vat\":326}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 335,
-			"start": 220
+			"end": 351,
+			"start": 221
 		}
 	]
 }

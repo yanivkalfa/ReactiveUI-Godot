@@ -12,14 +12,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":74,\"attrs\":[{\"at\":81,\"end\":90,\"kind\":\"str\",\"name\":\"text\",\"value\":\"on\",\"vat\":87}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"Label\"}]"
+			"tree": "[{\"at\":82,\"attrs\":[{\"at\":89,\"end\":98,\"kind\":\"str\",\"name\":\"text\",\"value\":\"on\",\"vat\":95}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 94,
-			"start": 73
+			"end": 104,
+			"start": 77
 		}
 	]
 }

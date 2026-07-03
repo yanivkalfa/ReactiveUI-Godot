@@ -1,23 +1,31 @@
 @class_name DemoControls
 
-component DemoControls() {
-	var v = useState(40.0)
-	return (
-		<DemoBox title="Controls — a slice of the 60-control set">
-			<CheckButton text="CheckButton" />
-			<CheckBox text="CheckBox" />
-			<HBox style={ {"separation": 8} }>
-				<HSlider min_value={ 0 } max_value={ 100 } value={ v[0] } onChange={ func(x): v[1].call(x) } style={ {"min_width": 220} } />
-				<Label text={ "%d" % int(v[0]) } />
-			</HBox>
-			<ProgressBar min_value={ 0 } max_value={ 100 } value={ v[0] } style={ {"min_width": 260} } />
-			<Label text="ItemList:" />
-			<ItemList items={ ["Apple", "Banana", "Cherry", "Date"] } style={ {"min_height": 90} } />
-			<Label text="Tree (declarative, expansion preserved):" />
-			<Tree hide_root items={ [
+component DemoControls {
+  var v = useState(40.0)
+  return (
+    <DemoBox title="Controls — a slice of the 60-control set">
+      <CheckButton text="CheckButton" />
+      <CheckBox text="CheckBox" />
+      <HBox style={ {"separation": 8} }>
+        <HSlider
+          min_value={ 0 }
+          max_value={ 100 }
+          value={ v[0] }
+          onChange={ func(x): v[1].call(x) }
+          style={ {"min_width": 220} } />
+        <Label text={ "%d" % int(v[0]) } />
+      </HBox>
+      <ProgressBar min_value={ 0 } max_value={ 100 } value={ v[0] } style={ {"min_width": 260} } />
+      <Label text="ItemList:" />
+      <ItemList items={ ["Apple", "Banana", "Cherry", "Date"] } style={ {"min_height": 90} } />
+      <Label text="Tree (declarative, expansion preserved):" />
+      <Tree
+        hide_root
+        items={ [
 				{ "id": "fruit", "text": "🍎 Fruit", "children": [{ "id": "apple", "text": "Apple" }, { "id": "pear", "text": "Pear" }] },
 				{ "id": "veg", "text": "🥕 Veg", "children": [{ "id": "carrot", "text": "Carrot" }] },
-			] } style={ {"min_height": 150} } />
-		</DemoBox>
-	)
+			] }
+        style={ {"min_height": 150} } />
+    </DemoBox>
+  )
 }

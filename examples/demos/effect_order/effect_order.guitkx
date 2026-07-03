@@ -1,25 +1,27 @@
 @class_name DemoEffectOrder
 
 component DemoEffectOrder {
-	var n = useState(3)
-	var log = useState([])
-	var append = func(msg): log[1].call(func(arr): return arr + [msg])
-	return (
-		<DemoBox title="Effect cleanup order — mount / unmount">
-			<HBox style={ {"separation": 8} }>
-				<Button text="− row" onClick={ func(): n[1].call(maxi(0, n[0] - 1)) } />
-				<Label text={ "%d rows" % n[0] } />
-				<Button text="+ row" onClick={ func(): n[1].call(n[0] + 1) } />
-			</HBox>
-			<VBox style={ {"separation": 2} }>
-				@for (i in n[0]) { return (
-					<DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
-				) }
-			</VBox>
-			<Label
-				text="Effect log (add/remove rows — cleanup runs on unmount):"
-				style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
-			<Label text={ "\n".join(log[0]) } />
-		</DemoBox>
-	)
+  var n = useState(3)
+  var log = useState([])
+  var append = func(msg): log[1].call(func(arr): return arr + [msg])
+  return (
+    <DemoBox title="Effect cleanup order — mount / unmount">
+      <HBox style={ {"separation": 8} }>
+        <Button text="− row" onClick={ func(): n[1].call(maxi(0, n[0] - 1)) } />
+        <Label text={ "%d rows" % n[0] } />
+        <Button text="+ row" onClick={ func(): n[1].call(n[0] + 1) } />
+      </HBox>
+      <VBox style={ {"separation": 2} }>
+        @for (i in n[0]) {
+          return (
+            <DemoEffectOrderRow key={ str(i) } idx={ i } append={ append } />
+          )
+        }
+      </VBox>
+      <Label
+        text="Effect log (add/remove rows — cleanup runs on unmount):"
+        style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
+      <Label text={ "\n".join(log[0]) } />
+    </DemoBox>
+  )
 }

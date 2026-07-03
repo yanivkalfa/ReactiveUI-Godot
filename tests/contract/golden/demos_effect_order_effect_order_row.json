@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":220,\"attrs\":[{\"at\":227,\"end\":252,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"• row %d\\\" % idx\",\"vat\":234}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"}]"
+			"tree": "[{\"at\":229,\"attrs\":[{\"at\":236,\"end\":261,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"• row %d\\\" % idx\",\"vat\":243}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 257,
-			"start": 217
+			"end": 267,
+			"start": 224
 		}
 	]
 }

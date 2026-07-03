@@ -304,7 +304,7 @@ immediately.
   levels together and dedenting a nested `return` out of its guard on reformat; now the min
   positive delta between distinct widths (sample-idempotency sweep caught it). Corpus
   regenerated (14 cases, spaces-2). Repo-wide reformat deferred into D5 (files migrate anyway).
-- **D1 ⬜ GD markup grammar:** `_parse_if/_parse_loop/_parse_match` bodies → `body_code` model:
+- **D1 ✅ (landed `ae5d55a`) GD markup grammar:** `_parse_if/_parse_loop/_parse_match` bodies → `body_code` model:
   raw text (parser stays dumb — Unity parity); a new compiler-side splitter (adapt
   `_split_return:963`'s scan) classifies every DIRECTIVE-LEVEL return: markup-paren / bare
   markup / `return null` / bare `return` / VALUE return (`return node_var` — LEGAL, rewritten
@@ -314,20 +314,27 @@ immediately.
   migration error ("a directive body returns its markup — write `return ( <markup> )`");
   code-only bodies with no return are legal (produce nothing, Unity parity). New node shapes
   documented in the mirror header (markup.ts D4). Hooks scan → **GUITKX2104** (D2).
-- **D2 ⬜ No-hooks-in-directive-bodies diagnostic** (both sides, live + compiler): scan
-  body_code for vocabulary hooks + `use_`-prefixed calls (Unity HooksValidator parity).
-- **D3 ⬜ GD lowering:** `_emit_if/_emit_loop/_emit_match` → the lambda-IIFE design above, prep
+- **D2 ✅ (landed `ae5d55a` GD + `f9d806e` live) No-hooks-in-directive-bodies diagnostic**
+  (both sides): GUITKX2104 via the shared `_find_hook_call`/`findHookCall` over body gd segments.
+- **D3 ✅ (landed `ae5d55a`) GD lowering:** `_emit_if/_emit_loop/_emit_match` → the lambda-IIFE design above, prep
   code spliced verbatim (re-indent via Phase C `_reindent_block`), markup returns lowered in
   place; expr_mode variants collapse into the same IIFE form (a lambda call IS an expression —
   `@while/@match` inside {expr} become legal, GUITKX0026 narrows/retires).
-- **D4 ⬜ TS mirror:** markup.ts grammar; virtualDoc splices body prep code as ANALYZABLE
+- **D4 ✅ (landed `f9d806e`) TS mirror:** splitBody line-mirror + fmtBody corpus byte-parity +
+  live 2103/2104/per-return 0108/0106 + recursion. virtualDoc keeps neutralizing bodies inside
+  windows (flow-correct; body-prep embedded analysis noted as follow-up polish). Original scope: markup.ts grammar; virtualDoc splices body prep code as ANALYZABLE
   GDScript (embedded diagnostics inside directive bodies — new capability); liveMarkup
   structure walk + new diagnostics live; semanticTokens; formatGuitkx emits the new form.
-- **D5 ⬜ Migration:** all 43 examples/demos + fixtures + contract goldens (regen via
+- **D5 ✅ (landed `4a27efb` + reformat sweep) Migration:** `dev/migrate_directive_bodies.gd`
+  (loops first-legacy-wrap + rescan; .gdignore-aware, explicit roots win) migrated 8 demos + 14
+  fixtures + every inline test source; `dev/reformat_all.gd` swept 99 files to spaces-2; goldens
+  regenerated twice (migration, then reformat). Original scope: all 43 examples/demos + fixtures + contract goldens (regen via
   contract_dump) + guitkx_test pins flipped to the new grammar.
-- **D6 ⬜ Runtime proof:** demos suite + GDScript.new() render tests incl. a 4-deep nested case
+- **D6 ✅ Runtime proof:** `_test_phase_d_bodies` — the kitchen-sink 4-deep nesting renders its
+  exact 16-label tree (null-skip and @else both load-bearing); demos 30/30. Original scope: demos suite + GDScript.new() render tests incl. a 4-deep nested case
   mirroring the Unity kitchen-sink file (prep vars per level, `return null` skip, else-branch).
-- **D7 ⬜ Docs + release:** language-reference directive section rewritten, Unity-differences
+- **D7 ✅ Docs + release:** diagnostics rows 2103/2104, CHANGELOGs (root 0.7.0 + vscode 0.8.0
+  with migration notes), addon 0.7.0 + ext/lsp 0.8.0. Original scope: language-reference directive section rewritten, Unity-differences
   page updated, CHANGELOGs, addon 0.7.0 + ext/lsp 0.8.0, migration notes (loud).
 - **D8 ⬜ Gates:** full headless suite + TS suite + pristine-clone cold open + field checklist.
 

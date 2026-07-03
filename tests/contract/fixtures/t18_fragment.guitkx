@@ -1,15 +1,17 @@
 component NamedFragment(xs: Array = []) {
-	return (
-		<vbox>
-			<Fragment>
-				<label text="a" />
-				<label text="b" />
-			</Fragment>
-			@for (i in 3) { return (
-				<Fragment key={ str(i) }>
-					<label text={ str(i) } />
-				</Fragment>
-			) }
-		</vbox>
-	)
+  return (
+    <vbox>
+      <Fragment>
+        <label text="a" />
+        <label text="b" />
+      </Fragment>
+      @for (i in 3) {
+        return (
+          <Fragment key={ str(i) }>
+            <label text={ str(i) } />
+          </Fragment>
+        )
+      }
+    </vbox>
+  )
 }

@@ -18,14 +18,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":54,\"attrs\":[],\"children\":[{\"at\":64,\"attrs\":[],\"children\":[{\"at\":79,\"attrs\":[{\"at\":86,\"end\":94,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":92}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"label\"},{\"at\":102,\"attrs\":[{\"at\":109,\"end\":117,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":115}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}],\"named\":\"Fragment\",\"t\":\"frag\"},{\"at\":139,\"body_at\":154,\"body_markup\":\" return (\\n\\t\\t\\t\\t<Fragment key={ str(i) }>\\n\\t\\t\\t\\t\\t<label text={ str(i) } />\\n\\t\\t\\t\\t</Fragment>\\n\\t\\t\\t) \",\"header\":\"i in 3\",\"t\":\"for\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":57,\"attrs\":[],\"children\":[{\"at\":70,\"attrs\":[],\"children\":[{\"at\":89,\"attrs\":[{\"at\":96,\"end\":104,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":102}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"label\"},{\"at\":116,\"attrs\":[{\"at\":123,\"end\":131,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":129}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}],\"named\":\"Fragment\",\"t\":\"frag\"},{\"at\":159,\"body_at\":174,\"body_markup\":\"\\n        return (\\n          <Fragment key={ str(i) }>\\n            <label text={ str(i) } />\\n          </Fragment>\\n        )\\n      \",\"header\":\"i in 3\",\"t\":\"for\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 259,
-			"start": 51
+			"end": 320,
+			"start": 52
 		}
 	]
 }

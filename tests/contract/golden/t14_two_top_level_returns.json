@@ -8,7 +8,7 @@
 		},
 		{
 			"code": "GUITKX0107",
-			"len": 48,
+			"len": 55,
 			"off": 61,
 			"severity": 2
 		}
@@ -18,24 +18,24 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":35,\"attrs\":[{\"at\":42,\"end\":54,\"kind\":\"str\",\"name\":\"text\",\"value\":\"first\",\"vat\":48}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":34,\"attrs\":[{\"at\":41,\"end\":53,\"kind\":\"str\",\"name\":\"text\",\"value\":\"first\",\"vat\":47}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"label\"}]"
 		},
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":81,\"attrs\":[{\"at\":88,\"end\":104,\"kind\":\"str\",\"name\":\"text\",\"value\":\"last wins\",\"vat\":94}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":86,\"attrs\":[{\"at\":93,\"end\":109,\"kind\":\"str\",\"name\":\"text\",\"value\":\"last wins\",\"vat\":99}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"label\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 58,
-			"start": 34
+			"end": 57,
+			"start": 33
 		},
 		{
-			"end": 108,
-			"start": 80
+			"end": 115,
+			"start": 81
 		}
 	]
 }

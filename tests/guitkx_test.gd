@@ -50,6 +50,7 @@ func _run() -> void:
 	_test_formatter_options()
 	_test_codegen()
 	_test_cold_open_recovery()
+	_test_phase_d_bodies()
 	_test_spread()
 	if _failed:
 		print("[guitkx_test] FAILED")
@@ -580,6 +581,82 @@ func _test_return_null_guard() -> void:
 	var gd: String = res["gd"]
 	_check_true("return null" in gd, "guard `return null` preserved in setup")
 	_check(gd, "V.label(", "real markup return still emitted")
+
+# Phase D acceptance: the Unity kitchen-sink nesting translated to guitkx -- 4 directive levels
+# (@for -> markup -> @if/@else -> @for -> @if -> @for), prep vars at every level, a prep-markup
+# variable consumed via {expr}, a `return null` skip-guard, and an @else arm -- compiled, parsed,
+# MOUNTED, and the exact rendered Label count asserted (null-skip and branch choice are load-bearing).
+func _test_phase_d_bodies() -> void:
+	var src := """component Deep(cats: Array = ["A", "B"], n: int = 2, mode: String = "x") {
+	var pills = ["x", "y", "z"]
+	return (
+		<VBox>
+			@for (cat in cats) {
+				var badge = (
+					<HBox>
+						<Label text={ cat } />
+						@if (mode != "") {
+							return ( <Label text={ "[" + mode + "]" } /> )
+						}
+					</HBox>
+				)
+				return (
+					<VBox key={ cat }>
+						{ badge }
+						@for (d in n) {
+							var frac := float(d) / maxi(1, n - 1)
+							return (
+								<VBox key={ cat + str(d) }>
+									<Label text={ "depth %d %.1f" % [d, frac] } />
+									@if (d % 2 == 0) {
+										var slot = "even " + cat
+										return (
+											<HBox>
+												<Label text={ slot } />
+												@for (tag in pills) {
+													if tag == "z" and d == 0:
+														return null
+													return ( <Label key={ tag } text={ tag } /> )
+												}
+											</HBox>
+										)
+									} @else {
+										return ( <Label text="odd" /> )
+									}
+								</VBox>
+							)
+						}
+					</VBox>
+				)
+			}
+		</VBox>
+	)
+}"""
+	var r := RUIGuitkx.compile(src, "Deep")
+	if not bool(r["ok"]):
+		_fail("phase_d_bodies: compile failed: " + str(r["diagnostics"]))
+		return
+	var sc := GDScript.new()
+	sc.source_code = str(r["gd"]).replace("class_name Deep\n", "")
+	if sc.reload() != OK:
+		_fail("phase_d_bodies: generated .gd does not parse:\n" + str(r["gd"]))
+		return
+	var c := Control.new()
+	root.add_child(c)
+	var inst = sc.new()
+	var app := ReactiveRoot.create(c, V.fc(inst.render, {}))
+	var count := _count_labels(c)
+	# per cat: badge (cat + [mode]) = 2; d=0 even: depth + slot + pills minus z = 4; d=1 odd: depth + odd = 2
+	# -> 8 per cat x 2 cats = 16. The z-skip at d=0 and the @else arm are both load-bearing here.
+	_check_true(count == 16, "phase D 4-deep render: 16 labels expected, got %d" % count)
+	app.unmount()
+	c.free()
+
+func _count_labels(node: Node) -> int:
+	var n := 1 if node is Label else 0
+	for ch in node.get_children():
+		n += _count_labels(ch)
+	return n
 
 func _test_formatter() -> void:
 	const Fmt = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")

@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":329,\"code\":\"V.router({ \\\"initial\\\": \\\"/\\\" }, [V.fc(DemoRouterInner.render)])\",\"t\":\"expr\",\"vat\":331}]"
+			"tree": "[{\"at\":330,\"code\":\"V.router({ \\\"initial\\\": \\\"/\\\" }, [V.fc(DemoRouterInner.render)])\",\"t\":\"expr\",\"vat\":332}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 395,
-			"start": 326
+			"end": 397,
+			"start": 325
 		}
 	]
 }

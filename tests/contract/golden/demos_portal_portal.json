@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":586,\"attrs\":[{\"at\":595,\"end\":643,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Portal — render into a different subtree\",\"vat\":602}],\"children\":[{\"at\":648,\"attrs\":[{\"at\":656,\"end\":695,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Toggle portal (%s)\\\" % show[0]\",\"vat\":663},{\"at\":696,\"end\":741,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): show[1].call(not show[0])\",\"vat\":706}],\"children\":[],\"line\":21,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":748,\"attrs\":[{\"at\":754,\"end\":782,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 16}\",\"vat\":762}],\"children\":[{\"at\":788,\"attrs\":[{\"at\":794,\"end\":822,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_h\\\": true}\",\"vat\":802}],\"children\":[{\"at\":829,\"attrs\":[{\"at\":836,\"end\":872,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Logical parent (left column):\",\"vat\":842}],\"children\":[],\"line\":24,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":881,\"code\":\"content if content != null else <Label text=\\\"(portal hidden)\\\" />\",\"t\":\"expr\",\"vat\":883}],\"line\":23,\"t\":\"el\",\"tag\":\"VBox\"},{\"at\":966,\"attrs\":[{\"at\":973,\"end\":987,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"target\",\"vat\":979},{\"at\":988,\"end\":1076,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.13, 0.22, 0.13), \\\"pad\\\": 8, \\\"min_size\\\": Vector2(280, 110)}\",\"vat\":996}],\"children\":[],\"line\":27,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":22,\"t\":\"el\",\"tag\":\"HBox\"}],\"line\":20,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":616,\"attrs\":[{\"at\":625,\"end\":673,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Portal — render into a different subtree\",\"vat\":632}],\"children\":[{\"at\":681,\"attrs\":[{\"at\":697,\"end\":736,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Toggle portal (%s)\\\" % show[0]\",\"vat\":704},{\"at\":745,\"end\":790,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): show[1].call(not show[0])\",\"vat\":755}],\"children\":[],\"line\":21,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":800,\"attrs\":[{\"at\":806,\"end\":834,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 16}\",\"vat\":814}],\"children\":[{\"at\":844,\"attrs\":[{\"at\":850,\"end\":878,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_h\\\": true}\",\"vat\":858}],\"children\":[{\"at\":890,\"attrs\":[{\"at\":897,\"end\":933,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Logical parent (left column):\",\"vat\":903}],\"children\":[],\"line\":26,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":947,\"code\":\"content if content != null else <Label text=\\\"(portal hidden)\\\" />\",\"t\":\"expr\",\"vat\":949}],\"line\":25,\"t\":\"el\",\"tag\":\"VBox\"},{\"at\":1040,\"attrs\":[{\"at\":1057,\"end\":1071,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"target\",\"vat\":1063},{\"at\":1082,\"end\":1170,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.13, 0.22, 0.13), \\\"pad\\\": 8, \\\"min_size\\\": Vector2(280, 110)}\",\"vat\":1090}],\"children\":[],\"line\":29,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":24,\"t\":\"el\",\"tag\":\"HBox\"}],\"line\":20,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 1105,
-			"start": 583
+			"end": 1205,
+			"start": 611
 		}
 	]
 }

@@ -1,5 +1,7 @@
-component First() {
-	return ( <label text="a" /> )
+component First {
+  return (
+    <label text="a" />
+  )
 }
 
 component Second() {

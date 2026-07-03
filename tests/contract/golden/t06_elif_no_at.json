@@ -1,31 +1,13 @@
 {
 	"diagnostics": [
 		{
-			"code": "GUITKX0103",
+			"code": "GUITKX0304",
 			"len": 1,
-			"off": 10,
-			"severity": 1
-		},
-		{
-			"code": "GUITKX0150",
-			"len": 15,
-			"off": 97,
-			"severity": 1
+			"off": 28,
+			"severity": 0
 		}
 	],
-	"markup": [
-		{
-			"error": "",
-			"error_at": -1,
-			"error_code": "",
-			"tree": "[{\"at\":42,\"attrs\":[],\"children\":[{\"at\":52,\"branches\":[{\"body_at\":61,\"body_markup\":\" return ( <Label text=\\\"a\\\" /> ) \",\"cond\":\"c\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"},{\"at\":97,\"t\":\"text\",\"value\":\"#elif (false) {\"},{\"at\":113,\"attrs\":[{\"at\":120,\"end\":128,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":126}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":132,\"t\":\"text\",\"value\":\"}\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBox\"}]"
-		}
-	],
-	"ok": true,
-	"windows": [
-		{
-			"end": 145,
-			"start": 39
-		}
-	]
+	"markup": [],
+	"ok": false,
+	"windows": []
 }

@@ -1,10 +1,10 @@
 component LambdaGuard(items: Array = []) {
-	var pick = func(i):
-		return (i * 2)
-	var total = 0
-	return (
-		<vbox>
-			<label text={ str(pick.call(3)) } />
-		</vbox>
-	)
+  var pick = func(i):
+    return (i * 2)
+  var total = 0
+  return (
+    <vbox>
+      <label text={ str(pick.call(3)) } />
+    </vbox>
+  )
 }

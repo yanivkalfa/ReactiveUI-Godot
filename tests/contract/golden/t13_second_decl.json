@@ -9,7 +9,7 @@
 		{
 			"code": "GUITKX2105",
 			"len": 20,
-			"off": 54,
+			"off": 59,
 			"severity": 0
 		}
 	],
@@ -18,24 +18,24 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":30,\"attrs\":[{\"at\":37,\"end\":45,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":43}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":33,\"attrs\":[{\"at\":40,\"end\":48,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":46}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"label\"}]"
 		},
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":85,\"attrs\":[{\"at\":92,\"end\":100,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":98}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":90,\"attrs\":[{\"at\":97,\"end\":105,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":103}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"label\"}]"
 		}
 	],
 	"ok": false,
 	"windows": [
 		{
-			"end": 49,
-			"start": 29
+			"end": 54,
+			"start": 28
 		},
 		{
-			"end": 104,
-			"start": 84
+			"end": 109,
+			"start": 89
 		}
 	]
 }

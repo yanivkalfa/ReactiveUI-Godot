@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":90,\"attrs\":[{\"at\":99,\"end\":126,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Deep component tree\",\"vat\":106}],\"children\":[{\"at\":131,\"attrs\":[{\"at\":137,\"end\":164,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":145}],\"children\":[{\"at\":170,\"attrs\":[{\"at\":178,\"end\":192,\"kind\":\"str\",\"name\":\"text\",\"value\":\"− depth\",\"vat\":184},{\"at\":193,\"end\":249,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): depth[1].call(maxi(1, depth[0] - 1))\",\"vat\":203}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":257,\"attrs\":[{\"at\":264,\"end\":294,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"depth %d\\\" % depth[0]\",\"vat\":271}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":302,\"attrs\":[{\"at\":310,\"end\":324,\"kind\":\"str\",\"name\":\"text\",\"value\":\"+ depth\",\"vat\":316},{\"at\":325,\"end\":372,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): depth[1].call(depth[0] + 1)\",\"vat\":335}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":7,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":390,\"attrs\":[{\"at\":408,\"end\":426,\"kind\":\"expr\",\"name\":\"level\",\"value\":\"depth[0]\",\"vat\":416}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"DemoDeepTreeNode\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":92,\"attrs\":[{\"at\":101,\"end\":128,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Deep component tree\",\"vat\":108}],\"children\":[{\"at\":136,\"attrs\":[{\"at\":142,\"end\":169,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":150}],\"children\":[{\"at\":179,\"attrs\":[{\"at\":187,\"end\":201,\"kind\":\"str\",\"name\":\"text\",\"value\":\"− depth\",\"vat\":193},{\"at\":202,\"end\":258,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): depth[1].call(maxi(1, depth[0] - 1))\",\"vat\":212}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":270,\"attrs\":[{\"at\":277,\"end\":307,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"depth %d\\\" % depth[0]\",\"vat\":284}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":319,\"attrs\":[{\"at\":327,\"end\":341,\"kind\":\"str\",\"name\":\"text\",\"value\":\"+ depth\",\"vat\":333},{\"at\":342,\"end\":389,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): depth[1].call(depth[0] + 1)\",\"vat\":352}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":7,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":413,\"attrs\":[{\"at\":431,\"end\":449,\"kind\":\"expr\",\"name\":\"level\",\"value\":\"depth[0]\",\"vat\":439}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"DemoDeepTreeNode\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 444,
+			"end": 470,
 			"start": 87
 		}
 	]

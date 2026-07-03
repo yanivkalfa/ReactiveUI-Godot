@@ -1,20 +1,24 @@
 @class_name DemoKeyed
 
-component DemoKeyed() {
-	var items = useState(["A", "B", "C", "D", "E"])
-	var shuffle = func():
-		var arr: Array = items[0].duplicate()
-		arr.shuffle()
-		items[1].call(arr)
-	return (
-		<DemoBox title="Keyed diff — identity survives reordering">
-			<Button text="Shuffle" onClick={ shuffle } />
-			<Label text="Each tile keeps its node (and its random color) across shuffles — that's keys at work." style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
-			<HBox style={ {"separation": 6} }>
-				@for (id in items[0]) { return (
-					<DemoKeyedTile key={ str(id) } id={ id } />
-				) }
-			</HBox>
-		</DemoBox>
-	)
+component DemoKeyed {
+  var items = useState(["A", "B", "C", "D", "E"])
+  var shuffle = func():
+    var arr: Array = items[0].duplicate()
+    arr.shuffle()
+    items[1].call(arr)
+  return (
+    <DemoBox title="Keyed diff — identity survives reordering">
+      <Button text="Shuffle" onClick={ shuffle } />
+      <Label
+        text="Each tile keeps its node (and its random color) across shuffles — that's keys at work."
+        style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
+      <HBox style={ {"separation": 6} }>
+        @for (id in items[0]) {
+          return (
+            <DemoKeyedTile key={ str(id) } id={ id } />
+          )
+        }
+      </HBox>
+    </DemoBox>
+  )
 }

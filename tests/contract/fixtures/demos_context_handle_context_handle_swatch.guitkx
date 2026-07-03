@@ -1,9 +1,11 @@
 @class_name DemoContextHandleSwatch
 
-component DemoContextHandleSwatch() {
-	const AccentContext = preload("res://examples/demos/context_handle/accent_context.gd")
-	var c = Hooks.useContext(AccentContext.HANDLE)
-	return (
-		<Label text="   ● this label reads the accent straight from the context handle" style={ {"font_color": c} } />
-	)
+component DemoContextHandleSwatch {
+  const AccentContext = preload("res://examples/demos/context_handle/accent_context.gd")
+  var c = Hooks.useContext(AccentContext.HANDLE)
+  return (
+    <Label
+      text="   ● this label reads the accent straight from the context handle"
+      style={ {"font_color": c} } />
+  )
 }

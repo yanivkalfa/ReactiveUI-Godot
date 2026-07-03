@@ -1,19 +1,19 @@
 @class_name DemoFragment
 
-component DemoFragment() {
-	return (
-		<DemoBox title="Fragment — group nodes without a wrapper">
-			<Label text="A fragment inserts its children flat — no extra container node:" />
-			<Panel style={ {"bg_color": Color(0.18, 0.18, 0.22), "pad": 10} }>
-				<VBox style={ {"separation": 4} }>
-					<Label text="• before fragment" />
-					<>
-						<Label text="• — fragment child A —" style={ {"font_color": Color(0.6, 0.85, 1.0)} } />
-						<Label text="• — fragment child B —" style={ {"font_color": Color(0.6, 0.85, 1.0)} } />
-					</>
-					<Label text="• after fragment" />
-				</VBox>
-			</Panel>
-		</DemoBox>
-	)
+component DemoFragment {
+  return (
+    <DemoBox title="Fragment — group nodes without a wrapper">
+      <Label text="A fragment inserts its children flat — no extra container node:" />
+      <Panel style={ {"bg_color": Color(0.18, 0.18, 0.22), "pad": 10} }>
+        <VBox style={ {"separation": 4} }>
+          <Label text="• before fragment" />
+          <>
+            <Label text="• — fragment child A —" style={ {"font_color": Color(0.6, 0.85, 1.0)} } />
+            <Label text="• — fragment child B —" style={ {"font_color": Color(0.6, 0.85, 1.0)} } />
+          </>
+          <Label text="• after fragment" />
+        </VBox>
+      </Panel>
+    </DemoBox>
+  )
 }

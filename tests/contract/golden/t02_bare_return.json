@@ -12,13 +12,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":24,\"attrs\":[{\"at\":31,\"end\":40,\"kind\":\"str\",\"name\":\"text\",\"value\":\"hi\",\"vat\":37}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"Label\"}]"
+			"tree": "[{\"at\":29,\"attrs\":[{\"at\":36,\"end\":45,\"kind\":\"str\",\"name\":\"text\",\"value\":\"hi\",\"vat\":42}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"Label\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 44,
+			"end": 51,
 			"start": 24
 		}
 	]
