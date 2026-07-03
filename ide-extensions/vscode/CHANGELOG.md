@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.1] - 2026-07-03
+- **Fixed the host-tag storm:** `<HBox>`, `<Button>`, `<Label>` and every vocabulary alias no
+  longer squiggle as "unknown component" once the workspace scan completes; a typo'd host tag now
+  gets a did-you-mean for the host tag itself.
+- An early markup return (`return <s></a>` before the final return) no longer sprays four bogus
+  embedded-GDScript errors over the line. It shows the real thing instead — a live `GUITKX2102`
+  with honest wording (only returning **markup** early is banned; `return null` guards are fine)
+  that appears and clears as you type, Godot editor open or not.
+- Garbage directive headers (`@for (i in 2: int5)`) flag live as `GUITKX2508` (new, mirrored in
+  the compiler) instead of passing silently into an invalid generated `.gd`.
+- Stale compiler-sidecar diagnostics collapse into one file-level note while you edit — they used
+  to pile up at drifted offsets and never clear without the Godot editor recompiling.
+- Packaging: prepublish now verifies the bundled server is complete and current; a publish
+  without a fresh bundle could previously ship a server that died on startup.
+- Pairs with addon **0.5.1** (root CHANGELOG): the ~250-line red wall on a cold Godot editor open
+  is two warning lines now, with generated outputs preserved and quiet self-healing.
+
 ## [0.6.0] - 2026-07-03
 - **Diagnostic codes renumbered onto the Unity-shared table** (addon 0.5.0): most visibly,
   unreachable-after-return dimming is now `GUITKX0107` (was 0114), missing-declaration is

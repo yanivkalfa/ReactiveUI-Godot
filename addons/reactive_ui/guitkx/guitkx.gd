@@ -52,15 +52,45 @@ static func hook_names() -> Array:
 static func v_factories() -> Array:
 	return vocab().get("v_factories", [])
 
+## B1 (0.6.0 field triage): one log line per unreadable-vocabulary EPISODE. A cold editor open used
+## to produce three red lines per file per sweep (~250 for the demos project) because every compile
+## retried the read, failed, and logged. Reset on a successful load so a later real failure logs again.
+static var _vocab_hold := false
+
 static func _load_vocabulary() -> Dictionary:
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(_VOCAB_PATH))
+	var text := FileAccess.get_file_as_string(_VOCAB_PATH)
+	if text.is_empty():
+		# The editor's first-scan window: `res://` reads can come back EMPTY for the whole scan
+		# (field capture 2026-07-03 -- every per-file compile of a cold open failed the read). Try
+		# the absolute OS path too: cheap, and it covers environments where only the res://
+		# indirection is unavailable -- though the 4.7 cold-open replay showed BOTH paths fail
+		# inside the scan window itself, so the real safety is the empty-check + hold below.
+		var f := FileAccess.open(ProjectSettings.globalize_path(_VOCAB_PATH), FileAccess.READ)
+		if f != null:
+			text = f.get_as_text()
+			f.close()
+	if text.is_empty():
+		# Checked BEFORE parsing: JSON.parse_string("") adds Godot's own "Parse JSON failed" line
+		# on top of ours. Transient (scan window) or missing file -- warn once per episode; the
+		# per-file GUITKX2507 env_error still records the hold for every compile that needs it.
+		if not _vocab_hold:
+			_vocab_hold = true
+			push_warning("[guitkx] vocabulary.json could not be read (editor scan window or missing file) -- compiles hold, existing outputs kept, retrying; further failures are silent until it recovers")
+		return {}
+	var parsed = JSON.parse_string(text)
 	if parsed is Dictionary and (parsed as Dictionary).has("host_tags") and (parsed as Dictionary).has("hooks"):
+		if _vocab_hold:
+			_vocab_hold = false
+			print("[guitkx] vocabulary loaded -- compiler ready again")
 		return parsed
 	# assert() is stripped from release exports, so fail LOUDLY but non-fatally: the compiler is
 	# editor tooling and must never crash a game that accidentally loads this script. Returning {}
 	# (not a keyed fallback) keeps vocab() retrying on the next call — self-healing as soon as the
-	# file becomes readable again.
-	push_error("[guitkx] vocabulary.json missing or invalid -- the compiler cannot classify tags/hooks without it")
+	# file becomes readable again. A non-empty-but-wrong file is REAL breakage (not the scan
+	# window), so this one stays an error -- still once per episode.
+	if not _vocab_hold:
+		_vocab_hold = true
+		push_error("[guitkx] vocabulary.json is not the expected JSON shape -- the compiler cannot classify tags/hooks without it")
 	return {}
 
 ## `known_components`: PascalCase class names resolvable as components in this project (sibling
@@ -537,20 +567,82 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 				diags.append(D.make("GUITKX0150", D.WARNING, "braces inside text are literal -- interpolate with a leading `{expr}` node or a `text={ ... }` attribute instead", _cbase(base, int(nd.get("at", -1))), (str(nd.get("value", "")) as String).length()))
 		"if":
 			for br in nd["branches"]:
+				var ihe := _header_error("if", str(br.get("cond", "")))
+				if ihe != "":
+					diags.append(D.make("GUITKX2508", D.ERROR, ihe, _cbase(base, int(nd.get("at", -1))), 3))
+					break
+			for br in nd["branches"]:
 				_validate_body(br["body_markup"], diags, false, _cbase(base, br["body_at"]))
 			if nd["else_body"] != null:
 				_validate_body(nd["else_body"], diags, false, _cbase(base, nd["else_body_at"]))
 		"for":
+			var fhe := _header_error("for", str(nd["header"]))
+			if fhe != "":
+				diags.append(D.make("GUITKX2508", D.ERROR, fhe, _cbase(base, int(nd.get("at", -1))), 4))
 			# T2.7 (Unity UITKX0019): the loop binder threads down so `key={ binder }` can warn.
 			var fh := _split_for_header(str(nd["header"]))
 			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]), str(fh.get("var", "")))
 		"while":
+			var whe := _header_error("while", str(nd["header"]))
+			if whe != "":
+				diags.append(D.make("GUITKX2508", D.ERROR, whe, _cbase(base, int(nd.get("at", -1))), 6))
 			_validate_body(nd["body_markup"], diags, true, _cbase(base, nd["body_at"]))
 		"match":
+			var mhe := _header_error("match", str(nd.get("subject", "")))
+			if mhe == "":
+				for c in nd.get("cases", []):
+					mhe = _header_error("case", str(c.get("value", "")))
+					if mhe != "":
+						break
+			if mhe != "":
+				diags.append(D.make("GUITKX2508", D.ERROR, mhe, _cbase(base, int(nd.get("at", -1))), 6))
 			for c in nd.get("cases", []):
 				_validate_body(c["body_markup"], diags, false, _cbase(base, c["body_at"]))
 			if nd.get("default_body") != null:
 				_validate_body(nd["default_body"], diags, false, _cbase(base, nd["default_body_at"]))
+
+## A5/B2 (0.6.0 field triage): directive-header grammar. Headers were captured raw by the parser
+## and emitted VERBATIM into GDScript (`for i in 2: int5:` -- invalid), so garbage passed every
+## guitkx tier and only Godot's own parser choked on the generated .gd at load time. Mirrors
+## liveMarkup.ts headerError (change BOTH or neither). Deliberately shallow: the expression's
+## SEMANTICS stay the analyzer's job; this catches shapes a single expression can never contain
+## (no ` in ` in @for, a non-identifier loop var, an unbracketed `:`). "" = well-formed.
+static func _header_error(kind: String, header: String) -> String:
+	var h := header.strip_edges()
+	if kind == "for":
+		var sep := h.find(" in ")
+		if sep == -1:
+			return "malformed `@for` header -- expected `(<identifier> in <expression>)`"
+		if not h.substr(0, sep).strip_edges().is_valid_identifier():
+			return "malformed `@for` header -- expected `(<identifier> in <expression>)`"
+		var iter := h.substr(sep + 4).strip_edges()
+		if iter == "" or _top_level_colon(iter):
+			return "malformed `@for` header -- the part after `in` is not a single expression"
+		return ""
+	if h == "" or _top_level_colon(h):
+		return "malformed `@%s` header -- expected a single expression" % kind
+	return ""
+
+## An unbracketed `:` at depth 0 -- legal nowhere in a single GDScript expression (dict colons sit
+## inside `{}`, typed-lambda colons inside `()`), so it marks statement garbage like `2: int5`.
+static func _top_level_colon(s: String) -> bool:
+	var depth := 0
+	var i := 0
+	var n := s.length()
+	while i < n:
+		var j := L.skip_noncode(s, i)
+		if j != i:
+			i = j
+			continue
+		var c := s[i]
+		if c == "(" or c == "[" or c == "{":
+			depth += 1
+		elif c == ")" or c == "]" or c == "}":
+			depth -= 1
+		elif c == ":" and depth <= 0:
+			return true
+		i += 1
+	return false
 
 static func _validate_body(body_src: String, diags: Array, is_loop: bool, base: int = -1, binder: String = "") -> void:
 	var parser := Markup.new()
@@ -858,7 +950,7 @@ static func _split_return(body: String) -> Dictionary:
 						bad.append(_bad_return(chosen, body, n))
 					chosen = { "at": i, "p": p, "shape": "paren", "close": close }
 				elif _paren_holds_markup(body, p + 1, close):
-					bad.append({ "at": i, "to": eol, "msg": "a conditional/early `return` cannot return markup (setup is plain GDScript) -- return null and branch with @if/@match in the markup" })
+					bad.append({ "at": i, "to": eol, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" })
 				i = close + 1
 				continue
 			elif p < n and body[p] == "<":
@@ -868,7 +960,7 @@ static func _split_return(body: String) -> Dictionary:
 						bad.append(_bad_return(chosen, body, n))
 					chosen = { "at": i, "p": p, "shape": "bare", "close": -1 }
 				else:
-					bad.append({ "at": i, "to": eol, "msg": "a conditional/early `return` cannot return markup (setup is plain GDScript) -- return null and branch with @if/@match in the markup" })
+					bad.append({ "at": i, "to": eol, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" })
 				i = eol
 				continue
 			elif L.keyword_at(body, p, "null"):
@@ -899,7 +991,7 @@ static func _bad_return(cand: Dictionary, body: String, n: int) -> Dictionary:
 	var to: int = body.find("\n", at)
 	if to == -1:
 		to = n
-	return { "at": at, "to": to, "msg": "a component's setup cannot `return` before the final markup return -- use a `return null` guard or branch with @if in the markup" }
+	return { "at": at, "to": to, "msg": "an early or conditional `return` cannot return markup -- only the final markup return renders; `return null` guards are fine, or branch with @if/@match in the markup" }
 
 ## True when a parenthesized return's content [from,to) starts with markup (`<` element or `@`
 ## directive) -- neither can begin a legal GDScript expression, so this never false-flags a plain
