@@ -35,7 +35,8 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 	var class_name_line := ""
 	while i < n:
 		i = _skip_ws_nl(source, i)
-		if source.substr(i, 11) == "@class_name":
+		# T3.5: directive keywords require a token boundary (mirrors compile()).
+		if source.substr(i, 11) == "@class_name" and (i + 11 >= n or not L._is_ident(source[i + 11])):
 			var le := source.find("\n", i)
 			if le == -1: le = n
 			class_name_line = source.substr(i, le - i).strip_edges()

@@ -37,7 +37,8 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
   let classNameLine = "";
   while (i < n) {
     i = skipWsNl(source, i);
-    if (source.slice(i, i + 11) === "@class_name") {
+    // T3.5: directive keywords require a token boundary (`@class_nameFoo` is not a directive).
+    if (source.slice(i, i + 11) === "@class_name" && (i + 11 >= n || !isIdent(source[i + 11]))) {
       let le = source.indexOf("\n", i);
       if (le === -1) le = n;
       classNameLine = source.slice(i, le).trim();
@@ -635,6 +636,38 @@ export function missingReturnComponents(src: string): { start: number; end: numb
         const b = declBody(src, d.at);
         if (b) {
           if (splitReturn(src, b.start, b.close) === null) out.push(declHead(src, d.at));
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
+}
+
+// T3.5: components whose body holds a markup return with an UNCLOSED `(` -- the compiler's
+// GUITKX0304. No window is produced for them, so every window-scoped tier skips the file and the
+// live side used to stay silent. Span = the declaration head (same anchor as missing-return).
+export function unclosedReturns(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          if (splitReturn(src, b.start, b.close) === "unclosed") out.push(declHead(src, d.at));
           i = b.close + 1;
         } else i = d.at + 1;
       } else if (d.kind === "hook") {

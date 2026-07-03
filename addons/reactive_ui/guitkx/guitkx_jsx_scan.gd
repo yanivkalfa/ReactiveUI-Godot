@@ -63,14 +63,16 @@ static func find_markup_ranges(src: String, start: int, end: int) -> Array:
 		if c == ":" and not delim.is_empty() and delim[-1] == "{" and not _is_colon_op(src, i, end):
 			i = _try(src, i + 1, end, "", i, out, i + 1)
 			continue
-		if (c == "r" or c == "e" or c == "a") and _is_ident_boundary(src, i):
-			# keyword boundaries: return / else / and
+		if (c == "r" or c == "e" or c == "a" or c == "o") and _is_ident_boundary(src, i):
+			# keyword boundaries: return / else / and / or (T3.5 mirrors Unity's operator set)
 			if L.keyword_at(src, i, "return"):
 				i = _try(src, i + 6, end, "", i, out, i + 6); continue
 			if L.keyword_at(src, i, "else"):
 				i = _try(src, i + 4, end, "", i, out, i + 4); continue
 			if L.keyword_at(src, i, "and"):
 				i = _try(src, i + 3, end, "and", i, out, i + 3); continue
+			if L.keyword_at(src, i, "or"):
+				i = _try(src, i + 2, end, "or", i, out, i + 2); continue
 		i += 1
 	return out
 

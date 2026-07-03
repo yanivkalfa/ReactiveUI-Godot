@@ -37,7 +37,7 @@ import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig, setupSpans } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans } from "./formatGuitkx";
 import { parseMarkup } from "./markup";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
@@ -614,6 +614,7 @@ function publishDiagnosticsFor(doc: TextDocument): void {
     ...structuralDiagnostics(doc),
     ...markupDiagnostics(doc),
     ...missingReturnDiagnostics(doc),
+    ...unclosedReturnDiagnostics(doc),
     ...unreachableDiagnostics(doc),
     ...embeddedDiagnostics(doc),
   ];
@@ -1479,6 +1480,17 @@ function missingReturnDiagnostics(doc: TextDocument): Diagnostic[] {
     severity: DiagnosticSeverity.Error,
     range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
     message: "GUITKX0102: component has no `return ( ... )` (only `return null`?)",
+    source: "guitkx",
+  }));
+}
+
+// T3.5: the half-typed/unclosed `return (` -- the compiler's GUITKX0304 -- now shows live too
+// (missing-return deliberately skips it, and no markup window exists to carry a parse error).
+function unclosedReturnDiagnostics(doc: TextDocument): Diagnostic[] {
+  return unclosedReturns(doc.getText()).map((r) => ({
+    severity: DiagnosticSeverity.Error,
+    range: { start: doc.positionAt(r.start), end: doc.positionAt(r.end) },
+    message: "GUITKX0304: unclosed `(` after return",
     source: "guitkx",
   }));
 }

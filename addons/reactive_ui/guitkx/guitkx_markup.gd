@@ -133,6 +133,10 @@ func _parse_element(open_i: int, end: int) -> Dictionary:
 	if tag == "" and (i >= end or _src[i] != ">"):
 		_fail("GUITKX0300", "invalid tag name -- `<` must be followed by a tag name, or `<>` for a fragment", open_i)
 		return { "node": null, "next": end }
+	# T3.5: a tag cannot start with a digit (`<9foo/>` used to parse and emit a nonsense call).
+	if tag != "" and tag[0] >= "0" and tag[0] <= "9":
+		_fail("GUITKX0300", "tag name cannot start with a digit (<%s>)" % tag, open_i)
+		return { "node": null, "next": end }
 	# attributes up to ">" or "/>"
 	var attrs: Array = []
 	while i < end:
@@ -219,6 +223,10 @@ func _parse_attribute(start: int, end: int) -> Dictionary:
 	if name == "":
 		_fail("GUITKX0300", "unexpected token in attributes", i)
 		return { "attr": null, "next": end }
+	# T3.5: `<Foo.Bar/>` used to silently parse as tag Foo + boolean attr `.Bar`.
+	if name.begins_with(".") or name.begins_with("-"):
+		_fail("GUITKX0300", "unexpected `%s` in attributes -- dotted/namespaced tags are not supported" % name[0], ns)
+		return { "attr": null, "next": end }
 	i = _skip_ws(i, end)
 	if i >= end or _src[i] != "=":
 		# boolean shorthand
@@ -231,6 +239,10 @@ func _parse_attribute(start: int, end: int) -> Dictionary:
 	var c := _src[i]
 	if c == "\"" or c == "'":
 		var se := L._skip_string(_src, i)
+		# T3.5: an unterminated string used to truncate silently at the newline.
+		if se <= i + 1 or se > end or _src[se - 1] != c:
+			_fail("GUITKX0300", "unterminated string in attribute '%s'" % name, i)
+			return { "attr": null, "next": end }
 		var val := _src.substr(i + 1, se - i - 2)
 		return { "attr": { "name": name, "kind": "str", "value": val, "at": ns, "vat": i + 1, "end": se }, "next": se }
 	if c == "{":
@@ -303,6 +315,9 @@ func _parse_if(at: int, end: int) -> Dictionary:
 	i = b["next"]
 	while true:
 		var k := _skip_ws(i, end)
+		# T3.5: the `@` itself must be verified -- a commented `#elif` used to become a real branch.
+		if k >= end or _src[k] != "@":
+			break
 		if k + 5 <= end and L.keyword_at(_src, k + 1, "elif"):
 			var pe := _read_paren(k + 5, end)
 			if _err != "": return { "node": null, "next": end }

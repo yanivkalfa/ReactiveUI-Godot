@@ -404,7 +404,7 @@ arg + include in dup-check; extend missing-key 0106 to fragment/expr loop roots 
 (Godot's expression-signature dup detection is already superior — keep; Unity adopts it in its own plan.)
 Fixtures for both.
 
-### T3.5 — Lexer/parser bug set  · effort: small · Status: ⬜
+### T3.5 — Lexer/parser bug set  · effort: small · Status: ✅ (all in BOTH parsers, goldens t06/t07/t08 flipped + markup-cases regenerated: `@class_name`/`@uss`/`@theme` require a token boundary (compiler + both formatters; declarations.ts already had it and gained the §5.1-item-5 comment-skip before the directive); `#elif`/`#else` no longer become ghost branches (the `@` itself is verified — the comment-ish line falls to literal text, where the 0150 brace warning hints at the mistake); digit tags `<9foo>` and dotted tags `<Foo.Bar/>` are 0300 parse errors (used to emit nonsense/silently eat `.Bar` as a bool attr); unterminated attribute strings error at the opening quote (used to truncate at the newline); unclosed `return (` now shows LIVE as 0304 via new `unclosedReturns()` (compiler 0304 + formatter-verbatim + virtualDoc partial-window already aligned since T1.4); jsx_scan gained the `or` boundary with a React-`||` desugar — `LHS or <B/>` emits `(V.b() if not (LHS) else null)` instead of raw markup in GDScript (ternary-LHS positions were already covered by the start/`(`/`,`/`=` boundaries))
 All in BOTH parsers + contract fixtures (matrix rows 3, 10, 17, 22 + §5.1 items 4-6):
 - `@class_name` token boundary: require whitespace after the keyword (`guitkx.gd:38-53`; `formatGuitkx.ts:40`;
   `declarations.ts` comment-skip — §5.1 item 5: skip comments, not just whitespace, before the directive).

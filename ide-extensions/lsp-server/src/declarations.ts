@@ -56,8 +56,21 @@ export function declarationDiags(src: string): DeclDiag[] {
   // Preamble directive `@class_name <Ident>`: validate the value. A near-miss directive like
   // `@clasaas_name` is flagged as a typo (GUITKX0300) instead of being silently ignored — it would
   // otherwise produce NO diagnostic at all, one of the mistakes that used to slip through.
+  // T3.5 (§5.1 item 5): skip COMMENTS, not just whitespace, so a file-header comment doesn't hide
+  // the @class_name validation.
   let p = 0;
-  while (p < src.length && (src[p] === " " || src[p] === "\t" || src[p] === "\n" || src[p] === "\r")) p++;
+  while (p < src.length) {
+    const k = skipNoncode(src, p);
+    if (k !== p) {
+      p = k;
+      continue;
+    }
+    if (/[ \t\r\n]/.test(src[p])) {
+      p++;
+      continue;
+    }
+    break;
+  }
   if (src[p] === "@") {
     let w = p + 1;
     while (w < src.length && /[A-Za-z0-9_]/.test(src[w])) w++;

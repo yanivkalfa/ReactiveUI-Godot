@@ -58,7 +58,8 @@ static func compile(source: String, basename: String = "Component", known_compon
 	var n := source.length()
 	while i < n:
 		i = _skip_ws_and_comments(source, i)
-		if source.substr(i, 11) == "@class_name":
+		# T3.5: directive keywords require a token boundary (`@class_nameFoo` is not a directive).
+		if source.substr(i, 11) == "@class_name" and (i + 11 >= n or not _is_ident_char(source[i + 11])):
 			var le := source.find("\n", i)
 			if le == -1: le = n
 			var cn_raw := source.substr(i + 11, le - i - 11)
@@ -74,8 +75,10 @@ static func compile(source: String, basename: String = "Component", known_compon
 		# T2.3 (Unity @uss): `@uss "res://theme.tres"` preloads a Theme and applies it to the
 		# component's root element (theme prop) unless one is set explicitly. `@theme` is the
 		# Godot-idiomatic alias. One per file; component files only (2210, like Unity).
-		if source.substr(i, 4) == "@uss" or source.substr(i, 6) == "@theme":
-			var dlen := 4 if source.substr(i, 4) == "@uss" else 6
+		var is_uss := source.substr(i, 4) == "@uss" and (i + 4 >= n or not _is_ident_char(source[i + 4]))
+		var is_theme := source.substr(i, 6) == "@theme" and (i + 6 >= n or not _is_ident_char(source[i + 6]))
+		if is_uss or is_theme:
+			var dlen := 4 if is_uss else 6
 			var le2 := source.find("\n", i)
 			if le2 == -1: le2 = n
 			var raw2 := source.substr(i + dlen, le2 - i - dlen)
@@ -151,6 +154,9 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 			return { "kind": "module", "at": i }
 		i += 1
 	return { "kind": "", "at": -1 }
+
+static func _is_ident_char(c: String) -> bool:
+	return c == "_" or (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or (c >= "0" and c <= "9")
 
 ## True if `s` is a single valid GDScript identifier ([A-Za-z_][A-Za-z0-9_]*), non-empty. [BUG-V2]
 static func _is_valid_identifier(s: String) -> bool:
@@ -1508,6 +1514,14 @@ static func _splice_expr_markup(expr: String, ctx: Dictionary) -> String:
 			out += expr.substr(prev, lhs_start - prev)
 			var lhs := expr.substr(lhs_start, op_pos - lhs_start).strip_edges()
 			out += "(%s if (%s) else null)" % [markup, lhs]
+		elif op == "or":
+			# T3.5: `LHS or <B/>` -- render B when LHS is falsy (React's `a || <B/>` fallback).
+			# GDScript `or` yields a bool, so emit the ternary directly instead of the raw operator.
+			var op_pos2: int = r["op_pos"]
+			var lhs_start2 := _find_lhs_start(expr, prev, op_pos2)
+			out += expr.substr(prev, lhs_start2 - prev)
+			var lhs2 := expr.substr(lhs_start2, op_pos2 - lhs_start2).strip_edges()
+			out += "(%s if not (%s) else null)" % [markup, lhs2]
 		else:
 			out += expr.substr(prev, rs - prev)
 			out += markup

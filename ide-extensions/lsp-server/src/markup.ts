@@ -160,6 +160,11 @@ class MarkupParser {
       this.fail("GUITKX0300", "invalid tag name -- `<` must be followed by a tag name, or `<>` for a fragment", openI);
       return { node: null, next: end };
     }
+    // T3.5: a tag cannot start with a digit (`<9foo/>` used to parse and emit a nonsense call).
+    if (tag !== "" && tag[0] >= "0" && tag[0] <= "9") {
+      this.fail("GUITKX0300", `tag name cannot start with a digit (<${tag}>)`, openI);
+      return { node: null, next: end };
+    }
     const attrs: Attr[] = [];
     while (i < end) {
       i = this.skipWs(i, end);
@@ -252,6 +257,11 @@ class MarkupParser {
       this.fail("GUITKX0300", "unexpected token in attributes", i);
       return { attr: null, next: end };
     }
+    // T3.5: `<Foo.Bar/>` used to silently parse as tag Foo + boolean attr `.Bar`.
+    if (name.startsWith(".") || name.startsWith("-")) {
+      this.fail("GUITKX0300", `unexpected \`${name[0]}\` in attributes -- dotted/namespaced tags are not supported`, ns);
+      return { attr: null, next: end };
+    }
     i = this.skipWs(i, end);
     if (i >= end || this.src[i] !== "=") {
       return { attr: { name, kind: "bool", value: "true", at: ns, vat: -1, end: nameEnd }, next: i };
@@ -265,6 +275,11 @@ class MarkupParser {
     const c = this.src[i];
     if (c === '"' || c === "'") {
       const se = skipString(this.src, i);
+      // T3.5: an unterminated string used to truncate silently at the newline.
+      if (se <= i + 1 || se > end || this.src[se - 1] !== c) {
+        this.fail("GUITKX0300", `unterminated string in attribute '${name}'`, i);
+        return { attr: null, next: end };
+      }
       const val = this.src.slice(i + 1, se - 1);
       return { attr: { name, kind: "str", value: val, at: ns, vat: i + 1, end: se }, next: se };
     }
@@ -343,6 +358,8 @@ class MarkupParser {
     i = b.next;
     while (true) {
       const k = this.skipWs(i, end);
+      // T3.5: the `@` itself must be verified -- a commented `#elif` used to become a real branch.
+      if (k >= end || this.src[k] !== "@") break;
       if (k + 5 <= end && keywordAt(this.src, k + 1, "elif")) {
         const pe = this.readParen(k + 5, end);
         if (this.err !== "") return { node: null, next: end };

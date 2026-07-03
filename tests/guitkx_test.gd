@@ -30,6 +30,7 @@ func _run() -> void:
 	_test_t26_naming()
 	_test_t27_diag_ports()
 	_test_t23_uss()
+	_test_t35_parser_bugs()
 	_test_p2_markup_features()
 	_test_return_null_guard()
 	_test_jsx_value()
@@ -341,6 +342,30 @@ func _test_t27_diag_ports() -> void:
 	var src121 := "component B() {\n\treturn ( <texture_rect texture=\"res://project.godot\" /> )\n}\n"
 	var r121 := RUIGuitkx.compile(src121, "B")
 	_check_true(not r121["ok"] and _has_code(r121, "GUITKX0121"), "T2.7: wrong-type asset errors 0121 (got %s)" % str(r121["diagnostics"]))
+
+func _test_t35_parser_bugs() -> void:
+	# T3.5: a commented `#elif` is NOT a ghost branch anymore -- it falls to literal text.
+	var src06 := "component X(c: bool = true) {\n\treturn (\n\t\t<vbox>\n\t\t\t@if (c) { <label text=\"a\" /> }\n\t\t\t#elif (false) { <label text=\"b\" /> }\n\t\t</vbox>\n\t)\n}\n"
+	var r06 := RUIGuitkx.compile(src06, "X")
+	_check_true(bool(r06["ok"]) and not ("elif false" in str(r06["gd"])), "T3.5: #elif is not a ghost branch (got %s)" % str(r06["diagnostics"]))
+
+	# digit / dotted tags are parse errors now (used to emit nonsense silently).
+	_check_true(not RUIGuitkx.compile("component X() {\n\treturn ( <9foo/> )\n}\n", "X")["ok"], "T3.5: digit tag errors")
+	var rdot := RUIGuitkx.compile("component X() {\n\treturn ( <Foo.Bar/> )\n}\n", "X")
+	_check_true(not rdot["ok"] and _has_code(rdot, "GUITKX0300"), "T3.5: dotted tag errors (got %s)" % str(rdot["diagnostics"]))
+
+	# unterminated attribute string errors at the quote (used to truncate silently).
+	var r09 := RUIGuitkx.compile("component X() {\n\treturn (\n\t\t<label text=\"oops\n\t)\n}\n", "X")
+	_check_true(not r09["ok"] and _has_code(r09, "GUITKX0300"), "T3.5: unterminated attr string errors (got %s)" % str(r09["diagnostics"]))
+
+	# directive keywords need a token boundary.
+	var rb := RUIGuitkx.compile("@class_nameFoo\ncomponent A() {\n\treturn ( <label text=\"x\" /> )\n}\n", "A")
+	_check_true(not rb["ok"] and _has_code(rb, "GUITKX2105"), "T3.5: @class_nameFoo is junk, not a directive (got %s)" % str(rb["diagnostics"]))
+
+	# jsx_scan: markup after `or` desugars (used to emit the raw markup as invalid GDScript).
+	var ror := RUIGuitkx.compile("component O(ready: bool = false) {\n\treturn ( <vbox>{ ready or <label text=\"waiting\" /> }</vbox> )\n}\n", "O")
+	_check_true(bool(ror["ok"]), "T3.5: `or <markup>` compiles (got %s)" % str(ror["diagnostics"]))
+	_check_true("if not (ready) else null" in str(ror["gd"]), "T3.5: or-desugar emitted")
 
 func _test_t23_uss() -> void:
 	# T2.3 (Unity @uss): preloads a Theme and applies it to the root element's `theme` prop.
