@@ -36,9 +36,30 @@ var _env_retry_announced := false
 
 func _enter_tree() -> void:
 	_efs = EditorInterface.get_resource_filesystem()
-	_compile_all()
 	if _efs and not _efs.filesystem_changed.is_connected(_on_fs_changed):
 		_efs.filesystem_changed.connect(_on_fs_changed)
+	_kick_initial_sweep()
+
+# 0.6.2: the initial sweep must WAIT OUT the editor's first filesystem scan. Sweeping inside it
+# is worthless-to-harmful: every FileAccess call flakes there -- mtimes read 0 (is_stale sees
+# "fresh", the sweep silently finds nothing to do and nothing retries; field capture 2026-07-03:
+# a stale demo survived a cold open uncompiled), source reads come back empty, and nothing is
+# reliable until the scan settles. Headless/tests: is_scanning() is false -> immediate deferred
+# sweep, the old behavior.
+func _kick_initial_sweep() -> void:
+	if _efs and _efs.is_scanning():
+		print("[guitkx] editor is scanning -- initial .guitkx sweep runs when the scan completes")
+		get_tree().create_timer(0.5).timeout.connect(_check_scan_done)
+	else:
+		call_deferred("_compile_all")
+
+func _check_scan_done() -> void:
+	if _efs == null:
+		return
+	if _efs.is_scanning():
+		get_tree().create_timer(0.5).timeout.connect(_check_scan_done)
+		return
+	_compile_all()
 
 func _exit_tree() -> void:
 	if _efs and _efs.filesystem_changed.is_connected(_on_fs_changed):

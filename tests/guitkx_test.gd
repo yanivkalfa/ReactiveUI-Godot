@@ -1028,6 +1028,32 @@ func _test_cold_open_recovery() -> void:
 	DirAccess.remove_absolute(Codegen.gd_path_for(gx))
 	DirAccess.remove_absolute(gx + ".diags.json")
 	DirAccess.remove_absolute(gx)
+	# 0.6.2: an empty SOURCE read of an existing file is the scan-window flake -- held (outputs
+	# kept, env_error), never a compile failure (which would T1.1-delete the healthy sibling .gd).
+	var gx2 := dir + "/empty_read.guitkx"
+	var f2 := FileAccess.open(gx2, FileAccess.WRITE)
+	f2.store_string("component EmptyRead() {\n\treturn ( <Label text=\"x\" /> )\n}\n")
+	f2.close()
+	var r_ok := Codegen.compile_file(gx2)
+	_check_true(bool(r_ok["ok"]) and bool(r_ok.get("gd_parse_ok", false)), "healthy fixture compiles and its generated .gd parses: " + str(r_ok))
+	var gd2 := Codegen.gd_path_for(gx2)
+	var f3 := FileAccess.open(gx2, FileAccess.WRITE)   # truncate to empty = the flake, simulated
+	f3.close()
+	var r_empty := Codegen.compile_file(gx2)
+	_check_true(not r_empty["ok"] and bool(r_empty.get("env_error", false)), "empty source read is HELD (env), not a compile failure: " + str(r_empty))
+	_check_true(FileAccess.file_exists(gd2), "sibling .gd preserved on an empty source read")
+	# 0.6.2: an unknown identifier is legal guitkx (a GDScript-level concern), but the generated
+	# .gd is parse-checked immediately on a throwaway GDScript (Unity parity: errors surface at
+	# compile time in the dock, not on first load at play time).
+	var f4 := FileAccess.open(gx2, FileAccess.WRITE)
+	f4.store_string("component EmptyRead() {\n\treturn ( <Label text={ str(slisced[0]) } /> )\n}\n")
+	f4.close()
+	var r_typo := Codegen.compile_file(gx2)
+	_check_true(bool(r_typo["ok"]), "unknown identifier still compiles at the guitkx level: " + str(r_typo))
+	_check_true(not bool(r_typo.get("gd_parse_ok", true)), "generated .gd parse-check FAILS on the unknown identifier")
+	DirAccess.remove_absolute(gd2)
+	DirAccess.remove_absolute(gx2 + ".diags.json")
+	DirAccess.remove_absolute(gx2)
 	DirAccess.remove_absolute(dir)
 
 func _test_control_flow() -> void:

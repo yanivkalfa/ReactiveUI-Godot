@@ -4,6 +4,28 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] — 2026-07-03
+
+**Scan-window completeness + instant GDScript feedback.** Field follow-up to 0.6.1: a stale
+`.guitkx` could still survive a cold editor open uncompiled, because the startup sweep ran
+inside the first filesystem scan where **mtime reads return 0** — every file looked fresh, the
+sweep silently found nothing to do, and nothing retried. And a guitkx-legal typo (an unknown
+identifier in an expression) produced no error anywhere until the generated `.gd` was first
+loaded at play time.
+
+### Fixed
+- **The initial sweep waits out the editor's first scan** (`is_scanning()` poll) and runs the
+  moment the filesystem is actually readable — no more silent no-op cold opens.
+- **Zero mtimes count as stale** and **an empty source read of an existing file is held**
+  (env-hold + auto-retry), never treated as clean or as a failed compile — an empty flake read
+  can no longer skip a stale file or delete a healthy sibling `.gd`.
+
+### Added
+- **Generated `.gd` files are parse-checked immediately** after every compile (throwaway
+  `GDScript`, resource cache untouched): unknown identifiers and type errors in `.guitkx`
+  expressions now land in the editor dock at compile time — Unity parity with the Roslyn
+  compile surfacing generated-C# errors instantly. `compile_file` reports it as `gd_parse_ok`.
+
 ## [0.6.1] — 2026-07-03
 
 **Cold-open recovery.** A real-project field capture showed a cold Godot open holding every
