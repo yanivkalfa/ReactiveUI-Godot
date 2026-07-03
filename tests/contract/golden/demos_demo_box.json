@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":259,\"attrs\":[{\"at\":267,\"end\":291,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"margin\\\": 20}\",\"vat\":275}],\"children\":[{\"at\":296,\"attrs\":[{\"at\":302,\"end\":330,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 12}\",\"vat\":310}],\"children\":[{\"at\":336,\"attrs\":[{\"at\":343,\"end\":357,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"title\",\"vat\":350},{\"at\":358,\"end\":422,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 24, \\\"font_color\\\": Color(0.55, 0.8, 1.0)}\",\"vat\":366}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":430,\"attrs\":[],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"HSeparator\"},{\"at\":449,\"code\":\"children\",\"t\":\"expr\",\"vat\":451}],\"line\":8,\"t\":\"el\",\"tag\":\"VBox\"}],\"line\":7,\"t\":\"el\",\"tag\":\"Margin\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 486,
+			"start": 256
+		}
+	]
+}

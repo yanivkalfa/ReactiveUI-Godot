@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":89,\"attrs\":[{\"at\":98,\"end\":146,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Controls — a slice of the 60-control set\",\"vat\":105}],\"children\":[{\"at\":151,\"attrs\":[{\"at\":164,\"end\":182,\"kind\":\"str\",\"name\":\"text\",\"value\":\"CheckButton\",\"vat\":170}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"CheckButton\"},{\"at\":189,\"attrs\":[{\"at\":199,\"end\":214,\"kind\":\"str\",\"name\":\"text\",\"value\":\"CheckBox\",\"vat\":205}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"CheckBox\"},{\"at\":221,\"attrs\":[{\"at\":227,\"end\":254,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":235}],\"children\":[{\"at\":260,\"attrs\":[{\"at\":269,\"end\":284,\"kind\":\"expr\",\"name\":\"min_value\",\"value\":\"0\",\"vat\":281},{\"at\":285,\"end\":302,\"kind\":\"expr\",\"name\":\"max_value\",\"value\":\"100\",\"vat\":297},{\"at\":303,\"end\":317,\"kind\":\"expr\",\"name\":\"value\",\"value\":\"v[0]\",\"vat\":311},{\"at\":318,\"end\":352,\"kind\":\"expr\",\"name\":\"onChange\",\"value\":\"func(x): v[1].call(x)\",\"vat\":329},{\"at\":353,\"end\":381,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 220}\",\"vat\":361}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"HSlider\"},{\"at\":389,\"attrs\":[{\"at\":396,\"end\":421,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"%d\\\" % int(v[0])\",\"vat\":403}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":9,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":439,\"attrs\":[{\"at\":452,\"end\":467,\"kind\":\"expr\",\"name\":\"min_value\",\"value\":\"0\",\"vat\":464},{\"at\":468,\"end\":485,\"kind\":\"expr\",\"name\":\"max_value\",\"value\":\"100\",\"vat\":480},{\"at\":486,\"end\":500,\"kind\":\"expr\",\"name\":\"value\",\"value\":\"v[0]\",\"vat\":494},{\"at\":501,\"end\":529,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 260}\",\"vat\":509}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"ProgressBar\"},{\"at\":536,\"attrs\":[{\"at\":543,\"end\":559,\"kind\":\"str\",\"name\":\"text\",\"value\":\"ItemList:\",\"vat\":549}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":566,\"attrs\":[{\"at\":576,\"end\":623,\"kind\":\"expr\",\"name\":\"items\",\"value\":\"[\\\"Apple\\\", \\\"Banana\\\", \\\"Cherry\\\", \\\"Date\\\"]\",\"vat\":584},{\"at\":624,\"end\":652,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_height\\\": 90}\",\"vat\":632}],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"ItemList\"},{\"at\":659,\"attrs\":[{\"at\":666,\"end\":713,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Tree (declarative, expansion preserved):\",\"vat\":672}],\"children\":[],\"line\":16,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":720,\"attrs\":[{\"at\":726,\"end\":735,\"kind\":\"bool\",\"name\":\"hide_root\",\"value\":\"true\",\"vat\":-1},{\"at\":736,\"end\":968,\"kind\":\"expr\",\"name\":\"items\",\"value\":\"[\\n\\t\\t\\t\\t{ \\\"id\\\": \\\"fruit\\\", \\\"text\\\": \\\"🍎 Fruit\\\", \\\"children\\\": [{ \\\"id\\\": \\\"apple\\\", \\\"text\\\": \\\"Apple\\\" }, { \\\"id\\\": \\\"pear\\\", \\\"text\\\": \\\"Pear\\\" }] },\\n\\t\\t\\t\\t{ \\\"id\\\": \\\"veg\\\", \\\"text\\\": \\\"🥕 Veg\\\", \\\"children\\\": [{ \\\"id\\\": \\\"carrot\\\", \\\"text\\\": \\\"Carrot\\\" }] },\\n\\t\\t\\t]\",\"vat\":744},{\"at\":969,\"end\":998,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_height\\\": 150}\",\"vat\":977}],\"children\":[],\"line\":17,\"t\":\"el\",\"tag\":\"Tree\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 1016,
+			"start": 86
+		}
+	]
+}

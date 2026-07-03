@@ -1,0 +1,25 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 1,
+			"off": 10,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":74,\"attrs\":[{\"at\":81,\"end\":90,\"kind\":\"str\",\"name\":\"text\",\"value\":\"on\",\"vat\":87}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"Label\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 94,
+			"start": 73
+		}
+	]
+}

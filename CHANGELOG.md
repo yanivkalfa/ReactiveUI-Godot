@@ -4,6 +4,66 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-07-03
+
+**The `.uitkx` syntax & diagnostics parity release.** `.guitkx` now matches Unity
+ReactiveUIToolKit's grammar feature-for-feature, its diagnostic codes are renumbered onto
+Unity's shared numbering (the minor bump), and the embedded-GDScript analysis is upgraded to
+gdscript-analyzer 0.6 with Godot's own verbatim messages.
+
+### Changed — **diagnostic codes renumbered** (breaking for anything matching code strings)
+
+| old | new | meaning |
+|---|---|---|
+| `GUITKX0102` | `GUITKX2101` | missing/unknown declaration (the conditional-markup-return half is `GUITKX2102`) |
+| `GUITKX0107` | `GUITKX0109` | moved per the shared table |
+| `GUITKX0114` | `GUITKX0107` | unreachable code after the component's return (hint + dimming) |
+| `GUITKX0113` | `GUITKX0026` | duplicate key (now an error) |
+| `GUITKX0110` | `GUITKX2504` | structure error (shared 25xx Godot-reserved block) |
+| `GUITKX0112` | `GUITKX2505` | structure error |
+| `GUITKX0306` | `GUITKX2506` | Godot-specific parse error (different meaning than Unity's 0306) |
+
+Kept: `0103 0104 0105 0106 0108 0013 0300–0305`. New (Unity numbers): `0014–0016 0018 0019
+0111 0120 0121 0150 2100 2102 2105 2203 2210`; Godot-reserved `2504–2507`. One severity per
+code everywhere, driven by `vocabulary.json`'s `severities` table (duplicate keys error;
+unreachable code is a dimmed hint).
+
+### Added
+- **Unity-parity grammar:** markup comments (`//`, `/* */`, `<!-- -->`, and `{/* */}` in
+  attribute lists), `<Fragment key={ ... }>`, the Unity text model (mid-text braces are
+  literal; `GUITKX0150` migration warning), rules-of-hooks as errors (conditional / loop /
+  match / lambda contexts + hook calls inside markup expressions), PascalCase/`use_` naming
+  checks, effect-deps / binder-as-key / unused-param / asset-path checks (`0018 0019 0111
+  0120 0121`), and a working `@uss` / `@theme` directive that preloads a Theme onto the root.
+- **Live tier:** markup parse errors, unknown lowercase tags with did-you-mean, and unknown
+  PascalCase components (checked against the full project universe) all squiggle while typing.
+- `examples/demos/directives/` — every directive, all comment forms, `<Fragment key>`, `@uss`,
+  spread-with-key; doubles as a grammar contract fixture.
+
+### Changed
+- **The compiler is fail-loud:** an error can never coexist with a successful compile; a broken
+  `.guitkx` deletes its stale sibling `.gd` instead of letting the editor run code that no
+  longer matches the source; the **last top-level markup return** is the component's output
+  (Unity `useLastReturn` parity) and early/conditional markup returns are precise errors.
+- **Embedded GDScript analysis bundles gdscript-analyzer 0.6:** Godot's verbatim 4.7 message
+  texts (probed against the real binary), `Too few/many arguments` + invalid-argument errors on
+  resolved calls, unreachable/unused code dims in the editor (LSP DiagnosticTags), diagnostics
+  carry a real `code` + a link to the analyzer's Warning Reference, and the warning profile
+  matches the engine's defaults (the `UNSAFE_*` family stays opt-in, like Godot itself).
+- Names declared in sibling `.guitkx` files now feed the analyzer as **virtual libraries**
+  (replacing a suppression hack) — cross-file references resolve on a fresh clone, and a typo
+  colliding with a `.guitkx` name is no longer silently forgiven.
+
+### Fixed
+- The five filed silent-tooling bugs (G5–G9): unknown-tag pairs, unreachable-after-return
+  flagging/dimming, the `fsunc():` typo silently accepted, the false `UNDEFINED_IDENTIFIER`
+  cascade on a broken lambda initializer, and the `@for`-only missing-return miss.
+- The vocabulary now loads lazily and self-heals; an unreadable vocabulary is an environment
+  error (`GUITKX2507`) that **preserves** generated output instead of stale-deleting it (the
+  editor's first filesystem scan used to wipe every generated `.gd` on a fresh clone).
+- Parser hardening: commented `#elif` ghost branches, digit/dotted tags, unterminated attribute
+  strings, directive token boundaries, `or`-fallback markup in expressions.
+
 ## [0.4.3] — 2026-07-02
 
 Compiler indentation-anchor fixes and analyzer-ready hook typing.

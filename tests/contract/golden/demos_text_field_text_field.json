@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":89,\"attrs\":[{\"at\":98,\"end\":135,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Text Field — controlled input\",\"vat\":105}],\"children\":[{\"at\":140,\"attrs\":[{\"at\":150,\"end\":163,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"s[0]\",\"vat\":157},{\"at\":164,\"end\":198,\"kind\":\"str\",\"name\":\"placeholder_text\",\"value\":\"Type something…\",\"vat\":182},{\"at\":199,\"end\":233,\"kind\":\"expr\",\"name\":\"onChange\",\"value\":\"func(t): s[1].call(t)\",\"vat\":210},{\"at\":234,\"end\":262,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 280}\",\"vat\":242}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":269,\"attrs\":[{\"at\":276,\"end\":340,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"You typed: \\\\\\\"%s\\\\\\\"  (%d chars)\\\" % [s[0], s[0].length()]\",\"vat\":283}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 358,
+			"start": 86
+		}
+	]
+}

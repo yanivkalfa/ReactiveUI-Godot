@@ -10,8 +10,11 @@ func _initialize() -> void:
 	var warnings := 0
 	var paths: Array = Codegen.find_all("res://examples")
 	paths.sort()
+	# T1.5: resolve the component-class universe once so PascalCase tags are validated like the
+	# editor plugin's compile_all pass does.
+	var known: Array = Codegen.known_component_names(paths)
 	for p in paths:
-		var r: Dictionary = Codegen.compile_file(p)
+		var r: Dictionary = Codegen.compile_file(p, known)
 		if not r["ok"]:
 			errors += 1
 			printerr("COMPILE FAIL  %s" % p)

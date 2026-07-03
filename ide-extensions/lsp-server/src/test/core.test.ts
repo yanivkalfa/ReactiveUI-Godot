@@ -6,10 +6,11 @@ import { findMatching, skipNoncode, keywordAt } from "../scanner";
 import { SourceMap, offsetToPosition, positionToOffset } from "../sourceMap";
 import { buildVirtualDoc } from "../virtualDoc";
 import { declarationDiags } from "../declarations";
-import { scanDeclarations, WorkspaceIndex, componentTagAt, vetoGuitkxDeclared } from "../workspaceIndex";
+import { scanDeclarations, WorkspaceIndex, componentTagAt, guitkxVirtualLibText } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows, missingReturnComponents } from "../formatGuitkx";
+import { formatGuitkx, markupWindows, missingReturnComponents, setupSpans } from "../formatGuitkx";
+import { windowStructureDiags, hookContextDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
@@ -225,9 +226,9 @@ test("virtualDoc: one outlier-shallow setup line does not shift the rest (first-
 
 // The LSP "floor": a misspelled declaration keyword used to make the whole file go dark (no markup
 // window -> no analysis, no diagnostics). declarationDiags reports it live instead of silence.
-test("declarationDiags flags a misspelled `component` keyword (GUITKX0102)", () => {
+test("declarationDiags flags a misspelled `component` keyword (GUITKX2101)", () => {
   const d = declarationDiags("@class_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(d.some((x) => x.code === "GUITKX0102" && /did you mean 'component'/.test(x.message)), `got ${JSON.stringify(d)}`);
+  assert.ok(d.some((x) => x.code === "GUITKX2101" && /did you mean 'component'/.test(x.message)), `got ${JSON.stringify(d)}`);
 });
 
 test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
@@ -237,12 +238,12 @@ test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
 
 test("declarationDiags: a fully typo'd header still reports something, never silence", () => {
   const d = declarationDiags("@clasaas_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX0102"), `got ${JSON.stringify(d)}`);
+  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX2101"), `got ${JSON.stringify(d)}`);
 });
 
 // G3: a component whose closed body has NO markup return used to be silent live (no markup window →
 // every window tier skips it; the virtual doc just emits `pass`) — only the post-save sidecar showed it.
-test("missingReturnComponents flags a component with no markup return (live GUITKX0102)", () => {
+test("missingReturnComponents flags a component with no markup return (live GUITKX2101)", () => {
   const src = "component NoRet() {\n\tvar a = useState(0)\n}\n";
   const hits = missingReturnComponents(src);
   assert.equal(hits.length, 1, `got ${JSON.stringify(hits)}`);
@@ -279,6 +280,117 @@ test("declarationDiags flags a misspelled @class_name DIRECTIVE (@clasaas_name -
     d.some((x) => x.code === "GUITKX0300" && /did you mean '@class_name'/.test(x.message)),
     `got ${JSON.stringify(d)}`,
   );
+});
+
+// T1.3: the compiler compiles only the FIRST top-level declaration; everything after is GUITKX2105.
+test("T1.3: declarationDiags flags content after the first top-level declaration (GUITKX2105)", () => {
+  const src = "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n";
+  const d = declarationDiags(src);
+  const hit = d.find((x) => x.code === "GUITKX2105");
+  assert.ok(hit, `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.end), "component B() {");
+});
+
+test("T1.3: trailing comments after the declaration stay clean (no 2105)", () => {
+  assert.equal(declarationDiags("component A() {\n\treturn ( <Label /> )\n}\n# note\n").length, 0);
+});
+
+test("T1.3: the index holds only the first top-level declaration (no completion ghosts)", () => {
+  const idx = new WorkspaceIndex();
+  idx.reindex("file:///t/A.guitkx", "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(idx.has("A"), "first decl indexed");
+  assert.ok(!idx.has("B"), "ghost second decl NOT indexed");
+});
+
+test("T1.3: module members still index (the compiler compiles them)", () => {
+  const idx = new WorkspaceIndex();
+  idx.reindex("file:///t/M.guitkx", "module M {\n\tcomponent A() { return ( <Label /> ) }\n\thook use_y() { return 2 }\n}\n");
+  assert.ok(idx.has("M") && idx.has("A") && idx.has("use_y"), "module + both members indexed");
+});
+
+// T1.5 (G5): the live tier used to compute markup parse errors then DISCARD them, and never
+// checked lowercase tags at all -- `return <s></a>` squiggled nothing while typing.
+test("T1.5: window parse errors surface live (<s></a> -> GUITKX0302)", () => {
+  const src = "component S() {\n\treturn ( <s></a> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  assert.ok(d.some((x) => x.code === "GUITKX0302"), `got ${JSON.stringify(d)}`);
+});
+
+test("T1.5: unknown lowercase tag fires live with a did-you-mean", () => {
+  const src = 'component T() {\n\treturn ( <vbox><lable text="x" /></vbox> )\n}\n';
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0105");
+  assert.ok(hit && /did you mean <label>/.test(hit.message), `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.end), "lable");
+});
+
+test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed offsets)", () => {
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { <lable /> }</vbox> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0105");
+  assert.ok(hit, `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.end), "lable");
+});
+
+test("T1.5: a broken @if body's parse error surfaces live (bodies are opaque to the window parse)", () => {
+  const src = "component B() {\n\treturn ( <vbox>@if (true) { <Broken> }</vbox> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0301");
+  assert.ok(hit, `got ${JSON.stringify(d)}`);
+  assert.equal(src.slice(hit!.start, hit!.start + 7), "<Broken");
+});
+
+test("T1.5: PascalCase tags and known factories stay clean in the vocabulary check", () => {
+  const src = "component P() {\n\treturn ( <vbox><Card /><label text=\"ok\" /></vbox> )\n}\n";
+  assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
+});
+
+// T2.4: mid-text braces are literal under the Unity text model -- warn live so migrating authors notice.
+test("T2.4: literal braces in text fire the GUITKX0150 migration warning live", () => {
+  const src = "component T(n: int = 3) {\n\treturn ( <vbox><label>Count: {n} items</label></vbox> )\n}\n";
+  const d = windowStructureDiags(src, markupWindows(src));
+  const hit = d.find((x) => x.code === "GUITKX0150");
+  assert.ok(hit && hit.severity === "warning", `got ${JSON.stringify(d)}`);
+});
+
+test("T2.6: live naming checks -- 2100 PascalCase error, 2203 use_ warning", () => {
+  const d = declarationDiags("component my_widget() {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.some((x) => x.code === "GUITKX2100"), `got ${JSON.stringify(d)}`);
+  const dh = declarationDiags("hook make_thing() {\n\treturn 1\n}\n");
+  const hit = dh.find((x) => x.code === "GUITKX2203");
+  assert.ok(hit && hit.severity === "warning", `got ${JSON.stringify(dh)}`);
+});
+
+test("T2.6: junk before the first declaration is 2105 live (comments/directives skipped)", () => {
+  const d = declarationDiags("var oops = 1\ncomponent A() {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(d.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(d)}`);
+  assert.equal(declarationDiags("# header\n@class_name A\ncomponent A() {\n\treturn ( <Label /> )\n}\n").length, 0);
+});
+
+// T2.5: the live routine is the compiler's _validate_hooks ported line-for-line -- same fixtures
+// as guitkx_test.gd _test_t25_hook_contexts so the two implementations cannot drift unnoticed.
+test("T2.5: hook context codes 0013/0014/0015/0016 fire live over setup spans", () => {
+  const mk = (setup: string): string => `component H(c: bool = true, xs: Array = []) {\n${setup}\treturn ( <label text="x" /> )\n}\n`;
+  const codes = (src: string): string[] => hookContextDiags(src, setupSpans(src)).map((d) => d.code);
+  assert.deepEqual(codes(mk("\tfor x in xs:\n\t\tvar s = useState(0)\n")), ["GUITKX0014"]);
+  assert.deepEqual(codes(mk("\tmatch c:\n\t\ttrue:\n\t\t\tvar s = useState(0)\n")), ["GUITKX0015"]);
+  assert.deepEqual(codes(mk("\tvar f = func():\n\t\tvar s = useState(0)\n")), ["GUITKX0016"]);
+  assert.deepEqual(codes(mk("\tif c: var s = useState(0)\n")), ["GUITKX0013"]);
+  assert.deepEqual(codes(mk("\tvar s = useState(0)\n\tvar my_useState_thing = 1\n")), []);
+  // hook declaration bodies are spans too
+  assert.deepEqual(codes("hook use_bad(c: bool = false) {\n\tif c:\n\t\tvar s = useState(0)\n\treturn 1\n}\n"), ["GUITKX0013"]);
+});
+
+test("T2.5: hook CALL in a markup expression is 0016 live; a hook RESULT is not", () => {
+  const bad = 'component A() {\n\treturn ( <label text={ str(useState(0)[0]) } /> )\n}\n';
+  assert.ok(windowStructureDiags(bad, markupWindows(bad)).some((d) => d.code === "GUITKX0016"));
+  const ok = 'component OK() {\n\tvar s = useState(0)\n\treturn ( <label text={ str(s[0]) } on_pressed={ s[1] } /> )\n}\n';
+  assert.equal(windowStructureDiags(ok, markupWindows(ok)).filter((d) => d.code === "GUITKX0016").length, 0);
+});
+
+test("T2.1/T2.2: comments and <Fragment> stay clean live", () => {
+  const src = "component C() {\n\treturn (\n\t\t// note\n\t\t<Fragment>\n\t\t\t<label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</Fragment>\n\t)\n}\n";
+  assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
 });
 
 // Error-recovery: a near-miss keyword at a real declaration position is treated as that declaration
@@ -547,19 +659,28 @@ test("reindent anchor skips comment lines — an over-indented leading comment c
   assert.ok(fmt.includes("\tif a[0]:\n\t\ta[1].call(1)"), `formatter must not dedent the if body, got ${JSON.stringify(fmt)}`);
 });
 
-test("vetoGuitkxDeclared drops UNDEFINED_* for names declared in sibling .guitkx files, keeps real typos", () => {
-  // The analyzer only sees .gd files; a .guitkx-declared class's generated sibling .gd is git-ignored
-  // (fresh clone / before the first Godot compile) — the index knows the binding, so never flag it.
+test("guitkxVirtualLibText mirrors a .guitkx's compiled bindings (T4.5 — replaced the veto)", () => {
+  // The analyzer only sees .gd files; a .guitkx-declared class's generated sibling .gd is
+  // git-ignored (fresh clone / before the first Godot compile). Instead of vetoing UNDEFINED_*
+  // for index-known names (which also hid real typos that collided with a binding), the binding
+  // is DECLARED to the analyzer as a virtual library — resolution is honest both ways.
   const wi = new WorkspaceIndex();
   wi.reindex("file:///proj/demo_hooks.guitkx", "module DemoHooks {\n\thook use_x() {\n\t\treturn 1\n\t}\n}\n");
-  const text = "var a = DemoHooks.use_x()\nvar b = Nonexistent.thing()\n";
-  const diags = [
-    { code: "UNDEFINED_IDENTIFIER", range: { start: text.indexOf("DemoHooks"), end: text.indexOf("DemoHooks") + 9 } },
-    { code: "UNDEFINED_IDENTIFIER", range: { start: text.indexOf("Nonexistent"), end: text.indexOf("Nonexistent") + 11 } },
-  ];
-  const kept = vetoGuitkxDeclared(wi, diags, text);
-  assert.equal(kept.length, 1, "the .guitkx-declared name is vetoed");
-  assert.equal(text.slice(kept[0].range.start, kept[0].range.end), "Nonexistent", "a genuinely unknown name still flags");
+  const lib = guitkxVirtualLibText(wi.entriesFor("file:///proj/demo_hooks.guitkx"));
+  assert.ok(lib, "a module produces a virtual library");
+  assert.ok(lib!.includes("class_name DemoHooks"), `the binding is a real class_name: ${lib}`);
+  // Member stubs are VARIADIC so the analyzer's arity checking can never false-fire through one.
+  assert.ok(lib!.includes("static func use_x(...args): return null"), `variadic member stub: ${lib}`);
+
+  // A component's library exposes the compiled render entry too; @class_name overrides win.
+  const wc = new WorkspaceIndex();
+  wc.reindex("file:///proj/card.guitkx", "@class_name FancyCard\ncomponent Card {\n\treturn ( <label text=\"x\" /> )\n}\n");
+  const clib = guitkxVirtualLibText(wc.entriesFor("file:///proj/card.guitkx"));
+  assert.ok(clib!.includes("class_name FancyCard"), `override binding wins: ${clib}`);
+  assert.ok(clib!.includes("static func render(...args): return null"), `component exposes render: ${clib}`);
+
+  // Nothing indexable -> no library (the caller closes any previous one).
+  assert.equal(guitkxVirtualLibText([]), null);
 });
 
 test("virtualDoc paramNames is noncode-aware (comma/colon inside a string default does not mis-split)", () => {
@@ -813,7 +934,7 @@ test("parseMarkup parses `{...spread}` into a spread-kind attr (name empty, valu
   assert.equal(r.error, "");
   const el = r.nodes[0] as Extract<(typeof r.nodes)[number], { t: "el" }>;
   assert.equal(el.attrs.length, 2);
-  assert.deepStrictEqual(el.attrs[0], { name: "", kind: "spread", value: "base" });
+  assert.deepStrictEqual(el.attrs[0], { name: "", kind: "spread", value: "base", at: 6, vat: 10, end: 15 });
   assert.equal(el.attrs[1].name, "title");
   assert.equal(el.attrs[1].kind, "expr");
 });
@@ -829,4 +950,86 @@ test("formatGuitkx preserves `{...spread}` attributes and stays idempotent", () 
   assert.ok(out.includes("{...base}"), "spread attribute preserved");
   assert.ok(out.includes("title={ t }"), "explicit attr still formatted");
   assert.equal(formatGuitkx(out).text, out, "formatting is idempotent over a spread");
+});
+
+// ---- T4.4/T4.5/T4.6 -- the analyzer halves (some assertions need core 0.6+ — shipped — and are gated on
+// the new setWarningOverride method so this suite stays green against the registry 0.5.4 too) ----
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const CORE_HAS_OVERRIDE = typeof (require("@gdscript-analyzer/core").AnalysisHandle.prototype as any).setWarningOverride === "function";
+
+test("live PascalCase 0105 fires only against a known-components universe (T4.5 ungate)", () => {
+  const src = 'component C {\n\treturn ( <Cardz text="x" /> )\n}\n';
+  const wins = markupWindows(src);
+  const ungated = windowStructureDiags(src, wins);
+  assert.ok(!ungated.some((d) => d.code === "GUITKX0105"), "null universe (scan not finished) stays silent");
+  const known = new Set(["Card", "DemoHooks"]);
+  const hit = windowStructureDiags(src, wins, known).find((d) => d.code === "GUITKX0105");
+  assert.ok(hit, "unknown PascalCase flags against the universe");
+  assert.ok(hit!.message.includes("did you mean <Card>"), `suggestion expected: ${hit!.message}`);
+  const okSrc = 'component C {\n\treturn ( <Card text="x" /> )\n}\n';
+  assert.ok(
+    !windowStructureDiags(okSrc, markupWindows(okSrc), known).some((d) => d.code === "GUITKX0105"),
+    "a known component is silent"
+  );
+  const fragSrc = "component C {\n\treturn ( <Fragment><Card /></Fragment> )\n}\n";
+  assert.ok(
+    !windowStructureDiags(fragSrc, markupWindows(fragSrc), known).some((d) => d.code === "GUITKX0105"),
+    "<Fragment> is structural, never an unknown component"
+  );
+});
+
+test("T4.5 e2e: a fed virtual library resolves the binding; a typo still flags", () => {
+  const az = new AnalyzerAdapter();
+  az.upsertLibrary(
+    "file:///proj/demo_hooks.guitkx.__guitkx_lib.gd",
+    "class_name DemoHooks\n\nstatic func use_x(...args): return null\n",
+    "res://demo_hooks.gd"
+  );
+  az.setWorkspaceComplete(true);
+  const vUri = "file:///proj/y.__guitkx_virtual.gd";
+  const good = "extends RefCounted\nstatic func render(props, children):\n\tvar a = DemoHooks.use_x(1, 2)\n\treturn a\n";
+  az.sync(vUri, good);
+  const codes = az.diagnosticsAt(vUri, good).map((d) => d.code);
+  assert.ok(!codes.includes("UNDEFINED_IDENTIFIER"), `the .guitkx binding resolves for real: ${codes}`);
+  assert.ok(!codes.includes("TOO_MANY_ARGUMENTS"), `the variadic stub is arity-transparent: ${codes}`);
+  // The veto era would have silenced this too had it collided with an indexed name -- now a
+  // genuinely unknown identifier always flags.
+  const typo = good.replace(/DemoHooks/g, "DemoHoks");
+  az.sync(vUri, typo);
+  const typoCodes = az.diagnosticsAt(vUri, typo).map((d) => d.code);
+  assert.ok(typoCodes.includes("UNDEFINED_IDENTIFIER"), `a typo'd binding still flags: ${typoCodes}`);
+});
+
+test("T4.4 e2e: analyzer DiagnosticTags cross the adapter (core 0.6+)", () => {
+  if (!CORE_HAS_OVERRIDE) return; // only a pre-0.6 core lacks these (the pinned dep has them)
+  const az = new AnalyzerAdapter();
+  const uri = "file:///proj/unused.gd";
+  const src = "func f() -> void:\n\tvar unused = 1\n";
+  az.sync(uri, src);
+  const unused = az.diagnosticsAt(uri, src).find((d) => d.code === "UNUSED_VARIABLE");
+  assert.ok(unused, "UNUSED_VARIABLE fires");
+  assert.deepEqual(unused!.tags, [1], `Unnecessary (1) crosses so the editor dims: ${JSON.stringify(unused)}`);
+});
+
+test("G8 e2e: a broken lambda initializer reports the syntax error, never a cascading UNDEFINED (core 0.6+)", () => {
+  if (!CORE_HAS_OVERRIDE) return; // only a pre-0.6 core lacks the fix (the pinned dep has it)
+  const az = new AnalyzerAdapter();
+  az.setWorkspaceComplete(true);
+  const vUri = "file:///proj/g8.__guitkx_virtual.gd";
+  const src = "extends RefCounted\nstatic func render(props, children):\n\tvar toggle = func(broken: pass\n\tprint(toggle)\n";
+  az.sync(vUri, src);
+  const codes = az.diagnosticsAt(vUri, src).map((d) => d.code);
+  assert.ok(codes.includes("GDSCRIPT_SYNTAX"), `the real problem (the syntax error) is reported: ${codes}`);
+  assert.ok(!codes.includes("UNDEFINED_IDENTIFIER"), `no false UNDEFINED_IDENTIFIER on top (G8): ${codes}`);
+});
+
+test("T4.6 e2e: the engine-defaults profile keeps UNSAFE_* silent (core 0.6+)", () => {
+  if (!CORE_HAS_OVERRIDE) return; // only a pre-0.6 core lacks the method (the pinned dep has it)
+  const az = new AnalyzerAdapter(); // the constructor selects "engine-defaults"
+  const uri = "file:///proj/unsafe.gd";
+  const src = "func f(n: Node) -> void:\n\tn.some_fn()\n";
+  az.sync(uri, src);
+  const codes = az.diagnosticsAt(uri, src).map((d) => d.code);
+  assert.ok(!codes.includes("UNSAFE_METHOD_ACCESS"), `Godot ships UNSAFE_* as ignore -- so do we: ${codes}`);
 });

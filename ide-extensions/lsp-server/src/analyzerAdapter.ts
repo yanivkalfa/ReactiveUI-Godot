@@ -71,6 +71,9 @@ export interface AdapterDiag {
   code: string;
   /** The human message. */
   message: string;
+  /** LSP DiagnosticTag numbers (1 = Unnecessary, 2 = Deprecated) — core 0.6+ emits them on the
+   *  unused/unreachable family so editors dim the range. Absent otherwise. */
+  tags?: number[];
 }
 
 // The analyzer's diagnostic `severity` is a lowercase string; map to the LSP enum.
@@ -153,6 +156,15 @@ export class AnalyzerAdapter {
   /** uri -> the doc's current text (for offset<->position mapping at the call site). The analyzer's
    *  binding now reports each navigation target's `uri` directly, so we no longer mirror its FileIds. */
   private docs = new Map<string, string>();
+
+  constructor() {
+    // T4.6: match Godot's own default warning levels — the editor must never warn where the
+    // engine wouldn't (the UNSAFE_* opt-in family stays silent). With a project.godot fed the
+    // analyzer auto-selects engine defaults already; this pins the SAME profile for the
+    // project-less case. Optional-called so the adapter still boots against a pre-0.6 core
+    // (the method simply doesn't exist there and the analyzer keeps its built-in default).
+    (this.az as { setWarningOverride?: (mode: string) => void }).setWarningOverride?.("engine-defaults");
+  }
 
   /** Set the project's project.godot text (enables `[autoload]` singleton resolution). Best-effort. */
   setProjectConfig(text: string): void {
@@ -237,7 +249,9 @@ export class AnalyzerAdapter {
     return { kind: MarkupKind.Markdown, value };
   }
 
-  /** Parse + type diagnostics for the virtual doc, with ranges mapped to CHAR offsets in `text`. */
+  /** Parse + type diagnostics for the virtual doc, with ranges mapped to CHAR offsets in `text`.
+   *  `tags` carries the analyzer's LSP DiagnosticTag numbers (1 = Unnecessary, core 0.6+ on the
+   *  unused/unreachable family); absent on older cores and on untagged diagnostics. */
   diagnosticsAt(uri: string, text: string): AdapterDiag[] {
     const diags: any[] = this.az.diagnostics(uri) ?? [];
     return diags.map((d) => {
@@ -247,6 +261,7 @@ export class AnalyzerAdapter {
         severity: SEVERITY[String(d.severity).toLowerCase()] ?? DiagnosticSeverity.Warning,
         code: String(d.code ?? ""),
         message: String(d.message ?? ""),
+        tags: Array.isArray(d.tags) && d.tags.length ? d.tags.map(Number) : undefined,
       };
     });
   }

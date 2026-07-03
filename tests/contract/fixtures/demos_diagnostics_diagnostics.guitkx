@@ -1,0 +1,26 @@
+@class_name DemoDiagnostics
+
+component DemoDiagnostics() {
+	RUIDiagnostics.enabled = true
+	var tick = useState(0)
+	var shown = useState(RUIDiagnostics.report())
+	var capture = func():
+		shown[1].call(RUIDiagnostics.report())
+		return Callable()
+	useEffect(capture, [tick[0]])
+	var do_reset = func():
+		RUIDiagnostics.reset()
+		shown[1].call(RUIDiagnostics.report())
+	var rep: Dictionary = shown[0]
+	return (
+		<DemoBox title="Diagnostics — render/commit metrics">
+			<Label text={ "renders: %d    commits: %d" % [rep["renders"], rep["commits"]] } />
+			<Label text={ "placements: %d    updates: %d    deletions: %d" % [rep["placements"], rep["updates"], rep["deletions"]] } />
+			<Label text="captured after the last click's commit (displaying is itself a render)" style={ {"font_color": Color(0.55, 0.55, 0.55)} } />
+			<HBox style={ {"separation": 8} }>
+				<Button text="Trigger a render" onClick={ func(): tick[1].call(tick[0] + 1) } />
+				<Button text="Reset counters" onClick={ do_reset } />
+			</HBox>
+		</DemoBox>
+	)
+}

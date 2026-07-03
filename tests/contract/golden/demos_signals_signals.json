@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":63,\"attrs\":[{\"at\":72,\"end\":120,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Signals — shared state, no prop drilling\",\"vat\":79}],\"children\":[{\"at\":125,\"attrs\":[{\"at\":132,\"end\":190,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Two independent components read the SAME RUISignal:\",\"vat\":138},{\"at\":191,\"end\":237,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":199}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":244,\"attrs\":[],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"DemoSignalsDisplay\"},{\"at\":270,\"attrs\":[],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"DemoSignalsDisplay\"},{\"at\":296,\"attrs\":[{\"at\":304,\"end\":334,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Increment shared signal\",\"vat\":310},{\"at\":335,\"end\":408,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): DemoSignalsStore.shared.update(func(v): return v + 1)\",\"vat\":345}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":5,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 426,
+			"start": 60
+		}
+	]
+}

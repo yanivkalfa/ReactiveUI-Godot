@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":1507,\"attrs\":[{\"at\":1516,\"end\":1591,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Native stress test — raw ColorRects, no reconciler (engine ceiling)\",\"vat\":1523}],\"children\":[{\"at\":1596,\"attrs\":[{\"at\":1602,\"end\":1629,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":1610}],\"children\":[{\"at\":1635,\"attrs\":[{\"at\":1642,\"end\":1657,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"status\",\"vat\":1649},{\"at\":1658,\"end\":1686,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_h\\\": true}\",\"vat\":1666}],\"children\":[],\"line\":37,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":1694,\"attrs\":[{\"at\":1701,\"end\":1714,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Boxes:\",\"vat\":1707}],\"children\":[],\"line\":38,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":1722,\"attrs\":[{\"at\":1732,\"end\":1754,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"count_text[0]\",\"vat\":1739},{\"at\":1755,\"end\":1798,\"kind\":\"expr\",\"name\":\"onChange\",\"value\":\"func(t): count_text[1].call(t)\",\"vat\":1766},{\"at\":1799,\"end\":1826,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 70}\",\"vat\":1807}],\"children\":[],\"line\":39,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":1834,\"attrs\":[{\"at\":1841,\"end\":1853,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Secs:\",\"vat\":1847}],\"children\":[],\"line\":40,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":1861,\"attrs\":[{\"at\":1871,\"end\":1891,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"dur_text[0]\",\"vat\":1878},{\"at\":1892,\"end\":1933,\"kind\":\"expr\",\"name\":\"onChange\",\"value\":\"func(t): dur_text[1].call(t)\",\"vat\":1903},{\"at\":1934,\"end\":1961,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 50}\",\"vat\":1942}],\"children\":[],\"line\":41,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":1969,\"attrs\":[{\"at\":1977,\"end\":2060,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Running…\\\" if running[0] else (\\\"Restart\\\" if loop[\\\"finished\\\"] else \\\"Start\\\")\",\"vat\":1984},{\"at\":2061,\"end\":2078,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"start\",\"vat\":2071}],\"children\":[],\"line\":42,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":36,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":2096,\"attrs\":[{\"at\":2105,\"end\":2121,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"area_ref\",\"vat\":2111},{\"at\":2122,\"end\":2135,\"kind\":\"bool\",\"name\":\"clip_contents\",\"value\":\"true\",\"vat\":-1},{\"at\":2136,\"end\":2201,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_h\\\": true, \\\"expand_v\\\": true, \\\"min_height\\\": 320}\",\"vat\":2144}],\"children\":[],\"line\":44,\"t\":\"el\",\"tag\":\"Control\"}],\"line\":35,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 2219,
+			"start": 1504
+		}
+	]
+}

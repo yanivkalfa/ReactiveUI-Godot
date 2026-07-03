@@ -1,0 +1,11 @@
+component X(v: int = 0) {
+	return (
+		<VBox>
+			@match (v) {
+				@case (0) { <Label text="zero" /> }
+				@case (1) { <Label text="one" /> }
+				@default { <Label text="many" /> }
+			}
+		</VBox>
+	)
+}

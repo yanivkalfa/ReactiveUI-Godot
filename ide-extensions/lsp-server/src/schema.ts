@@ -1,6 +1,21 @@
-// guitkx vocabulary for markup-side completion/hover. Embedded (not loaded from disk) so the
-// server is self-contained; mirrors ide-extensions/grammar/guitkx-schema.json. Per-control Godot
-// properties are NOT enumerated here — those come from a bundled ClassDB dump (see classdb.ts).
+// guitkx vocabulary for markup-side completion/hover. The tag NAME set comes from the shared
+// vocabulary.json (T0.3 — a byte-identical copy of addons/reactive_ui/guitkx/vocabulary.json, the
+// single source of truth guitkx.gd also loads; vocab.test.ts enforces the sync). This file keeps
+// the per-tag METADATA (godotClass, events) and DERIVES alias entries (VBoxContainer,
+// RichTextLabel, …) from the vocabulary, so every tag the compiler accepts gets completion/hover
+// and can never be false-flagged unknown. Per-control Godot properties are NOT enumerated here —
+// those come from a bundled ClassDB dump (see classdb.ts).
+
+import vocabulary from "./vocabulary.json";
+
+export const VOCABULARY: {
+  directives: string[];
+  hooks: string[];
+  host_tags: Record<string, string>;
+  v_factories: string[];
+  severities: Record<string, string>; // T3.2: single severity source per code
+  live: string[]; // T3.3: codes the live tier computes (stale sidecar entries for these drop)
+} = vocabulary;
 
 export interface TagInfo {
   tag: string;
@@ -15,7 +30,10 @@ export interface AttrInfo {
   detail: string;
 }
 
-export const HOST_TAGS: TagInfo[] = [
+const BASE_TAGS: TagInfo[] = [
+  // T2.2: the named alias of `<>...</>` (Unity parity, case-insensitive at the parser). Groups
+  // children without a container node; accepts only `key`.
+  { tag: "Fragment", godotClass: "Fragment", factory: "V.fragment" },
   { tag: "Control", godotClass: "Control", factory: "V.control" },
   { tag: "VBox", godotClass: "VBoxContainer", factory: "V.vbox" },
   { tag: "HBox", godotClass: "HBoxContainer", factory: "V.hbox" },
@@ -50,6 +68,22 @@ export const HOST_TAGS: TagInfo[] = [
   { tag: "TabBar", godotClass: "TabBar", factory: "V.tab_bar", events: ["onChange"] },
 ];
 
+// Every vocabulary tag as a TagInfo: hand-maintained BASE_TAGS carry the metadata; aliases from
+// vocabulary.host_tags that BASE_TAGS doesn't name (VBoxContainer -> vbox, …) clone the canonical
+// entry with the alias as tag AND godotClass (the long form IS the Godot class name).
+export const HOST_TAGS: TagInfo[] = (() => {
+  const byFactory = new Map<string, TagInfo>();
+  for (const t of BASE_TAGS) if (!byFactory.has(t.factory)) byFactory.set(t.factory, t);
+  const known = new Set(BASE_TAGS.map((t) => t.tag));
+  const out = [...BASE_TAGS];
+  for (const [alias, factory] of Object.entries(VOCABULARY.host_tags)) {
+    if (known.has(alias)) continue;
+    const base = byFactory.get(`V.${factory}`);
+    if (base) out.push({ ...base, tag: alias, godotClass: alias });
+  }
+  return out;
+})();
+
 export const STRUCTURAL_ATTRS: AttrInfo[] = [
   { name: "key", type: "Variant", detail: "Reconciler key — stabilises identity across re-renders/reorders." },
   { name: "ref", type: "Callable|Array", detail: "Forwarded ref — receives the underlying Godot Control once mounted." },
@@ -74,7 +108,10 @@ export interface DirectiveInfo {
 
 export const PREAMBLE_DIRECTIVES: DirectiveInfo[] = [
   { label: "@class_name", insert: "@class_name ", detail: "Override the generated class name." },
-  { label: "@uss", insert: '@uss "', detail: "Associate a Theme/StyleBox resource path (reserved)." },
+  // T2.3: implemented -- preloads the Theme and applies it to the component's root element
+  // (theme prop) unless one is set explicitly. Component files only; one per file.
+  { label: "@uss", insert: '@uss "', detail: 'Preload a Theme for the root element: @uss "res://theme.tres" (Unity @uss parity).' },
+  { label: "@theme", insert: '@theme "', detail: 'Godot-idiomatic alias of @uss: preload a Theme for the root element.' },
 ];
 
 export const CONTROL_FLOW: DirectiveInfo[] = [

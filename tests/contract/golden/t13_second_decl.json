@@ -1,0 +1,41 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 5,
+			"off": 10,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX2105",
+			"len": 20,
+			"off": 54,
+			"severity": 0
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":30,\"attrs\":[{\"at\":37,\"end\":45,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":43}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"label\"}]"
+		},
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":85,\"attrs\":[{\"at\":92,\"end\":100,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":98}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"label\"}]"
+		}
+	],
+	"ok": false,
+	"windows": [
+		{
+			"end": 49,
+			"start": 29
+		},
+		{
+			"end": 104,
+			"start": 84
+		}
+	]
+}

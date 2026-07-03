@@ -1,0 +1,5 @@
+component TwoReturns() {
+	return ( <label text="first" /> )
+	var x = 5
+	return ( <label text="last wins" /> )
+}

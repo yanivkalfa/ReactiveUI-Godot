@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":151,\"attrs\":[{\"at\":160,\"end\":191,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Context — provide / use\",\"vat\":167}],\"children\":[{\"at\":196,\"attrs\":[{\"at\":202,\"end\":229,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":210}],\"children\":[{\"at\":235,\"attrs\":[{\"at\":243,\"end\":254,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Blue\",\"vat\":249},{\"at\":255,\"end\":311,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): accent[1].call(Color(0.3, 0.6, 1.0))\",\"vat\":265}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":319,\"attrs\":[{\"at\":327,\"end\":339,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Green\",\"vat\":333},{\"at\":340,\"end\":398,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): accent[1].call(Color(0.3, 0.85, 0.45))\",\"vat\":350}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":406,\"attrs\":[{\"at\":414,\"end\":424,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Red\",\"vat\":420},{\"at\":425,\"end\":482,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): accent[1].call(Color(0.9, 0.4, 0.35))\",\"vat\":435}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":8,\"t\":\"el\",\"tag\":\"HBox\"},{\"at\":500,\"attrs\":[{\"at\":507,\"end\":575,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Consumers below read 'accent' from context (no props passed):\",\"vat\":513},{\"at\":576,\"end\":622,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":584}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":629,\"attrs\":[],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"DemoContextConsumer\"},{\"at\":656,\"attrs\":[],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"DemoContextConsumer\"}],\"line\":7,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 694,
+			"start": 148
+		}
+	]
+}

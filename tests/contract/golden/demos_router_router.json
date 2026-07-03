@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":329,\"code\":\"V.router({ \\\"initial\\\": \\\"/\\\" }, [V.fc(DemoRouterInner.render)])\",\"t\":\"expr\",\"vat\":331}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 395,
+			"start": 326
+		}
+	]
+}

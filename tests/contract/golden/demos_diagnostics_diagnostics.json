@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":410,\"attrs\":[{\"at\":419,\"end\":462,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Diagnostics — render/commit metrics\",\"vat\":426}],\"children\":[{\"at\":467,\"attrs\":[{\"at\":474,\"end\":546,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"renders: %d    commits: %d\\\" % [rep[\\\"renders\\\"], rep[\\\"commits\\\"]]\",\"vat\":481}],\"children\":[],\"line\":17,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":553,\"attrs\":[{\"at\":560,\"end\":673,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"placements: %d    updates: %d    deletions: %d\\\" % [rep[\\\"placements\\\"], rep[\\\"updates\\\"], rep[\\\"deletions\\\"]]\",\"vat\":567}],\"children\":[],\"line\":18,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":680,\"attrs\":[{\"at\":687,\"end\":764,\"kind\":\"str\",\"name\":\"text\",\"value\":\"captured after the last click's commit (displaying is itself a render)\",\"vat\":693},{\"at\":765,\"end\":814,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.55, 0.55, 0.55)}\",\"vat\":773}],\"children\":[],\"line\":19,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":821,\"attrs\":[{\"at\":827,\"end\":854,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":835}],\"children\":[{\"at\":860,\"attrs\":[{\"at\":868,\"end\":891,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Trigger a render\",\"vat\":874},{\"at\":892,\"end\":937,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): tick[1].call(tick[0] + 1)\",\"vat\":902}],\"children\":[],\"line\":21,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":945,\"attrs\":[{\"at\":953,\"end\":974,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Reset counters\",\"vat\":959},{\"at\":975,\"end\":995,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"do_reset\",\"vat\":985}],\"children\":[],\"line\":22,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":20,\"t\":\"el\",\"tag\":\"HBox\"}],\"line\":16,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 1024,
+			"start": 407
+		}
+	]
+}

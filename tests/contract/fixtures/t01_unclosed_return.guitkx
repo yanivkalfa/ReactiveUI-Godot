@@ -1,0 +1,4 @@
+component X() {
+	var a = 1
+	return ( <Label
+}

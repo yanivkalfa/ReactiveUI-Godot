@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":300,\"attrs\":[{\"at\":309,\"end\":360,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useTween — animate a node via Godot's Tween\",\"vat\":316}],\"children\":[{\"at\":365,\"attrs\":[{\"at\":373,\"end\":395,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Pulse (fade in)\",\"vat\":379},{\"at\":396,\"end\":413,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"pulse\",\"vat\":406}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":420,\"attrs\":[{\"at\":427,\"end\":442,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"box_ref\",\"vat\":433},{\"at\":443,\"end\":548,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.3, 0.6, 0.9), \\\"corner_radius\\\": 8, \\\"min_size\\\": Vector2(220, 90), \\\"pad\\\": 12}\",\"vat\":451}],\"children\":[{\"at\":554,\"attrs\":[{\"at\":561,\"end\":592,\"kind\":\"str\",\"name\":\"text\",\"value\":\"I fade in on every pulse\",\"vat\":567},{\"at\":593,\"end\":630,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color.WHITE}\",\"vat\":601}],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":14,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 660,
+			"start": 297
+		}
+	]
+}

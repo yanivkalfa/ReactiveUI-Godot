@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":121,\"attrs\":[{\"at\":128,\"end\":206,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.18, 0.18, 0.22), \\\"corner_radius\\\": 6, \\\"pad\\\": 10}\",\"vat\":136}],\"children\":[{\"at\":211,\"attrs\":[{\"at\":218,\"end\":250,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"consumer sees: %d\\\" % v\",\"vat\":225}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"Panel\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 266,
+			"start": 118
+		}
+	]
+}

@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 13,
+			"off": 10,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0150",
+			"len": 16,
+			"off": 67,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":50,\"attrs\":[],\"children\":[{\"at\":60,\"attrs\":[],\"children\":[{\"at\":67,\"t\":\"text\",\"value\":\"Count: {n} items\"}],\"line\":4,\"t\":\"el\",\"tag\":\"label\"},{\"at\":95,\"attrs\":[],\"children\":[{\"at\":102,\"code\":\"n\",\"t\":\"expr\",\"vat\":104},{\"at\":108,\"t\":\"text\",\"value\":\"at node start\"}],\"line\":5,\"t\":\"el\",\"tag\":\"label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 141,
+			"start": 47
+		}
+	]
+}
