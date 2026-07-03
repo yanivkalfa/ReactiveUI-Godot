@@ -306,7 +306,7 @@ formatter round-trip. Runtime demo check via headless suite.
 **Done when.** Same fixture produces identical AST classification on Unity (spot-check against MT
 semantics in the golden) and Godot; demos green.
 
-### T2.5 — Rules-of-hooks: four-context validation  · effort: medium · Status: ⬜
+### T2.5 — Rules-of-hooks: four-context validation  · effort: medium · Status: ✅ (the one-shot indent heuristic became a deterministic BLOCK-OPENER STACK over setup lines (same _indent_unit/_indent_depth geometry as emission): hook call under if/elif/else ⇒ 0013, for/while ⇒ 0014, match ⇒ 0015, `func():` lambda ⇒ 0016, single-line `if c: use_x()` included; ALL are errors (were: one 0013 warning max) and every violation reports; runs on component setup + hook decl bodies + module members; (d) a hook CALL inside a markup {expr} (attr or child) ⇒ 0016 in _validate_node — hook RESULTS are fine (token-boundary `_expr_calls_hook`, which also fixed `_line_calls_hook`'s substring false-positive on `my_useState(`). LSP: `hookContextDiags` in liveMarkup.ts is the routine ported line-for-line over `setupSpans()` (new formatGuitkx export; indentUnit/indentDepth now exported so both consumers share ONE geometry), same fixtures asserted on both sides; virtualDoc keeps its stubs (the analyzer needs them) exactly as planned. Demos: zero hits — build stays 0 errors/3 warnings on clean sources)
 **Current.** One indent-heuristic warning (GUITKX0013), compiler-only, max 1/component, never on hook
 decls or module members (`guitkx.gd:221-251`); LSP stubs legalize bare hooks everywhere
 (`virtualDoc.ts:26-50, 442-448`) while the compiler prefixes only setup/hook bodies — LSP-green code

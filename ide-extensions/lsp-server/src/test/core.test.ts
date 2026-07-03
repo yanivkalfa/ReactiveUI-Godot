@@ -9,8 +9,8 @@ import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt, vetoGuitkxDeclared } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows, missingReturnComponents } from "../formatGuitkx";
-import { windowStructureDiags } from "../liveMarkup";
+import { formatGuitkx, markupWindows, missingReturnComponents, setupSpans } from "../formatGuitkx";
+import { windowStructureDiags, hookContextDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
 import { scanTagRefs } from "../refs";
@@ -365,6 +365,27 @@ test("T2.6: junk before the first declaration is 2105 live (comments/directives 
   const d = declarationDiags("var oops = 1\ncomponent A() {\n\treturn ( <Label /> )\n}\n");
   assert.ok(d.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(d)}`);
   assert.equal(declarationDiags("# header\n@class_name A\ncomponent A() {\n\treturn ( <Label /> )\n}\n").length, 0);
+});
+
+// T2.5: the live routine is the compiler's _validate_hooks ported line-for-line -- same fixtures
+// as guitkx_test.gd _test_t25_hook_contexts so the two implementations cannot drift unnoticed.
+test("T2.5: hook context codes 0013/0014/0015/0016 fire live over setup spans", () => {
+  const mk = (setup: string): string => `component H(c: bool = true, xs: Array = []) {\n${setup}\treturn ( <label text="x" /> )\n}\n`;
+  const codes = (src: string): string[] => hookContextDiags(src, setupSpans(src)).map((d) => d.code);
+  assert.deepEqual(codes(mk("\tfor x in xs:\n\t\tvar s = useState(0)\n")), ["GUITKX0014"]);
+  assert.deepEqual(codes(mk("\tmatch c:\n\t\ttrue:\n\t\t\tvar s = useState(0)\n")), ["GUITKX0015"]);
+  assert.deepEqual(codes(mk("\tvar f = func():\n\t\tvar s = useState(0)\n")), ["GUITKX0016"]);
+  assert.deepEqual(codes(mk("\tif c: var s = useState(0)\n")), ["GUITKX0013"]);
+  assert.deepEqual(codes(mk("\tvar s = useState(0)\n\tvar my_useState_thing = 1\n")), []);
+  // hook declaration bodies are spans too
+  assert.deepEqual(codes("hook use_bad(c: bool = false) {\n\tif c:\n\t\tvar s = useState(0)\n\treturn 1\n}\n"), ["GUITKX0013"]);
+});
+
+test("T2.5: hook CALL in a markup expression is 0016 live; a hook RESULT is not", () => {
+  const bad = 'component A() {\n\treturn ( <label text={ str(useState(0)[0]) } /> )\n}\n';
+  assert.ok(windowStructureDiags(bad, markupWindows(bad)).some((d) => d.code === "GUITKX0016"));
+  const ok = 'component OK() {\n\tvar s = useState(0)\n\treturn ( <label text={ str(s[0]) } on_pressed={ s[1] } /> )\n}\n';
+  assert.equal(windowStructureDiags(ok, markupWindows(ok)).filter((d) => d.code === "GUITKX0016").length, 0);
 });
 
 test("T2.1/T2.2: comments and <Fragment> stay clean live", () => {

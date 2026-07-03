@@ -381,7 +381,8 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
 
 // Inferred space-indent unit: the smallest positive run of leading spaces across `lines` (1 for
 // tab-only source), so a tab weighs the same as one such run. Mirrors guitkx.gd `_indent_unit`.
-function indentUnit(lines: string[]): number {
+// Exported for the T2.5 rules-of-hooks scan (liveMarkup.ts) so both consumers share ONE geometry.
+export function indentUnit(lines: string[]): number {
   let unit = 0;
   for (const l of lines) {
     let sp = 0;
@@ -397,7 +398,7 @@ function indentUnit(lines: string[]): number {
 
 // Indentation depth in whole levels: a tab = `unit` columns, a space = 1 column, rounded. Mirrors
 // guitkx.gd `_indent_depth`.
-function indentDepth(s: string, unit: number): number {
+export function indentDepth(s: string, unit: number): number {
   let cols = 0;
   for (const c of s) {
     if (c === "\t") cols += unit;
@@ -695,6 +696,43 @@ function moduleBodyAt(src: string, at: number): { start: number; end: number } |
   const close = findMatching(src, i);
   if (close === -1) return null;
   return { start: i + 1, end: close };
+}
+
+// T2.5: every embedded-GDScript span the rules-of-hooks scan covers -- component setups (body start
+// to the chosen return; the whole body when no/unclosed return, matching the compiler's view of an
+// all-setup body) and hook declaration bodies, top-level or module members.
+export function setupSpans(src: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const collect = (from: number, to: number): void => {
+    let i = from;
+    while (i < to) {
+      const d = findDecl(src, i, true);
+      if (d.kind === "" || d.at >= to) break;
+      if (d.kind === "component") {
+        const b = declBody(src, d.at);
+        if (b) {
+          const split = splitReturn(src, b.start, b.close);
+          const end = split && split !== "unclosed" ? split.setupEnd : b.close;
+          if (end > b.start) out.push({ start: b.start, end });
+          i = b.close + 1;
+        } else i = d.at + 1;
+      } else if (d.kind === "hook") {
+        const ph = parseHookAt(src, d.at);
+        if (ph.ok) {
+          if (ph.bodyEnd > ph.bodyStart) out.push({ start: ph.bodyStart, end: ph.bodyEnd });
+          i = ph.next;
+        } else i = d.at + 1;
+      } else if (d.kind === "module") {
+        const body = moduleBodyAt(src, d.at);
+        if (body) {
+          collect(body.start, body.end);
+          i = body.end + 1;
+        } else i = d.at + 1;
+      } else break;
+    }
+  };
+  collect(0, src.length);
+  return out;
 }
 
 // The embedded-GDScript spans (component setup / hook body) of a (already-formatted) document — the

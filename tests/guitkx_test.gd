@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_t13_single_decl()
 	_test_t14_last_return()
 	_test_t15_unknown_tags()
+	_test_t25_hook_contexts()
 	_test_t26_naming()
 	_test_p2_markup_features()
 	_test_return_null_guard()
@@ -276,6 +277,37 @@ func _test_t14_last_return() -> void:
 	var expr_src := "component E(items: Array = []) {\n\treturn ( { items.map(func(i): return <label text={ str(i) } />) } )\n}\n"
 	var expr := RUIGuitkx.compile(expr_src, "E")
 	_check_true(bool(expr["ok"]), "T1.4: {expr} root still compiles (got %s)" % str(expr["diagnostics"]))
+
+func _test_t25_hook_contexts() -> void:
+	# T2.5 (Unity 0013-0016): four contexts, each its own code, all ERRORS.
+	var base := "component H(c: bool = true, xs: Array = []) {\n%s\treturn ( <label text=\"x\" /> )\n}\n"
+	var rl := RUIGuitkx.compile(base % "\tfor x in xs:\n\t\tvar s = useState(0)\n", "H")
+	_check_true(not rl["ok"] and _has_code(rl, "GUITKX0014"), "T2.5: hook in loop = 0014 (got %s)" % str(rl["diagnostics"]))
+	var rm := RUIGuitkx.compile(base % "\tmatch c:\n\t\ttrue:\n\t\t\tvar s = useState(0)\n", "H")
+	_check_true(not rm["ok"] and _has_code(rm, "GUITKX0015"), "T2.5: hook in match = 0015 (got %s)" % str(rm["diagnostics"]))
+	var rf := RUIGuitkx.compile(base % "\tvar f = func():\n\t\tvar s = useState(0)\n", "H")
+	_check_true(not rf["ok"] and _has_code(rf, "GUITKX0016"), "T2.5: hook in lambda = 0016 (got %s)" % str(rf["diagnostics"]))
+	var ri := RUIGuitkx.compile(base % "\tif c: var s = useState(0)\n", "H")
+	_check_true(not ri["ok"] and _has_code(ri, "GUITKX0013"), "T2.5: single-line if hook = 0013 (got %s)" % str(ri["diagnostics"]))
+
+	# (d) markup-expression context: attr expr + child expr.
+	var ra := RUIGuitkx.compile("component A() {\n\treturn ( <label text={ str(useState(0)[0]) } /> )\n}\n", "A")
+	_check_true(not ra["ok"] and _has_code(ra, "GUITKX0016"), "T2.5: hook call in attr expr = 0016 (got %s)" % str(ra["diagnostics"]))
+	var rc := RUIGuitkx.compile("component B() {\n\treturn ( <vbox>{ useState(0)[0] }</vbox> )\n}\n", "B")
+	_check_true(not rc["ok"] and _has_code(rc, "GUITKX0016"), "T2.5: hook call in child expr = 0016 (got %s)" % str(rc["diagnostics"]))
+
+	# NEGATIVES: top-level hook, hook RESULT in attr, look-alike identifier, member call.
+	var ok_src := "component OK(c: bool = true) {\n" + \
+		"\tvar s = useState(0)\n" + \
+		"\tvar my_useState_thing = 1\n" + \
+		"\tvar obj_call = s\n" + \
+		"\treturn ( <label text={ str(s[0]) } on_pressed={ s[1] } /> )\n}\n"
+	var rok := RUIGuitkx.compile(ok_src, "OK")
+	_check_true(bool(rok["ok"]), "T2.5: top-level hook + result-in-attr stay clean (got %s)" % str(rok["diagnostics"]))
+
+	# hook DECLARATION bodies are validated too (hooks compose hooks -- unconditionally).
+	var rhb := RUIGuitkx.compile("hook use_bad(c: bool = false) {\n\tif c:\n\t\tvar s = useState(0)\n\treturn 1\n}\n", "use_bad")
+	_check_true(not rhb["ok"] and _has_code(rhb, "GUITKX0013"), "T2.5: hook body validated (got %s)" % str(rhb["diagnostics"]))
 
 func _test_t26_naming() -> void:
 	# T2.6 (Unity 2100): component names are PascalCase -- they become the generated class_name.
@@ -557,7 +589,9 @@ func _test_diagnostics() -> void:
 	var roh_src := "component Bad(c: bool = true) {\n\tvar a = useState(0)\n\tif c:\n\t\tvar b = useState(1)\n\treturn ( <Label /> )\n}\n"
 	var roh := RUIGuitkx.compile(roh_src, "Bad")
 	_check_diag_at(roh, "GUITKX0013", roh_src, "var b = useState(1)", "rules-of-hooks")
-	_check_true(int(_diag(roh, "GUITKX0013").get("severity", -9)) == GDiag.WARNING, "GUITKX0013 is a warning")
+	# T2.5 (Unity parity): rules-of-hooks violations are ERRORS and fail the compile.
+	_check_true(int(_diag(roh, "GUITKX0013").get("severity", -9)) == GDiag.ERROR, "GUITKX0013 is an error")
+	_check_true(not roh["ok"], "T2.5: conditional hook fails the compile")
 	# duplicate literal keys among siblings — flagged at the SECOND key attribute
 	var dk_src := "component Dup() {\n\treturn (\n\t\t<VBox>\n\t\t\t<Label key=\"x\" />\n\t\t\t<Label key=\"x\" />\n\t\t</VBox>\n\t)\n}\n"
 	var dk := RUIGuitkx.compile(dk_src, "Dup")

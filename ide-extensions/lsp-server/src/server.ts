@@ -35,9 +35,9 @@ import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
 import { skipString, findMatching, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
-import { windowStructureDiags } from "./liveMarkup";
+import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
-import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig } from "./formatGuitkx";
+import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, loadFormatterConfig, setupSpans } from "./formatGuitkx";
 import { parseMarkup } from "./markup";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
@@ -1456,7 +1456,9 @@ function markupDiagnostics(doc: TextDocument): Diagnostic[] {
   const wins = markupWindows(src);
   // T1.5 (G5): markup parse errors (0301/0302/...) and unknown lowercase tags (0105) fire LIVE --
   // they used to be computed and discarded, so `return <s></a>` squiggled nothing until save.
-  for (const d of windowStructureDiags(src, wins)) {
+  // T2.5: rules-of-hooks (0013-0016) fire live over every setup span with the same routine the
+  // compiler runs (liveMarkup.hookContextDiags mirrors guitkx.gd _validate_hooks).
+  for (const d of [...windowStructureDiags(src, wins), ...hookContextDiags(src, setupSpans(src))]) {
     diags.push({
       severity: d.severity === "warning" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
       range: { start: doc.positionAt(d.start), end: doc.positionAt(d.end) },

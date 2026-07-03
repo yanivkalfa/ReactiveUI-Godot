@@ -16,6 +16,8 @@
 import { parseMarkup, MarkupNode } from "./markup";
 import { VOCABULARY } from "./schema";
 import { editDistance } from "./declScan";
+import { skipNoncode, keywordAt, isIdent } from "./scanner";
+import { indentUnit, indentDepth } from "./formatGuitkx";
 
 export interface LiveMarkupDiag {
   start: number;
@@ -54,11 +56,25 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
             message: `GUITKX0105: unknown element <${nd.tag}>${suggestTag(nd.tag)}`,
           });
         }
+        attrHookChecks(nd.attrs, base, out);
         walkTags(nd.children, base, out);
         break;
       }
       case "frag":
+        attrHookChecks(nd.attrs ?? [], base, out);
         walkTags(nd.children, base, out);
+        break;
+      case "expr":
+        // T2.5 (Unity 0016): a hook CALL inside a markup expression runs per-render out of hook
+        // order -- using a hook RESULT is fine, only the call is flagged.
+        if (exprCallsHook(nd.code)) {
+          out.push({
+            start: base + nd.vat,
+            end: base + nd.vat + Math.max(1, nd.code.length),
+            code: "GUITKX0016",
+            message: "GUITKX0016: hook called inside a markup expression -- call it in setup and reference the result",
+          });
+        }
         break;
       case "text":
         // T2.4 migration warning: braces inside text are LITERAL under the Unity-parity text model.
@@ -99,6 +115,107 @@ function walkBody(bodySrc: string, base: number, out: LiveMarkupDiag[]): void {
     return;
   }
   walkTags(pr.nodes, base, out);
+}
+
+function attrHookChecks(attrs: { kind: string; value: string; vat: number }[], base: number, out: LiveMarkupDiag[]): void {
+  for (const a of attrs) {
+    if (a.kind === "expr" && exprCallsHook(a.value)) {
+      out.push({
+        start: base + a.vat,
+        end: base + a.vat + Math.max(1, a.value.length),
+        code: "GUITKX0016",
+        message: "GUITKX0016: hook called inside a markup expression -- call it in setup and reference the result",
+      });
+    }
+  }
+}
+
+// Token-boundary hook-call detection -- a `my_useState(` look-alike or `obj.useState(` member call
+// is NOT a hook call. Mirrors guitkx.gd _expr_calls_hook.
+function exprCallsHook(code: string): boolean {
+  let i = 0;
+  const n = code.length;
+  while (i < n) {
+    const j = skipNoncode(code, i);
+    if (j !== i) {
+      i = j;
+      continue;
+    }
+    if (i === 0 || (!isIdent(code[i - 1]) && code[i - 1] !== ".")) {
+      for (const h of VOCABULARY.hooks) {
+        if (keywordAt(code, i, h) && isCallAt(code, i + h.length)) return true;
+      }
+    }
+    i++;
+  }
+  return false;
+}
+
+function isCallAt(s: string, at: number): boolean {
+  while (at < s.length && (s[at] === " " || s[at] === "\t")) at++;
+  return s[at] === "(";
+}
+
+// T2.5 (a)-(c) + lambda: the compiler's _validate_hooks ported line-for-line -- a deterministic
+// block-opener stack over each setup span (component setup / hook body from setupSpans()).
+export function hookContextDiags(src: string, spans: { start: number; end: number }[]): LiveMarkupDiag[] {
+  const out: LiveMarkupDiag[] = [];
+  for (const sp of spans) {
+    const lines = src.slice(sp.start, sp.end).split("\n");
+    const unit = indentUnit(lines);
+    const stack: { depth: number; kind: string }[] = [];
+    let off = 0;
+    for (const l of lines) {
+      const t = l.trim();
+      if (t === "" || t.startsWith("#")) {
+        off += l.length + 1;
+        continue;
+      }
+      const d = indentDepth(l, unit);
+      while (stack.length && stack[stack.length - 1].depth >= d) stack.pop();
+      if (exprCallsHook(l)) {
+        let kind = "";
+        if (stack.length) kind = stack[stack.length - 1].kind;
+        else if (t.includes(":")) kind = blockOpenerKind(t.slice(0, t.indexOf(":") + 1)); // single-line `if c: use_y()`
+        if (kind !== "") {
+          let code = "GUITKX0013";
+          let what = "conditionally (inside an if/else block)";
+          if (kind === "for" || kind === "while") {
+            code = "GUITKX0014";
+            what = "inside a loop";
+          } else if (kind === "match") {
+            code = "GUITKX0015";
+            what = "inside a match branch";
+          } else if (kind === "func") {
+            code = "GUITKX0016";
+            what = "inside a callback/lambda";
+          }
+          const lead = l.length - l.replace(/^[\t ]+/, "").length;
+          out.push({
+            start: sp.start + off + lead,
+            end: sp.start + off + lead + t.length,
+            code,
+            message: `${code}: hook called ${what} -- hooks must run unconditionally at the top of setup`,
+          });
+        }
+      }
+      if (t.endsWith(":")) {
+        const k2 = blockOpenerKind(t);
+        if (k2 !== "") stack.push({ depth: d, kind: k2 });
+      }
+      off += l.length + 1;
+    }
+  }
+  return out;
+}
+
+// Mirrors guitkx.gd _block_opener_kind.
+function blockOpenerKind(t: string): string {
+  for (const kw of ["if", "elif", "else", "for", "while", "match"]) {
+    if (t === kw + ":" || t.startsWith(kw + " ") || t.startsWith(kw + "(")) return kw === "elif" || kw === "else" ? "if" : kw;
+  }
+  if (t.startsWith("func") || t.includes("func(") || t.includes("func (")) return "func";
+  return "";
 }
 
 function suggestTag(tag: string): string {

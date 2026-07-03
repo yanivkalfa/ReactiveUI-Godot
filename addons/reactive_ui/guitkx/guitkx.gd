@@ -283,32 +283,16 @@ static func _validate(setup: String, root: Dictionary, diags: Array, base: int =
 static func _cbase(base: int, rel: int) -> int:
 	return -1 if (base < 0 or rel < 0) else base + rel
 
-## Rules of hooks (heuristic): a hook call indented deeper than the shallowest setup statement is
-## inside an if/for/while/match block, i.e. called conditionally. [GUITKX0013]
+## Rules of hooks (T2.5, Unity 0013-0016): hooks must run unconditionally at the top level of setup.
+## Deterministic block-opener STACK over the lines (replacing the old one-shot indent heuristic):
+## a hook call under an if/elif/else block is 0013, for/while 0014, match 0015, and a func():
+## lambda/callback 0016. Depth is measured in LEVELS (tab+spaces mixes stay invisible-safe, same
+## _indent_unit/_indent_depth as emission). Runs on component setup, hook declaration bodies, and
+## module members alike; every violating call is reported (not just the first).
 static func _validate_hooks(setup: String, diags: Array, base_off: int = -1) -> void:
 	var lines := setup.split("\n")
-	# Compare indentation by DEPTH (levels), not raw character count, so a tab+spaces mix -- which
-	# renders identically to tabs and is thus invisible to the author -- doesn't produce a spurious
-	# "hook in a block" warning. The base is the FIRST non-blank non-comment line's depth (the same
-	# anchor rule as _reindent_setup, so validation agrees with emission): a min-depth base let one
-	# outlier-shallow line make every real top-level hook look "in a block". Comment lines are also
-	# skipped when SCANNING for hook calls -- a commented-out `useState(...)` is not a call.
 	var unit := _indent_unit(lines)
-	var base := -1
-	var base_any := -1
-	for l in lines:
-		var t := (l as String).strip_edges()
-		if t == "":
-			continue
-		var d := _indent_depth(l as String, unit)
-		if base_any == -1:
-			base_any = d
-		if base == -1 and not t.begins_with("#"):
-			base = d
-	if base == -1:
-		base = base_any
-	if base == -1:
-		return
+	var stack: Array = []   # [{ depth, kind }] of enclosing block openers
 	var off := 0
 	for l in lines:
 		var s := l as String
@@ -316,16 +300,59 @@ static func _validate_hooks(setup: String, diags: Array, base_off: int = -1) -> 
 		if t == "" or t.begins_with("#"):
 			off += s.length() + 1
 			continue
-		if _line_calls_hook(s) and _indent_depth(s, unit) > base:
-			var lead := _leading_ws(s).length()
-			diags.append(D.make("GUITKX0013", D.WARNING, "hook called conditionally/in a block -- hooks must run unconditionally at the top of setup", _cbase(base_off, off + lead), t.length()))
-			return
+		var d := _indent_depth(s, unit)
+		while not stack.is_empty() and int(stack[-1]["depth"]) >= d:
+			stack.pop_back()
+		if _expr_calls_hook(s):
+			var kind := ""
+			if not stack.is_empty():
+				kind = str(stack[-1]["kind"])
+			elif ":" in t:
+				kind = _block_opener_kind(t.substr(0, t.find(":") + 1))   # single-line `if x: use_y()`
+			if kind != "":
+				var code := "GUITKX0013"
+				var what := "conditionally (inside an if/else block)"
+				if kind == "for" or kind == "while":
+					code = "GUITKX0014"
+					what = "inside a loop"
+				elif kind == "match":
+					code = "GUITKX0015"
+					what = "inside a match branch"
+				elif kind == "func":
+					code = "GUITKX0016"
+					what = "inside a callback/lambda"
+				var lead := _leading_ws(s).length()
+				diags.append(D.make(code, D.ERROR, "hook called %s -- hooks must run unconditionally at the top of setup" % what, _cbase(base_off, off + lead), t.length()))
+		if t.ends_with(":"):
+			var kind2 := _block_opener_kind(t)
+			if kind2 != "":
+				stack.append({ "depth": d, "kind": kind2 })
 		off += s.length() + 1
 
-static func _line_calls_hook(s: String) -> bool:
-	for h in HOOK_NAMES:   # single source of truth (all 23 hooks), camelCase
-		if (h + "(") in s:
-			return true
+## Classify a `...:`-terminated line as a hook-blocking block opener ("" = not one, e.g. a dict key).
+static func _block_opener_kind(t: String) -> String:
+	for kw in ["if", "elif", "else", "for", "while", "match"]:
+		if t == kw + ":" or t.begins_with(kw + " ") or t.begins_with(kw + "("):
+			return "if" if (kw == "elif" or kw == "else") else kw
+	if t.begins_with("func") or "func(" in t or "func (" in t:
+		return "func"
+	return ""
+
+## Token-boundary hook-call detection (a `my_useState(` look-alike or `obj.useState(` member call is
+## NOT a hook call). Shared by setup-line scanning and markup {expr} checks (0016).
+static func _expr_calls_hook(code: String) -> bool:
+	var i := 0
+	var n := code.length()
+	while i < n:
+		var j := L.skip_noncode(code, i)
+		if j != i:
+			i = j
+			continue
+		if i == 0 or (not L._is_ident(code[i - 1]) and code[i - 1] != "."):
+			for h in HOOK_NAMES:
+				if L.keyword_at(code, i, h) and _is_call_at(code, i + h.length()):
+					return true
+		i += 1
 	return false
 
 static func _validate_node(nd, diags: Array, base: int = -1) -> void:
@@ -333,9 +360,17 @@ static func _validate_node(nd, diags: Array, base: int = -1) -> void:
 		return
 	match nd.get("t", ""):
 		"el", "frag":
+			# T2.5 (Unity 0016): a hook CALL inside a markup attribute expression runs per-render out
+			# of hook order -- using a hook RESULT there is fine, only the call is flagged.
+			for a in nd.get("attrs", []):
+				if (a as Dictionary).get("kind", "") == "expr" and _expr_calls_hook(str(a["value"])):
+					diags.append(D.make("GUITKX0016", D.ERROR, "hook called inside a markup expression -- call it in setup and reference the result", _cbase(base, int(a.get("vat", -1))), maxi(1, str(a["value"]).length())))
 			_check_dup_keys(nd.get("children", []), diags, base)
 			for c in nd.get("children", []):
 				_validate_node(c, diags, base)
+		"expr":
+			if _expr_calls_hook(str(nd.get("code", ""))):
+				diags.append(D.make("GUITKX0016", D.ERROR, "hook called inside a markup expression -- call it in setup and reference the result", _cbase(base, int(nd.get("vat", -1))), maxi(1, str(nd.get("code", "")).length())))
 		"text":
 			# T2.4 migration warning: braces inside text are LITERAL since the Unity-parity text model
 			# landed -- surface it so a pre-T2.4 `Count: {n}` habit doesn't silently render "{n}".
@@ -431,6 +466,9 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 	if not ph["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	_error_on_trailing(source, int(ph["next"]), "hook", diags)
+	# T2.5: rules-of-hooks apply inside hook declaration bodies too (hooks compose hooks -- still
+	# unconditionally, at the top level).
+	_validate_hooks(ph["body"], diags, int(ph["body_at"]))
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls := class_name_override if class_name_override != "" else basename
@@ -556,6 +594,8 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	# GUITKX0108 multi-root in a loop body) fails the whole module, exactly like a single-file compile.
 	for c in comps:
 		_validate(c["setup"], c["root"], diags, c["body_at"])
+	for h in hooks:
+		_validate_hooks(h["body"], diags, int(h["body_at"]))   # T2.5: member hook bodies too
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls := class_name_override if class_name_override != "" else mod_name
