@@ -1,0 +1,269 @@
+extends SceneTree
+## Headless tests for runtime Fast Refresh (Phase H, core/hmr.gd + the reconciler's
+## hmr_refresh). No debugger session needed: RUIHmr_.apply is called directly — exactly what the
+## debugger-channel callback does — against components loaded from scratch files, mounted with
+## the real reconciler. Run: godot --headless --path . --script res://tests/hmr_test.gd
+
+var _failed := 0
+var _passed := 0
+
+const DIR := "res://tests/__hmr_tmp"
+## preload, not the global name: a freshly-added class_name only enters the global cache on the
+## next editor scan, and this suite must run on a cold checkout (CI clones) regardless.
+const RUIHmr_ = preload("res://addons/reactive_ui/core/hmr.gd")
+
+func _initialize() -> void:
+	DirAccess.make_dir_recursive_absolute(DIR)
+	_test_fast_refresh_preserves_state()
+	_test_signature_change_resets_state()
+	_test_module_change_rerenders_globally()
+	_test_error_isolation_and_recovery()
+	_test_empty_read_held()
+	_test_uncached_path_skipped()
+	_test_unmount_prunes_registry()
+	_test_multi_root()
+	_cleanup_dir()
+	if _failed > 0:
+		print("[hmr_test] FAILED (%d passed, %d failed)" % [_passed, _failed])
+		quit(1)
+	else:
+		print("[hmr_test] ALL PASSED (%d checks)" % _passed)
+		quit(0)
+
+# --------------------------------------------------------------------------------- harness ---
+
+func _check_true(cond: bool, msg: String) -> void:
+	if cond:
+		_passed += 1
+	else:
+		_failed += 1
+		print("[hmr_test] FAIL: ", msg)
+
+func _write(path: String, src: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(src)
+	f.close()
+
+func _find_first(n: Node, klass: String) -> Node:
+	if n.get_class() == klass:
+		return n
+	for c in n.get_children():
+		var r := _find_first(c, klass)
+		if r != null:
+			return r
+	return null
+
+func _labels_text(n: Node) -> Array:
+	var out: Array = []
+	if n is Label:
+		out.append((n as Label).text)
+	for c in n.get_children():
+		out.append_array(_labels_text(c))
+	return out
+
+## A component in the exact shape the guitkx compiler emits (statics only + the H4 const).
+## `prefix` shows in the label, `sig` is the hook fingerprint, `hooks` the number of useState
+## calls (all but the first are padding to change the shape).
+func _counter_src(prefix: String, sig: String, hooks: int = 1) -> String:
+	var pad := ""
+	for i in range(hooks - 1):
+		pad += "\tvar _pad%d = Hooks.useState(0)\n" % i
+	return "extends RefCounted\n" \
+		+ "const __RUI_HOOK_SIG := \"" + sig + "\"\n" \
+		+ "static func render(props: Dictionary, children: Array) -> RUIVNode:\n" \
+		+ "\tvar n = Hooks.useState(0)\n" + pad \
+		+ "\treturn V.vbox({}, [\n" \
+		+ "\t\tV.label({ \"text\": \"" + prefix + "-\" + str(n[0]) }),\n" \
+		+ "\t\tV.button({ \"text\": \"+\", \"onClick\": func(): n[1].call(n[0] + 1) }),\n" \
+		+ "\t])\n"
+
+func _sibling_src(prefix: String) -> String:
+	return "extends RefCounted\n" \
+		+ "static var renders := 0\n" \
+		+ "static func render(props: Dictionary, children: Array) -> RUIVNode:\n" \
+		+ "\trenders += 1\n" \
+		+ "\treturn V.label({ \"text\": \"" + prefix + "\" })\n"
+
+func _parent_src() -> String:
+	return "extends RefCounted\n" \
+		+ "static func render(props: Dictionary, children: Array) -> RUIVNode:\n" \
+		+ "\treturn V.vbox({}, [V.fc(props[\"a\"], {}), V.fc(props[\"b\"], {})])\n"
+
+## Mount parent(a, b) under a fresh Control; returns { app, root, rec }.
+func _mount(a: GDScript, b: GDScript) -> Dictionary:
+	var parent_path := DIR + "/parent.gd"
+	if not FileAccess.file_exists(parent_path):
+		_write(parent_path, _parent_src())
+	var parent_scr: GDScript = load(parent_path)
+	var root := Control.new()
+	get_root().add_child(root)
+	var app = ReactiveRoot.create(root, V.fc(Callable(parent_scr, "render"),
+		{ "a": Callable(a, "render"), "b": Callable(b, "render") }))
+	return { "app": app, "root": root, "rec": app._reconciler }
+
+func _click_plus(root: Node, rec) -> void:
+	var btn := _find_first(root, "Button") as Button
+	btn.pressed.emit()
+	rec._tick()   # the setter schedules a deferred tick; headless drives it directly
+
+func _teardown(m: Dictionary) -> void:
+	m["app"].unmount()
+	(m["root"] as Node).free()
+
+# ----------------------------------------------------------------------------------- tests ---
+
+func _test_fast_refresh_preserves_state() -> void:
+	# THE Fast Refresh acceptance, headless: new code runs, hook state survives, siblings bail.
+	var ap := DIR + "/counter_a.gd"
+	var bp := DIR + "/sib_b.gd"
+	_write(ap, _counter_src("v1", "useState"))
+	_write(bp, _sibling_src("sib"))
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var m := _mount(a, b)
+	_click_plus(m["root"], m["rec"])
+	_click_plus(m["root"], m["rec"])
+	_check_true("v1-2" in _labels_text(m["root"]), "clicked twice -> v1-2 (got %s)" % str(_labels_text(m["root"])))
+	var sib_renders_before: int = b.renders
+	_write(ap, _counter_src("v2", "useState"))
+	var res: Dictionary = RUIHmr_.apply([ap])
+	_check_true(int(res["reloaded"]) == 1 and int(res["reset"]) == 0 and (res["errors"] as Array).is_empty(),
+		"apply: 1 reloaded, 0 reset, no errors (got %s)" % str(res))
+	_check_true(int(res["refreshed"]) == 1, "exactly ONE fiber refreshed (targeted), got %s" % str(res))
+	_check_true("v2-2" in _labels_text(m["root"]),
+		"NEW code + OLD state: v2-2 (got %s)" % str(_labels_text(m["root"])))
+	_check_true(int(b.renders) == sib_renders_before,
+		"untouched sibling did not re-render (bailout intact): %d == %d" % [int(b.renders), sib_renders_before])
+	# state must keep working AFTER the swap: the new render's fresh onClick increments from 2
+	_click_plus(m["root"], m["rec"])
+	_check_true("v2-3" in _labels_text(m["root"]), "post-swap click -> v2-3 (got %s)" % str(_labels_text(m["root"])))
+	_teardown(m)
+
+func _test_signature_change_resets_state() -> void:
+	var ap := DIR + "/counter_sig.gd"
+	var bp := DIR + "/sib_sig.gd"
+	_write(ap, _counter_src("s1", "useState"))
+	_write(bp, _sibling_src("sib"))
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var m := _mount(a, b)
+	_click_plus(m["root"], m["rec"])
+	_check_true("s1-1" in _labels_text(m["root"]), "state at 1 before the shape change")
+	_write(ap, _counter_src("s2", "useState|useState", 2))   # hook SHAPE changed
+	var res: Dictionary = RUIHmr_.apply([ap])
+	_check_true(int(res["reset"]) == 1, "signature change counted as a reset (got %s)" % str(res))
+	_check_true("s2-0" in _labels_text(m["root"]),
+		"changed hook shape -> deliberate state RESET: s2-0 (got %s)" % str(_labels_text(m["root"])))
+	# and the fresh state is live: click increments from 0
+	_click_plus(m["root"], m["rec"])
+	_check_true("s2-1" in _labels_text(m["root"]), "fresh state works after reset (s2-1)")
+	_teardown(m)
+
+func _test_module_change_rerenders_globally() -> void:
+	var ap := DIR + "/counter_g.gd"
+	var bp := DIR + "/sib_g.gd"
+	var mp := DIR + "/hooks_mod.gd"
+	_write(ap, _counter_src("g1", "useState"))
+	_write(bp, _sibling_src("sib"))
+	_write(mp, "extends RefCounted\nstatic func use_thing() -> int:\n\treturn 1\n")
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var mod: GDScript = load(mp)   # must be CACHED for apply to consider it
+	assert(mod != null)
+	var m := _mount(a, b)
+	var sib_before: int = b.renders
+	_write(mp, "extends RefCounted\nstatic func use_thing() -> int:\n\treturn 2\n")
+	var res: Dictionary = RUIHmr_.apply([mp])
+	_check_true(bool(res["global"]), "module (no render func) classified as global (got %s)" % str(res))
+	_check_true(int(b.renders) == sib_before + 1,
+		"global refresh re-ran the sibling too: %d == %d+1" % [int(b.renders), sib_before])
+	_check_true(int(res["refreshed"]) >= 3, "all function fibers marked (parent+a+b), got %s" % str(res))
+	_teardown(m)
+
+func _test_error_isolation_and_recovery() -> void:
+	var ap := DIR + "/counter_e.gd"
+	var bp := DIR + "/sib_e.gd"
+	_write(ap, _counter_src("e1", "useState"))
+	_write(bp, _sibling_src("sib-e1"))
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var m := _mount(a, b)
+	_click_plus(m["root"], m["rec"])
+	# batch: A becomes UNPARSEABLE, B legitimately changes -- B must still swap, A reports
+	_write(ap, "extends RefCounted\nstatic func render(:::broken:::\n")
+	_write(bp, _sibling_src("sib-e2"))
+	var res: Dictionary = RUIHmr_.apply([ap, bp])
+	_check_true((res["errors"] as Array).size() == 1, "broken file reported (got %s)" % str(res["errors"]))
+	_check_true(int(res["reloaded"]) == 1, "healthy file in the same batch still reloaded")
+	_check_true("sib-e2" in _labels_text(m["root"]),
+		"healthy sibling refreshed despite the broken batchmate (got %s)" % str(_labels_text(m["root"])))
+	_check_true("e1-1" in _labels_text(m["root"]),
+		"broken component keeps its last-good UI (got %s)" % str(_labels_text(m["root"])))
+	# repair A -> next apply recovers it, state still intact
+	_write(ap, _counter_src("e2", "useState"))
+	var res2: Dictionary = RUIHmr_.apply([ap])
+	_check_true((res2["errors"] as Array).is_empty() and int(res2["reloaded"]) == 1, "repaired file reloads clean")
+	_check_true("e2-1" in _labels_text(m["root"]),
+		"recovery: new code + state preserved across the broken interlude (got %s)" % str(_labels_text(m["root"])))
+	_teardown(m)
+
+func _test_empty_read_held() -> void:
+	var ap := DIR + "/counter_h.gd"
+	_write(ap, _counter_src("h1", "useState"))
+	var a: GDScript = load(ap)
+	var m := _mount(a, a)
+	var f := FileAccess.open(ap, FileAccess.WRITE)   # truncate = the editor mid-write race
+	f.close()
+	var res: Dictionary = RUIHmr_.apply([ap])
+	_check_true((res["errors"] as Array).size() == 1 and int(res["reloaded"]) == 0,
+		"empty read held, old code kept (got %s)" % str(res))
+	_check_true("h1-0" in _labels_text(m["root"]), "UI untouched on the empty read")
+	_teardown(m)
+
+func _test_uncached_path_skipped() -> void:
+	var p := DIR + "/never_loaded.gd"
+	_write(p, _sibling_src("x"))
+	var res: Dictionary = RUIHmr_.apply([p])
+	_check_true(int(res["reloaded"]) == 0 and (res["errors"] as Array).is_empty(),
+		"a never-loaded script is skipped without error (got %s)" % str(res))
+
+func _test_unmount_prunes_registry() -> void:
+	var ap := DIR + "/counter_u.gd"
+	_write(ap, _counter_src("u1", "useState"))
+	var a: GDScript = load(ap)
+	var m := _mount(a, a)
+	_teardown(m)
+	_write(ap, _counter_src("u2", "useState"))
+	var res: Dictionary = RUIHmr_.apply([ap])
+	_check_true(int(res["refreshed"]) == 0, "unmounted root is pruned: nothing refreshed (got %s)" % str(res))
+
+func _test_multi_root() -> void:
+	var ap := DIR + "/counter_m.gd"
+	var bp := DIR + "/sib_m.gd"
+	_write(ap, _counter_src("m1", "useState"))
+	_write(bp, _sibling_src("sib"))
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var m1 := _mount(a, b)
+	var m2 := _mount(a, b)
+	_click_plus(m1["root"], m1["rec"])   # roots hold independent state: 1 vs 0
+	_write(ap, _counter_src("m2", "useState"))
+	var res: Dictionary = RUIHmr_.apply([ap])
+	_check_true(int(res["refreshed"]) == 2, "both live roots refreshed (got %s)" % str(res))
+	_check_true("m2-1" in _labels_text(m1["root"]), "root 1: new code, ITS state (m2-1)")
+	_check_true("m2-0" in _labels_text(m2["root"]), "root 2: new code, ITS state (m2-0)")
+	_teardown(m1)
+	_teardown(m2)
+
+func _cleanup_dir() -> void:
+	var d := DirAccess.open(DIR)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if not d.current_is_dir():
+			DirAccess.remove_absolute(DIR + "/" + name)
+		name = d.get_next()
+	d.list_dir_end()
+	DirAccess.remove_absolute(DIR)
