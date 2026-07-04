@@ -13,6 +13,7 @@ const GROUP := "reactive_ui_editor/"
 const KEY_HIGHLIGHTING := GROUP + "highlighting_enabled"
 const KEY_DIAGNOSTICS := GROUP + "diagnostics_enabled"
 const KEY_COMPLETION := GROUP + "completion_enabled"
+const KEY_HOVER := GROUP + "hover_enabled"
 const KEY_OPEN_IN_EDITOR := GROUP + "open_guitkx_in_editor"
 const KEY_FORMAT_ON_SAVE := GROUP + "format_on_save"
 
@@ -21,6 +22,7 @@ const DEFAULTS := {
 	KEY_HIGHLIGHTING: true,
 	KEY_DIAGNOSTICS: true,
 	KEY_COMPLETION: true,
+	KEY_HOVER: true,
 	KEY_OPEN_IN_EDITOR: true,
 	KEY_FORMAT_ON_SAVE: true,
 }
