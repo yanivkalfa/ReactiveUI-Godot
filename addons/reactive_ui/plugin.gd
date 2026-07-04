@@ -102,6 +102,11 @@ func _notification(what: int) -> void:
 func _on_fs_changed() -> void:
 	# The mtime staleness guard makes this self-terminating: writing a .gd makes it newer than its
 	# .guitkx, so the next filesystem_changed finds nothing stale and stops. _busy guards re-entry.
+	# Mid-scan events are IGNORED (the 0.6.2 rule: FileAccess flakes inside the first scan, and
+	# generated classes aren't registered yet so dependent parse-checks false-error): the initial
+	# sweep runs when the scan settles, and the watch poll is is_scanning-gated the same way.
+	if _efs and _efs.is_scanning():
+		return
 	_compile_all()
 
 func _compile_all() -> void:
@@ -140,8 +145,10 @@ func _compile_all() -> void:
 	else:
 		_schedule_env_retry(held.size())
 	# Sweep summary: printed whenever the sweep DID anything, and unconditionally for the first
-	# sweep of the session (cold-open proof of life -- see _first_sweep_done).
-	var attempted: int = (res["compiled"] as Array).size() + (res["errors"] as Array).size() + held.size()
+	# sweep of the session (cold-open proof of life -- see _first_sweep_done). Held-only sweeps
+	# retry every couple of seconds while the environment recovers -- their one-per-episode line
+	# already announced it, so they don't count as work here (a summary per retry floods Output).
+	var attempted: int = (res["compiled"] as Array).size() + (res["errors"] as Array).size()
 	if attempted > 0 or not _first_sweep_done:
 		print("[guitkx] sweep: %d .guitkx tracked -- %d compiled, %d error(s), %d held" % [
 			int(res.get("total", 0)), (res["compiled"] as Array).size(), (res["errors"] as Array).size(), held.size()])

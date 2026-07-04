@@ -1105,6 +1105,17 @@ func _test_cold_open_recovery() -> void:
 		"guitkx_vocabulary.gen.gd in sync with vocabulary.json (regenerate: dev/gen_vocabulary.gd)")
 	RUIGuitkx._VOCAB = {}
 	_check_true(not RUIGuitkx.vocab().is_empty(), "vocab() serves the embedded const at the default path")
+	# Editor static-init reality (2026-07-04, THE "Godot never recompiles" root cause): during the
+	# editor's early script indexing `static var` INITIALIZERS may not have run, so _VOCAB_PATH
+	# reads as "" (String type default) -- which used to fall into the test-seam file branch, read
+	# a file at path "", and hold every compile of every editor session forever. Headless runs
+	# initialize statics and were always healthy -- exactly why no suite ever caught it. An empty
+	# path must therefore behave as DEFAULT (embedded const, no file read, no hold).
+	RUIGuitkx._VOCAB = {}
+	RUIGuitkx._VOCAB_PATH = ""
+	_check_true(not RUIGuitkx.vocab().is_empty(), "an uninitialized-static ('') vocab path serves the embedded const")
+	RUIGuitkx._VOCAB_PATH = RUIGuitkx._VOCAB_PATH_DEFAULT
+	RUIGuitkx._VOCAB = {}
 	# R2+R3 (0.6.1): a sweep hitting the unreadable-vocabulary environment reports those files as
 	# HELD -- not errors (no per-file dock line; the loader's hold warning announced the episode) --
 	# and must NOT consume the compiler-changed fingerprint marker: a held forced sweep compiled

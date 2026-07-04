@@ -63,7 +63,15 @@ static func v_factories() -> Array:
 static var _vocab_hold := false
 
 static func _load_vocabulary() -> Dictionary:
-	if _VOCAB_PATH == _VOCAB_PATH_DEFAULT:
+	# _VOCAB_PATH is a `static var`, and static INITIALIZERS do not reliably run in the editor:
+	# during the editor's early script indexing statics can read as bare type defaults ("" here),
+	# which used to divert production into the test-seam file branch below -- reading a file at
+	# path "" -- and hold EVERY compile of EVERY editor session forever, while headless runs
+	# (statics initialized) stayed healthy. Field capture 2026-07-04: an instrumented editor run
+	# printed `path=<> len=0 is_default=false`; THE root cause of "Godot never recompiles".
+	# An empty path therefore means DEFAULT: serve the embedded const, touch no file. Only an
+	# explicit non-empty override (the test seam) reads a file.
+	if _VOCAB_PATH.is_empty() or _VOCAB_PATH == _VOCAB_PATH_DEFAULT:
 		# Production: the embedded const — no file read to flake, so the env hold below can no
 		# longer trigger from a cold editor open. The shape check still runs: a hand-edited or
 		# stale .gen.gd is REAL breakage and must fail as loudly as a wrong-shape JSON did.
