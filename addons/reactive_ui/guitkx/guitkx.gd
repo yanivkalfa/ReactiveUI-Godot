@@ -1490,9 +1490,15 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 	if not has_ret:
 		# "JSX everywhere" (Phase D): value markup in SETUP (`var bla = ( <Box /> )`) splices in
 		# place; hoists from directives nested in that markup emit first at func-body level.
+		# SPLICE FIRST, alias SECOND: the splice's markup parse carries diagnostic offsets, and
+		# they must be relative to the ORIGINAL source -- aliasing first inserted 6 chars per
+		# `Hooks.` prefix and shifted every later diagnostic (field capture 2026-07-04: a 0105
+		# anchored 12 chars late, on the CLOSING tag, after two useState aliases). Aliasing the
+		# spliced output is also safer: markup text children are string literals in the generated
+		# code, which the lexer-aware aliaser skips (hook calls in markup exprs are 0016 errors).
 		var saved_sl: Array = ctx["lines"]
 		ctx["lines"] = []
-		var spliced_setup := _splice_expr_markup(_apply_hook_aliases(setup, skip_hooks), ctx)
+		var spliced_setup := _apply_hook_aliases(_splice_expr_markup(setup, ctx), skip_hooks)
 		for h in ctx["lines"]:
 			out += str(h) + "\n"
 		ctx["lines"] = saved_sl
@@ -1516,7 +1522,7 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 				var sb2 := _swap_base(ctx, _cbase(base, int(part["from"])))
 				var saved_gl2: Array = ctx["lines"]
 				ctx["lines"] = []
-				var spliced2 := _splice_expr_markup(_apply_hook_aliases(seg, skip_hooks), ctx)
+				var spliced2 := _apply_hook_aliases(_splice_expr_markup(seg, ctx), skip_hooks)   # splice first -- see the setup splice note
 				for h2 in ctx["lines"]:
 					out += str(h2) + "\n"
 				ctx["lines"] = saved_gl2

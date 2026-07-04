@@ -17,6 +17,12 @@ where statics initialize normally, stayed green. Proven with an instrumented edi
 ### Fixed
 - An empty vocabulary path now means DEFAULT: the embedded vocabulary const serves, no file is
   read, nothing holds. Only an explicit non-empty override (the test seam) reads a file.
+- **Diagnostics from setup-value markup anchor correctly.** Hook aliasing ran BEFORE the markup
+  splice, so every inserted `Hooks.` prefix (6 chars) shifted every later diagnostic offset —
+  two `useState` calls pushed a `GUITKX0105` onto the *closing* tag instead of the opening one
+  (both in the Godot dock and, via the sidecar, in VS Code). The splice now parses the original
+  source first and aliasing runs on the spliced output; generated output is byte-identical
+  (contract goldens unchanged), only the anchors move to where the error actually is.
 - `filesystem_changed` sweeps that arrive DURING the editor's first scan are deferred to scan-end
   (mid-scan `FileAccess` flakes; generated classes aren't registered yet, so dependent
   parse-checks false-error).

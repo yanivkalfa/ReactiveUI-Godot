@@ -414,6 +414,15 @@ Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, 
   handleWatchedPath) and re-validate the matching open document on write AND delete. Smoke
   check: a sidecar write with only a `didChangeWatchedFiles` event (no document event) must
   produce the squiggle; deletion must clear it.
+- **R3.5 — setup-value diagnostics anchored 6 chars late per hook alias (addon 0.7.2).** ✅
+  First squiggle from R3.4 landed on the CLOSING `</VdsBs>` (dock 8:33, expected 8:21 — exactly
+  +12 after two `useState` aliases): `_splice_expr_markup(_apply_hook_aliases(setup))` parsed
+  the ALIASED text, so node offsets were aliased-domain while `_cbase` mapped them against the
+  original. Swapped to splice-first/alias-second at both aliased sites (setup + early-return gd
+  segments) — offsets now original-domain, and aliasing the spliced output is safer (markup text
+  children are string literals in generated code, which the lexer-aware aliaser skips; hook
+  calls in markup exprs are 0016 errors regardless). Contract goldens byte-identical; regression
+  pins the 0105 offset to the opening tag name with two aliases in front of it.
 
 ## Phase H — runtime Fast Refresh for running games (PROPOSED, not started)
 

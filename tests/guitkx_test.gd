@@ -111,6 +111,24 @@ func _test_jsx_value() -> void:
 	print("--- generated (JsxVal) ---\n" + gd + "----------------------------")
 	_check(gd, "if cond else", "ternary preserved")
 	_check_true(not ("<Label" in gd), "no raw <Label markup left in expression")
+	# 0.7.2 anchor regression (field capture 2026-07-04): diagnostics from setup-VALUE markup must
+	# anchor in the ORIGINAL source. Aliasing used to run BEFORE the splice, so every inserted
+	# `Hooks.` prefix (6 chars) shifted every later diagnostic -- two useState calls pushed a 0105
+	# onto the CLOSING tag (the dock said 8:33 instead of 8:21). Splice first, alias second.
+	var a_src := "component AnchorProbe() {\n" + \
+		"\tvar n = useState(0)\n" + \
+		"\tvar m = useState(1)\n" + \
+		"\tvar c = (<Nope></Nope>)\n" + \
+		"\treturn ( <VBox>{ c }<Label text={ str(n[0] + m[0]) } /></VBox> )\n}\n"
+	var ra := RUIGuitkx.compile(a_src, "AnchorProbe", ["DemoBox"])
+	_check_true(not ra["ok"], "unknown component in a setup value fails the compile")
+	var a_found := false
+	for da in (ra["diagnostics"] as Array):
+		if str((da as Dictionary).get("code", "")) == "GUITKX0105":
+			a_found = true
+			_check_true(int((da as Dictionary).get("offset", -1)) == a_src.find("<Nope>") + 1,
+				"0105 anchors on the OPENING tag name in the original source (got %d, want %d)" % [int((da as Dictionary).get("offset", -1)), a_src.find("<Nope>") + 1])
+	_check_true(a_found, "0105 reported for the unknown setup-value component")
 	_check(gd, "if (cond) else null", "short-circuit `and` desugared to ternary")
 	_check(gd, "V.label({ \"text\": it })", "map-lambda markup lowered")
 	# runtime: cond=true -> Label x + (map a,b) = 3 Labels, + 1 Button (short-circuit)
