@@ -1225,6 +1225,24 @@ func _test_codegen() -> void:
 	var g_sweep3 := Codegen.compile_all(g_dir)
 	_check_true((g_sweep3["errors"] as Array).is_empty(), "restore heals the dependent: " + str(g_sweep3["errors"]))
 	_check_true((g_sweep3["compiled"] as Array).size() == 2, "child recompiled AND dependent healed (recompiled)")
+	# FOLDER deletion: source AND outputs vanish together -- no orphan left for the poll to
+	# notice, and the dependent isn't mtime-stale (field capture 2026-07-04: the 2107 only
+	# landed when a save/focus happened to cause a sweep). The dangling-refs pass must make the
+	# poll hot anyway, settle once flagged, go hot again on restore (heal work), then settle.
+	for lf3 in [g_child, Codegen.gd_path_for(g_child), g_child + ".diags.json"]:
+		if FileAccess.file_exists(str(lf3)):
+			DirAccess.remove_absolute(str(lf3))
+	_check_true(Codegen.has_stale(g_dir), "folder-style deletion (no orphans) still makes the poll hot")
+	var g_sweep4 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep4["errors"] as Array).size() == 1, "folder-style deletion flags 2107: " + str(g_sweep4["errors"]))
+	_check_true(not Codegen.has_stale(g_dir), "poll settles once the flag lands")
+	var gf4 := FileAccess.open(g_child, FileAccess.WRITE)
+	gf4.store_string(g_child_src)
+	gf4.close()
+	_check_true(Codegen.has_stale(g_dir), "restoring the component makes the poll hot again (heal work)")
+	var g_sweep5 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep5["errors"] as Array).is_empty(), "the heal sweep clears everything: " + str(g_sweep5["errors"]))
+	_check_true(not Codegen.has_stale(g_dir), "poll settles clean after the heal")
 	for lf2 in [g_child, Codegen.gd_path_for(g_child), g_child + ".diags.json", g_parent, Codegen.gd_path_for(g_parent), g_parent + ".diags.json"]:
 		if FileAccess.file_exists(str(lf2)):
 			DirAccess.remove_absolute(str(lf2))

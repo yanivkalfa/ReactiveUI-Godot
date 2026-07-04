@@ -138,7 +138,12 @@ connection.onInitialized(() => {
   }
   connection.client
     .register(DidChangeWatchedFilesNotification.type, {
-      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/*.guitkx" }, { globPattern: "**/project.godot" }, { globPattern: "**/*.guitkx.diags.json" }],
+      // "**" and not per-extension globs: FOLDER events only get delivered for patterns that
+      // match the folder path itself, and deleting a component's directory arrives as exactly
+      // one such event (field capture 2026-07-04: with file-only globs the folder-deletion
+      // handler was correct and UNREACHABLE in production). handleWatchedPath routes cheaply;
+      // irrelevant file events fall through a couple of string checks.
+      watchers: [{ globPattern: "**" }],
     })
     .then(() => armWorkspaceComplete())
     .catch(() => startNativeWatcher()); // client refused — try the in-process fallback

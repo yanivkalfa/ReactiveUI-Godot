@@ -168,6 +168,32 @@ static func has_stale(root: String = "res://") -> bool:
 	for gd in gd_paths:
 		if _is_orphaned_output(gd, sources):
 			return true
+	# Dangling references make the poll hot too: deleting a component's whole FOLDER removes its
+	# outputs with it -- no orphan is left behind to notice, and dependents aren't mtime-stale,
+	# so nothing above fires (field capture 2026-07-04: the 2107 only landed when a save or a
+	# focus change happened to cause a sweep). The dependents' sidecars still record what they
+	# reference; a state MISMATCH is sweep work in either direction: unflagged-but-missing needs
+	# the 2107 flag, flagged-but-restored needs the heal recompile. Matching states settle the
+	# poll. Cost: one small JSON read per tracked file, same order as the mtime pass above.
+	for path in paths:
+		var raw := _read_sidecar_raw(str(path))
+		if raw.is_empty():
+			continue
+		var refs: Dictionary = raw.get("refs", {})
+		if refs.is_empty():
+			continue
+		var flagged := false
+		for e in (raw.get("diagnostics", []) as Array):
+			if e is Dictionary and str((e as Dictionary).get("code", "")) == "GUITKX2107":
+				flagged = true
+				break
+		var missing := false
+		for cls in refs:
+			if not FileAccess.file_exists(str(refs[cls])):
+				missing = true
+				break
+		if missing != flagged:
+			return true
 	return false
 
 # --- Compiler-version staleness ----------------------------------------------------------------
