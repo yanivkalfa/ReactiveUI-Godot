@@ -13,9 +13,15 @@
 /addons/reactive_ui_editor export-ignore
 /addons/reactive_ui/dev export-ignore
 /godotLogo.png export-ignore
+/ReactiveUI-Godot.png export-ignore
 /godotLogo100.png export-ignore
 /CLAUDE.md export-ignore
 # Never let an addon install clobber the user's own project files.
 /project.godot export-ignore
 /icon.png export-ignore
 /.asset-template.json.hb export-ignore
+# Store-install hygiene (field feedback from the Asset Library listing): the download must not
+# drop README/CHANGELOG/LICENSE into the user's project root — the addon folder carries its own.
+/README.md export-ignore
+/CHANGELOG.md export-ignore
+/LICENSE export-ignore

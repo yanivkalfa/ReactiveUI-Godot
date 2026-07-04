@@ -9,6 +9,7 @@ extends RefCounted
 # tag name (the referenceable identity: @class_name override, else the declaration name) ->
 #   { path:String, offset:int, name:String, kind:String }
 static var _index: Dictionary = {}
+static var _paths: Array = []   # every .guitkx seen by the scan (incl. hook-only files w/o tags)
 static var _scanned := false
 
 static var _decl_re: RegEx = null
@@ -28,7 +29,8 @@ static func ensure_scanned() -> void:
 		return
 	_scanned = true
 	_res()
-	for path in _collect_guitkx("res://"):
+	_paths = _collect_guitkx("res://")
+	for path in _paths:
 		var text := FileAccess.get_file_as_string(path)
 		if text != "":
 			_index_source(path, text)
@@ -36,6 +38,7 @@ static func ensure_scanned() -> void:
 static func rescan() -> void:
 	_scanned = false
 	_index.clear()
+	_paths.clear()
 	ensure_scanned()
 
 ## Re-index a single file (call on save so completion stays fresh without a full rescan).
@@ -46,7 +49,15 @@ static func reindex(path: String, text: String) -> void:
 		if (_index[tag] as Dictionary).get("path", "") == path:
 			_index.erase(tag)
 	_index_source(path, text)
+	if not _paths.has(path):
+		_paths.append(path)
 	_scanned = true
+
+## Every .guitkx in the project (the last scan's file list, kept fresh by reindex/rescan).
+## Feeds RUIGuitkxCodegen.project_bindings() for the editor's cross-file diagnostics.
+static func all_paths() -> Array:
+	ensure_scanned()
+	return _paths
 
 ## All indexed user-component tag names (PascalCase identities), sorted.
 static func component_tags() -> Array:
@@ -92,6 +103,12 @@ static func _index_source(path: String, text: String) -> void:
 
 static func _collect_guitkx(root: String) -> Array:
 	var out: Array = []
+	# Honor `.gdignore`, exactly like the watcher's codegen walk — tests/contract/fixtures (and any
+	# user-ignored folder) contains deliberately-broken/duplicate declarations that must never
+	# reach the component index, hover, goto-def, or the known-components universe. [field capture:
+	# hover resolved <DemoBox> to the contract FIXTURE copy]
+	if FileAccess.file_exists(root.path_join(".gdignore")):
+		return out
 	var dir := DirAccess.open(root)
 	if dir == null:
 		return out

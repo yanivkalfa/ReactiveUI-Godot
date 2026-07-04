@@ -8,55 +8,106 @@ extends CodeEdit
 ## Emitted when the user clicks the diagnostics gutter icon on a diagnosed line.
 signal gutter_diagnostic_clicked(line: int, record: Variant)
 
+## Emitted when Ctrl+click resolves a component tag to its declaration (parity plan G1). The view
+## owns navigation (open the file, place the caret); the widget only resolves.
+signal definition_requested(path: String, offset: int)
+
 var diag_gutter: int = -1
 
 var _highlighter: GuitkxCodeHighlighter
 var _theme_source: Control
+var _line_diags: Dictionary = {}  # line (int) -> Array of diagnostic records (from the view)
+
+func _init() -> void:
+	# Pure CodeEdit state — safe in every context (editor, headless tests), so the widget is never
+	# half-configured (a -1 diag_gutter would make the diagnostics renderer index out of bounds).
+	configure()
 
 func _ready() -> void:
 	if not Engine.is_editor_hint():
 		return
 
-	# Editing UX — tabs to match the compiler/formatter default (indent_use_spaces=false).
-	indent_use_spaces = false
-	indent_size = 4
+	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
+	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload. Editor-only:
+	# the highlighter reads EditorSettings theme colours.
+	_highlighter = GuitkxCodeHighlighter.new()
+	syntax_highlighter = _highlighter
+
+	# Refresh highlight colours when the editor theme changes.
+	_theme_source = EditorInterface.get_base_control()
+	if _theme_source != null and not _theme_source.theme_changed.is_connected(_on_theme_changed):
+		_theme_source.theme_changed.connect(_on_theme_changed)
+
+## Applies the whole editing substrate: indentation, delimiters, brace pairs, gutters, view
+## comforts, completion triggers, and hover. Pure CodeEdit state with no editor-singleton
+## dependency, so the headless suite instantiates a GuitkxCodeEdit and asserts this directly
+## (tests/guitkx_editor_test.gd).
+func configure() -> void:
+	# Indentation — MUST match the formatter's output (guitkx_formatter.gd defaults: spaces, 2),
+	# or live typing and format-on-save fight each other and every save produces mixed indent.
+	indent_use_spaces = true
+	indent_size = 2
+	indent_automatic = true
+	draw_tabs = true
+
 	if not has_comment_delimiter("#"):
 		add_comment_delimiter("#", "", true)
 	if not has_string_delimiter("\""):
 		add_string_delimiter("\"", "\"")
 	if not has_string_delimiter("'"):
 		add_string_delimiter("'", "'")
+
 	# CodeEdit already ships the default { } ( ) [ ] " " ' ' auto-close pairs; re-adding them throws
-	# "auto brace completion open key '...' already exists", so we just enable the feature.
+	# "auto brace completion open key '...' already exists". `<` -> `>` is ours to add for markup.
 	auto_brace_completion_enabled = true
+	auto_brace_completion_highlight_matching = true
+	if not auto_brace_completion_pairs.has("<"):
+		add_auto_brace_completion_pair("<", ">")
 
-	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
-	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload.
-	_highlighter = GuitkxCodeHighlighter.new()
-	syntax_highlighter = _highlighter
+	# Gutters + view comforts, mirroring the built-in script editor's defaults.
+	gutters_draw_line_numbers = true
+	line_folding = true
+	gutters_draw_fold_gutter = true
+	highlight_current_line = true
+	highlight_all_occurrences = true
+	minimap_draw = true
+	caret_blink = true
+	scroll_smooth = true
+	scroll_past_end_of_file = true
+	# One ruler at the formatter's print width.
+	line_length_guidelines = [100]
 
-	# Diagnostics gutter (icon type), to the right of the built-in gutters.
-	diag_gutter = get_gutter_count()
-	add_gutter(diag_gutter)
-	set_gutter_type(diag_gutter, TextEdit.GUTTER_TYPE_ICON)
-	set_gutter_width(diag_gutter, 24)
-	set_gutter_clickable(diag_gutter, true)
-	gutter_clicked.connect(_on_gutter_clicked)
+	# Diagnostics gutter (icon type), to the right of the built-in gutters. Guarded so a repeat
+	# configure() (plugin reload, re-open) never allocates a duplicate gutter.
+	if diag_gutter == -1:
+		diag_gutter = get_gutter_count()
+		add_gutter(diag_gutter)
+		set_gutter_type(diag_gutter, TextEdit.GUTTER_TYPE_ICON)
+		set_gutter_width(diag_gutter, 24)
+		set_gutter_clickable(diag_gutter, true)
+	if not gutter_clicked.is_connected(_on_gutter_clicked):
+		gutter_clicked.connect(_on_gutter_clicked)
 
 	# Markup completion (Phase 1). Trigger on `<` (tags), `@` (directives) and space (attributes); the
 	# context classifier decides what to offer per caret position. KEY_COMPLETION is honoured live.
 	code_completion_enabled = true
 	code_completion_prefixes = PackedStringArray(["<", "@", " "])
 
-	# Markup hover: Godot 4.4+ CodeEdit emits `symbol_hovered` while the mouse rests on a symbol. We
-	# turn tags/attrs/directives into a tooltip. Guarded so it no-ops on engine builds without it.
+	# Markup hover: Godot 4.4+ CodeEdit emits `symbol_hovered` while the mouse rests on a symbol —
+	# but ONLY when `symbol_tooltip_on_hover` is set; without it the signal never fires and hover is
+	# dead. Both are 4.4+, guarded so older builds no-op.
+	if "symbol_tooltip_on_hover" in self:
+		symbol_tooltip_on_hover = true
 	if has_signal("symbol_hovered") and not is_connected("symbol_hovered", _on_symbol_hovered):
 		connect("symbol_hovered", _on_symbol_hovered)
 
-	# Refresh highlight colours when the editor theme changes.
-	_theme_source = EditorInterface.get_base_control()
-	if _theme_source != null and not _theme_source.theme_changed.is_connected(_on_theme_changed):
-		_theme_source.theme_changed.connect(_on_theme_changed)
+	# Go-to-definition (G1): Ctrl+hover validates component tags as lookup words (underline +
+	# pointer), Ctrl+click resolves through the workspace index and asks the view to navigate.
+	symbol_lookup_on_click = true
+	if not symbol_validate.is_connected(_on_symbol_validate):
+		symbol_validate.connect(_on_symbol_validate)
+	if not symbol_lookup.is_connected(_on_symbol_lookup):
+		symbol_lookup.connect(_on_symbol_lookup)
 
 func _exit_tree() -> void:
 	if _theme_source != null and _theme_source.theme_changed.is_connected(_on_theme_changed):
@@ -66,6 +117,20 @@ func _on_theme_changed() -> void:
 	if _highlighter != null:
 		_highlighter.update_colors()
 		queue_redraw()
+
+## Replaces the whole buffer as ONE undoable edit. Assigning `.text` clears the undo history —
+## with format-on-save enabled that meant every Save destroyed Ctrl+Z (parity plan G33). The
+## caret is preserved (clamped to the new bounds).
+func set_text_undoable(new_text: String) -> void:
+	var l := get_caret_line()
+	var c := get_caret_column()
+	begin_complex_operation()
+	select_all()
+	delete_selection()
+	insert_text_at_caret(new_text)
+	end_complex_operation()
+	set_caret_line(mini(l, maxi(0, get_line_count() - 1)))
+	set_caret_column(mini(c, get_line(get_caret_line()).length()))
 
 ## Fade the given lines (a set: line -> true) as unreachable code. [BUG-V6]
 func set_dim_lines(lines: Dictionary) -> void:
@@ -104,14 +169,51 @@ func _kind_of(kind: String) -> int:
 		_:
 			return CodeEdit.KIND_PLAIN_TEXT
 
-# Markup hover -> native tooltip. GuitkxHover owns the (tested) logic; here we just render it plain.
+func _on_symbol_validate(symbol: String) -> void:
+	set_symbol_lookup_word_as_valid(GuitkxWorkspace.is_component(symbol))
+
+func _on_symbol_lookup(symbol: String, _line: int, _column: int) -> void:
+	var hit := GuitkxWorkspace.lookup(symbol)
+	if hit.is_empty():
+		return
+	definition_requested.emit(str(hit.get("path", "")), int(hit.get("offset", 0)))
+
+## Diagnostics for the current buffer, keyed by line — folded into the hover card so the message
+## (and its did-you-mean) is readable without clicking the gutter. [field ask]
+func set_line_diagnostics(by_line: Dictionary) -> void:
+	_line_diags = by_line
+
+# Markup hover: GuitkxHover owns the (tested) logic; the text stored in tooltip_text is raw
+# Markdown, rendered rich by _make_custom_tooltip at show time (no stale-tooltip double delay —
+# the previous native-tooltip path often needed a second hover pass to display anything).
 func _on_symbol_hovered(_symbol: String, line: int, column: int) -> void:
 	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_HOVER):
 		tooltip_text = ""
 		return
 	var text := get_text()
-	tooltip_text = _plain_md(GuitkxHover.for_caret(text, GuitkxContext.offset_of(text, line, column)))
+	var md := GuitkxHover.for_caret(text, GuitkxContext.offset_of(text, line, column))
+	tooltip_text = compose_hover(md, line)
 
-# Strip the tiny Markdown subset our hover uses (`code`, **bold**) for a native plain-text tooltip.
-func _plain_md(md: String) -> String:
-	return md.replace("`", "").replace("**", "")
+## Prepend the hovered line's diagnostics (message includes any did-you-mean) to the symbol card.
+func compose_hover(symbol_md: String, line: int) -> String:
+	var parts: Array = []
+	for rec in _line_diags.get(line, []):
+		if rec is Dictionary:
+			parts.append("**%s** `%s` — %s" % [
+				str(rec.get("severity", "error")).to_upper(), str(rec.get("code", "")),
+				str(rec.get("message", ""))])
+	if symbol_md != "":
+		parts.append(symbol_md)
+	return "\n\n".join(parts)
+
+## Rich tooltip: `for_text` is the raw Markdown from _on_symbol_hovered.
+func _make_custom_tooltip(for_text: String) -> Object:
+	if for_text.strip_edges().is_empty():
+		return null
+	var rtl := RichTextLabel.new()
+	rtl.bbcode_enabled = true
+	rtl.fit_content = true
+	rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rtl.custom_minimum_size = Vector2(480, 0)
+	rtl.text = GuitkxHover.md_to_bbcode(for_text)
+	return rtl

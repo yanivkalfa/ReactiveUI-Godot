@@ -69,15 +69,18 @@ export const KnownIssuesPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       Godot&apos;s script editor is an LSP <em>server</em>, not a client, and cannot be pointed at
-      an external language server for a custom language. Full in-editor{' '}
-      <code>.guitkx</code> intelligence therefore ships as a dedicated Godot addon (on the
-      roadmap). Today, rich language support — completion, hover, diagnostics, formatting — lives
-      in the <strong>VS Code</strong> and <strong>Visual Studio</strong> extensions; inside the
-      Godot editor you still get on-save compilation via the <code>@tool</code> plugin.
+      an external language server for a custom language. In-editor <code>.guitkx</code>{' '}
+      intelligence therefore ships as the dedicated <strong>Reactive UI Editor</strong> addon
+      (<code>addons/reactive_ui_editor</code>): a main-screen editor with syntax highlighting,
+      live cross-file compiler diagnostics, completion, hover, go-to-definition, find (plus
+      project-wide Search in Files), and data-safety guards. What it does <em>not</em> cover yet
+      is intelligence <em>inside</em> embedded GDScript (<code>&#123;expr&#125;</code>/setup
+      code) — type-aware completion/hover/diagnostics there remain <strong>VS Code</strong> and{' '}
+      <strong>Visual Studio</strong>-only until the native analyzer binding lands.
     </Typography>
     <Typography variant="body1" paragraph>
-      The in-editor extension targets Godot <strong>4.4+</strong> (for stdio subprocess and
-      hover-symbol APIs), even though the runtime itself supports 4.2+.
+      The in-editor addon targets Godot <strong>4.4+</strong> (hover-symbol APIs), even though the
+      runtime itself supports 4.2+.
     </Typography>
 
     {/* ── Compilation ─────────────────────────────────────────────────────── */}
