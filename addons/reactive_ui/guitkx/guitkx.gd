@@ -1456,10 +1456,57 @@ static func _emit(cls: String, comp_name: String, params: String, setup: String,
 	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
+	# Fast Refresh (Phase H): the hook-call fingerprint. The HMR runtime compares this const
+	# across an in-place reload -- a changed fingerprint means the positional hook slots no
+	# longer line up, so the component's state is deliberately RESET instead of corrupted.
+	var sig_src := setup
+	for part in early.get("parts", []):
+		if str(part["t"]) == "ret":
+			sig_src = str(early.get("body", ""))   # Phase C interleaved path: setup lives in body
+			break
+	out += "const __RUI_HOOK_SIG := %s\n\n" % _gd_str(_hook_signature(sig_src))
 	if uss_path != "":
 		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)   # T2.3 @uss
 	out += _emit_func("render", params, setup, root, {}, [], diags, base, known, early)
 	return out
+
+## Ordered hook-call fingerprint for Fast Refresh (Unity [HookSignature] parity): every builtin
+## `useX(` and user `use_*(` call token in the component's code, in call order, joined with `|`.
+## Lexer-aware (strings/comments skipped); `Hooks.`-qualified calls count, other member calls
+## don't. Markup text that happens to look like a hook call can only make the fingerprint MORE
+## conservative (a spurious state reset on edit, never a missed one).
+static func _hook_signature(src: String) -> String:
+	var names: Array = []
+	var i := 0
+	var n := src.length()
+	while i < n:
+		var j := L.skip_noncode(src, i)
+		if j != i:
+			i = j
+			continue
+		var qualified := i >= 6 and src.substr(i - 6, 6) == "Hooks." and (i == 6 or not L._is_ident(src[i - 7]))
+		var free := i == 0 or (not L._is_ident(src[i - 1]) and src[i - 1] != ".")
+		if free or qualified:
+			var matched := ""
+			for h in hook_names():
+				if L.keyword_at(src, i, str(h)) and _is_call_at(src, i + str(h).length()):
+					matched = str(h)
+					break
+			if matched == "" and src.substr(i, 4) == "use_":
+				var k := i
+				while k < n and L._is_ident(src[k]):
+					k += 1
+				if _is_call_at(src, k):
+					matched = src.substr(i, k - i)
+				else:
+					i = k
+					continue
+			if matched != "":
+				names.append(matched)
+				i += matched.length()
+				continue
+		i += 1
+	return "|".join(names)
 
 # Emit one `static func <name>(props, children) -> RUIVNode:` from params + setup + a markup root.
 # `module_comps` maps intra-module component names -> true so <Foo/> emits V.fc(Foo, ...) (bare

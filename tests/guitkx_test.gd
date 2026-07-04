@@ -1039,6 +1039,12 @@ func _test_codegen() -> void:
 	var gd_src := FileAccess.get_file_as_string(gd)
 	_check(gd_src, "class_name Fixture", "sibling .gd named from the file")
 	_check(gd_src, "V.label(", "sibling .gd compiled the markup")
+	_check(gd_src, "const __RUI_HOOK_SIG := \"\"", "hookless component emits an empty Fast Refresh fingerprint")
+	# Fast Refresh fingerprint (H4): ordered hook calls, builtin + Hooks.-qualified + user use_*
+	var sig_r := RUIGuitkx.compile("component SigProbe() {\n\tvar a = useState(0)\n\tvar b = use_custom_thing()\n\tHooks.useEffect(func(): pass, [])\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "SigProbe")
+	_check_true(bool(sig_r["ok"]), "sig probe compiles: " + str(sig_r["diagnostics"]))
+	_check(str(sig_r["gd"]), "const __RUI_HOOK_SIG := \"useState|use_custom_thing|useEffect\"",
+		"fingerprint lists the hooks in call order")
 	_check_true(not Codegen.is_stale(gx), "not stale right after compile")
 	# The env guard: an UNREADABLE VOCABULARY is a tooling state, not a source regression — the
 	# compile must refuse (env_error + GUITKX2507) and compile_file must PRESERVE the sibling .gd

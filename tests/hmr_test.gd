@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_uncached_path_skipped()
 	_test_unmount_prunes_registry()
 	_test_multi_root()
+	_test_compiled_component_end_to_end()
 	_cleanup_dir()
 	if _failed > 0:
 		print("[hmr_test] FAILED (%d passed, %d failed)" % [_passed, _failed])
@@ -254,6 +255,51 @@ func _test_multi_root() -> void:
 	_check_true("m2-0" in _labels_text(m2["root"]), "root 2: new code, ITS state (m2-0)")
 	_teardown(m1)
 	_teardown(m2)
+
+## REAL compiler output end to end (ties H4 to H2/H3): compile a .guitkx, mount the generated
+## script, bump state, recompile with the same hook shape (state preserved), then with an added
+## hook (deliberate reset via the emitted __RUI_HOOK_SIG).
+func _test_compiled_component_end_to_end() -> void:
+	var Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
+	var gp := DIR + "/e2e.gd"
+	var r1: Dictionary = Compiler.compile(_e2e_guitkx("e1", false), "e2e")
+	_check_true(bool(r1["ok"]), "e2e v1 compiles: " + str(r1.get("diagnostics")))
+	_write(gp, _strip_class_name(str(r1["gd"])))
+	var scr: GDScript = load(gp)
+	var m := _mount(scr, scr)
+	_click_plus(m["root"], m["rec"])
+	_check_true("e1-1" in _labels_text(m["root"]), "compiled component mounted + clicked to e1-1 (got %s)" % str(_labels_text(m["root"])))
+	# same hook shape, new text -> Fast Refresh preserves state
+	var r2: Dictionary = Compiler.compile(_e2e_guitkx("e2", false), "e2e")
+	_write(gp, _strip_class_name(str(r2["gd"])))
+	var res2: Dictionary = RUIHmr_.apply([gp])
+	_check_true(int(res2["reset"]) == 0 and "e2-1" in _labels_text(m["root"]),
+		"recompiled (same shape): new code + preserved state e2-1 (got %s / %s)" % [str(res2), str(_labels_text(m["root"]))])
+	# added hook -> changed __RUI_HOOK_SIG -> deliberate reset
+	var r3: Dictionary = Compiler.compile(_e2e_guitkx("e3", true), "e2e")
+	_write(gp, _strip_class_name(str(r3["gd"])))
+	var res3: Dictionary = RUIHmr_.apply([gp])
+	_check_true(int(res3["reset"]) == 1 and "e3-0" in _labels_text(m["root"]),
+		"recompiled (added hook): deliberate state reset e3-0 (got %s / %s)" % [str(res3), str(_labels_text(m["root"]))])
+	_teardown(m)
+
+func _e2e_guitkx(prefix: String, extra_hook: bool) -> String:
+	var pad := "\tvar extra = useState(9)\n" if extra_hook else ""
+	return "component E2E() {\n" \
+		+ "\tvar n = useState(0)\n" + pad \
+		+ "\treturn (\n" \
+		+ "\t\t<VBox>\n" \
+		+ "\t\t\t<Label text={ \"" + prefix + "-\" + str(n[0]) } />\n" \
+		+ "\t\t\t<Button text=\"+\" onClick={ func(): n[1].call(n[0] + 1) } />\n" \
+		+ "\t\t</VBox>\n" \
+		+ "\t)\n}\n"
+
+## Generated files start with `class_name E2E`; strip it so scratch scripts stay anonymous
+## (no phantom global classes if an editor scan runs while the suite's tmp files exist).
+func _strip_class_name(gd: String) -> String:
+	if gd.begins_with("class_name "):
+		return gd.substr(gd.find("\n") + 1)
+	return gd
 
 func _cleanup_dir() -> void:
 	var d := DirAccess.open(DIR)
