@@ -314,13 +314,17 @@ function resyncSiblingGuitkxLibrary(gdFsPath: string): void {
 function reindexGuitkxFile(fsPath: string, deleted: boolean): void {
   if (resPathFor(fsPath) === null) return; // outside the project / hidden dirs
   const uri = pathToFileURL(fsPath).toString();
-  if (documents.get(uri)) return;
   if (deleted) {
+    // Evict EVEN when the document is open: VS Code keeps a deleted file's tab alive, but the
+    // component no longer exists on disk -- consumers must squiggle immediately, not after the
+    // user happens to save something (field capture 2026-07-04). The open buffer keeps its own
+    // diagnostics; if the user re-saves it, the created-file event re-indexes it right back.
     index.evict(uri);
     syncGuitkxLibrary(uri); // no entries left -> closes the virtual library
     scheduleRepublish(); // open docs referencing the vanished component must squiggle NOW
     return;
   }
+  if (documents.get(uri)) return; // an OPEN document's buffer is the source of truth for edits
   try {
     index.reindex(uri, readFileSync(fsPath, "utf8"));
     syncGuitkxLibrary(uri);

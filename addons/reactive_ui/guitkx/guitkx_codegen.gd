@@ -72,8 +72,16 @@ static func is_stale(guitkx_path: String) -> bool:
 	var gd_t := FileAccess.get_modified_time(gd_path)
 	if src_t == 0 or gd_t == 0:
 		return true
-	if src_t != gd_t:
-		return src_t > gd_t
+	if src_t > gd_t:
+		# Mtime-newer is only stale when the CONTENT isn't already reported broken: a re-save of
+		# a file with a standing error verdict (e.g. GUITKX2107 after deleting a component it
+		# references) bumps the mtime but changes nothing -- treating it as stale made the poll
+		# sweep every 2s forever, because the error branch re-surfaces without compiling and the
+		# .gd mtime never advances (field capture 2026-07-04). A REAL edit hash-mismatches the
+		# sidecar, so sidecar_error_diags returns [] and the file compiles normally.
+		return sidecar_error_diags(guitkx_path).is_empty()
+	if src_t < gd_t:
+		return false
 	return not _sidecar_hash_matches(guitkx_path)
 
 ## Raw sidecar payload for `guitkx_path` ({} when absent/unparseable) -- the refs/2107 logic

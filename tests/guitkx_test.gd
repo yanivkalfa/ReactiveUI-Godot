@@ -1208,6 +1208,17 @@ func _test_codegen() -> void:
 					g_hit = true
 	_check_true(g_hit, "dependent flagged GUITKX2107 in the SAME sweep as the deletion: " + str(g_errs))
 	_check_true(FileAccess.file_exists(Codegen.gd_path_for(g_parent)), "dependent's .gd kept (last good code)")
+	# a RE-SAVE of the flagged (unchanged) dependent bumps its mtime but must NOT wake the poll:
+	# the 2107 branch re-surfaces without compiling, so an mtime-stale verdict here looped the
+	# sweep every 2s forever (field capture 2026-07-04). Known-broken content is not stale.
+	var g_same := FileAccess.get_file_as_string(g_parent)
+	var gf_rs := FileAccess.open(g_parent, FileAccess.WRITE)
+	gf_rs.store_string(g_same)
+	gf_rs.close()
+	_check_true(not Codegen.has_stale(g_dir), "re-saving the flagged dependent does not wake the poll (no sweep loop)")
+	var g_sweep2b := Codegen.compile_all(g_dir)
+	_check_true((g_sweep2b["compiled"] as Array).is_empty() and (g_sweep2b["errors"] as Array).size() == 1,
+		"a sweep after the re-save only re-surfaces (no compile churn): " + str(g_sweep2b["errors"]))
 	var gf3 := FileAccess.open(g_child, FileAccess.WRITE)   # restore -> heal
 	gf3.store_string(g_child_src)
 	gf3.close()

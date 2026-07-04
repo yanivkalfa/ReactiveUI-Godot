@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.4] - 2026-07-04
+- **Deleting a component whose tab is open now squiggles its consumers immediately.** The index
+  refused to touch files with open buffers — right for edits (the buffer is the source of
+  truth), wrong for deletions: VS Code keeps a deleted file's tab alive, so the component
+  never left the index and dangling references stayed clean until some unrelated save.
+  Deletions now evict regardless; re-saving the open buffer recreates the file and re-indexes
+  it right back.
+
 ## [0.8.3] - 2026-07-04
 - **Deleting/renaming a component now squiggles its dangling references — live.** Two fixes:
   the server re-validates every open document when the component universe changes (previously

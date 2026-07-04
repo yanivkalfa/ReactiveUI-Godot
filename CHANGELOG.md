@@ -48,9 +48,11 @@ with a dock line per removal. Empty reads (editor scan window) never count as an
   **in the same pass** — dock line, sidecar, VS Code squiggle at the tag — while its last good
   code keeps running (in the editor *and* in a live game, same as any compile error). Restore
   the component, or edit the reference away, and the next sweep heals the file automatically.
-  The VS Code server (0.8.3) pairs with it live: open documents re-validate whenever the
+  The VS Code server (0.8.3+) pairs with it live: open documents re-validate whenever the
   component universe changes, and a deleted generated class is un-harvested instead of
-  suppressing the unknown-component check forever.
+  suppressing the unknown-component check forever. Re-saving a flagged-but-unchanged dependent
+  is recognized as known-broken content (not stale), so the watch poll settles instead of
+  sweeping every 2 seconds forever.
 
 ## [0.8.0] — 2026-07-04
 
