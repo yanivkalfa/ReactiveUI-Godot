@@ -189,6 +189,84 @@ jobs:
         run: echo "::notice title=Godot Asset Store::Classic AL edit posted for ${{ needs.release-addon.outputs.tag }}. The NEW store (store.godotengine.org) still needs its manual version-add in the publisher dashboard."
 
   # ════════════════════════════════════════════════════════════════════════════
+  # Godot EDITOR addon (reactive_ui_editor) — zip + GitHub release, tag editor-v<ver>.
+  # Independent versioning from the runtime addon; the zip carries its own LICENSE and is the
+  # store-uploadable artifact (the classic AL's provider-zip mechanism cannot ship this addon —
+  # export-ignore strips it from git archives — so the listing is new-store only, via this asset).
+  # ════════════════════════════════════════════════════════════════════════════
+  release-editor-addon:
+    name: Package editor addon + GitHub release (idempotent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read editor addon version from plugin.cfg
+        id: ver
+        run: |
+          VER=$(grep -oP '^version="\K[^"]+' addons/reactive_ui_editor/plugin.cfg | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=editor-v$VER" >> "$GITHUB_OUTPUT"
+          echo "Editor addon version: $VER"
+
+      - name: Skip if tag already exists
+        id: check
+        run: |
+          if git rev-parse "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.ver.outputs.tag }} already exists — nothing to publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Godot for the editor-addon suites
+        if: steps.check.outputs.exists == 'false'
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: "4.7.0"
+          use-dotnet: false
+          include-templates: false
+
+      - name: Verify editor-addon tests pass
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          godot --headless --path . --script res://tests/guitkx_build.gd
+          godot --headless --path . --editor --quit || true
+          godot --headless --path . --script res://tests/guitkx_lsp_test.gd
+          godot --headless --path . --script res://tests/guitkx_editor_test.gd
+
+      - name: Package the editor addon (only addons/reactive_ui_editor ships; LICENSE is inside)
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p dist
+          zip -r "dist/reactive_ui_editor-${{ steps.ver.outputs.version }}.zip" addons/reactive_ui_editor -x '*/.git*'
+
+      - name: Extract this version's changelog section for the release body
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          awk '/^## \[/{n++} n==1' addons/reactive_ui_editor/CHANGELOG.md > dist/release-body.md
+          echo "" >> dist/release-body.md
+          echo "_Requires the [Reactive UI](https://github.com/yanivkalfa/ReactiveUI-Godot) addon (see the release notes for the minimum version)._" >> dist/release-body.md
+
+      - name: Create + push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Reactive UI Editor ${{ steps.ver.outputs.version }}
+          body_path: dist/release-body.md
+          files: dist/reactive_ui_editor-${{ steps.ver.outputs.version }}.zip
+
+  # ════════════════════════════════════════════════════════════════════════════
   # VS Code extension — VS Marketplace + Open VSX, publishes only if version changed
   # ════════════════════════════════════════════════════════════════════════════
   publish-vscode:

@@ -4,6 +4,53 @@ All notable changes to the **Reactive UI Editor** Godot addon are documented her
 The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
 of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
 
+## [0.4.0] — 2026-07-04
+
+The store-readiness milestone (parity plan M1): the editor stops losing work, stops lying, and
+gains the daily-driver features a code editor is judged by in its first five minutes.
+
+### Added
+- **Go-to-definition** — Ctrl+click a component tag jumps to its declaration, cross-file (the
+  hover text has promised this since 0.3.0; now it's true).
+- **Find bar** — Ctrl+F (seeded from the selection), all-match highlight, match counter,
+  F3/Shift+F3 stepping with wrap in both directions, case toggle, Esc to close. `.guitkx` is also
+  registered into Godot's project-wide **Search in Files**, which previously could not see the
+  format at all (per-user editor setting, set once).
+- **Ctrl+S saves the file** while the editor tab is visible (it used to fall through to Godot's
+  Save Scene, leaving the buffer silently unsaved). Godot's **Save All**, **quit confirmation**,
+  and **Play** now also see the buffer: unsaved `.guitkx` changes join the quit dialog, and
+  pressing Play flushes first so the game runs what's on screen.
+- **Dirty tracking + guards** — `*` in the file label; switching files with unsaved edits prompts
+  Save/Discard/Cancel; double-clicking the file already being edited no longer clobbers the buffer.
+- **External-change safety** — a clean buffer auto-reloads when the file changes on disk (window
+  focus); a dirty buffer gets an explicit Overwrite/Reload choice at Save. Renaming/moving the open
+  file in the dock retargets the buffer (Save no longer resurrects the old filename); deleting it
+  marks the buffer detached and Save asks before recreating. Failed writes raise a dialog.
+- **Cross-file diagnostics** — the live compile now receives the project's component universe, so
+  unknown `<Component />` tags error with a did-you-mean exactly like the watcher build; the index
+  and bindings follow external file changes automatically.
+- **Editor substrate** — line numbers, code folding + fold gutter, minimap, current-line /
+  occurrence / matching-bracket highlights, `<` auto-closes to `>`, automatic indent on Enter,
+  caret blink, smooth scroll, scroll-past-end, print-width ruler.
+
+### Fixed
+- **Hover never fired** — `symbol_tooltip_on_hover` was never enabled, so the 0.3.0 hover feature
+  was unreachable. It works now.
+- **Undo survived nothing** — Format (and format-on-save, which is default-on) replaced the buffer
+  via `text =`, wiping the undo history on every save. Formatting is now a single undoable edit
+  with the caret preserved.
+- **The editor typed tabs/4 while the formatter wrote spaces/2**, mixing indentation on every
+  format cycle. The editor now types exactly what the formatter emits (spaces, 2), and tab glyphs
+  are drawn so any legacy mix is visible.
+- **Unsaved scratch buffers self-reported a name mismatch** (GUITKX0103) against the placeholder
+  basename; a pathless buffer now derives its identity from its own declaration.
+- Big files no longer freeze the editor on every typing pause — the compile debounce stretches
+  with measured compile time (0.3s floor, 2s cap), and the live-compile guard tightened.
+
+### Dependencies
+- Requires **Reactive UI 0.8.1+**; the plugin now checks on enable and shows a friendly dialog
+  (instead of a raw script error) when the runtime addon is missing, incomplete, or too old.
+
 ## [0.3.0] — 2026-07-04
 
 - **Native markup intelligence — completion and hover, right inside the Godot editor, no VS Code
