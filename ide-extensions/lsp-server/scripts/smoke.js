@@ -211,6 +211,22 @@ function fail(m) {
   fs.unlinkSync(scFsPath + ".diags.json");
   console.log("compiler sidecar OK (surfaced on hash match, suppressed when stale)");
 
+  // 0.8.2: the sidecar lands SECONDS AFTER the save (the addon's watch poll compiles ~2s later),
+  // long after the save-time validation read the previous one -- the server must re-validate on
+  // the sidecar's own change event or a compiler-only error NEVER squiggles (field capture
+  // 2026-07-04: GUITKX0105 in the Godot dock, nothing in VS Code). Simulate the client watcher:
+  // write a fresh sidecar matching the CURRENT buffer, send only didChangeWatchedFiles.
+  const scEdited = scText + "\n# edited\n";
+  fs.writeFileSync(scFsPath + ".diags.json", JSON.stringify({ src_hash: srcHash(scEdited), diagnostics: [{ code: "GUITKX0105", severity: "error", message: "GUITKX0105: unknown element <VdsBs>" }] }));
+  notify("workspace/didChangeWatchedFiles", { changes: [{ uri: scUri + ".diags.json", type: 2 }] });
+  await new Promise((r) => setTimeout(r, 300));
+  if (!(diagnostics[scUri] || []).some((d) => d.message.includes("GUITKX0105"))) fail("post-save sidecar write not re-validated: " + JSON.stringify(diagnostics[scUri]));
+  fs.unlinkSync(scFsPath + ".diags.json");
+  notify("workspace/didChangeWatchedFiles", { changes: [{ uri: scUri + ".diags.json", type: 3 }] });
+  await new Promise((r) => setTimeout(r, 300));
+  if ((diagnostics[scUri] || []).some((d) => d.message.includes("GUITKX0105"))) fail("deleted sidecar should clear the compiler diagnostics");
+  console.log("sidecar watch OK (post-save write re-validates without a document event, deletion clears)");
+
   console.log("SMOKE PASSED");
   server.kill();
   process.exit(0);

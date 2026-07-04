@@ -138,7 +138,7 @@ connection.onInitialized(() => {
   }
   connection.client
     .register(DidChangeWatchedFilesNotification.type, {
-      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/*.guitkx" }, { globPattern: "**/project.godot" }],
+      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/*.guitkx" }, { globPattern: "**/project.godot" }, { globPattern: "**/*.guitkx.diags.json" }],
     })
     .then(() => armWorkspaceComplete())
     .catch(() => startNativeWatcher()); // client refused — try the in-process fallback
@@ -206,6 +206,24 @@ connection.onDidChangeWatchedFiles((params) => {
 });
 
 function handleWatchedPath(fsPath: string, deleted: boolean): void {
+  if (fsPath.endsWith(".guitkx.diags.json")) {
+    // The Godot watcher writes the compiler sidecar a couple of SECONDS after the save that
+    // triggered it (the addon's watch poll), long after this server's save-time validation read
+    // the previous one. Without re-validating on the sidecar's own change event, a compiler-only
+    // diagnostic (e.g. GUITKX0105 in setup-value markup, which the live tier does not scan yet)
+    // could NEVER surface: no later document event re-reads it, and the next keystroke diverges
+    // the buffer hash, which suppresses compiler entries by design (field capture 2026-07-04:
+    // 0105 in the Godot dock, no squiggle in VS Code). Deletion re-validates too — a removed
+    // sidecar means the verdict was cleared.
+    const src = fsPath.slice(0, -".diags.json".length).toLowerCase();
+    for (const doc of documents.all()) {
+      if (uriToProjectPath(doc.uri).toLowerCase() === src) {
+        publishDiagnosticsFor(doc);
+        break;
+      }
+    }
+    return;
+  }
   if (fsPath.endsWith("project.godot")) {
     if (resolve(fsPath) !== resolve(join(projectPath, "project.godot"))) return;
     try {
