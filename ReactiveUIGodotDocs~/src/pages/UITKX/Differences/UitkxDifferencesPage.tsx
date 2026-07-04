@@ -18,14 +18,18 @@ export const UitkxDifferencesPage: FC = () => (
 
     <Box sx={Styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        Hooks are snake_case
+        Hooks are compiler-resolved, not imported
       </Typography>
       <Typography variant="body1" paragraph>
-        Hooks follow GDScript naming: <code>useState</code>, <code>useEffect</code>,{' '}
-        <code>useMemo</code>, <code>useRef</code>, and so on — never React's{' '}
-        <code>useState</code> camelCase. In plain <code>.gd</code> you call them as{' '}
-        <code>Hooks.useState(…)</code>; inside <code>.guitkx</code> the bare <code>use_*</code> form
-        is auto-prefixed to <code>Hooks.*</code> by the compiler.
+        Hook names are camelCase and match React's exactly — <code>useState</code>,{' '}
+        <code>useEffect</code>, <code>useMemo</code>, <code>useRef</code>, and so on (a
+        deliberate breaking change in library 0.4.0 for full naming parity with React). What
+        differs is the mechanism, not the spelling: hooks are static methods on the{' '}
+        <code>Hooks</code> class, not importable functions, and the bare camelCase form only
+        exists inside <code>.guitkx</code> markup — the compiler recognizes a call like{' '}
+        <code>useState(…)</code> and rewrites it to <code>Hooks.useState(…)</code>. In plain{' '}
+        <code>.gd</code> scripts (or anywhere outside <code>.guitkx</code>), call the fully
+        qualified form directly: <code>Hooks.useState(…)</code>.
       </Typography>
     </Box>
 
@@ -136,7 +140,7 @@ export const UitkxDifferencesPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<>Hooks are <code>snake_case</code> and returned as arrays/dictionaries, not typed <code>StateSetter&lt;T&gt;</code> delegates.</>} />
+          <ListItemText primary={<>Hooks are <code>camelCase</code> (matching JS/React) rather than the C# sibling's <code>PascalCase</code> methods, and are returned as arrays/dictionaries, not typed <code>StateSetter&lt;T&gt;</code> delegates.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<>The function-component factory is <code>V.fc</code> (GDScript reserves <code>func</code>), not <code>V.Func</code>.</>} />

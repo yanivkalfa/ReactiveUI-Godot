@@ -28,11 +28,12 @@ export const FAQPage: FC = () => (
       What is <code>.guitkx</code>?
     </Typography>
     <Typography variant="body2" paragraph>
-      <code>.guitkx</code> is the optional markup language — JSX-style tags, hooks, and control
-      flow (<code>@if</code>, <code>@for</code>, <code>@match</code>) in one file. A{' '}
-      <code>@tool</code> editor plugin compiles each <code>.guitkx</code> into a sibling{' '}
-      <code>.gd</code> render function on save. You can also skip markup entirely and write
-      components directly against the <code>V</code> factory API in plain GDScript.
+      <code>.guitkx</code> is the markup language you author components in — JSX-style tags,
+      hooks, and control flow (<code>@if</code>, <code>@for</code>, <code>@match</code>) in one
+      file. A <code>@tool</code> editor plugin compiles each <code>.guitkx</code> into a sibling{' '}
+      <code>.gd</code> render function on save. Under the hood it compiles to plain calls against
+      the <code>V</code> factory and <code>Hooks</code> API — see below for when to reach for
+      those directly instead.
     </Typography>
 
     <Typography variant="body1" sx={Styles.question}>
@@ -180,20 +181,40 @@ export const FAQPage: FC = () => (
       Which editors have <code>.guitkx</code> language support?
     </Typography>
     <Typography variant="body2" paragraph>
-      <strong>VS Code</strong> and <strong>Visual Studio</strong> have extensions with syntax
-      highlighting, completion, hover, diagnostics, and formatting, backed by a language server
-      that embeds the Rust GDScript analyzer. A full <strong>in-editor Godot addon</strong> with
-      the same capabilities is on the roadmap — see the <em>Roadmap</em> page.
+      Godot itself does, out of the box: the <strong>reactive_ui_editor</strong> addon
+      (<code>addons/reactive_ui_editor/</code>) is a native in-editor plugin with syntax
+      highlighting, live diagnostics, completion, and hover built directly into the Godot
+      editor — no external tools required. <strong>VS Code</strong> and{' '}
+      <strong>Visual Studio</strong> extensions add the same markup intelligence plus one thing
+      the in-editor addon doesn&apos;t cover yet: deep analysis of the embedded GDScript inside{' '}
+      <code>{'{expr}'}</code> and setup code, via a language server that embeds the Rust GDScript
+      analyzer.
+    </Typography>
+
+    <Typography variant="body1" sx={Styles.question}>
+      Does editing a <code>.guitkx</code> file require restarting my game?
+    </Typography>
+    <Typography variant="body2" paragraph>
+      No. While the game is running under <strong>F5</strong>, saving a <code>.guitkx</code>{' '}
+      hot-reloads it into the live session within a couple of seconds — hook state is preserved
+      (a counter keeps its count) unless the edit changed the component&apos;s hook-call shape, in
+      which case that component&apos;s state deliberately resets. This is dev-only: it requires
+      the debugger session F5 gives you, so exported builds carry none of it. See{' '}
+      <strong>Hot Reload (Fast Refresh)</strong> under Tooling for the full mechanism and its
+      limits.
     </Typography>
 
     <Typography variant="body1" sx={Styles.question}>
       Can I write components without <code>.guitkx</code> at all?
     </Typography>
     <Typography variant="body2" paragraph>
-      Yes. <code>.guitkx</code> is a convenience layer that compiles to GDScript. You can author
-      the same components by hand against the <code>V</code> factory
-      (<code>V.vbox</code>, <code>V.label</code>, <code>V.button</code>, …) in a normal{' '}
-      <code>.gd</code> file — no build step, no extension required.
+      You can, but <code>.guitkx</code> is the recommended way to author components day to day —
+      it compiles straight to the <code>V</code>/<code>Hooks</code> calls described above, so
+      nothing is hidden. Writing those calls by hand is the underlying implementation and stays
+      fully supported as an escape hatch: for structural primitives that have no markup tag
+      (<code>Portal</code>, <code>Suspense</code>, <code>ErrorBoundary</code>, <code>Memo</code>,{' '}
+      <code>Audio</code>, <code>Video</code>, router configuration), or for one-off/advanced
+      scripts where a whole <code>.guitkx</code> file would be overkill.
     </Typography>
 
     {/* ── Troubleshooting ──────────────────────────────────────────────── */}

@@ -108,9 +108,11 @@ Releases are automated. The changelog source of truth is **`changelog.json`**; p
 `CHANGELOG.md` + the VS2022 `overview.md` are generated from it by `scripts/changelog.mjs`. See
 [VERSIONING.md](VERSIONING.md) for the release process and [PUBLISHING.md](PUBLISHING.md) for manual steps.
 
-- **CI:** `.github/workflows/publish-extensions.yml` (`workflow_dispatch`) — version-gated per extension
-  (skips if the `vscode-v*` / `vs2022-v*` tag exists), publishes the VS Code extension to the **VS Marketplace**
-  + **Open VSX**, and the VS2022 extension via **VsixPublisher**, then tags + uploads artifacts.
+- **CI:** `.github/workflows/publish.yml` (`workflow_dispatch`, shared with the runtime addon's own
+  release + the docs-site deploy) — its `publish-vscode` / `publish-vs2022` jobs are version-gated per
+  extension (skip if the `vscode-v*` / `vs2022-v*` tag exists), publish the VS Code extension to the
+  **VS Marketplace** + **Open VSX**, and the VS2022 extension via **VsixPublisher**, then tag + upload
+  artifacts.
 - **Local:** `scripts/publish-extension.ps1` (VS Code) and `scripts/publish-vsix.ps1` (VS2022).
 
 **Secret matrix** (GitHub repo secrets / local `publisher-secrets.json` keys):
@@ -128,8 +130,8 @@ Releases are automated. The changelog source of truth is **`changelog.json`**; p
 | Layer | State |
 |-------|-------|
 | Grammar + schema | Done (valid JSON, adapted from the shipping Unity grammar) |
-| Language server — markup completion/hover, structural diagnostics | Done + tested (`npm test`, `smoke.js`) |
+| Language server — markup completion/hover, structural diagnostics, dangling-reference detection | Done + tested (`npm test`, `smoke.js`) |
 | Language server — embedded GDScript (completion/hover/goto/diagnostics) | Done — headless, in-process via `@gdscript-analyzer/core` (no Godot editor, no TCP) |
-| VS Code extension | Builds; server bundles + serves over stdio (proven); packages to a self-contained `.vsix` |
-| VS2022 extension | ILanguageClient + `.pkgdef` pattern; needs VS2022 + VSSDK to build/verify |
-| Publishing + changelogs | Done — `changelog.json` + `changelog.mjs`, `publish-extensions.yml` (VS Marketplace + Open VSX + VsixPublisher), local publish scripts, version-gating + tagging |
+| VS Code extension | Published; **0.8.6** — grammar, LSP client, format-on-save, sidecar + workspace-index watching |
+| VS2022 extension | Published; **0.5.5** — has not been re-released since; missing every fix/feature shipped in VS Code 0.6.0–0.8.6 (same shared `lsp-server`, just not repackaged yet) |
+| Publishing + changelogs | Automated via `publish.yml`, but **`changelog.json` had drifted behind the hand-edited `vscode/CHANGELOG.md`** (now reconciled) — keep using `scripts/changelog.mjs add` so future releases don't diverge again |

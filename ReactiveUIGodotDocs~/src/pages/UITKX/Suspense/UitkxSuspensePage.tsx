@@ -13,6 +13,13 @@ export const UitkxSuspensePage: FC = () => (
       <code>V.suspense</code> shows a fallback node while an asynchronous
       operation completes, then renders its children once the operation is ready.
     </Typography>
+    <Alert severity="warning" sx={{ mb: 2 }}>
+      Unlike most of the library, <code>Suspense</code> has <strong>no markup tag</strong> —{' '}
+      <code>{'<Suspense>'}</code> is not a recognized <code>.guitkx</code> element. Call{' '}
+      <code>V.suspense(props, children)</code> from an embedded <code>{'{ expr }'}</code> inside a{' '}
+      normal <code>.guitkx</code> component instead, e.g.{' '}
+      <code>{'<VBox>{ V.suspense({...}, [...]) }</VBox>'}</code>.
+    </Alert>
     <Alert severity="info" sx={{ mb: 2 }}>
       GDScript has no throw-to-suspend (React&apos;s mechanism relies on throwing
       a promise). So this <code>Suspense</code> is a plain function component

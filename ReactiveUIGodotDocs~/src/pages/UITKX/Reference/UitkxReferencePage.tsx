@@ -36,28 +36,39 @@ component Counter(label: String = "Count") {
 
 const CONTROL_FLOW_EXAMPLE = `<VBox>
   @if (is_logged_in) {
-    <Label text="Welcome back!" />
+    return ( <Label text="Welcome back!" /> )
   } @elif (is_guest) {
-    <Label text="Browsing as guest" />
+    return ( <Label text="Browsing as guest" /> )
   } @else {
-    <Button text="Log in" onClick={ func(): login() } />
+    return ( <Button text="Log in" onClick={ func(): login() } /> )
   }
 
   @for (item in items) {
-    <Label key={ item.id } text={ item.name.to_upper() }
-      style={ {"font_color": Color.GREEN if item.active else Color.GRAY} } />
+    var color = Color.GREEN if item.active else Color.GRAY
+    return ( <Label key={ item.id } text={ item.name.to_upper() }
+      style={ {"font_color": color} } /> )
   }
 
   @for (i in count) {
-    <Label key={ str(i) } text={ "Row %d" % i } />
+    return ( <Label key={ str(i) } text={ "Row %d" % i } /> )
   }
 
   @match (mode) {
-    @case ("dark")  { <Label text="Dark mode" /> }
-    @case ("light") { <Label text="Light mode" /> }
-    @default        { <Label text="Unknown mode" /> }
+    @case ("dark")  { return ( <Label text="Dark mode" /> ) }
+    @case ("light") { return ( <Label text="Light mode" /> ) }
+    @default        { return ( <Label text="Unknown mode" /> ) }
   }
 </VBox>`
+
+const EARLY_RETURN_EXAMPLE = `component Panel(ready: bool = false) {
+  if not ready:
+    return ( <Label text="Loading…" /> )
+  return (
+    <VBox>
+      <Label text="Ready!" />
+    </VBox>
+  )
+}`
 
 const PROP_SPREAD_EXAMPLE = `component Toolbar(cfg: Dictionary = {}) {
   var base := { "text": "Save", "disabled": false }
@@ -205,10 +216,26 @@ export const UitkxReferencePage: FC = () => (
             <TableCell>Return</TableCell>
             <TableCell><code>return ( &lt;markup /&gt; )</code> — a single root, or a raw <code>{'{ expr }'}</code></TableCell>
           </TableRow>
+          <TableRow>
+            <TableCell>Early / conditional return</TableCell>
+            <TableCell><code>if not ready: return ( &lt;Label text="loading" /&gt; )</code> — legal anywhere in setup, not just as the final statement (v0.6+)</TableCell>
+          </TableRow>
         </TableBody>
       </Table>
     </TableContainer>
     <CodeBlock language="jsx" code={FUNCTION_STYLE_EXAMPLE} />
+    <Typography variant="body2" paragraph sx={{ mt: 2 }}>
+      A component&apos;s setup code can <code>return ( {'<markup>'} )</code> anywhere, not just as the
+      final statement — an early or conditional markup return renders immediately when it&apos;s hit
+      (v0.6+, React-style: a loading guard, an early-exit branch, and so on).
+    </Typography>
+    <CodeBlock language="jsx" code={EARLY_RETURN_EXAMPLE} />
+    <Typography variant="body2" paragraph sx={{ mt: 1 }}>
+      Code after an <strong>unconditional</strong> markup return is unreachable and dimmed by the
+      editor (<code>GUITKX0107</code>). The compiler only requires the component&apos;s{' '}
+      <strong>FINAL</strong> top-level <code>return</code> to be markup (<code>GUITKX2102</code>) —{' '}
+      <code>return null</code> guards and plain value returns elsewhere are ordinary GDScript.
+    </Typography>
 
     {/* ── Markup Control Flow ────────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
@@ -249,13 +276,31 @@ export const UitkxReferencePage: FC = () => (
     </TableContainer>
     <CodeBlock language="jsx" code={CONTROL_FLOW_EXAMPLE} />
     <Typography variant="body2" paragraph sx={{ mt: 2 }}>
-      Each directive body contains <strong>bare markup</strong> (no <code>return</code> wrapper), and
-      setup statements may precede the markup inside the block. Control-flow directives are{' '}
+      A directive body is a <strong>code block</strong>: GDScript preparation statements followed by{' '}
+      <code>return ( {'<markup>'} )</code>, and it nests recursively — exactly like ReactiveUIToolKit
+      for Unity. <code>return null</code> (or a bare <code>return</code>) is the sanctioned way to
+      skip a <code>@for</code> iteration or render nothing from a branch; a directive{' '}
+      <code>return</code> must yield exactly one root element (<code>GUITKX0108</code>), and calling
+      a hook inside a directive body is a compile error (<code>GUITKX2104</code>) — hooks must run
+      unconditionally in setup. Control-flow directives are still{' '}
       <strong>statement-level</strong>: <code>@if</code>, <code>@for</code>, and <code>@match</code>{' '}
       appear directly among markup children, not inside a <code>{'{ expr }'}</code> value. For
       inline conditional values, use a GDScript ternary (<code>a if cond else b</code>) inside a{' '}
       <code>{'{ … }'}</code> expression instead.
     </Typography>
+    <Box sx={{ my: 2, p: 2, borderLeft: '4px solid', borderColor: 'warning.main', bgcolor: 'action.hover' }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+        Breaking change (0.7.0): directive bodies used to be bare markup
+      </Typography>
+      <Typography variant="body2" sx={{ mb: 0 }}>
+        Before 0.7.0, a directive body held bare markup children with no <code>return</code> wrapper.
+        That form no longer compiles — it now fails with <code>GUITKX2103</code> (&quot;a directive
+        body returns its markup — write{' '}
+        <code>return ( {'<markup>'} )</code>&quot;), reported live in the editor and at compile time.
+        Migrate a whole project in one shot: <code>godot --headless --path . --script
+        res://addons/reactive_ui/dev/migrate_directive_bodies.gd -- res://&lt;your-ui-dir&gt;</code>.
+      </Typography>
+    </Box>
 
     {/* ── Expressions & Values ───────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
@@ -436,10 +481,10 @@ export const UitkxReferencePage: FC = () => (
     </Typography>
     <Typography component="ul" variant="body2">
       <li><code>@class_name</code> and <code>@uss</code> must appear before the declaration keyword.</li>
-      <li>Hook calls must be unconditional at component top level — not inside <code>@if</code>, <code>@for</code>, etc.</li>
-      <li>Control-flow directive bodies contain bare markup; setup statements go before the markup inside the block.</li>
+      <li>Hook calls must be unconditional at component top level — not inside a directive body (<code>@if</code>, <code>@for</code>, <code>@case</code>, etc.), or it&apos;s <code>GUITKX2104</code>.</li>
+      <li>A directive body is a code block: GDScript prep statements followed by <code>return ( {'<markup>'} )</code>, nesting recursively. The pre-0.7 bare-markup form is a compile error (<code>GUITKX2103</code>).</li>
       <li>Direct children of <code>@for</code> need a <code>key</code> attribute for stable reconciliation.</li>
-      <li>Components must return a single root element (or a single raw <code>{'{ expr }'}</code>).</li>
+      <li>A component's FINAL top-level return must be markup (a single root element, or a single raw <code>{'{ expr }'}</code>); earlier <code>return</code>s may conditionally return markup too (v0.6+).</li>
       <li>The declaration name should match the file / <code>@class_name</code> (e.g. <code>MyButton.guitkx</code> defines <code>component MyButton</code>).</li>
       <li><code>@match</code> is a statement-level directive; it can't be embedded inside a <code>{'{ expr }'}</code> attribute or child value.</li>
     </Typography>

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.6] - 2026-07-04
+- **Folder deletions now reach both diagnostic tiers.** Deleting a component's folder removes its
+  compiled outputs along with it, so nothing looked stale and the dangling-reference check
+  (`GUITKX2107`) waited for an unrelated save or editor focus-in — the addon's watch poll (0.8.2)
+  now goes hot on a sidecar-state mismatch instead of only on stale mtimes. Separately, the
+  extension's folder-delete handling shipped in 0.8.5 was correct but **unreachable**: the dynamic
+  watcher registered per-extension file globs, and VS Code only delivers folder-delete events to a
+  pattern that matches the folder path itself. Watcher registration is now a single `**` glob.
+
+## [0.8.5] - 2026-07-04
+- **Deleting a component's whole folder now evicts everything under it.** VS Code coalesces a bulk
+  delete into one folder-level event, which previously only closed each file's analyzer library —
+  the `.guitkx` index entries and their harvested generated classes survived, so the component never
+  left the project universe and no squiggle ever appeared. The folder-deleted path now evicts every
+  indexed `.guitkx` under it, un-harvests every generated class under it (path keys normalized, since
+  the harvest source and the delete event spell paths differently), and re-validates open documents
+  — including the reverse case, a moved-in folder clearing stale squiggles.
+- Single-file deletions un-harvest the generated sibling's class immediately instead of waiting
+  ~2 seconds for the Godot addon's own orphan sweep to delete the `.gd` and produce a second event —
+  the squiggle now lands on the watcher tick, not on the compiler's schedule.
+
 ## [0.8.4] - 2026-07-04
 - **Deleting a component whose tab is open now squiggles its consumers immediately.** The index
   refused to touch files with open buffers — right for edits (the buffer is the source of

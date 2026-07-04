@@ -16,6 +16,12 @@ export const UitkxPortalPage: FC = () => (
       overlays that need to visually escape their parent&apos;s clipping or draw
       order.
     </Typography>
+    <Alert severity="warning" sx={{ mb: 2 }}>
+      Unlike most of the library, <code>Portal</code> has <strong>no markup tag</strong> —{' '}
+      <code>{'<Portal>'}</code> is not a recognized <code>.guitkx</code> element. Build it with{' '}
+      <code>V.portal(target, children)</code> in your component&apos;s setup code, then render the
+      result from an embedded <code>{'{ expr }'}</code> inside the returned markup, as shown below.
+    </Alert>
 
     <Typography variant="h5" component="h2" gutterBottom>
       Signature

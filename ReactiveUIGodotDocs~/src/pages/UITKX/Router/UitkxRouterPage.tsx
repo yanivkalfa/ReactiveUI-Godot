@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Box, List, ListItem, ListItemText, Typography } from '@mui/material'
+import { Alert, Box, List, ListItem, ListItemText, Typography } from '@mui/material'
 import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from '../../Router/RouterPage.style'
 import {
@@ -15,15 +15,19 @@ export const UitkxRouterPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       The library ships a lightweight, in-memory router inspired by React Router, built on the
-      reactive core (context + hooks). Routing is authored directly in your component tree — you
-      compose <code>{'<Router>'}</code>, <code>{'<Route>'}</code>, links, and routed child
-      components as part of the returned UI. The pieces are exposed as{' '}
-      <code>V.router</code> / <code>V.route</code> / <code>V.routes</code> /{' '}
+      reactive core (context + hooks). Routing is authored by calling the{' '}
+      <code>V.router</code> / <code>V.routes</code> / <code>V.route</code> /{' '}
       <code>V.outlet</code> / <code>V.navigate</code> / <code>V.nav_link</code> /{' '}
-      <code>V.link</code> factories (and the corresponding markup tags{' '}
-      <code>{'<Router>'}</code>, <code>{'<Route>'}</code>, <code>{'<Outlet/>'}</code>,{' '}
-      <code>{'<NavLink>'}</code>).
+      <code>V.link</code> factories from an embedded expression as part of the returned UI.
     </Typography>
+    <Alert severity="warning" sx={{ mb: 2 }}>
+      None of the router primitives are registered <code>.guitkx</code> markup tags — there is
+      no <code>{'<Router>'}</code>, <code>{'<Route>'}</code>, <code>{'<Outlet>'}</code>,{' '}
+      <code>{'<NavLink>'}</code>, or <code>{'<Navigate>'}</code> element. Build the router tree with
+      the <code>V.*</code> factories above and mount it from an embedded{' '}
+      <code>{'{ expr }'}</code> inside a normal <code>.guitkx</code> component, e.g.{' '}
+      <code>{'<VBox>{ V.router({...}, [...]) }</VBox>'}</code>.
+    </Alert>
 
     <Box sx={Styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
@@ -31,22 +35,22 @@ export const UitkxRouterPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>{'<Router>'}</code> establishes routing context and history for the subtree. The optional <code>basename</code> prop prefixes every URL. Provide a custom <code>history</code> (an <code>RUIHistory</code>) or an <code>initial</code> path.</>} />
+          <ListItemText primary={<><code>V.router({'{...}'})</code> establishes routing context and history for the subtree. The optional <code>basename</code> prop prefixes every URL. Provide a custom <code>history</code> (an <code>RUIHistory</code>) or an <code>initial</code> path.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>{'<Routes>'}</code> ranks its child <code>{'<Route>'}</code>s and renders the single best match (RR-v6 behaviour, first-match-wins by score).</>} />
+          <ListItemText primary={<><code>V.routes({'{}'}, [...])</code> ranks its <code>V.route(...)</code> children and renders the single best match (RR-v6 behaviour, first-match-wins by score).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>{'<Route>'}</code> matches the current path and decides what to render via its <code>element</code> vnode or a <code>render</code> callback. Supports <code>index</code>, <code>case_sensitive</code>, <code>exact</code>, and layout-route composition with child <code>{'<Route>'}</code>s + <code>{'<Outlet/>'}</code>.</>} />
+          <ListItemText primary={<><code>V.route({'{...}'})</code> matches the current path and decides what to render via its <code>element</code> vnode or a <code>render</code> callback. Supports <code>index</code>, <code>case_sensitive</code>, <code>exact</code>, and layout-route composition with nested <code>V.route(...)</code> children + <code>V.outlet(...)</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>{'<Outlet/>'}</code> is the render-slot inside a layout route — the matched nested route renders here (falling back to the outlet&apos;s own children).</>} />
+          <ListItemText primary={<><code>V.outlet(...)</code> is the render-slot inside a layout route — the matched nested route renders here (falling back to the outlet&apos;s own children).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>{'<NavLink>'}</code> renders a navigation button with active-state styling (<code>active_style</code>).</>} />
+          <ListItemText primary={<><code>V.nav_link({'{...}'})</code> renders a navigation button with active-state styling (<code>active_style</code>).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>{'<Navigate to=...>'}</code> performs a declarative redirect from an effect after commit (defaults to <code>replace = true</code>).</>} />
+          <ListItemText primary={<><code>{'V.navigate({ "to": ... })'}</code> performs a declarative redirect from an effect after commit (defaults to <code>replace = true</code>).</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<>The <code>RUIRouter.use_*</code> hooks expose imperative navigation, location data, search params, blockers, and breadcrumbs from any descendant component.</>} />
@@ -60,11 +64,11 @@ export const UitkxRouterPage: FC = () => (
       </Typography>
       <Typography variant="body1" paragraph>
         The example below shows the full RR-v6-parity surface:{' '}
-        <code>{'<Router basename>'}</code>, ranked <code>{'<Routes>'}</code>, an{' '}
-        <code>index</code> route, a layout route with <code>{'<Outlet/>'}</code>, a declarative
-        redirect, and the search-params / breadcrumb hooks. The route table takes vnode/callback
-        props rather than markup children, so it is written as an embedded{' '}
-        <code>{'{ V.routes(...) }'}</code> expression.
+        <code>{'V.router({ "basename": ... })'}</code>, a ranked <code>V.routes(...)</code> table, an{' '}
+        <code>index</code> route, a layout route with <code>V.outlet(...)</code>, a declarative
+        redirect, and the search-params / breadcrumb hooks. None of these are markup tags — the
+        whole router tree is built with <code>V.*</code> calls and mounted via a single embedded{' '}
+        <code>{'{ expr }'}</code> expression.
       </Typography>
       <CodeBlock language="gdscript" code={UITKX_ROUTER_EXAMPLE} />
     </Box>
@@ -74,13 +78,13 @@ export const UitkxRouterPage: FC = () => (
         Routes — ranked first-match-wins
       </Typography>
       <Typography variant="body1" paragraph>
-        <code>{'<Routes>'}</code> (via <code>V.routes</code>) is the deterministic selector. It
-        walks its child <code>{'<Route>'}</code> declarations, scores each one with the same
-        ranking algorithm React Router uses (static segments beat dynamic <code>:params</code>,
-        which beat splats), and renders only the highest-ranked match. Ties break by declaration
-        order. Use it whenever more than one route could match the same path — it eliminates the
-        &quot;two routes both matched&quot; foot-gun of a bare <code>{'<Route>'}</code>. A{' '}
-        <code>V.routes</code> call also accepts the legacy table form{' '}
+        <code>{'V.routes({}, [...])'}</code> is the deterministic selector. It walks its{' '}
+        <code>V.route(...)</code> children, scores each one with the same ranking algorithm React
+        Router uses (static segments beat dynamic <code>:params</code>, which beat splats), and
+        renders only the highest-ranked match. Ties break by declaration order. Use it whenever more
+        than one route could match the same path — it eliminates the &quot;two routes both
+        matched&quot; foot-gun of a bare <code>V.route(...)</code>. A <code>V.routes</code> call
+        also accepts the legacy table form{' '}
         <code>{'{ "routes": [ { "path", "component" }, ... ] }'}</code>, kept working for
         back-compat.
       </Typography>
@@ -91,11 +95,12 @@ export const UitkxRouterPage: FC = () => (
         Layout routes and Outlet
       </Typography>
       <Typography variant="body1" paragraph>
-        A <code>{'<Route>'}</code> with both an <code>element</code> and child{' '}
-        <code>{'<Route>'}</code>s becomes a <em>layout route</em>. Its <code>element</code>{' '}
-        renders as a wrapper, and the matched child renders wherever you place an{' '}
-        <code>{'<Outlet/>'}</code> inside that wrapper. The wrapper sees the matched child through
-        context, so there is no prop-drilling — this mirrors React Router v6.
+        A <code>V.route({'{...}'}, [...])</code> with both an <code>element</code> and nested{' '}
+        <code>V.route(...)</code> children becomes a <em>layout route</em>. Its <code>element</code>{' '}
+        renders as a wrapper, and the matched child renders wherever you place{' '}
+        <code>V.outlet(...)</code> inside that wrapper as an embedded expression (<code>Outlet</code>{' '}
+        has no markup tag). The wrapper sees the matched child through context, so there is no
+        prop-drilling — this mirrors React Router v6.
       </Typography>
       <CodeBlock language="gdscript" code={UITKX_ROUTER_LAYOUT_EXAMPLE} />
       <Typography variant="body1" paragraph>
@@ -111,10 +116,10 @@ export const UitkxRouterPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>index={'{true}'}</code> — the route matches the parent path exactly (no extra segment). Setting both <code>index</code> and <code>path</code> on the same route logs an actionable error via <code>RUIDiagnostics</code> / <code>push_error</code> and drops the path (the port cannot throw; it degrades).</>} />
+          <ListItemText primary={<><code>{'"index": true'}</code> — the route matches the parent path exactly (no extra segment). Setting both <code>index</code> and <code>path</code> on the same route logs an actionable error via <code>RUIDiagnostics</code> / <code>push_error</code> and drops the path (the port cannot throw; it degrades).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>case_sensitive={'{true}'}</code> — opt in to case-sensitive segment matching for that route. The default is case-insensitive.</>} />
+          <ListItemText primary={<><code>{'"case_sensitive": true'}</code> — opt in to case-sensitive segment matching for that route. The default is case-insensitive.</>} />
         </ListItem>
       </List>
     </Box>
@@ -141,10 +146,10 @@ export const UitkxRouterPage: FC = () => (
         renders a <code>Button</code> that navigates on press and applies{' '}
         <code>active_style</code> (instead of <code>style</code>) when its target matches the
         current location. The activation rules mirror RR&apos;s <code>NavLink</code> — including
-        the special case where <code>to=&quot;/&quot;</code> is only active when the path is
+        the special case where <code>{'"to": "/"'}</code> is only active when the path is
         exactly <code>&quot;/&quot;</code> (otherwise Home would highlight everywhere). Use{' '}
-        <code>end={'{true}'}</code> to require an exact match for non-root paths and{' '}
-        <code>case_sensitive={'{true}'}</code> for case-sensitive comparison. For a plain,
+        <code>{'"end": true'}</code> to require an exact match for non-root paths and{' '}
+        <code>{'"case_sensitive": true'}</code> for case-sensitive comparison. For a plain,
         non-active-aware link, use <code>V.link</code>.
       </Typography>
     </Box>
@@ -179,7 +184,7 @@ export const UitkxRouterPage: FC = () => (
         Navigation and history
       </Typography>
       <Typography variant="body1" paragraph>
-        By default <code>{'<Router>'}</code> uses an in-memory <code>RUIHistory</code>. You can
+        By default <code>V.router(...)</code> uses an in-memory <code>RUIHistory</code>. You can
         provide a custom instance via the <code>history</code> prop to control how locations are
         stored or synchronised. Inside components, use{' '}
         <code>RUIRouter.useNavigate()</code> to push or replace locations, and{' '}
@@ -189,11 +194,11 @@ export const UitkxRouterPage: FC = () => (
         navigation while a confirmation is pending.
       </Typography>
       <Typography variant="body1" paragraph>
-        Nesting two <code>{'<Router>'}</code> elements in the same tree is not allowed — mirrors
+        Nesting two <code>V.router(...)</code> calls in the same tree is not allowed — mirrors
         RR&apos;s <code>invariant(!useInRouterContext())</code>. Because GDScript cannot throw a
         catchable exception, the port logs an actionable error (via <code>RUIDiagnostics</code> /{' '}
         <code>push_error</code>) and degrades: the inner router shadows the outer for its subtree.
-        Use a single root <code>{'<Router>'}</code> and compose <code>{'<Route>'}</code>s
+        Mount a single root <code>V.router(...)</code> and nest <code>V.route(...)</code> calls
         underneath it.
       </Typography>
     </Box>
@@ -244,9 +249,9 @@ export const UitkxRouterPage: FC = () => (
         Nested routes
       </Typography>
       <Typography variant="body1" paragraph>
-        Layout routes are the recommended way to nest. A parent <code>{'<Route>'}</code> with both
-        an <code>element</code> and child <code>{'<Route>'}</code>s renders its element as a
-        wrapper and projects the matched child into the descendant <code>{'<Outlet/>'}</code>.
+        Layout routes are the recommended way to nest. A parent <code>V.route(...)</code> with both
+        an <code>element</code> and nested <code>V.route(...)</code> children renders its element as
+        a wrapper and projects the matched child into the descendant <code>V.outlet(...)</code>.
         Child routes may use relative paths (for example <code>&quot;profile&quot;</code> or{' '}
         <code>&quot;:id/edit&quot;</code>) and are resolved against the parent match automatically —
         no need to repeat the parent prefix. This matches React Router v6.

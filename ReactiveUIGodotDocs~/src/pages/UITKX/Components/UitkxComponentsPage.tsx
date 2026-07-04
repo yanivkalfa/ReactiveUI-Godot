@@ -2,6 +2,7 @@ import type { FC } from 'react'
 import {
   Alert,
   Box,
+  Chip,
   List,
   ListItem,
   ListItemText,
@@ -37,11 +38,28 @@ component ButtonShowcase() {
   )
 }`
 
+// V.*-only primitives (no markup tag) are reached via an embedded { expr } inside an
+// otherwise-normal .guitkx component — never as a fictitious <Tag>.
+const FRAMEWORK_EXAMPLE = `component App {
+  var ready = useState(false)
+  return (
+    <VBox>
+      { V.suspense(
+          { "fallback": V.fc(Spinner.render), "is_ready": useCallback(func(): return ready[0], [ready[0]]) },
+          [ V.fc(Content.render) ]) }
+    </VBox>
+  )
+}`
+
 /* ------------------------------------------------------------------ */
 /*  Component catalog                                                  */
 /* ------------------------------------------------------------------ */
 
-type CompEntry = { name: string; factory: string; desc: string }
+// `hasTag` defaults to true (a real `<Name>` markup element backed by host_tags in
+// vocabulary.json). Set it to `false` for a V.* factory that has NO corresponding markup
+// tag — it can only be reached via an embedded `{ V.foo(...) }` expression inside a .guitkx
+// component's setup/markup, never written as `<Name>`.
+type CompEntry = { name: string; factory: string; desc: string; hasTag?: false }
 
 const containers: CompEntry[] = [
   { name: 'Control', factory: 'V.control', desc: 'Universal base container — the div of Godot UI' },
@@ -53,8 +71,8 @@ const containers: CompEntry[] = [
   { name: 'Center', factory: 'V.center', desc: 'Centers its child (CenterContainer)' },
   { name: 'Scroll', factory: 'V.scroll', desc: 'Scrollable container (ScrollContainer)' },
   { name: 'Tabs', factory: 'V.tabs', desc: 'Tabbed container (TabContainer)' },
-  { name: 'Aspect', factory: 'V.aspect', desc: 'Keeps child at a fixed aspect ratio' },
-  { name: 'Foldable', factory: 'V.foldable', desc: 'Collapsible container (FoldableContainer)' },
+  { name: 'Aspect', factory: 'V.aspect', desc: 'Keeps child at a fixed aspect ratio', hasTag: false },
+  { name: 'Foldable', factory: 'V.foldable', desc: 'Collapsible container (FoldableContainer)', hasTag: false },
 ]
 
 const display: CompEntry[] = [
@@ -62,7 +80,7 @@ const display: CompEntry[] = [
   { name: 'RichText', factory: 'V.rich_text', desc: 'BBCode-formatted text (RichTextLabel)' },
   { name: 'ColorRect', factory: 'V.color_rect', desc: 'Solid colour rectangle' },
   { name: 'TextureRect', factory: 'V.texture_rect', desc: 'Displays a Texture2D' },
-  { name: 'NinePatch', factory: 'V.nine_patch', desc: 'Nine-patch texture (NinePatchRect)' },
+  { name: 'NinePatch', factory: 'V.nine_patch', desc: 'Nine-patch texture (NinePatchRect)', hasTag: false },
   { name: 'ProgressBar', factory: 'V.progress_bar', desc: 'Determinate progress indicator' },
 ]
 
@@ -86,49 +104,92 @@ const textInputs: CompEntry[] = [
 const pickers: CompEntry[] = [
   { name: 'HSlider', factory: 'V.h_slider', desc: 'Horizontal range slider' },
   { name: 'VSlider', factory: 'V.v_slider', desc: 'Vertical range slider' },
-  { name: 'ColorPicker', factory: 'V.color_picker', desc: 'Full colour picker' },
-  { name: 'ColorPickerButton', factory: 'V.color_picker_button', desc: 'Button that opens a colour picker' },
+  { name: 'ColorPicker', factory: 'V.color_picker', desc: 'Full colour picker', hasTag: false },
+  { name: 'ColorPickerButton', factory: 'V.color_picker_button', desc: 'Button that opens a colour picker', hasTag: false },
 ]
 
 const dataViews: CompEntry[] = [
   { name: 'ItemList', factory: 'V.item_list', desc: 'Selectable list, reconciled by item identity' },
   { name: 'Tree', factory: 'V.tree', desc: 'Hierarchical tree (item-model control)' },
   { name: 'TabBar', factory: 'V.tab_bar', desc: 'Standalone tab strip (item-model control)' },
-  { name: 'MenuBar', factory: 'V.menu_bar', desc: 'Application-style menu bar' },
+  { name: 'MenuBar', factory: 'V.menu_bar', desc: 'Application-style menu bar', hasTag: false },
 ]
 
 const media: CompEntry[] = [
-  { name: 'Audio', factory: 'V.audio', desc: 'AudioStreamPlayer wrapper' },
-  { name: 'Video', factory: 'V.video', desc: 'VideoStreamPlayer wrapper' },
+  { name: 'Audio', factory: 'V.audio', desc: 'AudioStreamPlayer wrapper', hasTag: false },
+  { name: 'Video', factory: 'V.video', desc: 'VideoStreamPlayer wrapper', hasTag: false },
 ]
 
 const framework: CompEntry[] = [
   { name: 'Fragment', factory: 'V.fragment', desc: 'Invisible grouping wrapper (no host node)' },
-  { name: 'Portal', factory: 'V.portal', desc: 'Renders children under an external Node target' },
-  { name: 'Suspense', factory: 'V.suspense', desc: 'Shows a fallback while async content loads' },
-  { name: 'ErrorBoundary', factory: 'V.error_boundary', desc: 'Shows a fallback on an imperative toggle' },
-  { name: 'Memo', factory: 'V.memo', desc: 'Memoized function component (skips unchanged renders)' },
+  { name: 'Portal', factory: 'V.portal', desc: 'Renders children under an external Node target', hasTag: false },
+  { name: 'Suspense', factory: 'V.suspense', desc: 'Shows a fallback while async content loads', hasTag: false },
+  { name: 'ErrorBoundary', factory: 'V.error_boundary', desc: 'Shows a fallback on an imperative toggle', hasTag: false },
+  { name: 'Memo', factory: 'V.memo', desc: 'Memoized function component (skips unchanged renders)', hasTag: false },
 ]
 
 const router: CompEntry[] = [
-  { name: 'Router', factory: 'V.router', desc: 'Provides router context to its subtree' },
-  { name: 'Routes', factory: 'V.routes', desc: 'Ranked first-match route switch' },
-  { name: 'Route', factory: 'V.route', desc: 'A single route definition (path + element)' },
-  { name: 'Outlet', factory: 'V.outlet', desc: 'Renders the matched nested route' },
-  { name: 'NavLink', factory: 'V.nav_link', desc: 'Active-aware navigation link' },
-  { name: 'Link', factory: 'V.link', desc: 'Navigation button' },
+  { name: 'Router', factory: 'V.router', desc: 'Provides router context to its subtree', hasTag: false },
+  { name: 'Routes', factory: 'V.routes', desc: 'Ranked first-match route switch', hasTag: false },
+  { name: 'Route', factory: 'V.route', desc: 'A single route definition (path + element)', hasTag: false },
+  { name: 'Outlet', factory: 'V.outlet', desc: 'Renders the matched nested route', hasTag: false },
+  { name: 'NavLink', factory: 'V.nav_link', desc: 'Active-aware navigation link', hasTag: false },
+  { name: 'Link', factory: 'V.link', desc: 'Navigation button', hasTag: false },
 ]
 
-const allCategories = [
-  { label: 'Containers & Layout', rows: containers },
-  { label: 'Display', rows: display },
+type Category = { label: string; rows: CompEntry[]; note?: string; example?: string }
+
+const allCategories: Category[] = [
+  {
+    label: 'Containers & Layout',
+    rows: containers,
+    note:
+      'Aspect and Foldable have no markup tag yet — reach them via { V.aspect(...) } / ' +
+      '{ V.foldable(...) } inside an embedded expression.',
+  },
+  {
+    label: 'Display',
+    rows: display,
+    note: 'NinePatch has no markup tag yet — reach it via { V.nine_patch(...) } inside an embedded expression.',
+  },
   { label: 'Buttons & Toggles', rows: buttons },
   { label: 'Text Input', rows: textInputs },
-  { label: 'Pickers & Sliders', rows: pickers },
-  { label: 'Item-Model Controls', rows: dataViews },
-  { label: 'Media', rows: media },
-  { label: 'Framework Components', rows: framework },
-  { label: 'Router', rows: router },
+  {
+    label: 'Pickers & Sliders',
+    rows: pickers,
+    note:
+      'ColorPicker and ColorPickerButton have no markup tag yet — reach them via ' +
+      '{ V.color_picker(...) } / { V.color_picker_button(...) } inside an embedded expression.',
+  },
+  {
+    label: 'Item-Model Controls',
+    rows: dataViews,
+    note: 'MenuBar has no markup tag yet — reach it via { V.menu_bar(...) } inside an embedded expression.',
+  },
+  {
+    label: 'Media',
+    rows: media,
+    note:
+      'Audio and Video wrap Godot scene nodes but have no markup tag — call the factory from an ' +
+      'embedded expression inside your .guitkx markup, e.g. { V.audio({ "stream": clip, "autoplay": true }) }.',
+  },
+  {
+    label: 'Framework Components',
+    rows: framework,
+    note:
+      'Fragment is a real markup element (<Fragment>). Portal, Suspense, ErrorBoundary, and Memo are ' +
+      'NOT — each is reached by calling its V.* factory from an embedded { expr } inside a .guitkx ' +
+      "component's markup, for example:",
+    example: FRAMEWORK_EXAMPLE,
+  },
+  {
+    label: 'Router',
+    rows: router,
+    note:
+      'None of the router primitives have a markup tag — build the provider and route table with ' +
+      'V.router(...), V.routes(...), V.route(...), V.outlet(...), V.navigate(...), V.nav_link(...), ' +
+      'and V.link(...) from an embedded expression. See the Router page for a complete example.',
+  },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -183,7 +244,16 @@ export const UitkxComponentsPage: FC = () => (
             <TableBody>
               {cat.rows.map((c) => (
                 <TableRow key={c.name}>
-                  <TableCell><code>{`<${c.name}>`}</code></TableCell>
+                  <TableCell>
+                    {c.hasTag === false ? (
+                      <>
+                        <code>{c.name}</code>{' '}
+                        <Chip label="V.* only — no markup tag" size="small" variant="outlined" />
+                      </>
+                    ) : (
+                      <code>{`<${c.name}>`}</code>
+                    )}
+                  </TableCell>
                   <TableCell>{c.desc}</TableCell>
                   <TableCell><code>{c.factory}</code></TableCell>
                 </TableRow>
@@ -191,6 +261,16 @@ export const UitkxComponentsPage: FC = () => (
             </TableBody>
           </Table>
         </TableContainer>
+        {cat.note && (
+          <Alert severity="info" sx={{ mt: 1 }}>
+            {cat.note}
+          </Alert>
+        )}
+        {cat.example && (
+          <Box sx={{ mt: 1 }}>
+            <CodeBlock language="jsx" code={cat.example} />
+          </Box>
+        )}
       </Box>
     ))}
 

@@ -13,6 +13,11 @@ main-screen editor, highlighter/tokenizer, live diagnostics, and the `lsp/` mark
 binding; design of record is `GODOT_ANALYZER_INTEGRATION_PLAN.md`. The research below stays as
 the evidence base.
 
+**Execution plan of record for the remaining gaps: [`NATIVE_EDITOR_PARITY_PLAN.md`](NATIVE_EDITOR_PARITY_PLAN.md)**
+(2026-07-04) — full VS-Code↔addon inventory diff, milestone-ordered: M1 store-submittable →
+M2 markup-tier parity → M3 gdext depth. This file remains the mechanism/constraint reference
+(§2, §6, §9).
+
 **Settled decisions (user):**
 1. **Engine floor = Godot 4.4+.** Unlocks `OS.execute_with_pipe` (stdio) and `symbol_hovered` /
    `symbol_tooltip_on_hover`, removing almost all the 4.2/4.3 version-gating below (TCP fallback,

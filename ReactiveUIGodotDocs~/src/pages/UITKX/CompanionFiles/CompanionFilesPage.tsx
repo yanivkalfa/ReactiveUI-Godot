@@ -179,10 +179,32 @@ export const CompanionFilesPage: FC = () => (
     </Typography>
     <List>
       <ListItem disablePadding>
-        <ListItemText primary="The editor plugin watches EditorFileSystem. When you save a .guitkx file, it compiles the source to its sibling .gd (Foo.guitkx → Foo.gd) and nudges the editor so the generated script is picked up." />
+        <ListItemText primary="The editor plugin watches EditorFileSystem. When you save a .guitkx file, it compiles the source to its sibling .gd (Foo.guitkx → Foo.gd)." />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary="Because the sibling .gd is a real GDScript source file that Godot's own compiler owns, edits hot-reload through Godot's normal script-reload path — no custom runtime codegen." />
+        <ListItemText
+          primary={
+            <>
+              While the game is running under <strong>F5</strong>, that compile also drives{' '}
+              <strong>Fast Refresh</strong>: the generated script reloads in place and the
+              runtime re-renders exactly the components whose script changed — hook state
+              survives unless the edit changed a component&apos;s hook-call shape, which is a
+              deliberate reset.
+            </>
+          }
+        />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText
+          primary={
+            <>
+              A companion <code>hook</code> or <code>module</code> file reloads the same way,
+              but since any component may call into it, editing one triggers a <em>global</em>{' '}
+              re-render — every mounted component re-runs (state preserved), not just the one
+              file that changed.
+            </>
+          }
+        />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText primary="A diagnostics sidecar (Foo.guitkx.diags.json) is written alongside the .gd; the IDE tooling reads it for errors and warnings." />
@@ -191,6 +213,11 @@ export const CompanionFilesPage: FC = () => (
         <ListItemText primary="Generated .gd files are marked AUTO-GENERATED … do not edit — edit the .guitkx source and let the plugin regenerate." />
       </ListItem>
     </List>
+    <Typography variant="body2" paragraph sx={{ mt: 1 }}>
+      Fast Refresh only runs while a play session is attached to the editor (F5) — see{' '}
+      <strong>Hot Reload (Fast Refresh)</strong> under Tooling for the full mechanism, the
+      per-hook state table, and its limitations.
+    </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>
       When not to use companion files

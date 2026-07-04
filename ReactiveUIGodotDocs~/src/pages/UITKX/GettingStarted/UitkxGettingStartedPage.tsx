@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Box, List, ListItem, ListItemText, Typography } from '@mui/material'
+import { Alert, Box, List, ListItem, ListItemText, Typography } from '@mui/material'
 import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from '../../GettingStarted/GettingStartedPage.style'
 import {
@@ -85,6 +85,13 @@ export const UitkxGettingStartedPage: FC = () => (
       automatically, so you don't have to hold a reference yourself:
     </Typography>
     <CodeBlock language="gdscript" code={UITKX_EDITOR_BOOTSTRAP} />
+
+    <Alert severity="info" sx={{ mb: 2 }}>
+      Keep the game running with <strong>F5</strong> and edit <code>HelloWorld.guitkx</code> again
+      — the change appears in the live UI within a couple of seconds, and any hook state (like a
+      counter's count) survives the edit. See <strong>Hot Reload (Fast Refresh)</strong> under
+      Tooling for how it works and its limits.
+    </Alert>
 
     <Typography variant="h5" component="h2" gutterBottom>
       Companion files (optional)

@@ -10,18 +10,22 @@ component DataView() {
   , [])
 
   var fallback = V.label({ "text": "Loading…" })
+  var content = V.vbox({ "style": { "separation": 4 } },
+    (data[0] if data[0] != null else []).map(func(item):
+        return V.label({ "key": item, "text": str(item) })))
+
+  // Suspense has no markup tag — call V.suspense from an embedded { expr }.
+  // is_ready is checked immediately, then polled each frame until true.
+  // Pass a STABLE callback (useCallback) so the boundary doesn't re-subscribe
+  // every render.
+  var boundary = V.suspense(
+    { "fallback": fallback, "is_ready": useCallback(func(): return data[0] != null, [data[0]]) },
+    [ content ])
 
   return (
-    // is_ready is checked immediately, then polled each frame until true.
-    // Pass a STABLE callback (useCallback) so the boundary doesn't re-subscribe
-    // every render.
-    <Suspense fallback={ fallback }
-              is_ready={ useCallback(func(): return data[0] != null, [data[0]]) }>
-      <VBox style={ {"separation": 4} }>
-        { (data[0] if data[0] != null else []).map(func(item):
-            return V.label({ "key": item, "text": str(item) })) }
-      </VBox>
-    </Suspense>
+    <VBox>
+      { boundary }
+    </VBox>
   )
 }`
 
@@ -38,10 +42,11 @@ component AsyncView() {
   , [])
 
   return (
-    // ready_signal is a Godot Signal — awaited ONCE; readiness flips when it fires.
-    <Suspense fallback={ V.label({ "text": "Loading…" }) }
-              ready_signal={ load.loaded }>
-      <Label text="Data loaded!" />
-    </Suspense>
+    <VBox>
+      // ready_signal is a Godot Signal — awaited ONCE; readiness flips when it fires.
+      // Suspense has no markup tag — call V.suspense from an embedded { expr }.
+      { V.suspense({ "fallback": V.label({ "text": "Loading…" }), "ready_signal": load.loaded },
+                   [ V.label({ "text": "Data loaded!" }) ]) }
+    </VBox>
   )
 }`
