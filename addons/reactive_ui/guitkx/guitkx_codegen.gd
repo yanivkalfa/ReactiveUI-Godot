@@ -130,8 +130,24 @@ static func sidecar_error_diags(guitkx_path: String) -> Array:
 static func has_stale(root: String = "res://") -> bool:
 	if compiler_changed():
 		return true
-	for path in find_all(root):
+	var paths: Array = []
+	var gd_paths: Array = []
+	var sc_paths: Array = []
+	_walk(root, paths, gd_paths, sc_paths)
+	for path in paths:
 		if is_stale(path):
+			return true
+	for sc in sc_paths:
+		if not FileAccess.file_exists(str(sc).trim_suffix(".diags.json")):
+			return true   # sourceless sidecar -- cleanup work for the sweep
+	# Orphaned outputs count as stale work too: a rename/delete must be cleaned up by the next
+	# poll tick, not whenever an unrelated save happens to trigger a sweep. Cheap: the header
+	# read only happens for .gd files that have NO sibling .guitkx (rare).
+	var sources := {}
+	for p in paths:
+		sources[p] = true
+	for gd in gd_paths:
+		if _is_orphaned_output(gd, sources):
 			return true
 	return false
 
@@ -337,11 +353,68 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	var errors: Array = []
 	var held: Array = []
 	var force := compiler_changed()
-	var all_paths := find_all(root)
+	var all_paths: Array = []
+	var gd_candidates: Array = []
+	var sc_candidates: Array = []
+	_walk(root, all_paths, gd_candidates, sc_candidates)
 	# T1.5: resolve the project's component-class universe ONCE per pass so every file's PascalCase
-	# tags are checked against it.
-	var known := known_component_names(all_paths)
+	# tags are checked against it -- and, in the same single read pass, detect DUPLICATE bindings.
+	# GUITKX2106 (0.8.1): copy-pasting a .guitkx creates a second source binding the same class
+	# INSTANTLY (the watch poll compiles the copy before the user renames it, field capture
+	# 2026-07-04) -- two outputs would declare the same class_name and poison global resolution.
+	# Rule: the INCUMBENT (the path whose sibling .gd already exists; else the first
+	# lexicographically) keeps compiling; every other binder errors (sidecar + dock), gets NO
+	# output, and any stale output it has is removed -- the project can never hold two .gd files
+	# for one class, and it converges the moment the copy is renamed.
+	var by_class := {}
+	for p2 in all_paths:
+		var b := _binding_name(FileAccess.get_file_as_string(str(p2)))
+		if b == "":
+			continue
+		if not by_class.has(b):
+			by_class[b] = []
+		(by_class[b] as Array).append(p2)
+	var known: Array = by_class.keys()
+	for gc in ProjectSettings.get_global_class_list():
+		var gn := str(gc.get("class", ""))
+		if gn != "" and not known.has(gn):
+			known.append(gn)
+	var dupe_losers := {}
+	for cls in by_class:
+		var binders: Array = by_class[cls]
+		if binders.size() < 2:
+			continue
+		binders.sort()
+		var winner = null
+		for p3 in binders:
+			if FileAccess.file_exists(gd_path_for(str(p3))):
+				winner = p3
+				break
+		if winner == null:
+			winner = binders[0]
+		for p3 in binders:
+			if p3 != winner:
+				dupe_losers[p3] = { "class": cls, "winner": winner }
 	for path in all_paths:
+		if dupe_losers.has(path):
+			var dl: Dictionary = dupe_losers[path]
+			var dsrc := FileAccess.get_file_as_string(path)
+			if dsrc.is_empty():
+				held.append(path)   # scan-window read flake -- never a verdict
+				continue
+			var dat := maxi(0, dsrc.find(str(dl["class"])))
+			var diag := { "code": "GUITKX2106", "severity": 0, "offset": dat, "length": str(dl["class"]).length(),
+				"message": "class `%s` is already bound by %s -- rename this component (a copied file compiles immediately, so rename before editing further)" % [dl["class"], dl["winner"]] }
+			var dlc := Diag.line_col(dsrc, dat)
+			diag["line"] = dlc["line"]
+			diag["col"] = dlc["col"]
+			write_diags_sidecar(path, dsrc, [diag])
+			var dupe_gd := gd_path_for(path)
+			if FileAccess.file_exists(dupe_gd):
+				DirAccess.remove_absolute(dupe_gd)
+				push_error("[guitkx] %s: duplicate class binding -- removed its %s (rename the component)" % [path, dupe_gd.get_file()])
+			errors.append({ "ok": false, "path": path, "diagnostics": [diag] })
+			continue
 		if not force:
 			# Known-broken content (sidecar hash-match + error): skip the recompile -- the verdict
 			# cannot change -- but keep SURFACING it, so a fresh session's first sweep re-reports.
@@ -362,15 +435,33 @@ static func compile_all(root: String = "res://") -> Dictionary:
 			errors.append(r)
 	if force and held.is_empty():
 		_write_fp_marker()
-	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size() }
+	# Orphan cleanup: generated outputs whose .guitkx was deleted or renamed. Without this, the
+	# stale .gd keeps its class_name registered and (after a rename) DUPLICATES the new file's
+	# class. Runs after the compile loop so freshly-written outputs always have their source.
+	var removed: Array = []
+	var sources := {}
+	for p in all_paths:
+		sources[p] = true
+	for gd in gd_candidates:
+		if _is_orphaned_output(gd, sources):
+			_remove_orphaned_output(gd)
+			removed.append(gd)
+	# Sourceless sidecars leak separately (a GUITKX2106 dupe-loser never had a .gd): the name
+	# pattern `<src>.guitkx.diags.json` is ours by construction, so no header check is needed.
+	for sc in sc_candidates:
+		var sc_src := str(sc).trim_suffix(".diags.json")
+		if not sources.has(sc_src) and not FileAccess.file_exists(sc_src):
+			DirAccess.remove_absolute(str(sc))
+			removed.append(str(sc))
+	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size(), "removed": removed }
 
 ## Recursively collect all .guitkx paths under `dir` (skips Godot's hidden cache dirs).
 static func find_all(dir: String = "res://") -> Array:
 	var out: Array = []
-	_walk(dir, out)
+	_walk(dir, out, [], [])
 	return out
 
-static func _walk(dir: String, out: Array) -> void:
+static func _walk(dir: String, out: Array, gd_out: Array, sc_out: Array) -> void:
 	var d := DirAccess.open(dir)
 	if d == null:
 		return
@@ -388,8 +479,46 @@ static func _walk(dir: String, out: Array) -> void:
 		var p := dir.path_join(name)
 		if d.current_is_dir():
 			if not name.begins_with("."):   # skip .godot, .git, etc.
-				_walk(p, out)
+				_walk(p, out, gd_out, sc_out)
 		elif name.get_extension() == "guitkx":
 			out.append(p)
+		elif name.get_extension() == "gd":
+			gd_out.append(p)   # orphan-cleanup candidates (see _is_orphaned_output)
+		elif name.ends_with(".guitkx.diags.json"):
+			sc_out.append(p)   # sidecar orphans: ours by name pattern, removable when sourceless
 		name = d.get_next()
 	d.list_dir_end()
+
+## True when `gd_path` is one of OUR generated outputs whose source .guitkx no longer exists —
+## the leak a rename/delete used to leave behind forever (field capture 2026-07-04: renaming
+## components/deep_tree.guitkx left components/deep_tree.gd declaring `class_name DemoDeepTree`,
+## a DUPLICATE of the real demo's global class — instant project-wide resolution chaos).
+## The AUTO-GENERATED header marker is the authority: hand-written scripts are never touched.
+## An empty read (the editor scan window) is never treated as an orphan verdict.
+static func _is_orphaned_output(gd_path: String, sources: Dictionary) -> bool:
+	var src := gd_path.get_basename() + ".guitkx"
+	if sources.has(src) or FileAccess.file_exists(src):
+		return false
+	# The marker sits in the first three lines of every generated file; read no more than that —
+	# this runs for every sibling-less .gd (all hand-written scripts) on every sweep/poll.
+	var f := FileAccess.open(gd_path, FileAccess.READ)
+	if f == null:
+		return false
+	var head := ""
+	for _i in 3:
+		head += f.get_line() + "\n"
+		if f.eof_reached():
+			break
+	f.close()
+	if head.strip_edges().is_empty():
+		return false
+	return head.contains("## AUTO-GENERATED from") and head.contains(".guitkx -- do not edit.")
+
+## Delete an orphan's whole output family: the .gd, its .uid, and the vanished source's sidecar
+## (+ .uid). Returns the paths actually removed (for the plugin's dock lines).
+static func _remove_orphaned_output(gd_path: String) -> void:
+	DirAccess.remove_absolute(gd_path)
+	var src := gd_path.get_basename() + ".guitkx"
+	for extra in [gd_path + ".uid", src + ".diags.json", src + ".uid"]:
+		if FileAccess.file_exists(extra):
+			DirAccess.remove_absolute(extra)

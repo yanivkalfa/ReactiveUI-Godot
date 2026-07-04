@@ -1116,6 +1116,66 @@ func _test_codegen() -> void:
 	_check_true(int(hsweep.get("total", -1)) == 1, "sweep reports the tracked total")
 	DirAccess.remove_absolute(hgx + ".diags.json")
 	DirAccess.remove_absolute(hgx)   # (the probe .gd was already T1.1-deleted by the broken compile)
+	# 0.8.1: renaming/deleting a .guitkx must not leak its generated outputs (field capture
+	# 2026-07-04: renaming components/deep_tree.guitkx left an orphaned deep_tree.gd whose
+	# class_name DUPLICATED the real demo's -- project-wide resolution chaos). The sweep removes
+	# outputs whose AUTO-GENERATED source is gone; hand-written .gd files are never touched.
+	var o_dir := "res://tests/__orphan_tmp"
+	DirAccess.make_dir_recursive_absolute(o_dir)
+	var ogx := o_dir + "/orig.guitkx"
+	var of := FileAccess.open(ogx, FileAccess.WRITE)
+	of.store_string("component Orig() {\n\treturn ( <Label text=\"o\" /> )\n}\n")
+	of.close()
+	_check_true(Codegen.compile_file(ogx)["ok"], "orphan fixture compiles")
+	var ogd := Codegen.gd_path_for(ogx)
+	var hand := o_dir + "/handwritten.gd"
+	var hf3 := FileAccess.open(hand, FileAccess.WRITE)
+	hf3.store_string("extends RefCounted\nfunc hi() -> int:\n\treturn 1\n")
+	hf3.close()
+	DirAccess.remove_absolute(ogx)   # the rename/delete: source gone, outputs remain
+	_check_true(Codegen.has_stale(o_dir), "an orphaned output makes the poll predicate hot")
+	var o_sweep := Codegen.compile_all(o_dir)
+	_check_true((o_sweep.get("removed", []) as Array).has(ogd), "sweep reports the removed orphan: " + str(o_sweep))
+	_check_true(not FileAccess.file_exists(ogd), "orphaned .gd deleted")
+	_check_true(not FileAccess.file_exists(ogx + ".diags.json"), "orphaned sidecar deleted")
+	_check_true(FileAccess.file_exists(hand), "hand-written .gd is never touched")
+	_check_true(not Codegen.has_stale(o_dir), "poll predicate settles after the cleanup")
+	DirAccess.remove_absolute(hand)
+	# GUITKX2106: the copy-paste flow -- a SECOND source binding the same class errors with no
+	# output written (the incumbent keeps compiling), so a duplicate class_name can never exist
+	# on disk; the project converges the moment the copy is renamed, and the loser's orphaned
+	# sidecar is swept with it.
+	var dd := "res://tests/__dupe_tmp"
+	DirAccess.make_dir_recursive_absolute(dd)
+	var d_orig := dd + "/a_orig.guitkx"
+	var d_copy := dd + "/z_copy.guitkx"
+	var d_src := "@class_name DupeProbe\n\ncomponent DupeProbe {\n\treturn ( <Label text=\"1\" /> )\n}\n"
+	var df1 := FileAccess.open(d_orig, FileAccess.WRITE)
+	df1.store_string(d_src)
+	df1.close()
+	_check_true(Codegen.compile_file(d_orig)["ok"], "dupe incumbent compiles")
+	var df2 := FileAccess.open(d_copy, FileAccess.WRITE)
+	df2.store_string(d_src)
+	df2.close()
+	var d_sweep := Codegen.compile_all(dd)
+	_check_true((d_sweep["errors"] as Array).size() == 1 and str(((d_sweep["errors"] as Array)[0] as Dictionary)["path"]) == d_copy,
+		"the COPY errors, the incumbent does not: " + str(d_sweep["errors"]))
+	var d_diag: Dictionary = (((d_sweep["errors"] as Array)[0] as Dictionary)["diagnostics"] as Array)[0]
+	_check_true(str(d_diag["code"]) == "GUITKX2106", "the copy is flagged GUITKX2106 (got %s)" % str(d_diag))
+	_check_true(not FileAccess.file_exists(Codegen.gd_path_for(d_copy)), "the copy never produces a .gd -- no duplicate class can exist")
+	_check_true(FileAccess.file_exists(Codegen.gd_path_for(d_orig)), "the incumbent's .gd survives")
+	DirAccess.remove_absolute(d_copy)   # the rename: copy becomes its own class
+	var d_new := dd + "/renamed.guitkx"
+	var df3 := FileAccess.open(d_new, FileAccess.WRITE)
+	df3.store_string("@class_name RenamedProbe\n\ncomponent RenamedProbe {\n\treturn ( <Label text=\"2\" /> )\n}\n")
+	df3.close()
+	var d_sweep2 := Codegen.compile_all(dd)
+	_check_true((d_sweep2["errors"] as Array).is_empty(), "post-rename sweep is clean: " + str(d_sweep2["errors"]))
+	_check_true(FileAccess.file_exists(Codegen.gd_path_for(d_new)), "the renamed component compiles")
+	_check_true(not FileAccess.file_exists(d_copy + ".diags.json"), "the dupe-loser's orphaned sidecar was swept")
+	for lf in [d_orig, Codegen.gd_path_for(d_orig), d_orig + ".diags.json", d_new, Codegen.gd_path_for(d_new), d_new + ".diags.json"]:
+		if FileAccess.file_exists(str(lf)):
+			DirAccess.remove_absolute(str(lf))
 
 func _test_cold_open_recovery() -> void:
 	# R0 (0.6.1): the vocabulary the compiler actually uses is the EMBEDDED const projection

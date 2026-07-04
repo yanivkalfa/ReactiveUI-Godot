@@ -4,6 +4,29 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] — 2026-07-04
+
+**Renaming or deleting a `.guitkx` no longer leaks its generated outputs.** Field capture,
+minutes into 0.8.0: renaming `components/deep_tree.guitkx` left the old generated
+`deep_tree.gd` behind — still declaring `class_name DemoDeepTree`, now a **duplicate** of the
+real demo's global class, breaking resolution project-wide. The sweep (and the watch poll) now
+detect generated outputs whose source is gone — identified by the `AUTO-GENERATED` header, so
+hand-written scripts are never touched — and remove the whole family (`.gd`, sidecar, `.uid`s),
+with a dock line per removal. Empty reads (editor scan window) never count as an orphan verdict.
+
+### Added
+- **`GUITKX2106` — duplicate class binding.** Copy-pasting a `.guitkx` used to poison the
+  project *instantly*: the watch poll compiled the copy before you could rename it, producing a
+  second `.gd` with the same `class_name`. Now the incumbent keeps compiling and the copy
+  errors (`class \`X\` is already bound by <path> — rename this component`) with **no output
+  written** — a duplicate class can never reach disk, and everything converges the moment you
+  rename the copy.
+
+### Changed
+- The in-game reload-failure message now explains the most likely cause: a hot-reloaded file
+  referencing a component **created after the game started** (Godot registers global
+  `class_name`s at launch — restart the run once; documented in the Hot Reload page's limits).
+
 ## [0.8.0] — 2026-07-04
 
 **Runtime Fast Refresh (hot reload) — edit a `.guitkx` while your game runs under F5 and the

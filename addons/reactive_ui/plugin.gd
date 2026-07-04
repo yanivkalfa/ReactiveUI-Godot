@@ -142,6 +142,8 @@ func _compile_all() -> void:
 			if bool(entry.get("gd_ok", true)):
 				hot.append(entry["gd_path"])
 		_hmr_dbg.push_reload(hot)
+	for orphan in res.get("removed", []):
+		print("[guitkx] removed orphaned output %s (its .guitkx is gone -- renamed or deleted)" % orphan)
 	for entry in res["compiled"]:
 		_efs.update_file(entry["gd_path"])
 		# A file that previously errored now compiles clean -> announce it and forget its stale errors

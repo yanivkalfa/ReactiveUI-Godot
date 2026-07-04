@@ -69,9 +69,11 @@ static func apply(paths: Array) -> Dictionary:
 		(scr as GDScript).source_code = src
 		var err: int = (scr as GDScript).reload(true)
 		if err != OK:
-			# The editor gd_parse_ok-gates what it pushes, so this is rare (disk race / manual
-			# edit). Isolate: report and continue with the other files.
-			errors.append("%s: in-place reload failed (err %d) -- fix the file and save again" % [path, err])
+			# The editor gd_parse_ok-gates what it pushes, so a failure here usually means the
+			# file references a GLOBAL CLASS this game has never seen -- Godot registers
+			# class_names at launch, so a component created after F5 can't be resolved until
+			# the next run. Isolate: report and continue with the other files.
+			errors.append("%s: in-place reload failed (err %d) -- if this references a component created after the game started, restart the run (new global classes register at launch); otherwise fix the file and save again" % [path, err])
 			continue
 		changed.append(scr)
 		if _is_module(scr):

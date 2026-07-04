@@ -170,7 +170,16 @@ export const HmrPage: FC = () => (
             </TableRow>
             <TableRow>
               <TableCell>Renaming a component remounts it</TableCell>
-              <TableCell>A new <code>class_name</code> is a new script — fresh state (same as Unity).</TableCell>
+              <TableCell>A new <code>class_name</code> is a new script — fresh state (same as Unity). The old generated <code>.gd</code> is cleaned up by the next sweep (0.8.1).</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Brand-new components need one restart</TableCell>
+              <TableCell>
+                Godot registers global <code>class_name</code>s at launch, so a component
+                created <em>after</em> F5 can&apos;t be resolved by hot-reloaded parents until
+                the next run — the reload reports it and keeps the last good UI. Restart the
+                run once; from then on the new component hot-reloads like any other.
+              </TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>static var</code> in hand-written modules</TableCell>
