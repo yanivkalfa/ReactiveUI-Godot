@@ -426,6 +426,16 @@ func _test_rich_hover() -> void:
 	var out: Variant = ldr._load("res://tests/__no_such_file_ever.guitkx", "", false, 0)
 	_ok(out is Resource, "loader returns an (empty) resource for an unreadable path, never an error")
 
+	# The loader MUST be a global class: the engine drops all custom format loaders on every
+	# script-reload cycle and re-adds only class_name'd ones — the old manually-registered
+	# instance silently died on the first reload after boot (red-✕/invisible-files field saga).
+	var is_global := false
+	for gc in ProjectSettings.get_global_class_list():
+		if str(gc.get("class", "")) == "GuitkxResourceLoader":
+			is_global = true
+	_ok(is_global, "GuitkxResourceLoader is a global class (engine-owned, reload-surviving registration)")
+	_ok(ResourceLoader.exists(TMP_PATH), "engine-registered loader serves ResourceLoader.exists for .guitkx")
+
 	# Rapid-rename hygiene (field capture: "after 1-2 renames it breaks — the .gd stays behind"):
 	# moving a .guitkx must synchronously remove the OLD name's generated outputs, or stacked
 	# renames leave multiple .gd files declaring the same class_name.

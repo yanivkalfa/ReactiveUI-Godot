@@ -1,13 +1,17 @@
 @tool
+class_name GuitkxResourceLoader
 extends ResourceFormatLoader
 ## Loads a .guitkx file as a GuitkxResource so double-clicking it in the FileSystem dock routes to
 ## the reactive_ui_editor main screen (via EditorNode's ResourceLoader.exists() -> _handles/_edit path).
 ##
-## Deliberately has NO class_name: the plugin registers this instance explicitly with
-## ResourceLoader.add_resource_format_loader() in _enter_tree and removes it in _exit_tree, so the
-## `open_guitkx_in_editor` toggle can genuinely turn the double-click routing on and off (a
-## class_name-registered loader would be permanent). Registering a loader makes ResourceLoader.exists()
-## true for .guitkx and is exactly what diverts the double-click away from the built-in text editor.
+## MUST have a class_name. The engine removes ALL custom format loaders on every script-reload
+## cycle (which the reactive_ui watcher triggers on each save, by regenerating a .gd) and re-adds
+## ONLY the ones declared as global classes. The previous manually-registered, class_name-less
+## instance silently died on the first reload after boot — .guitkx loads then failed, the dock
+## cached the failure (red ✕), routing fell through, and with no textfile fallback the files went
+## invisible [field captures across three sessions]. With class_name the engine owns registration
+## and re-adds this loader after every reload; the `open_guitkx_in_editor` toggle now lives in the
+## plugin's _handles() instead of loader add/remove.
 
 const EXT := "guitkx"
 

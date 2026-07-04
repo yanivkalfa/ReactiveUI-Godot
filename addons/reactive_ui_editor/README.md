@@ -66,11 +66,12 @@ double-click) and applies after you **re-enable the addon**.
 | `diagnostics_enabled` | on | live compile + gutter/Problems diagnostics |
 | `completion_enabled` | on | tag / attribute / directive completion |
 | `hover_enabled` | on | tag / attribute / directive / component hover |
-| `open_guitkx_in_editor` | on | double-click a `.guitkx` opens it here |
+| `open_guitkx_in_editor` | on | double-click a `.guitkx` opens it here (off: it opens in the Inspector) |
 | `format_on_save` | on | run the formatter when saving |
 
-Note: while this addon is **disabled**, `.guitkx` files have no in-editor route at all (double-click
-does nothing) — Godot only knows the format through this plugin's resource loader.
+Note: `.guitkx` files stay visible in the FileSystem dock even while this addon is disabled — the
+format's resource loader is a global class the engine registers on its own (that is also what keeps
+it alive across Godot's script-reload cycles).
 
 ## Known limits (vs. the VS Code / VS 2022 extensions)
 

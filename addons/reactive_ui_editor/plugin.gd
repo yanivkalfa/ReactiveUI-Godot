@@ -4,13 +4,13 @@ extends EditorPlugin
 ## compiler diagnostics. Sibling to the reactive_ui runtime addon, which it depends on for the .guitkx
 ## compiler/formatter (global classes RUIGuitkx / RUIGuitkxFormatter).
 ##
-## Lifecycle: registers the reactive_ui_editor/* Project Settings, mounts the editor into the main
-## screen and a "Problems" list into the bottom panel, and (when open_guitkx_in_editor is on) registers
-## a ResourceFormatLoader so double-clicking a .guitkx routes here via _handles/_edit. Everything is
-## torn down in _exit_tree so a disable/re-enable cycle leaves no orphans.
+## Lifecycle: registers the reactive_ui_editor/* Project Settings and mounts the editor into the
+## main screen plus a "Problems" list into the bottom panel. Double-click routing rides the
+## GuitkxResourceLoader global class (engine-registered — see the NOTE in _enter_tree) through
+## _handles/_edit; the open_guitkx_in_editor toggle is enforced in _handles. Everything mounted
+## here is torn down in _exit_tree so a disable/re-enable cycle leaves no orphans.
 
 const PLUGIN_NAME := "ReactiveUITK"
-const LoaderScript := preload("res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd")
 # Preload (own addon, dependency-free): fresh class_names are absent from cold class caches.
 const Deps := preload("res://addons/reactive_ui_editor/rui_editor_deps.gd")
 
@@ -20,7 +20,6 @@ const Deps := preload("res://addons/reactive_ui_editor/rui_editor_deps.gd")
 var _view: Control
 var _problems: Control
 var _problems_button: Button
-var _loader: ResourceFormatLoader
 var _fs_debounce: Timer
 var _deps_ok := false
 
@@ -68,16 +67,15 @@ func _enter_tree() -> void:
 	add_child(_fs_debounce)
 	EditorInterface.get_resource_filesystem().filesystem_changed.connect(_on_fs_changed)
 
-	# open_guitkx_in_editor is structural (it registers a ResourceFormatLoader that changes global
-	# double-click routing), so — unlike highlighting/completion/diagnostics/format — it applies on
-	# plugin reload, not live: flip it, then disable/re-enable the addon for it to take effect.
-	if RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_OPEN_IN_EDITOR):
-		_register_loader()
+	# NOTE: the GuitkxResourceLoader is NOT registered here. It carries a class_name, so the
+	# ENGINE registers it — and, critically, re-adds it after every script-reload cycle (the
+	# engine drops all custom loaders on reload and re-adds only global-class ones; a manually
+	# added instance silently dies on the first reload after boot). The open_guitkx_in_editor
+	# toggle is enforced in _handles() below instead.
 
 func _exit_tree() -> void:
 	if not _deps_ok:
 		return
-	_unregister_loader()
 	var efs := EditorInterface.get_resource_filesystem()
 	if efs.filesystem_changed.is_connected(_on_fs_changed):
 		efs.filesystem_changed.disconnect(_on_fs_changed)
@@ -195,7 +193,9 @@ func _make_visible(visible: bool) -> void:
 		_view.visible = visible
 
 func _handles(object: Object) -> bool:
-	return object is GuitkxResource
+	# The toggle lives HERE (the loader itself is engine-owned and always registered): with
+	# open_guitkx_in_editor off, we decline and the double-click lands in the Inspector.
+	return object is GuitkxResource and RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_OPEN_IN_EDITOR)
 
 func _edit(object: Object) -> void:
 	if object == null:
@@ -224,16 +224,6 @@ func _register_searchable_extension() -> void:
 	if parts.has("guitkx"):
 		parts.erase("guitkx")
 		es.set_setting(key, ",".join(PackedStringArray(parts)))
-
-func _register_loader() -> void:
-	if _loader == null:
-		_loader = LoaderScript.new()
-		ResourceLoader.add_resource_format_loader(_loader)
-
-func _unregister_loader() -> void:
-	if _loader != null:
-		ResourceLoader.remove_resource_format_loader(_loader)
-		_loader = null
 
 func _on_problem_activated(line: int) -> void:
 	EditorInterface.set_main_screen_editor(PLUGIN_NAME)
