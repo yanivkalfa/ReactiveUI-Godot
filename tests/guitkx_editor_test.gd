@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_intelligence_wiring()
 	_test_find_bar()
 	_test_deps_handshake()
+	_test_schema_sync()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -297,3 +298,28 @@ func _test_deps_handshake() -> void:
 	_ok(Deps._version_lt("0.9.9", "0.10.0"), "semver: numeric, not lexicographic")
 	_ok(not Deps._version_lt("0.8.2", "0.8.2"), "semver: equal is not less")
 	_ok(not Deps._version_lt("1.0.0", "0.9.9"), "semver: major dominates")
+
+# W6/F8/F12 — the bundled schema is a hand-synced copy with no generator; these tripwires turn
+# silent drift (between the two shipping editors, and against the compiler's tag universe) into
+# CI failures.
+func _test_schema_sync() -> void:
+	var bundled := FileAccess.get_file_as_string("res://addons/reactive_ui_editor/data/guitkx-schema.json")
+	var grammar := FileAccess.get_file_as_string("res://ide-extensions/grammar/guitkx-schema.json")
+	_ok(bundled != "", "bundled schema readable")
+	if grammar != "":
+		# Byte-identity with the source grammar (the copy the VS Code tooling ships from). The
+		# grammar file is absent from store installs — this arm runs in the repo/CI only.
+		_ok(bundled == grammar,
+			"bundled schema == ide-extensions grammar (resync: copy grammar/guitkx-schema.json into addons/reactive_ui_editor/data/)")
+	var parsed: Variant = JSON.parse_string(bundled)
+	_ok(parsed is Dictionary and (parsed as Dictionary).has("hostElements"), "bundled schema parses")
+	# Every schema host element must exist in the compiler's vocabulary (the source of truth the
+	# watcher compiles with) — a tag added there but not here silently vanishes from completion.
+	var vocab_tags: Dictionary = RUIGuitkx.vocab().get("host_tags", {})
+	_ok(not vocab_tags.is_empty(), "compiler vocabulary host_tags readable")
+	var missing: Array = []
+	for el in (parsed as Dictionary).get("hostElements", []):
+		var tag := str((el as Dictionary).get("tag", ""))
+		if tag != "" and not vocab_tags.has(tag):
+			missing.append(tag)
+	_ok(missing.is_empty(), "schema hostElements ⊆ compiler vocabulary (unknown: %s)" % str(missing))
