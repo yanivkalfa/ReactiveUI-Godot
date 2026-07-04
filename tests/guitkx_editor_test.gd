@@ -326,6 +326,19 @@ func _test_schema_sync() -> void:
 		# grammar file is absent from store installs — this arm runs in the repo/CI only.
 		_ok(bundled == grammar,
 			"bundled schema == ide-extensions grammar (resync: copy grammar/guitkx-schema.json into addons/reactive_ui_editor/data/)")
+	# Store-packaging sync (field feedback on the AL listing): the addon folder carries its own
+	# README/CHANGELOG/LICENSE so installs never touch the user's project root. The CHANGELOG is
+	# a mirror of the root one — this tripwire keeps them byte-identical (resync: cp CHANGELOG.md
+	# addons/reactive_ui/CHANGELOG.md).
+	_ok(FileAccess.get_file_as_string("res://addons/reactive_ui/CHANGELOG.md")
+		== FileAccess.get_file_as_string("res://CHANGELOG.md"),
+		"addon CHANGELOG mirrors the root CHANGELOG")
+	_ok(FileAccess.file_exists("res://addons/reactive_ui/README.md"), "addon carries its own README")
+	_ok(FileAccess.file_exists("res://addons/reactive_ui/LICENSE"), "addon carries its own LICENSE")
+	_ok(FileAccess.file_exists("res://addons/reactive_ui_editor/README.md")
+		and FileAccess.file_exists("res://addons/reactive_ui_editor/LICENSE"),
+		"editor addon carries its own README + LICENSE")
+
 	var parsed: Variant = JSON.parse_string(bundled)
 	_ok(parsed is Dictionary and (parsed as Dictionary).has("hostElements"), "bundled schema parses")
 	# Every schema host element must exist in the compiler's vocabulary (the source of truth the
