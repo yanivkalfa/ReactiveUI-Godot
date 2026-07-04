@@ -127,7 +127,7 @@ static func _load_vocabulary() -> Dictionary:
 ## .guitkx bindings + global script classes) -- the plugin/codegen supplies them so <UnknownComp/>
 ## errors (T1.5). Empty (headless/test callers) = the PascalCase check is skipped; lowercase tags
 ## are always checked against the vocabulary.
-static func compile(source: String, basename: String = "Component", known_components: Array = []) -> Dictionary:
+static func compile(source: String, basename: String = "Component", known_components: Array = [], component_paths: Dictionary = {}) -> Dictionary:
 	if vocab().is_empty():
 		# The compiler ITSELF is not ready (vocabulary unreadable — e.g. the editor's first-scan
 		# environment). `env_error` distinguishes this from a source error: callers must keep any
@@ -140,6 +140,12 @@ static func compile(source: String, basename: String = "Component", known_compon
 	var known := {}
 	for kc in known_components:
 		known[str(kc)] = true
+	# guitkx-bound components also carry their generated-.gd path (value = String instead of
+	# true): the emitter lowers their tags through the lazy path resolver (V.comp) so the
+	# output never depends on the global class registry. Hand-written class_name scripts stay
+	# `true` and lower to the classic global-name reference.
+	for cls in component_paths:
+		known[str(cls)] = str(component_paths[cls])
 	var uss_path := ""
 	var uss_at := -1
 	# 1. Preamble: optional `@class_name X` (other directives skipped for the skeleton).
@@ -1780,9 +1786,23 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			args += (", []" if children_src == "[]" else "") + ", " + key_expr
 		return "V.%s(%s)" % [factory, args]
 	else:
-		# child component -> V.fc(Tag.render, ...); a module-local component is a bare sibling
-		# static func -> V.fc(Tag, ...) (see _compile_module).
-		var fn := tag if (ctx.get("module_comps", {}) as Dictionary).has(tag) else (tag + ".render")
+		# child component reference, by precedence:
+		#   module-local        -> bare sibling static func:      V.fc(Tag, ...)
+		#   guitkx-bound        -> lazy PATH resolver:            V.fc(V.comp("res://....gd"), ...)
+		#   hand-written class  -> classic global-name reference: V.fc(Tag.render, ...)
+		# The path form is what makes generated code registry-independent: it parses whether or
+		# not the class is registered yet (new components mid-session, game-launch cache races,
+		# the editor's own rescan lag) -- the load is lazy and cached in V, so cycles and
+		# self-recursion are fine too.
+		var fn: String
+		if (ctx.get("module_comps", {}) as Dictionary).has(tag):
+			fn = tag
+		else:
+			var kv = (ctx.get("known_components", {}) as Dictionary).get(tag)
+			if kv is String:
+				fn = "V.comp(%s)" % _gd_str(str(kv))
+			else:
+				fn = tag + ".render"
 		var args2 := "%s, %s" % [fn, props_dict]
 		if children_src != "[]":
 			args2 += ", " + children_src

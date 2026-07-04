@@ -269,8 +269,48 @@ static func _binding_name(src: String) -> String:
 ## file per sweep -- the per-file GUITKX2507 env_error result still records the hold for callers.
 static var _env_hold := false
 
+## One read pass over `paths`: every class binding, the winners map (class -> generated .gd
+## path -- doubles as the HMR link table AND the emitter's V.comp path source), the dupe losers
+## (GUITKX2106), and the full known-component name list (bindings + project global classes).
+## Shared by compile_all and the build/CI helpers so every caller emits IDENTICAL output.
+static func project_bindings(paths: Array) -> Dictionary:
+	var by_class := {}
+	for p in paths:
+		var b := _binding_name(FileAccess.get_file_as_string(str(p)))
+		if b == "":
+			continue
+		if not by_class.has(b):
+			by_class[b] = []
+		(by_class[b] as Array).append(p)
+	var known: Array = by_class.keys()
+	for gc in ProjectSettings.get_global_class_list():
+		var gn := str(gc.get("class", ""))
+		if gn != "" and not known.has(gn):
+			known.append(gn)
+	var dupe_losers := {}
+	var bindings := {}
+	for cls in by_class:
+		var binders: Array = by_class[cls]
+		binders.sort()
+		var winner = binders[0]
+		if binders.size() > 1:
+			winner = null
+			for p3 in binders:
+				if FileAccess.file_exists(gd_path_for(str(p3))):
+					winner = p3
+					break
+			if winner == null:
+				winner = binders[0]
+			for p3 in binders:
+				if p3 != winner:
+					dupe_losers[p3] = { "class": cls, "winner": winner }
+		bindings[cls] = gd_path_for(str(winner))
+	return { "known": known, "bindings": bindings, "losers": dupe_losers }
+
 ## Compile one .guitkx and write its sibling .gd. Returns { ok, path, gd_path?, diagnostics?/error? }.
-static func compile_file(guitkx_path: String, known_components: Array = []) -> Dictionary:
+## `component_paths` (class -> generated .gd) makes the emitter reference guitkx siblings by
+## PATH (V.comp) -- pass project_bindings()["bindings"] for output identical to the watcher's.
+static func compile_file(guitkx_path: String, known_components: Array = [], component_paths: Dictionary = {}) -> Dictionary:
 	if not FileAccess.file_exists(guitkx_path):
 		return { "ok": false, "path": guitkx_path, "error": "file not found" }
 	var src := FileAccess.get_file_as_string(guitkx_path)
@@ -287,7 +327,7 @@ static func compile_file(guitkx_path: String, known_components: Array = []) -> D
 			{ "code": "GUITKX2507", "severity": 0, "message": "source read came back empty (editor scan window) -- retrying", "offset": -1, "length": 0 },
 		] }
 	var basename := guitkx_path.get_file().get_basename()
-	var r: Dictionary = Compiler.compile(src, basename, known_components)
+	var r: Dictionary = Compiler.compile(src, basename, known_components, component_paths)
 	if bool(r.get("env_error", false)):
 		# The compiler environment isn't ready (vocabulary unreadable — e.g. the editor's first
 		# filesystem scan). NOT a source regression: keep the existing sibling .gd AND the last
@@ -366,37 +406,10 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	# lexicographically) keeps compiling; every other binder errors (sidecar + dock), gets NO
 	# output, and any stale output it has is removed -- the project can never hold two .gd files
 	# for one class, and it converges the moment the copy is renamed.
-	var by_class := {}
-	for p2 in all_paths:
-		var b := _binding_name(FileAccess.get_file_as_string(str(p2)))
-		if b == "":
-			continue
-		if not by_class.has(b):
-			by_class[b] = []
-		(by_class[b] as Array).append(p2)
-	var known: Array = by_class.keys()
-	for gc in ProjectSettings.get_global_class_list():
-		var gn := str(gc.get("class", ""))
-		if gn != "" and not known.has(gn):
-			known.append(gn)
-	var dupe_losers := {}
-	var bindings := {}   # class -> generated .gd path (the winner's) -- the HMR push ships this
-	for cls in by_class:
-		var binders: Array = by_class[cls]
-		binders.sort()
-		var winner = binders[0]
-		if binders.size() > 1:
-			winner = null
-			for p3 in binders:
-				if FileAccess.file_exists(gd_path_for(str(p3))):
-					winner = p3
-					break
-			if winner == null:
-				winner = binders[0]
-			for p3 in binders:
-				if p3 != winner:
-					dupe_losers[p3] = { "class": cls, "winner": winner }
-		bindings[cls] = gd_path_for(str(winner))
+	var pb := project_bindings(all_paths)
+	var known: Array = pb["known"]
+	var dupe_losers: Dictionary = pb["losers"]
+	var bindings: Dictionary = pb["bindings"]   # class -> .gd path: V.comp emission + HMR link table
 	for path in all_paths:
 		if dupe_losers.has(path):
 			var dl: Dictionary = dupe_losers[path]
@@ -426,7 +439,7 @@ static func compile_all(root: String = "res://") -> Dictionary:
 				continue
 			if not is_stale(path):
 				continue
-		var r := compile_file(path, known)
+		var r := compile_file(path, known, bindings)
 		if r["ok"]:
 			# gd_ok: the generated script also PARSES (the throwaway GDScript.new check). The
 			# HMR push filters on it -- never hot-load a script the engine would reject.

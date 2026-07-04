@@ -166,6 +166,7 @@ const DATA: Dictionary = {
 		"color_picker",
 		"color_picker_button",
 		"color_rect",
+		"comp",
 		"control",
 		"error_boundary",
 		"fc",

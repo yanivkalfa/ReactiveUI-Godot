@@ -22,6 +22,15 @@ with a dock line per removal. Empty reads (editor scan window) never count as an
   written** — a duplicate class can never reach disk, and everything converges the moment you
   rename the copy.
 
+- **Generated code no longer depends on the global class registry — components reference each
+  other by path.** `<Card />` now compiles to `V.fc(V.comp("res://ui/card.gd"), …)` — a lazy,
+  cached, path-based resolver — instead of `Card.render`. This removes an entire failure class
+  at the root: a component created seconds ago mid-play-session, a game launched before the
+  class existed, the editor's own rescan lag, and Godot's built-in "Synchronize Script Changes"
+  loading a young reference — none of them can choke anymore, because the generated script
+  parses with zero registry knowledge. Lazy loading also makes self-recursive and cyclic
+  component graphs safe by construction. Hand-written `class_name` components and user
+  expressions (`DemoHello.render` in your own code) keep the classic global-name form.
 - **Brand-new components hot-link into a running game.** Godot registers global `class_name`s
   at launch, so a component created *after* F5 is unresolvable by name — the hot reload now
   detects the failure and retries with the class **linked by path** (an injected `preload`
