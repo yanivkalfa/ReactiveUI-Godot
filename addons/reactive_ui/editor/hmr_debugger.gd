@@ -19,10 +19,16 @@ extends EditorDebuggerPlugin
 func push_reload(gd_paths: Array, bindings: Dictionary = {}) -> void:
 	if gd_paths.is_empty():
 		return
+	var pushed := 0
 	for s in get_sessions():
 		var session := s as EditorDebuggerSession
 		if session != null and session.is_active():
 			session.send_message("rui_hmr:reload", [gd_paths, bindings])
+			pushed += 1
+	# ALWAYS say what happened -- "-> 0 session(s)" means no debugger-attached game was running
+	# (not launched via F5, or already closed), which is otherwise indistinguishable from a
+	# push that vanished (field capture 2026-07-04: a silent log hid exactly this question).
+	print("[guitkx] hmr push: %d script(s) -> %d session(s)" % [gd_paths.size(), pushed])
 
 func _has_capture(capture: String) -> bool:
 	return capture == "rui_hmr"
