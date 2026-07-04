@@ -144,6 +144,20 @@ corpus (parse trees, semantic-token spans, format output, ref scans).
   (`FileAccess` + `JSON.parse_string`). Wire richer completion/hover/goto/refs/rename for
   tags/attrs/directives/components into the `CodeEdit` hooks Phase 0 already exposes + the Problems panel.
   Validate every module against the shared golden-fixture corpus.
+
+  **Phase 1 status (2026-07-02) — completion + hover landed & tested.** New `addons/reactive_ui_editor/lsp/`:
+  `guitkx_schema.gd` (grammar vocab bundled at `data/guitkx-schema.json`, per-tag props/events/signals from
+  **live `ClassDB`** — no `godot-control.json` dump needed since the addon runs in-engine),
+  `guitkx_context.gd` (the 5-context classifier: tagName/attrName/attrValue/directive/markup/embedded),
+  `guitkx_workspace.gd` (project `.guitkx` component index → file+offset), `guitkx_completion.gd` +
+  `guitkx_hover.gd` (UI-free providers). Wired into `guitkx_code_edit.gd`: context-aware completion (host
+  tags + user components + per-tag props/events/structural attrs + directives) replacing the Phase-0
+  dump-all-Controls stub, reindex-on-save, and `symbol_hovered`→tooltip hover (new `KEY_HOVER` setting,
+  guarded for pre-4.4). 39 headless assertions green (`tests/guitkx_lsp_test.gd`) incl. live-ClassDB
+  property/event resolution and `<`-as-comparison. **Remaining Phase 1:** go-to-definition + find-references
+  + rename wiring (workspace index already maps tag→offset; `refs.ts` scan port pending), semantic-tokens
+  overlay, and the shared golden-fixture cross-check (`markup-cases`/`formatter-cases`). Interactive check
+  still owed: the hover *tooltip display* is logic-tested but its on-screen rendering needs a live editor.
 - **Phase 2 — the gdext crate (~1–1.5 wk).** Add `bindings/gdext` (crate-type `cdylib`, `publish=false`) to
   the analyzer repo, depending on `gdscript-session` + the `godot` crate. `GdscriptAnalyzer #[class(base=RefCounted, tool, init)]`
   holding a `Session`; one `#[func]` per method; the `serde_json::Value ↔ Variant` shim; bundle

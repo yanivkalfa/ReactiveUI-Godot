@@ -174,6 +174,8 @@ func _on_save_pressed() -> void:
 	f.close()
 	# Let the reactive_ui watcher pick up the change and regenerate the sibling .gd.
 	EditorInterface.get_resource_filesystem().scan()
+	# Keep the component index fresh so renamed/added components complete without a full rescan.
+	GuitkxWorkspace.reindex(_current_path, text)
 	_refresh_diagnostics()
 
 func _on_format_pressed() -> void:

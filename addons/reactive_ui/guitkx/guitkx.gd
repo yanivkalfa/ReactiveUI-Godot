@@ -63,7 +63,15 @@ static func v_factories() -> Array:
 static var _vocab_hold := false
 
 static func _load_vocabulary() -> Dictionary:
-	if _VOCAB_PATH == _VOCAB_PATH_DEFAULT:
+	# _VOCAB_PATH is a `static var`, and static INITIALIZERS do not reliably run in the editor:
+	# during the editor's early script indexing statics can read as bare type defaults ("" here),
+	# which used to divert production into the test-seam file branch below -- reading a file at
+	# path "" -- and hold EVERY compile of EVERY editor session forever, while headless runs
+	# (statics initialized) stayed healthy. Field capture 2026-07-04: an instrumented editor run
+	# printed `path=<> len=0 is_default=false`; THE root cause of "Godot never recompiles".
+	# An empty path therefore means DEFAULT: serve the embedded const, touch no file. Only an
+	# explicit non-empty override (the test seam) reads a file.
+	if _VOCAB_PATH.is_empty() or _VOCAB_PATH == _VOCAB_PATH_DEFAULT:
 		# Production: the embedded const — no file read to flake, so the env hold below can no
 		# longer trigger from a cold editor open. The shape check still runs: a hand-edited or
 		# stale .gen.gd is REAL breakage and must fail as loudly as a wrong-shape JSON did.
@@ -1482,9 +1490,15 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 	if not has_ret:
 		# "JSX everywhere" (Phase D): value markup in SETUP (`var bla = ( <Box /> )`) splices in
 		# place; hoists from directives nested in that markup emit first at func-body level.
+		# SPLICE FIRST, alias SECOND: the splice's markup parse carries diagnostic offsets, and
+		# they must be relative to the ORIGINAL source -- aliasing first inserted 6 chars per
+		# `Hooks.` prefix and shifted every later diagnostic (field capture 2026-07-04: a 0105
+		# anchored 12 chars late, on the CLOSING tag, after two useState aliases). Aliasing the
+		# spliced output is also safer: markup text children are string literals in the generated
+		# code, which the lexer-aware aliaser skips (hook calls in markup exprs are 0016 errors).
 		var saved_sl: Array = ctx["lines"]
 		ctx["lines"] = []
-		var spliced_setup := _splice_expr_markup(_apply_hook_aliases(setup, skip_hooks), ctx)
+		var spliced_setup := _apply_hook_aliases(_splice_expr_markup(setup, ctx), skip_hooks)
 		for h in ctx["lines"]:
 			out += str(h) + "\n"
 		ctx["lines"] = saved_sl
@@ -1508,7 +1522,7 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 				var sb2 := _swap_base(ctx, _cbase(base, int(part["from"])))
 				var saved_gl2: Array = ctx["lines"]
 				ctx["lines"] = []
-				var spliced2 := _splice_expr_markup(_apply_hook_aliases(seg, skip_hooks), ctx)
+				var spliced2 := _apply_hook_aliases(_splice_expr_markup(seg, ctx), skip_hooks)   # splice first -- see the setup splice note
 				for h2 in ctx["lines"]:
 					out += str(h2) + "\n"
 				ctx["lines"] = saved_gl2

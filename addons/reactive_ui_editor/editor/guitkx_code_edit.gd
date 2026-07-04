@@ -11,7 +11,6 @@ signal gutter_diagnostic_clicked(line: int, record: Variant)
 var diag_gutter: int = -1
 
 var _highlighter: GuitkxCodeHighlighter
-var _control_tags: PackedStringArray = PackedStringArray()
 var _theme_source: Control
 
 func _ready() -> void:
@@ -44,11 +43,15 @@ func _ready() -> void:
 	set_gutter_clickable(diag_gutter, true)
 	gutter_clicked.connect(_on_gutter_clicked)
 
-	# Minimal completion for host tags. Enabled at the engine level so _request_code_completion always
-	# fires; the KEY_COMPLETION toggle is honoured live inside that override.
+	# Markup completion (Phase 1). Trigger on `<` (tags), `@` (directives) and space (attributes); the
+	# context classifier decides what to offer per caret position. KEY_COMPLETION is honoured live.
 	code_completion_enabled = true
-	code_completion_prefixes = PackedStringArray(["<"])
-	_control_tags = ClassDB.get_inheriters_from_class("Control")
+	code_completion_prefixes = PackedStringArray(["<", "@", " "])
+
+	# Markup hover: Godot 4.4+ CodeEdit emits `symbol_hovered` while the mouse rests on a symbol. We
+	# turn tags/attrs/directives into a tooltip. Guarded so it no-ops on engine builds without it.
+	if has_signal("symbol_hovered") and not is_connected("symbol_hovered", _on_symbol_hovered):
+		connect("symbol_hovered", _on_symbol_hovered)
 
 	# Refresh highlight colours when the editor theme changes.
 	_theme_source = EditorInterface.get_base_control()
@@ -74,18 +77,41 @@ func _on_gutter_clicked(line: int, gutter: int) -> void:
 	if gutter == diag_gutter:
 		gutter_diagnostic_clicked.emit(line, get_line_gutter_metadata(line, diag_gutter))
 
-# Suggest Control-derived host tags immediately after a `<`.
+# Context-aware markup completion: tag names (host + user components), per-tag attributes / events,
+# and directives. The logic lives in the UI-free GuitkxCompletion provider (unit-tested headlessly);
+# this override just maps its items onto CodeEdit options. Attribute-value / embedded contexts yield
+# nothing in Phase 1 (the analyzer layer owns those). [plans/GODOT_ANALYZER_INTEGRATION_PLAN.md §7]
 func _request_code_completion(_force: bool) -> void:
 	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_COMPLETION):
 		return
-	var line := get_line(get_caret_line())
-	var before := line.substr(0, get_caret_column())
-	var lt := before.rfind("<")
-	if lt == -1 or before.rfind(">") > lt:
+	var text := get_text()
+	var off := GuitkxContext.offset_of(text, get_caret_line(), get_caret_column())
+	var items := GuitkxCompletion.for_caret(text, off)
+	if items.is_empty():
 		return
-	var seg := before.substr(lt + 1)
-	if seg.contains(" ") or seg.contains("/"):
-		return  # past the tag name — attributes are out of scope for Phase 1
-	for tag in _control_tags:
-		add_code_completion_option(CodeEdit.KIND_CLASS, tag, tag)
+	for it in items:
+		add_code_completion_option(_kind_of(str(it["kind"])), str(it["display"]), str(it["insert"]))
 	update_code_completion_options(true)
+
+func _kind_of(kind: String) -> int:
+	match kind:
+		GuitkxCompletion.CLASS:
+			return CodeEdit.KIND_CLASS
+		GuitkxCompletion.SIGNAL:
+			return CodeEdit.KIND_SIGNAL
+		GuitkxCompletion.MEMBER:
+			return CodeEdit.KIND_MEMBER
+		_:
+			return CodeEdit.KIND_PLAIN_TEXT
+
+# Markup hover -> native tooltip. GuitkxHover owns the (tested) logic; here we just render it plain.
+func _on_symbol_hovered(_symbol: String, line: int, column: int) -> void:
+	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_HOVER):
+		tooltip_text = ""
+		return
+	var text := get_text()
+	tooltip_text = _plain_md(GuitkxHover.for_caret(text, GuitkxContext.offset_of(text, line, column)))
+
+# Strip the tiny Markdown subset our hover uses (`code`, **bold**) for a native plain-text tooltip.
+func _plain_md(md: String) -> String:
+	return md.replace("`", "").replace("**", "")

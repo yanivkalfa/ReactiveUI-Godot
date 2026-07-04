@@ -111,6 +111,24 @@ func _test_jsx_value() -> void:
 	print("--- generated (JsxVal) ---\n" + gd + "----------------------------")
 	_check(gd, "if cond else", "ternary preserved")
 	_check_true(not ("<Label" in gd), "no raw <Label markup left in expression")
+	# 0.7.2 anchor regression (field capture 2026-07-04): diagnostics from setup-VALUE markup must
+	# anchor in the ORIGINAL source. Aliasing used to run BEFORE the splice, so every inserted
+	# `Hooks.` prefix (6 chars) shifted every later diagnostic -- two useState calls pushed a 0105
+	# onto the CLOSING tag (the dock said 8:33 instead of 8:21). Splice first, alias second.
+	var a_src := "component AnchorProbe() {\n" + \
+		"\tvar n = useState(0)\n" + \
+		"\tvar m = useState(1)\n" + \
+		"\tvar c = (<Nope></Nope>)\n" + \
+		"\treturn ( <VBox>{ c }<Label text={ str(n[0] + m[0]) } /></VBox> )\n}\n"
+	var ra := RUIGuitkx.compile(a_src, "AnchorProbe", ["DemoBox"])
+	_check_true(not ra["ok"], "unknown component in a setup value fails the compile")
+	var a_found := false
+	for da in (ra["diagnostics"] as Array):
+		if str((da as Dictionary).get("code", "")) == "GUITKX0105":
+			a_found = true
+			_check_true(int((da as Dictionary).get("offset", -1)) == a_src.find("<Nope>") + 1,
+				"0105 anchors on the OPENING tag name in the original source (got %d, want %d)" % [int((da as Dictionary).get("offset", -1)), a_src.find("<Nope>") + 1])
+	_check_true(a_found, "0105 reported for the unknown setup-value component")
 	_check(gd, "if (cond) else null", "short-circuit `and` desugared to ternary")
 	_check(gd, "V.label({ \"text\": it })", "map-lambda markup lowered")
 	# runtime: cond=true -> Label x + (map a,b) = 3 Labels, + 1 Button (short-circuit)
@@ -1105,6 +1123,17 @@ func _test_cold_open_recovery() -> void:
 		"guitkx_vocabulary.gen.gd in sync with vocabulary.json (regenerate: dev/gen_vocabulary.gd)")
 	RUIGuitkx._VOCAB = {}
 	_check_true(not RUIGuitkx.vocab().is_empty(), "vocab() serves the embedded const at the default path")
+	# Editor static-init reality (2026-07-04, THE "Godot never recompiles" root cause): during the
+	# editor's early script indexing `static var` INITIALIZERS may not have run, so _VOCAB_PATH
+	# reads as "" (String type default) -- which used to fall into the test-seam file branch, read
+	# a file at path "", and hold every compile of every editor session forever. Headless runs
+	# initialize statics and were always healthy -- exactly why no suite ever caught it. An empty
+	# path must therefore behave as DEFAULT (embedded const, no file read, no hold).
+	RUIGuitkx._VOCAB = {}
+	RUIGuitkx._VOCAB_PATH = ""
+	_check_true(not RUIGuitkx.vocab().is_empty(), "an uninitialized-static ('') vocab path serves the embedded const")
+	RUIGuitkx._VOCAB_PATH = RUIGuitkx._VOCAB_PATH_DEFAULT
+	RUIGuitkx._VOCAB = {}
 	# R2+R3 (0.6.1): a sweep hitting the unreadable-vocabulary environment reports those files as
 	# HELD -- not errors (no per-file dock line; the loader's hold warning announced the episode) --
 	# and must NOT consume the compiler-changed fingerprint marker: a held forced sweep compiled

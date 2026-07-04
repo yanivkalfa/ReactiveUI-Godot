@@ -1,0 +1,71 @@
+{
+  "version": "1.0",
+  "description": "GUITKX element and directive schema for IDE tooling. Per-property completion is resolved from a bundled ClassDB dump against each element's godotClass; this file catalogs the structural attributes, the host-element tag map, and common events. Event handlers use React-style camelCase names (onClick, onChange, onSubmit, onFocus, onBlur, onPointerDown/Up/Enter/Leave, onResize; onChange is polymorphic per control) that bind to the underlying Godot signal; the native on_<signal> spelling is also accepted as an escape hatch to any signal. See addons/reactive_ui/core/host_config.gd.",
+  "preambleDirectives": [
+    { "name": "@class_name", "description": "Override the generated class name (defaults to the component/file name)." },
+    { "name": "@uss", "description": "Associate a Godot Theme/StyleBox resource path for styling (reserved)." }
+  ],
+  "declarations": [
+    { "keyword": "component", "description": "A function component. Compiles to `static func render(props, children) -> RUIVNode`." },
+    { "keyword": "hook", "description": "A reusable hook. Compiles to a static function; hook calls (use_*) are auto-prefixed to Hooks.*" },
+    { "keyword": "module", "description": "Group multiple components/hooks in one file (compiles to one .gd class with a static func per declaration)." }
+  ],
+  "controlFlow": [
+    { "directive": "@if", "form": "@if (expr) { markup }", "description": "Conditional. Renders the branch whose expr is truthy; a missed @if with no @else renders nothing." },
+    { "directive": "@elif", "form": "@elif (expr) { markup }", "description": "Else-if branch of an @if." },
+    { "directive": "@else", "form": "@else { markup }", "description": "Fallback branch of an @if." },
+    { "directive": "@for", "form": "@for (x in xs) { markup }", "description": "Loop. Each iteration contributes its markup; give the body element a `key` for stable reconciliation." },
+    { "directive": "@while", "form": "@while (expr) { markup }", "description": "While loop producing markup." },
+    { "directive": "@match", "form": "@match (expr) { @case (v) { } @default { } }", "description": "Pattern match on expr." },
+    { "directive": "@case", "form": "@case (value) { markup }", "description": "A match arm." },
+    { "directive": "@default", "form": "@default { markup }", "description": "The default match arm (GDScript `_`)." }
+  ],
+  "structuralAttributes": [
+    { "name": "key", "type": "Variant", "description": "Reconciler key. Stabilises element identity across re-renders and reorders." },
+    { "name": "ref", "type": "Callable|Array", "description": "Forwarded ref. Receives the underlying Godot Control once mounted." },
+    { "name": "style", "type": "Dictionary", "description": "Inline style overrides (theme/StyleBox properties), applied via the host adapter." }
+  ],
+  "commonAttributes": [
+    { "name": "name", "type": "String", "description": "Node name." },
+    { "name": "visible", "type": "bool", "description": "Whether the Control is visible." },
+    { "name": "tooltip_text", "type": "String", "description": "Tooltip shown on hover." },
+    { "name": "mouse_filter", "type": "int", "description": "Control.MouseFilter (0 STOP, 1 PASS, 2 IGNORE)." },
+    { "name": "size_flags_horizontal", "type": "int", "description": "Container size flags (horizontal)." },
+    { "name": "size_flags_vertical", "type": "int", "description": "Container size flags (vertical)." },
+    { "name": "custom_minimum_size", "type": "Vector2", "description": "Minimum size hint." }
+  ],
+  "hostElements": [
+    { "tag": "Control", "godotClass": "Control", "factory": "V.control" },
+    { "tag": "VBox", "godotClass": "VBoxContainer", "factory": "V.vbox" },
+    { "tag": "HBox", "godotClass": "HBoxContainer", "factory": "V.hbox" },
+    { "tag": "Grid", "godotClass": "GridContainer", "factory": "V.grid" },
+    { "tag": "Margin", "godotClass": "MarginContainer", "factory": "V.margin" },
+    { "tag": "Panel", "godotClass": "PanelContainer", "factory": "V.panel" },
+    { "tag": "Center", "godotClass": "CenterContainer", "factory": "V.center" },
+    { "tag": "Scroll", "godotClass": "ScrollContainer", "factory": "V.scroll" },
+    { "tag": "Tabs", "godotClass": "TabContainer", "factory": "V.tabs" },
+    { "tag": "Label", "godotClass": "Label", "factory": "V.label" },
+    { "tag": "RichText", "godotClass": "RichTextLabel", "factory": "V.rich_text" },
+    { "tag": "ColorRect", "godotClass": "ColorRect", "factory": "V.color_rect" },
+    { "tag": "TextureRect", "godotClass": "TextureRect", "factory": "V.texture_rect" },
+    { "tag": "HSeparator", "godotClass": "HSeparator", "factory": "V.h_separator" },
+    { "tag": "VSeparator", "godotClass": "VSeparator", "factory": "V.v_separator" },
+    { "tag": "Button", "godotClass": "Button", "factory": "V.button", "events": ["onClick", "onChange", "onPointerDown", "onPointerUp"] },
+    { "tag": "CheckBox", "godotClass": "CheckBox", "factory": "V.check_box", "events": ["onChange", "onClick"] },
+    { "tag": "CheckButton", "godotClass": "CheckButton", "factory": "V.check_button", "events": ["onChange"] },
+    { "tag": "OptionButton", "godotClass": "OptionButton", "factory": "V.option_button", "events": ["onChange"] },
+    { "tag": "MenuButton", "godotClass": "MenuButton", "factory": "V.menu_button" },
+    { "tag": "LinkButton", "godotClass": "LinkButton", "factory": "V.link_button", "events": ["onClick"] },
+    { "tag": "TextureButton", "godotClass": "TextureButton", "factory": "V.texture_button", "events": ["onClick"] },
+    { "tag": "LineEdit", "godotClass": "LineEdit", "factory": "V.line_edit", "events": ["onChange", "onSubmit"] },
+    { "tag": "TextEdit", "godotClass": "TextEdit", "factory": "V.text_edit", "events": ["onChange"] },
+    { "tag": "CodeEdit", "godotClass": "CodeEdit", "factory": "V.code_edit" },
+    { "tag": "SpinBox", "godotClass": "SpinBox", "factory": "V.spin_box", "events": ["onChange"] },
+    { "tag": "HSlider", "godotClass": "HSlider", "factory": "V.h_slider", "events": ["onChange"] },
+    { "tag": "VSlider", "godotClass": "VSlider", "factory": "V.v_slider", "events": ["onChange"] },
+    { "tag": "ProgressBar", "godotClass": "ProgressBar", "factory": "V.progress_bar" },
+    { "tag": "ItemList", "godotClass": "ItemList", "factory": "V.item_list", "events": ["onChange"] },
+    { "tag": "Tree", "godotClass": "Tree", "factory": "V.tree", "events": ["onChange"] },
+    { "tag": "TabBar", "godotClass": "TabBar", "factory": "V.tab_bar", "events": ["onChange"] }
+  ]
+}

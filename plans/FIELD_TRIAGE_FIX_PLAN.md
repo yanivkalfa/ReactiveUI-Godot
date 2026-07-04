@@ -386,8 +386,69 @@ Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, 
   - Follow-up (parked, needs a live-editor capture): if the next session's Output shows NO sweep
     line, the plugin isn't loading at all in the user's editor — a different hunt (plugin-load
     error higher in the Output), now unambiguously diagnosable.
+- **R3.3 — THE root cause, found and fixed (addon 0.7.2, branch `fix/editor-static-vocab-path`).** ✅
+  The user's follow-up ("saving repeatedly, several times") killed the race theories; the
+  worktree's `--editor --quit` capture showed the plugin LOADING fine and every compile getting
+  HELD on "vocabulary.json could not be read" — at the DEFAULT path, where the embedded const
+  should have served. Instrumented editor run proved it: `_VOCAB_PATH` printed `<> len=0
+  is_default=false` — **GDScript `static var` initializers do not run during the editor's early
+  script indexing**, so production fell into the test-seam file branch, read path `""`, and held
+  every compile of every editor session forever. Headless (tests/CI/probes) always initialize
+  statics — exactly why nothing ever caught it, all the way back to the 0.6.0 "vocab read wall"
+  (the 0.6.1 const embedding was right, but the branch guarding it was itself a static var).
+  Fix: an empty path means DEFAULT (const, no read, no hold) + regression test pinning `""`;
+  `_on_fs_changed` now ignores mid-scan events (flaky reads, unregistered classes) like the poll
+  and initial sweep already did; held-only retries no longer print a summary per retry. Verified
+  end-to-end: the same instrumented editor run compiles all 42 files with the fix in place.
+  Also verified: the user's `var component = (<VdsBs></VdsBs>)` field case compiles to a clean
+  `GUITKX0105: unknown element <VdsBs>` — spliced setup markup IS compile-validated; only the
+  LIVE (as-you-type) tier doesn't scan setup-value markup yet (parked below).
+- **R3.4 — post-save sidecar verdicts never reached VS Code (ext/lsp 0.8.2).** ✅
+  Field-confirmed right after R3.3: the watcher now compiles on save (~2s poll) and the dock
+  shows `effect_order.guitkx:8:33: GUITKX0105 …` — but VS Code stayed squiggle-free. The server
+  watched `**/*.gd`, `**/*.guitkx`, `project.godot` — NOT the `.diags.json` sidecars — so a
+  verdict landing seconds after the save had no event to trigger a re-read; the save-time
+  validation saw the previous sidecar, and the next keystroke hash-diverges the buffer (which
+  suppresses compiler entries by design). Compiler-only errors were structurally invisible.
+  Fix: watch `**/*.guitkx.diags.json` (dynamic registration + native fallback share
+  handleWatchedPath) and re-validate the matching open document on write AND delete. Smoke
+  check: a sidecar write with only a `didChangeWatchedFiles` event (no document event) must
+  produce the squiggle; deletion must clear it.
+- **R3.5 — setup-value diagnostics anchored 6 chars late per hook alias (addon 0.7.2).** ✅
+  First squiggle from R3.4 landed on the CLOSING `</VdsBs>` (dock 8:33, expected 8:21 — exactly
+  +12 after two `useState` aliases): `_splice_expr_markup(_apply_hook_aliases(setup))` parsed
+  the ALIASED text, so node offsets were aliased-domain while `_cbase` mapped them against the
+  original. Swapped to splice-first/alias-second at both aliased sites (setup + early-return gd
+  segments) — offsets now original-domain, and aliasing the spliced output is safer (markup text
+  children are string literals in generated code, which the lexer-aware aliaser skips; hook
+  calls in markup exprs are 0016 errors regardless). Contract goldens byte-identical; regression
+  pins the 0105 offset to the opening tag name with two aliases in front of it.
+
+## Phase H — runtime Fast Refresh for running games (PROPOSED, not started)
+
+Field expectation capture (2026-07-04): edit a `.guitkx` while the demos run under F5 → the
+running UI should update. **Today RG has no runtime hot-reload at all** (grep-verified: zero
+refresh/HMR machinery in `addons/reactive_ui`): the watcher keeps generated `.gd` fresh for the
+EDITOR and the next run; a running game only sees changes on restart. Unity-side parity target:
+ReactiveUIToolKit's HMR hot-swaps delegates/modules in ~50–200 ms without a domain reload and
+re-renders mounted trees with hook state preserved (Fast Refresh families).
+
+Sketch (each step needs research/validation before commitment):
+1. **Editor→game push**: after a sweep compiles files while a session is running, push the new
+   script sources to the running game (Godot 4.2+ script hot-reload paths: the script editor's
+   reload-on-save plumbing / `EditorDebuggerNode`; find the API that works for EXTERNAL writes
+   of generated `.gd`).
+2. **Game-side re-render**: a reload listener walks live `ReactiveRoot`s and re-renders from the
+   root. Fast Refresh semantics: preserve hook state per component identity (class name), reset
+   only when the hook signature changed — mirror Unity's Refresh families.
+3. **Change scoping**: the generated `.gd` can embed a content hash so unchanged subtrees bail.
+4. **Acceptance**: headless GDScript.reload() simulation + a scripted field test (edit → running
+   demo updates without F5).
 
 ## Non-goals / parked
+- **Live checks for setup-value markup** (`var x = ( <Tag/> )` as-you-type): the compile tier
+  validates it (0105 etc. via the sidecar on save), but liveMarkup/scanWindow only walk return
+  windows and directive-body returns. Natural next live-tier wave.
 - **Setup markup as a value** (`var x = <Label/>` — Unity's bare-JSX ranges): natural C-follow-up,
   not in C's acceptance. Track after C lands.
 - **Analyzer redeclaration check** (duplicate `var rev` unflagged): gdscript-analyzer repo
@@ -418,3 +479,18 @@ Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, 
   sweep proof-of-life. Gates: lsp 174/174 + smoke (now 14 checks incl. the clean-body inverse
   gate), GD suite incl. new codegen staleness tests, pristine-worktree full suite, ext build.
   Release: addon **0.7.1**, ext/lsp **0.8.1**.
+- 2026-07-04 — **Phase R3.3 COMPLETE** on `fix/editor-static-vocab-path`: THE "Godot never
+  recompiles" root cause — GDScript `static var` initializers don't run during the editor's early
+  script indexing, so `_VOCAB_PATH` read `""` and production fell into the test-seam file branch,
+  holding every compile of every editor session forever (headless always healthy — why no suite
+  ever caught it). Empty path now = embedded const; `_on_fs_changed` mid-scan gate; held-retry
+  summary spam fixed. Proven by instrumented editor runs before/after (hold → 42 compiles), plus
+  the VdsBs field case verified compiling to a clean GUITKX0105. Release: addon **0.7.2**
+  (GD-only; ext/lsp stay 0.8.1).
+- 2026-07-04 — **R3.3 FIELD-CONFIRMED** (user: "Godot does catch and recompiles"): cold sweep
+  41 compiled + the VdsBs file errored precisely (`effect_order.guitkx:8:33: GUITKX0105`),
+  persisted verdicts re-surfaced without churn, "compile errors resolved" + recompile on fix.
+  Same capture exposed **R3.4**: the 0105 never squiggled in VS Code — the server never watched
+  the `.diags.json` sidecars, so post-save compiler verdicts had no event to surface them.
+  Fixed + smoke-pinned; release ext/lsp **0.8.2** (TS-only; addon stays 0.7.2). Runtime hot
+  reload for running games captured as PROPOSED Phase H (no machinery exists today).

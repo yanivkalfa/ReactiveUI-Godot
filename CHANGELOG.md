@@ -4,6 +4,31 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] — 2026-07-04
+
+**THE "Godot never recompiles" root cause — static initializers don't run in the editor.**
+GDScript `static var` initializers do not reliably execute during the editor's early script
+indexing: `_VOCAB_PATH` read as `""` (its bare type default) instead of the vocabulary path, which
+diverted production into the test-seam file-read branch, tried to read a file at path `""`, and
+**held every compile of every editor session forever** — while headless runs (tests, CI, probes),
+where statics initialize normally, stayed green. Proven with an instrumented editor run
+(`path=<> len=0 is_default=false`) and the same run compiles cleanly with the fix.
+
+### Fixed
+- An empty vocabulary path now means DEFAULT: the embedded vocabulary const serves, no file is
+  read, nothing holds. Only an explicit non-empty override (the test seam) reads a file.
+- **Diagnostics from setup-value markup anchor correctly.** Hook aliasing ran BEFORE the markup
+  splice, so every inserted `Hooks.` prefix (6 chars) shifted every later diagnostic offset —
+  two `useState` calls pushed a `GUITKX0105` onto the *closing* tag instead of the opening one
+  (both in the Godot dock and, via the sidecar, in VS Code). The splice now parses the original
+  source first and aliasing runs on the spliced output; generated output is byte-identical
+  (contract goldens unchanged), only the anchors move to where the error actually is.
+- `filesystem_changed` sweeps that arrive DURING the editor's first scan are deferred to scan-end
+  (mid-scan `FileAccess` flakes; generated classes aren't registered yet, so dependent
+  parse-checks false-error).
+- Held-only sweep retries no longer print a summary line per retry (the one-per-episode hold
+  notice already announces them).
+
 ## [0.7.1] — 2026-07-04
 
 **The watcher now provably notices your saves.** Field capture 2026-07-04: a `.guitkx` saved from
