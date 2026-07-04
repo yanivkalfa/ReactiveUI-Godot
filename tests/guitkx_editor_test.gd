@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_substrate()
 	_test_undoable_set_text()
 	_test_buffer_state()
+	_test_intelligence_wiring()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -167,5 +168,70 @@ func _test_buffer_state() -> void:
 	v._code_edit.text = before + "\n# local edit"
 	v.open_path(TMP_PATH)
 	_ok(v._code_edit.text.ends_with("# local edit"), "same-file reopen keeps dirty edits")
+
+	v.free()
+
+# W3 — goto-def resolution + navigation, cross-file bindings cache, pathless basename, adaptive gate.
+func _test_intelligence_wiring() -> void:
+	var fa := FileAccess.open(TMP_PATH, FileAccess.WRITE)
+	fa.store_string(TMP_SRC)
+	fa.close()
+	GuitkxWorkspace.rescan()
+
+	# Workspace exposes the full path list (feeds project_bindings).
+	_ok(GuitkxWorkspace.all_paths().has(TMP_PATH), "all_paths includes the temp component")
+
+	# G1: symbol lookup resolves a known component through the widget and emits the navigation
+	# request; unknown symbols stay silent.
+	var ce: CodeEdit = CodeEditScript.new()
+	var got: Array = []
+	ce.definition_requested.connect(func(p: String, o: int):
+		got.append(p)
+		got.append(o))
+	ce._on_symbol_lookup("EditorTmp", 0, 0)
+	_ok(got.size() == 2 and got[0] == TMP_PATH, "symbol lookup resolves the declaring file")
+	_ok(got.size() == 2 and int(got[1]) == TMP_SRC.find("EditorTmp"), "symbol lookup carries the declaration offset")
+	got.clear()
+	ce._on_symbol_lookup("NoSuchComponentXyz", 0, 0)
+	_ok(got.is_empty(), "unknown symbol emits nothing")
+	_ok(ce.symbol_lookup_on_click, "ctrl+click lookup enabled")
+	ce.free()
+
+	# Same-file navigation places the caret at the declaration.
+	var v: Control = ViewScript.new()
+	v.open_path(TMP_PATH)
+	v._on_definition_requested(TMP_PATH, TMP_SRC.find("EditorTmp"))
+	_ok(v._code_edit.get_caret_line() == 0 and v._code_edit.get_caret_column() == TMP_SRC.find("EditorTmp"),
+		"same-file goto-def lands on the declaration")
+
+	# Cross-file navigation: pending offset survives the load.
+	var second := "res://tests/__editor_test_tmp2.guitkx"
+	var fb := FileAccess.open(second, FileAccess.WRITE)
+	fb.store_string("component Other() {\n\treturn (\n\t\t<EditorTmp />\n\t)\n}\n")
+	fb.close()
+	v._on_definition_requested(second, 10)
+	_ok(v.current_path() == second, "cross-file goto-def opens the target")
+	_ok(v._code_edit.get_caret_line() == 0 and v._code_edit.get_caret_column() == 10,
+		"pending jump applied after load")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(second))
+
+	# G13/P2: bindings cache — computed once, invalidated by on_workspace_changed.
+	var pb1: Dictionary = v._project_bindings()
+	_ok((pb1.get("known", []) as Array).has("EditorTmp"), "project bindings know the temp component")
+	_ok(v._bindings_valid, "bindings cached after compute")
+	v.on_workspace_changed()
+	_ok(v._bindings_valid, "on_workspace_changed recomputes (refresh re-fills the cache)")
+
+	# D4: pathless buffers derive the compile identity from their own declaration.
+	v._current_path = ""
+	_ok(v._basename("component Foo() {\n}") == "Foo", "pathless basename from declaration")
+	_ok(v._basename("# nothing declared") == "Component", "pathless fallback stays 'Component'")
+	v._current_path = TMP_PATH
+	_ok(v._basename() == "__editor_test_tmp", "pathed basename is the file stem")
+
+	# P1: adaptive debounce math.
+	_ok(absf(ViewScript._adaptive_wait(10.0) - 0.3) < 0.001, "fast compiles keep the 0.3s debounce")
+	_ok(absf(ViewScript._adaptive_wait(200.0) - 0.8) < 0.001, "189ms-class compiles stretch to ~0.8s")
+	_ok(absf(ViewScript._adaptive_wait(3000.0) - 2.0) < 0.001, "debounce capped at 2s")
 
 	v.free()

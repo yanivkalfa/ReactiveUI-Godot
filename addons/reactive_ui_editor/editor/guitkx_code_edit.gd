@@ -8,6 +8,10 @@ extends CodeEdit
 ## Emitted when the user clicks the diagnostics gutter icon on a diagnosed line.
 signal gutter_diagnostic_clicked(line: int, record: Variant)
 
+## Emitted when Ctrl+click resolves a component tag to its declaration (parity plan G1). The view
+## owns navigation (open the file, place the caret); the widget only resolves.
+signal definition_requested(path: String, offset: int)
+
 var diag_gutter: int = -1
 
 var _highlighter: GuitkxCodeHighlighter
@@ -96,6 +100,14 @@ func configure() -> void:
 	if has_signal("symbol_hovered") and not is_connected("symbol_hovered", _on_symbol_hovered):
 		connect("symbol_hovered", _on_symbol_hovered)
 
+	# Go-to-definition (G1): Ctrl+hover validates component tags as lookup words (underline +
+	# pointer), Ctrl+click resolves through the workspace index and asks the view to navigate.
+	symbol_lookup_on_click = true
+	if not symbol_validate.is_connected(_on_symbol_validate):
+		symbol_validate.connect(_on_symbol_validate)
+	if not symbol_lookup.is_connected(_on_symbol_lookup):
+		symbol_lookup.connect(_on_symbol_lookup)
+
 func _exit_tree() -> void:
 	if _theme_source != null and _theme_source.theme_changed.is_connected(_on_theme_changed):
 		_theme_source.theme_changed.disconnect(_on_theme_changed)
@@ -155,6 +167,15 @@ func _kind_of(kind: String) -> int:
 			return CodeEdit.KIND_MEMBER
 		_:
 			return CodeEdit.KIND_PLAIN_TEXT
+
+func _on_symbol_validate(symbol: String) -> void:
+	set_symbol_lookup_word_as_valid(GuitkxWorkspace.is_component(symbol))
+
+func _on_symbol_lookup(symbol: String, _line: int, _column: int) -> void:
+	var hit := GuitkxWorkspace.lookup(symbol)
+	if hit.is_empty():
+		return
+	definition_requested.emit(str(hit.get("path", "")), int(hit.get("offset", 0)))
 
 # Markup hover -> native tooltip. GuitkxHover owns the (tested) logic; here we just render it plain.
 func _on_symbol_hovered(_symbol: String, line: int, column: int) -> void:

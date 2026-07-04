@@ -10,7 +10,8 @@ extends Control
 ## Save writes ONLY the .guitkx text to disk; the reactive_ui plugin's own filesystem watcher owns
 ## regenerating the sibling .gd, so the two never fight over the same file.
 
-const MAX_LIVE_COMPILE := 200_000  # chars; above this, compile on Save only (keeps typing responsive)
+const MAX_LIVE_COMPILE := 150_000  # chars; above this, compile on Save only. Measured: ~2.1ms/KB on
+                                   # the MAIN thread, so 150K ≈ 300ms worst-case stall per pause (P1).
 const DEBOUNCE_SEC := 0.3
 
 var _code_edit: GuitkxCodeEdit
@@ -27,6 +28,16 @@ var _dirty := false
 var _loading := false
 var _detached := false          # the source file was deleted/moved away on disk
 var _loaded_mtime := 0          # disk mtime the buffer was loaded from / last saved to
+
+# Cross-file compile context (W3, G13/P2): project_bindings() costs ~35ms over ~100 files, so it is
+# cached and recomputed only when the filesystem shape changes — never per debounce tick.
+var _bindings_cache: Dictionary = {}
+var _bindings_valid := false
+
+var _pending_jump_offset := -1  # goto-def target applied once the destination file finishes loading
+var _last_compile_ms := 0.0     # drives the adaptive debounce (P1)
+
+static var _decl_probe: RegEx = null
 
 func _init() -> void:
 	name = "ReactiveUITK"
@@ -54,6 +65,7 @@ func _init() -> void:
 	_code_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_code_edit.text_changed.connect(_on_text_changed)
 	_code_edit.gutter_diagnostic_clicked.connect(_on_gutter_diagnostic_clicked)
+	_code_edit.definition_requested.connect(_on_definition_requested)
 	vbox.add_child(_code_edit)
 
 	_debounce = Timer.new()
@@ -173,7 +185,30 @@ func goto_line(line: int) -> void:
 	_code_edit.set_caret_line(line)
 	_code_edit.set_caret_column(0)
 	_code_edit.center_viewport_to_caret()
-	_code_edit.grab_focus()
+	if _code_edit.is_inside_tree():
+		_code_edit.grab_focus()
+
+## Ctrl+click go-to-definition (G1): same-file jumps immediately; cross-file remembers the target
+## offset and opens the file (through the dirty-buffer guard), applied when the load completes.
+func _on_definition_requested(path: String, offset: int) -> void:
+	if path.is_empty():
+		return
+	if path == _current_path:
+		_goto_offset(offset)
+		return
+	_pending_jump_offset = offset
+	open_path(path)
+
+func _goto_offset(offset: int) -> void:
+	var lc: Dictionary = RUIGuitkxDiag.line_col(_code_edit.text, offset)
+	goto_line(int(lc.get("line", 0)))
+	_code_edit.set_caret_column(int(lc.get("col", 0)))
+
+## The filesystem shape changed (files added/removed/renamed anywhere): recompute cross-file
+## bindings on next compile and refresh so 0105/did-you-mean track reality (G13/G15).
+func on_workspace_changed() -> void:
+	_bindings_valid = false
+	_refresh_diagnostics()
 
 func _load_text(path: String, text: String) -> void:
 	_loading = true
@@ -186,6 +221,9 @@ func _load_text(path: String, text: String) -> void:
 	_loaded_mtime = FileAccess.get_modified_time(path) if (not path.is_empty() and FileAccess.file_exists(path)) else 0
 	_update_file_label()
 	_refresh_diagnostics()
+	if _pending_jump_offset >= 0:
+		_goto_offset(_pending_jump_offset)
+		_pending_jump_offset = -1
 
 func _on_text_changed() -> void:
 	if _loading:
@@ -227,13 +265,33 @@ func _refresh_diagnostics() -> void:
 		if _problems != null:
 			_problems.clear()
 		return
-	var result: Dictionary = RUIGuitkx.compile(text, _basename())
+	# Cross-file context (G13): known component classes + class->generated-.gd map, exactly what the
+	# watcher's sweep passes — so unknown-component 0105 (with did-you-mean) arms in-editor too.
+	var pb := _project_bindings()
+	var t0 := Time.get_ticks_usec()
+	var result: Dictionary = RUIGuitkx.compile(
+		text, _basename(text), pb.get("known", []), pb.get("bindings", {}))
+	_last_compile_ms = float(Time.get_ticks_usec() - t0) / 1000.0
+	# Adaptive gate (P1): compiles run on the main thread, so big files stretch the debounce
+	# instead of freezing the editor on every typing pause (measured 189ms @ 90KB).
+	_debounce.wait_time = _adaptive_wait(_last_compile_ms)
 	var diags: Array = result.get("diagnostics", [])
 	var records := GuitkxDiagnosticsRenderer.render(
 		_code_edit, _code_edit.diag_gutter, diags, _err_icon, _warn_icon)
 	if _problems != null:
 		_problems.set_records(records)
 	_apply_unreachable_dim(text)
+
+func _project_bindings() -> Dictionary:
+	if not _bindings_valid:
+		_bindings_cache = RUIGuitkxCodegen.project_bindings(GuitkxWorkspace.all_paths())
+		_bindings_valid = true
+	return _bindings_cache
+
+## Debounce stretched proportionally to the last compile cost, floored at DEBOUNCE_SEC, capped at
+## 2s — a 30ms file keeps the snappy 0.3s; a 200ms file waits ~0.8s between compiles.
+static func _adaptive_wait(compile_ms: float) -> float:
+	return clampf(compile_ms * 4.0 / 1000.0, DEBOUNCE_SEC, 2.0)
 
 ## Fade the lines after each component's markup return (unreachable code). [BUG-V6]
 func _apply_unreachable_dim(text: String) -> void:
@@ -243,10 +301,19 @@ func _apply_unreachable_dim(text: String) -> void:
 			lines[ln] = true
 	_code_edit.set_dim_lines(lines)
 
-func _basename() -> String:
-	if _current_path.is_empty():
-		return "Component"
-	return _current_path.get_file().get_basename()
+## The identity the compiler checks the declared name against (GUITKX0103). A pathless scratch
+## buffer derives it from its own first declaration — the literal "Component" fallback used to
+## self-report a spurious name-mismatch on every unsaved buffer (parity plan D4).
+func _basename(text: String = "") -> String:
+	if not _current_path.is_empty():
+		return _current_path.get_file().get_basename()
+	if _decl_probe == null:
+		_decl_probe = RegEx.new()
+		_decl_probe.compile("(?m)^[ \\t]*(?:component|hook|module)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
+	var m := _decl_probe.search(text)
+	if m != null:
+		return m.get_string(1)
+	return "Component"
 
 ## --- Toolbar actions ---
 
@@ -308,6 +375,7 @@ func _write_buffer() -> void:
 	_dirty = false
 	_detached = false
 	_loaded_mtime = FileAccess.get_modified_time(_current_path)
+	_bindings_valid = false  # our own save can change the project's class/binding shape
 	_update_file_label()
 	EditorInterface.get_resource_filesystem().update_file(_current_path)
 	# Keep the component index fresh so renamed/added components complete without a full rescan.

@@ -16,6 +16,7 @@ var _view: GuitkxEditorView
 var _problems: GuitkxProblemsPanel
 var _problems_button: Button
 var _loader: ResourceFormatLoader
+var _fs_debounce: Timer
 
 func _enter_tree() -> void:
 	RUIEditorSettings.register_all()
@@ -37,6 +38,15 @@ func _enter_tree() -> void:
 	dock.file_removed.connect(_on_file_removed)
 	dock.folder_removed.connect(_on_folder_removed)
 
+	# Keep the component index + cross-file bindings fresh when the filesystem shape changes
+	# (external creates/renames/deletes — G15/P2). Debounced: filesystem_changed fires in bursts.
+	_fs_debounce = Timer.new()
+	_fs_debounce.one_shot = true
+	_fs_debounce.wait_time = 0.5
+	_fs_debounce.timeout.connect(_on_fs_settled)
+	add_child(_fs_debounce)
+	EditorInterface.get_resource_filesystem().filesystem_changed.connect(_on_fs_changed)
+
 	# open_guitkx_in_editor is structural (it registers a ResourceFormatLoader that changes global
 	# double-click routing), so — unlike highlighting/completion/diagnostics/format — it applies on
 	# plugin reload, not live: flip it, then disable/re-enable the addon for it to take effect.
@@ -45,6 +55,9 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	_unregister_loader()
+	var efs := EditorInterface.get_resource_filesystem()
+	if efs.filesystem_changed.is_connected(_on_fs_changed):
+		efs.filesystem_changed.disconnect(_on_fs_changed)
 	var dock := EditorInterface.get_file_system_dock()
 	if dock.files_moved.is_connected(_on_file_moved):
 		dock.files_moved.disconnect(_on_file_moved)
@@ -104,6 +117,15 @@ func _on_folder_removed(folder: String) -> void:
 	var prefix := folder if folder.ends_with("/") else folder + "/"
 	if _view.current_path().begins_with(prefix):
 		_view.mark_detached()
+
+func _on_fs_changed() -> void:
+	if _fs_debounce != null and _fs_debounce.is_inside_tree():
+		_fs_debounce.start()
+
+func _on_fs_settled() -> void:
+	GuitkxWorkspace.rescan()
+	if _view != null:
+		_view.on_workspace_changed()
 
 func _has_main_screen() -> bool:
 	return true
