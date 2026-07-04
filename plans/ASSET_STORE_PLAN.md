@@ -53,10 +53,11 @@ an API, add it to the pipeline and let the AL entry age out.
 - README top section doubles as listing copy (both venues render repo README-ish content).
 
 ## 4. What I need from the user
-1. **License** — the repo has NO LICENSE file and both venues require one. Recommendation:
-   MIT, copyright "Yaniv Kalfa". Say the word (or pick another) and I commit it.
-2. **Icon** — a square PNG ≥128×128 committed to the repo. Provide one, or approve me deriving
-   a clean icon from the docs site's logo.
+1. ~~**License**~~ **DONE** — MIT, © 2026 Yaniv Kalfa, committed as `LICENSE` (ships in the
+   install archive). Sole-author repo, so future versions can be relicensed at will; released
+   MIT versions stay MIT.
+2. ~~**Icon**~~ **DONE** — user-provided 128×128 committed as `icon.png` (export-ignored so it
+   never clobbers a user project's own icon; served to the AL via raw.githubusercontent).
 3. **Accounts** — (a) godotengine.org shared account → log into store.godotengine.org once so
    the publisher profile exists; (b) classic Asset Library account (separate system!) at
    godotengine.org/asset-library.
