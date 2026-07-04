@@ -1,7 +1,277 @@
-> **BACKFILL NEEDED (2026-07-04 plans audit):** newest entry below is IDE 0.5.3 / addon-0.4-era —
-> everything since (return-based directive bodies 0.7.0, Fast Refresh/HMR 0.8.0, `V.comp`
-> codegen + orphan sweep + GUITKX2106/2107 in 0.8.1, IDE 0.5.4→0.8.6) is unposted. Write-ups
-> belong to the docs wave (Wave 3).
+## Now on the Godot Asset Store roadmap — MIT-licensed, publishing pipeline staged
+
+The repo is now dual-license-ready for distribution: an **MIT `LICENSE`** landed, plus a store icon, and a `.gitattributes` `export-ignore` pass so an AssetLib/Asset Store download or `git archive` contains only the addon + README + LICENSE (a bundled `project.godot` or root `icon.png` would otherwise clobber a user's own project on install — now excluded). A `publish.yml` CI job is staged to auto-update the classic Godot Asset Library listing on every tagged release; the new Godot Asset Store still needs a manual first submission. Not live yet — accounts + first submissions are next.
+
+---
+
+## [IDE 0.8.6] - 2026-07-04
+
+**Deleting a component's whole folder now actually gets caught — on both the fast path and the slow one.** Two holes, closed together: the extension's folder-delete handling (shipped in 0.8.5) turned out to be correct but *unreachable* — VS Code only delivers folder-delete events to a watcher whose glob matches the folder path itself, and the registration listed per-extension file globs. It's a single `**` watcher now. Separately, the Godot addon's watch poll only went hot on stale mtimes — but a deleted folder takes its outputs down with it, so nothing looked stale and `GUITKX2107` waited for an unrelated save or editor focus-in. The poll now re-reads each tracked file's sidecar references every tick and goes hot on any state mismatch (flagged-but-restored, or missing-but-unflagged), settling once everything matches again.
+
+Pins: a folder-style deletion (no orphaned files to notice) now goes poll-hot → flags → settles → and heals cleanly on restore, end to end.
+
+Reinstall **GUITKX 0.8.6** (VS Code + VS 2022) and update to **Reactive UI 0.8.2**.
+
+---
+
+## [0.8.2] - 2026-07-04
+
+**The dangling-reference guard from 0.8.1 now catches a deleted *folder*, not just a deleted file.** Removing a component's whole folder takes its generated output down with it — so nothing was stale, and nothing dependent looked stale either, which meant `GUITKX2107` sat quiet until some unrelated save nudged the watch poll. The poll now compares each tracked file's sidecar references against reality every tick and goes hot the moment they disagree in either direction, settling the instant they match again — no spinning, no waiting on a coincidental save.
+
+Pairs with **GUITKX IDE 0.8.6**, which fixes the matching VS Code-side gap (folder-delete events were being filtered out before they ever reached the extension).
+
+Update to **Reactive UI 0.8.2** (copy `addons/reactive_ui/` into your project).
+
+---
+
+## [IDE 0.8.5] - 2026-07-04
+
+**Deleting a component's folder now actually clears it out of the project.** VS Code coalesces a bulk delete into a single folder-level event — and the handler for that event only closed each file's analyzer library, leaving the `.guitkx` index entries and their harvested generated classes behind. The component never left the project's universe, so no squiggle ever told you a reference was now dangling. The folder-deleted path now evicts every indexed `.guitkx` under it, un-harvests every generated class under it, and re-validates open documents — including the reverse case, where a restored folder clears stale squiggles.
+
+Bonus: single-file deletions un-harvest the sibling class immediately now, instead of waiting ~2 seconds for the Godot addon's own orphan sweep to produce a second event.
+
+(One caveat found in the field the same day: this handler turned out to never actually fire — fixed next release, 0.8.6.)
+
+Reinstall **GUITKX 0.8.5** (VS Code + VS 2022).
+
+---
+
+## [IDE 0.8.4] - 2026-07-04
+
+**Deleting a component whose tab is still open now squiggles its consumers right away.** The dangling-reference index refused to touch files with an open buffer — the right call for *edits* (the buffer is the source of truth), the wrong one for *deletions*: VS Code keeps a deleted file's tab alive, so the component stayed in the index and every reference to it looked perfectly healthy until some unrelated save finally touched it. Deletions now evict the index regardless of open buffers; re-saving the (now-orphaned) open tab recreates the file and re-indexes it right back, so nothing gets stuck either way.
+
+Reinstall **GUITKX 0.8.4** (VS Code + VS 2022).
+
+---
+
+## [IDE 0.8.3] - 2026-07-04
+
+**Deleting or renaming a component now squiggles every place that referenced it — live, no save required.** Two gaps, closed together: the server only recomputed diagnostics for the file you just edited, so deleting a component elsewhere never updated the tabs still pointing at it; and generated `.gd` classes were only ever *added* to the known-class set, never removed, which permanently suppressed the unknown-component check for anything that had ever existed once. The server now re-validates every open document whenever the component universe changes, and un-harvests a generated class the moment its source file disappears.
+
+Pairs with the addon's **`GUITKX2107`** compile-tier error (0.8.1) — same problem, caught at two different moments now: the instant you delete the file here, and at the next compile there.
+
+Reinstall **GUITKX 0.8.3** (VS Code + VS 2022, language server 0.8.3).
+
+---
+
+## [IDE 0.8.2] - 2026-07-04
+
+**Compiler-only errors finally reach VS Code after you save.** The Godot addon compiles a saved `.guitkx` roughly 2 seconds *after* the save and writes its verdict into a `.diags.json` sidecar file — but the server never watched those sidecars. So a compiler-only error (say, an unknown element buried inside setup-value markup, which the fast live-typing tier doesn't scan) could genuinely never become a squiggle: by the time the sidecar updated, your next keystroke had already diverged the buffer from what was compiled, and diverged buffers suppress compiler-tier diagnostics by design. The server now watches every `**/*.guitkx.diags.json` and re-validates the matching open document the instant Godot writes or clears a verdict.
+
+Reinstall **GUITKX 0.8.2** (VS Code + VS 2022, language server 0.8.2).
+
+---
+
+## [0.8.1] - 2026-07-04
+
+**Renaming or deleting a `.guitkx` no longer leaks its generated output — and components stop depending on the global class registry at all.** Two related hardening passes:
+
+**Orphan cleanup + `GUITKX2106`.** Renaming a component used to leave its old generated `.gd` behind — still declaring the same `class_name`, now a duplicate that broke resolution project-wide. The sweep now detects and removes orphaned generated output by its `AUTO-GENERATED` header (hand-written scripts are never touched). Copy-pasting a `.guitkx` is caught too: the incumbent keeps compiling, the copy errors with `GUITKX2106` and writes nothing, so a duplicate class can never reach disk.
+
+**Generated code now references other components by *path*, not by global class name.** `<Card />` compiles to `V.fc(V.comp("res://ui/card.gd"), …)` — a lazy, cached, path-based resolver — instead of `Card.render`. This removes an entire failure class: a component created mid-session, an editor rescan lag, or a self-recursive component graph can no longer break resolution. Brand-new components even **hot-link into a running game** the moment you reference them, no restart needed. Hand-written `class_name` components keep the classic form.
+
+**`GUITKX2107`** flags a dangling reference — deleting or renaming a component now errors at every tag that still points to it, and heals automatically once you restore it or edit the reference away.
+
+Update to **Reactive UI 0.8.1**.
+
+---
+
+## [Editor 0.3.0] - 2026-07-04
+
+**The native in-Godot `.guitkx` editor gets completion and hover — no VS Code required.** Five new pure-logic modules (schema, context, completion, hover, workspace index), all headlessly tested, wired straight into the built-in editor tab:
+
+- **Completion** on `<` (host tags + your own project's components), inside attribute lists (structural attributes, React-style event names resolved to their real Godot signal via live `ClassDB`, plain properties), and after `@` (directives).
+- **Hover** for tags, attributes, directives, and your own components — a native tooltip, Godot 4.4+.
+
+Both read the vocabulary against the **running engine's own `ClassDB`**, so they never drift from a bundled snapshot. Independently toggleable under Project Settings, default on. Embedded-GDScript intelligence inside `{expr}`/setup code is still VS Code/VS 2022-only — that gap is tracked next.
+
+Update to **Reactive UI Editor 0.3.0** (copy `addons/reactive_ui_editor/`; it needs `reactive_ui`).
+
+---
+
+## [0.8.0] - 2026-07-04
+
+**Runtime Fast Refresh — edit a `.guitkx` while your game runs under F5, and the UI updates in place, hook state preserved.** The editor's watcher pushes freshly-compiled scripts into the running session over the debugger protocol; the game reloads them in place (`reload(keep_state=true)`, so `Callable` identity survives and the fiber reconciler keeps matching every component's hooks); exactly the affected components re-render, synchronously, so there's never a frame where old handlers meet new code.
+
+A changed **component** re-renders just its own fibers; a changed **hook/module** triggers a global re-render, since any component might call it. If the hook-call *shape* changed (added/removed/reordered), that component's state is **deliberately reset** instead of risking corruption — a compiler-embedded hook-order fingerprint decides which. Dev-only by construction: gated on an attached debugger session, so exported builds carry zero HMR code. 30 new checks, wired into CI.
+
+Update to **Reactive UI 0.8.0**.
+
+---
+
+## [0.7.2] - 2026-07-04
+
+**Found it: the real reason some editors never recompiled a single `.guitkx`, ever.** A `static var` initializer doesn't reliably run during the editor's early script indexing — so a path constant silently read as `""` instead of its real value, which diverted the compiler into a test-only file-read branch, tried to read a file at path `""`, and **held every compile of every session, forever** — while headless runs (tests, CI) stayed green the whole time, because statics *do* initialize normally there. Proven with an instrumented run and fixed: an empty path now just means "use the embedded default," so nothing holds unless a real override is explicitly set.
+
+Also fixed: a hook-aliasing/diagnostic-offset bug that pinned some setup-code errors to the wrong line (both in the Godot dock and via the VS Code sidecar) — the splice now runs before aliasing, not after, so offsets land where the error actually is.
+
+Update to **Reactive UI 0.7.2**.
+
+---
+
+## [0.7.1] - 2026-07-04
+
+**The watcher now provably notices your saves.** A `.guitkx` saved from an external editor was never guaranteed to recompile — editor focus-in and Godot's own `filesystem_changed` were the only triggers, and neither reliably fires for an external save. Worse, a sweep that found nothing stale printed nothing, so "plugin dead" and "nothing to do" looked identical in the Output panel.
+
+Fixed with a **standing 2-second watch poll** that sweeps the moment any `.guitkx` changes on disk — no focus dance, no restart required. Same-second saves (mtimes are whole seconds) are now broken by content hash instead of silently skipped, and the very first sweep of a session always prints a proof-of-life line, so a silent Output after startup now genuinely means the plugin isn't running.
+
+Update to **Reactive UI 0.7.1**.
+
+---
+
+## [IDE 0.8.1] - 2026-07-04
+
+**Fixed a false-positive multi-root error on perfectly valid directive bodies.** A leftover pre-0.8 live scanner pass was still parsing directive bodies as bare markup — counting the `return (` / `)` lines themselves as extra root elements, so every correctly-migrated `@if`/`@for` body squiggled `GUITKX0108` for no reason. The scanner now walks only each `return`'s actual markup span, matching the same body model the compiler and formatter already use. Correct bodies are diagnostic-free again; a smoke test pins it.
+
+Pairs with addon **0.7.1**'s watcher-liveness rework.
+
+Reinstall **GUITKX 0.8.1** (VS Code + VS 2022, language server 0.8.1).
+
+---
+
+## [0.7.0] - 2026-07-04
+
+**Directive bodies are code blocks now — full Unity convergence (BREAKING).** A directive body (`@if`/`@elif`/`@else`, `@for`, `@while`, `@match`/`@case`/`@default`) is no longer bare markup — it's GDScript prep code plus `return ( <markup> )`, exactly like ReactiveUIToolKit for Unity, nesting recursively:
+
+```
+@for (it in items) {
+	if it == null:
+		return null
+	return ( <Label key={ str(it) } text={ "row %s" % it } /> )
+}
+```
+
+Pre-0.7 bare-markup bodies now error with **`GUITKX2103`**, live in the editor and at compile. Migrate a whole project in one shot: `godot --headless --path . --script res://addons/reactive_ui/dev/migrate_directive_bodies.gd -- res://<your-ui-dir>`. A hook call inside a directive body is now `GUITKX2104` (hooks must stay unconditional in setup). Canonical formatting also changes to **spaces at width 2** (Unity-exact) — run `dev/reformat_all.gd` to reformat a project.
+
+Update to **Reactive UI 0.7.0** and migrate.
+
+---
+
+## [IDE 0.8.0] - 2026-07-04
+
+**The editor speaks the new directive-body grammar — and formats it for you.** Pairs with addon 0.7.0 (BREAKING): prep GDScript + `return ( <markup> )` inside every `@if`/`@for`/`@while`/`@case` body is now fully understood live — the old bare-markup form flags `GUITKX2103` with the migration message, and a hook call inside a body flags `GUITKX2104`. Markup inside prep values (`var badge = ( <HBox/> )`) gets full intelligence too.
+
+**Format-on-save now ships enabled by default** for `.guitkx`, emitting the Unity-exact spaces-2 canonical style — embedded GDScript is reflowed to match. Also fixed a reformat corruption where nested code at spaces-2 could lose an indent level.
+
+Reinstall **GUITKX 0.8.0** (VS Code + VS 2022, language server 0.8.0).
+
+---
+
+## [0.6.2] - 2026-07-03
+
+**Scan-window completeness, plus instant feedback on a typo the compiler alone couldn't catch.** A cold Godot editor open could still leave a `.guitkx` uncompiled — the startup sweep ran *during* the editor's first filesystem scan, where every mtime read returns 0, so every file looked fresh and nothing retried. Fixed: the initial sweep now waits out the first scan and runs the moment the filesystem is actually readable; a zero mtime now counts as stale, and an empty read of an existing file is held (not treated as clean or as a deletion).
+
+Also new: every generated `.gd` is **parse-checked immediately** after compiling, so an unknown identifier or type error inside a `.guitkx` expression now lands in the editor dock at compile time, instead of waiting for the script to first load at play time.
+
+Update to **Reactive UI 0.6.2**.
+
+---
+
+## [0.6.1] - 2026-07-03
+
+**Cold-open recovery: the ~250-line red wall on a fresh clone is gone.** During the editor's first filesystem scan, every `res://` read of the compiler's vocabulary file came back empty — so every single `.guitkx` in the project logged three red error lines, all at once, on a repo this size. The vocabulary is now **embedded directly in the compiler** (generated from `vocabulary.json`, drift-tested), so production never file-reads it at all — the scan window simply can't hold anything anymore. A held compile (if the environment is ever genuinely not ready) now auto-retries every 2 seconds instead of waiting for a user edit, and is announced once per episode instead of once per file per sweep.
+
+Update to **Reactive UI 0.6.1**.
+
+---
+
+## [IDE 0.7.1] - 2026-07-03
+
+**Enter after a closing tag no longer over-indents.** The indent rule matched any line ending in `>` — including `</VBox>` — so pressing Enter after a closing tag added an extra, unwanted indent level. It now aligns with the tag itself; opening tags, multi-line tags, and `/>` self-closers are unaffected.
+
+Pairs with addon **0.6.1**: the compiler vocabulary is now embedded, so the cold-open red wall (and the stale "unknown element" squiggles it used to pin in VS Code) can no longer happen.
+
+Reinstall **GUITKX 0.7.1** (VS Code + VS 2022).
+
+---
+
+## [0.6.0] - 2026-07-03
+
+**Early markup returns — the Unity way.** A component can now `return ( <markup> )` anywhere, not only as its final statement:
+
+```
+component Panel(ready: bool = false) {
+	if not ready:
+		return ( <Label text="loading" /> )
+	return ( <VBox>…</VBox> )
+}
+```
+
+Each early return's markup gets full validation and live intelligence — parse errors, unknown-tag hints, key checks — exactly like the final return. Code after an *unconditional* early return is unreachable and now dims in editors. `GUITKX2102` narrows to its true meaning: only "the final top-level return isn't markup" — the old false-positive on early returns is gone.
+
+Update to **Reactive UI 0.6.0**.
+
+---
+
+## [IDE 0.7.0] - 2026-07-03
+
+**The editor understands early markup returns, live.** Pairs with addon 0.6.0: `if not ready: return ( <Label /> )` is legal now, React-style, and the guard's markup gets full intelligence — parse errors, unknown-tag did-you-means, key checks, highlighting, everything the final return already had. An unconditional early return dims the dead code after it, including the now-unreachable final return. Diagnostics docs gain the `GUITKX2102` and `GUITKX2508` rows.
+
+Reinstall **GUITKX 0.7.0** (VS Code + VS 2022, language server 0.7.0).
+
+---
+
+## [0.5.1] - 2026-07-03
+
+**The field-triage release** — every defect from the first real-project test of 0.5.0, root-caused and fixed. Highlights: live `GUITKX0105` no longer flags host elements (`<HBox>`, `<Button>`, and every vocabulary alias were squiggling as "unknown component" the moment a workspace scan finished); an early markup return no longer leaks into the embedded-GDScript view and sprays bogus syntax/unreachable errors; `GUITKX2102` now fires live with honest wording instead of only appearing as a stale sidecar entry; and the cold-open error wall (three red lines per file, whole-project, on every fresh clone) collapses to one hold notice plus one recovery line, with generated outputs preserved throughout.
+
+Also new: `GUITKX2508` catches a malformed directive header (`@for (i in 2: int5)`) that used to pass every tier silently and only fail once Godot's own parser choked on the generated code.
+
+Update to **Reactive UI 0.5.1**.
+
+---
+
+## [IDE 0.6.1] - 2026-07-03
+
+**The host-tag storm is fixed.** `<HBox>`, `<Button>`, `<Label>` and every vocabulary alias no longer squiggle as "unknown component" once a workspace scan completes — the live check only ever consulted the project's own components, never the host vocabulary. A typo'd host tag now gets a did-you-mean for the host tag itself. Also: a garbage directive header (`@for (i in 2: int5)`) now flags live as `GUITKX2508` instead of silently compiling into broken GDScript, and stale compiler-sidecar diagnostics collapse into one file-level note instead of piling up at drifted offsets while you type.
+
+Pairs with addon **0.5.1**: the cold-open red wall is two warning lines now, not ~250.
+
+Reinstall **GUITKX 0.6.1** (VS Code + VS 2022, language server 0.6.1).
+
+---
+
+## [0.5.0] - 2026-07-03
+
+**The `.guitkx` syntax & diagnostics parity release.** `.guitkx` now matches Unity ReactiveUIToolKit's grammar feature-for-feature — markup comments (`//`, `/* */`, `<!-- -->`, `{/* */}`), `<Fragment key={...}>`, rules-of-hooks as errors, a working `@uss`/`@theme` directive — and every diagnostic code is renumbered onto Unity's shared numbering scheme (breaking for anything matching on code strings; see the concordance table in the full changelog). The compiler is also fail-loud now: an error can never coexist with a successful compile, and the **last** top-level markup return is the component's real output (Unity `useLastReturn` parity).
+
+Update to **Reactive UI 0.5.0** and re-check anything that matched on old `GUITKX01xx` codes.
+
+---
+
+## [IDE 0.6.0] - 2026-07-03
+
+**Diagnostic codes renumbered onto the Unity-shared table** (pairs with addon 0.5.0) — most visibly, unreachable-after-return is now `GUITKX0107` (was 0114), missing-declaration is `GUITKX2101` (was 0102), and duplicate keys (`GUITKX0026`, was 0113) are errors now. Bundles gdscript-analyzer 0.6.0: embedded-GDScript diagnostics use Godot's own verbatim message text, wrong-arity calls are errors, and unreachable/unused code dims. Names declared in sibling `.guitkx` files now feed the analyzer as virtual libraries, so cross-file references resolve on a fresh clone and a typo'd hook call is an error again. Unknown PascalCase component tags squiggle live with a did-you-mean.
+
+Reinstall **GUITKX 0.6.0** (VS Code + VS 2022, language server 0.6.0).
+
+---
+
+## [IDE 0.5.5] - 2026-07-02
+
+Bundles gdscript-analyzer 0.5.4: a typo'd method on a built-in value — `s.upper()` on a `String` (a Godot-3 rename), `v.zzz` on a `Vector2` — is now an error with a precise squiggle, exactly where Godot itself errors. Works through plain untyped `var s = useState(0)` locals (the analyzer narrows single-assignment locals to their initializer's type), and `Dictionary` `d.key` sugar now types correctly instead of ever false-flagging.
+
+Reinstall **GUITKX 0.5.5** (VS Code + VS 2022).
+
+---
+
+## [0.4.3] - 2026-07-02
+
+**Compiler indentation-anchor fixes, and hook returns the analyzer can actually type-check.** One accidentally-shallow setup line (or an over-indented leading comment) used to shift every other line in the block, producing a broken generated `.gd` plus a cascade of bogus follow-on errors. The reindenter now anchors to the first real (non-blank, non-comment) line and clamps outliers up to it — comments no longer count, so they can no longer fake a "hook called conditionally" warning either.
+
+Also new: `useState`, `useReducer`, and `useTransition` now carry `## @return-tuple(...)` doc tags — inert to Godot, but read by the IDE's analyzer (0.5.3+) as a fixed-shape return type, so `s := useState(0)` makes `s[1]` a typed, checkable `Callable`.
+
+Update to **Reactive UI 0.4.3**.
+
+---
+
+## [IDE 0.5.4] - 2026-07-02
+
+**A typo'd hook call is now flagged live, mapped right onto the typo.** The bundled analyzer only reports "defined nowhere" once it genuinely holds the whole project — so the server now feeds every `.gd` at startup and keeps that view current through a file watcher, arming the check without ever false-flagging a name that only exists in a sibling `.guitkx`'s not-yet-generated output. `GUITKX0108` (multi-root directive body) and `GUITKX0102` (missing `return (...)`) now fire live while typing, precisely ranged, instead of only after a save. Hook returns are typed pairs end-to-end now too — `s := useState(0)` makes `s[1]` a checkable `Callable` with real hover and inlay hints.
+
+Reinstall **GUITKX 0.5.4** (VS Code + VS 2022).
+
+---
 
 ## [IDE 0.5.3] - 2026-07-02
 

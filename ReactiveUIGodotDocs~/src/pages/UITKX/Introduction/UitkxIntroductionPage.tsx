@@ -35,7 +35,7 @@ export const UitkxIntroductionPage: FC = () => (
     </Typography>
     <List>
       <ListItem disablePadding>
-        <ListItemText primary="Function-style .guitkx components with snake_case hooks and typed props" />
+        <ListItemText primary="Function-style .guitkx components with camelCase hooks and typed props" />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText primary="A fiber reconciler that diffs and batches updates onto the Godot Control tree" />

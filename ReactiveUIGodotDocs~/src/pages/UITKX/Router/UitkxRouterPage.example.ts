@@ -7,37 +7,43 @@ component RouterDemo() {
   var ACTIVE := { "font_color": Color(1.0, 0.85, 0.3) }
   var IDLE := { "font_color": Color(0.7, 0.7, 0.8) }
 
+  // Router, NavLink, Routes, Route, and Outlet have no markup tags — the whole
+  // router tree below is built with V.* calls, then mounted with one embedded { expr }.
+  var app = V.router({ "basename": "/app" }, [
+    V.vbox({ "style": { "separation": 8 } }, [
+      // nav_link applies active_style when its target matches the location.
+      V.nav_link({ "to": "/", "end": true, "label": "Home", "style": IDLE, "active_style": ACTIVE }),
+      V.nav_link({ "to": "/about", "label": "About", "style": IDLE, "active_style": ACTIVE }),
+      V.nav_link({ "to": "/users", "label": "Users", "style": IDLE, "active_style": ACTIVE }),
+
+      V.button({ "text": "Open profile 42",
+                 "onClick": func(): navigate.call("/users/42?tab=profile") }),
+
+      // routes picks the single best match using RR's ranking algorithm.
+      V.routes({}, [
+        // Index route — matches the parent path exactly.
+        V.route({ "index": true, "element": V.label({ "text": "Landing route" }) }),
+
+        V.route({ "path": "/about", "element": V.label({ "text": "About route" }) }),
+
+        // Layout route — element wraps the matched child via V.outlet(...).
+        V.route({ "path": "/users", "element": V.fc(UsersLayout.render) }, [
+            V.route({ "index": true, "element": V.label({ "text": "Pick a user" }) }),
+            V.route({ "path": ":id", "element": V.fc(UserDetails.render) }),
+        ]),
+
+        // Declarative redirect (replace = true by default).
+        V.route({ "path": "/old", "element": V.navigate({ "to": "/about" }) }),
+
+        V.route({ "path": "*", "element": V.label({ "text": "Not found" }) }),
+      ]),
+    ]),
+  ])
+
   return (
-    <Router basename="/app">
-      <VBox style={ {"separation": 8} }>
-        // NavLink applies active_style when its target matches the location.
-        <NavLink to="/" end={ true } label="Home" style={ IDLE } active_style={ ACTIVE } />
-        <NavLink to="/about" label="About" style={ IDLE } active_style={ ACTIVE } />
-        <NavLink to="/users" label="Users" style={ IDLE } active_style={ ACTIVE } />
-
-        <Button text="Open profile 42"
-                onClick={ func(): navigate.call("/users/42?tab=profile") } />
-
-        // Routes picks the single best match using RR's ranking algorithm.
-        { V.routes({}, [
-            // Index route — matches the parent path exactly.
-            V.route({ "index": true, "element": V.label({ "text": "Landing route" }) }),
-
-            V.route({ "path": "/about", "element": V.label({ "text": "About route" }) }),
-
-            // Layout route — element wraps the matched child via <Outlet/>.
-            V.route({ "path": "/users", "element": V.fc(UsersLayout.render) }, [
-                V.route({ "index": true, "element": V.label({ "text": "Pick a user" }) }),
-                V.route({ "path": ":id", "element": V.fc(UserDetails.render) }),
-            ]),
-
-            // Declarative redirect (replace = true by default).
-            V.route({ "path": "/old", "element": V.navigate({ "to": "/about" }) }),
-
-            V.route({ "path": "*", "element": V.label({ "text": "Not found" }) }),
-        ]) }
-      </VBox>
-    </Router>
+    <VBox>
+      { app }
+    </VBox>
   )
 }`
 
@@ -47,8 +53,8 @@ component UsersLayout() {
   return (
     <VBox style={ {"separation": 8} }>
       <Label text="Users header" />
-      // Nested route content renders here.
-      <Outlet />
+      // Nested route content renders here — Outlet has no markup tag either.
+      { V.outlet() }
     </VBox>
   )
 }`

@@ -53,6 +53,9 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />VS Code and Visual Studio extensions — highlighting, completion, hover, diagnostics, formatting (LSP embeds the Rust GDScript analyzer)</>} />
       </ListItem>
       <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Fast Refresh (hot reload) — saving a .guitkx while the game runs under F5 updates the live UI in place, hook state preserved; dev-only, zero footprint in exported builds</>} />
+      </ListItem>
+      <ListItem disablePadding>
         <ListItemText primary={<><Chip label="In progress" size="small" color="info" sx={{ mr: 1 }} />This documentation site (ported from the Unity docs, rewritten for Godot)</>} />
       </ListItem>
     </List>

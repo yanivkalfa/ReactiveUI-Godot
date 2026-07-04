@@ -38,8 +38,9 @@ export const HooksGuidePage: FC = () => (
       Hooks let you use state, effects, context, and other framework features
       inside function-style <code>.guitkx</code> components. This page covers
       every hook in depth, with patterns and examples. In markup, bare{' '}
-      <code>use_*</code> calls are auto-prefixed to <code>Hooks.*</code>; the
-      static methods live on the <code>Hooks</code> class.
+      camelCase calls like <code>useState</code> are auto-prefixed to{' '}
+      <code>Hooks.useState</code>; the static methods live on the{' '}
+      <code>Hooks</code> class.
     </Typography>
 
     <Alert severity="info" sx={{ mt: 1 }}>
@@ -175,20 +176,23 @@ export const HooksGuidePage: FC = () => (
       <Typography variant="h5" component="h2" gutterBottom>
         useContext &amp; provideContext
       </Typography>
-      <CodeBlock language="jsx" code={`useContext(key: String)   # nearest provided value, or null
-Hooks.provideContext(key: String, value) -> void`} />
+      <CodeBlock language="jsx" code={`Hooks.createContext(default_value = null, name = "") -> RUIContext   # recommended
+useContext(handle_or_key)             # nearest provided value, or the handle's default
+Hooks.provideContext(handle_or_key, value) -> void`} />
       <Typography variant="body1" paragraph>
         Context lets you pass data down the component tree without threading
-        props through every level. <code>provideContext</code> makes a value
-        available to the current fiber&apos;s subtree; <code>useContext</code>{' '}
-        reads it.
+        props through every level. Both <code>provideContext</code> and{' '}
+        <code>useContext</code> accept either a <strong>context handle</strong> (from{' '}
+        <code>Hooks.createContext(...)</code> — recommended) or a bare String key
+        (back-compat). <code>provideContext</code> makes a value available to the
+        current fiber&apos;s subtree; <code>useContext</code> reads it.
       </Typography>
       <List sx={styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary="Context values are keyed by string. Use descriptive keys to avoid collisions." />
+          <ListItemText primary={<>Prefer a handle from <code>Hooks.createContext(default)</code> — it is keyed by object identity, so it can never collide with an unrelated feature&apos;s key, and it gives every consumer a default value for free. Bare String keys still work for back-compat but can collide.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="Nested providers shadow outer providers for the same key." />
+          <ListItemText primary="Nested providers shadow outer providers for the same key, whether it's a handle or a String." />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary="When a provided value changes, all consumers in the subtree are marked dirty and automatically re-render." />
@@ -199,8 +203,9 @@ Hooks.provideContext(key: String, value) -> void`} />
       </List>
       <CodeBlock language="jsx" code={HOOKS_CONTEXT_EXAMPLE} />
       <Alert severity="info" sx={{ mt: 1 }}>
-        See the dedicated <strong>Context API</strong> page for advanced
-        patterns (shadowing, performance, when to prefer signals).
+        See the dedicated <strong>Context API</strong> page for the full{' '}
+        <code>createContext</code> handle walkthrough and advanced patterns
+        (shadowing, performance, when to prefer signals).
       </Alert>
     </Box>
 

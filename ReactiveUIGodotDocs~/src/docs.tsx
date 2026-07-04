@@ -64,7 +64,7 @@ export const sections: DocSection[] = [
         title: 'Introduction',
         path: '/',
         keywords: ['introduction', 'markup', 'godot', 'guitkx'],
-        searchContent: 'reactive ui for godot react-style ui framework godot 4.x guitkx authoring language function-style components .guitkx hooks state effects reconcile fiber reconciler control nodes gdscript retained-mode scene tree component countercard useState return label button onClick vbox highlights snake_case hooks typed props diffs batches updates router signals utilities compiles to sibling .gd file no runtime codegen no javascript engine standard godot build var s useState',
+        searchContent: 'reactive ui for godot react-style ui framework godot 4.x guitkx authoring language function-style components .guitkx hooks state effects reconcile fiber reconciler control nodes gdscript retained-mode scene tree component countercard useState return label button onClick vbox highlights camelCase hooks typed props diffs batches updates router signals utilities compiles to sibling .gd file no runtime codegen no javascript engine standard godot build var s useState',
         element: () => <UitkxIntroductionPage />,
       },
     ],

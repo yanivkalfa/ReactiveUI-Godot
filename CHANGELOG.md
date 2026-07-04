@@ -4,6 +4,23 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.2] — 2026-07-04
+
+**Deleting a component's whole folder is now caught by the watch poll, not just by the next save.**
+Field re-test of 0.8.1's dangling-reference guard: deleting a component's *folder* removes its
+generated outputs along with it, so no orphaned `.gd` survives for `has_stale` to notice, and a
+dependent file isn't mtime-stale either — the 2-second poll stayed cold, and `GUITKX2107` only fired
+on an unrelated save or editor focus-in.
+
+### Fixed
+- **The watch poll now reads each tracked file's sidecar references every tick** and goes hot the
+  moment a dependency's state stops matching reality in either direction — unflagged-but-missing
+  (needs the `GUITKX2107` flag) or flagged-but-restored (needs the heal recompile) — settling again
+  once every state matches, so it never spins. Cost is one small JSON read per tracked file per
+  tick, alongside the existing mtime pass.
+- Pairs with `ide-extensions` LSP **0.8.6**, which fixes the matching VS Code-side gaps (the dynamic
+  file-glob watcher never actually received folder-delete events; it's a single `**` watcher now).
+
 ## [0.8.1] — 2026-07-04
 
 **Renaming or deleting a `.guitkx` no longer leaks its generated outputs.** Field capture,
