@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.3] - 2026-07-04
+- **Deleting/renaming a component now squiggles its dangling references — live.** Two fixes:
+  the server re-validates every open document when the component universe changes (previously
+  only the edited file itself recomputed diagnostics, so a deletion elsewhere never updated
+  your open tabs), and generated `.gd` classes are **un-harvested** when their file vanishes
+  (the class-name set was grow-only, which permanently suppressed the unknown-component check
+  for anything that had ever existed). Pairs with the addon's `GUITKX2107` compile-tier error.
+  (Server 0.8.3.)
+
 ## [0.8.2] - 2026-07-04
 - **Compiler errors now reach VS Code after the save.** The Godot addon's watch poll compiles a
   saved `.guitkx` ~2 seconds AFTER the save and writes its verdict into the `.diags.json`

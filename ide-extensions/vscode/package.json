@@ -2,7 +2,7 @@
   "name": "guitkx",
   "displayName": "GUITKX",
   "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence analyzed headlessly via gdscript-analyzer (no running Godot editor required).",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",
