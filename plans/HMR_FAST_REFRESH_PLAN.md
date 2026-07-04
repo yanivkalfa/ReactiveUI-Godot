@@ -1,6 +1,22 @@
 # Phase H — Runtime Fast Refresh (HMR) for running games
 
-**Status: PLANNED — research complete, feasibility CONFIRMED, implementation awaiting go.**
+**Status: IMPLEMENTED (2026-07-04, branch `feat/hmr-fast-refresh`, addon 0.8.0).**
+Landing map — H0 spike: all four engine proofs green (findings recorded in the a8dfe1f commit
+message; the "stale lambda" turned out to dispatch NEW code on 4.7, better than godot#85704
+suggested — the atomic flush stays as belt-and-suspenders). H2+H3 `a8dfe1f` (core/hmr.gd,
+root registry, hmr_refresh + 26-check suite). H1 `e560d04` (editor debugger push, gd_ok
+filter). H4 `da02567` (`__RUI_HOOK_SIG` const + compiler→reload→reset e2e; contract goldens
+byte-identical — the parity corpus captures parser behavior, not class headers). H5 `0525a98`
+(CHANGELOG 0.8.0, CI suite registration, docs page rewritten — it had been OVERPROMISING
+"rides Godot's own hot reload", the exact field-disproven claim). H6: hardening tests (mixed
+component+module batches, idempotent re-saves, reload racing a queued click — all one atomic
+pass) — final suite: hmr_test 37 checks, full CI-parity board green (build, contract 63,
+core 114, style 25, routers 18+37, update, demos 30/30, guitkx, TS 174, docs build).
+FIELD acceptance (the one gate that needs a human): F5 the gallery, click a counter to 5,
+edit its label in the `.guitkx`, save → the running UI updates in ~2–3 s with the count
+still 5; add a hook → deliberate reset; break the file → last good UI + dock error.
+
+Original plan (research + design record) follows.
 Field capture 2026-07-04: edit a `.guitkx` while the demos run under F5 → expectation is the
 running UI updates ("not much of a hot reload"). Today RG has zero runtime-reload machinery —
 the watcher keeps generated `.gd` fresh for the editor and the *next* run only.

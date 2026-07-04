@@ -433,8 +433,9 @@ was built for — method-reference Callables (`DemoBox.render`) keep their ident
 the new code, so RG's Callable-equality fiber matching preserves hook state for free. The four
 missing pieces (all with verified mechanisms): an `EditorDebuggerPlugin` push channel from the
 watcher into the running game, a live-root registry, a reconciler bailout-bypass
-(`hmr_refresh`), and a compile-time hook-signature (`__rui_hook_sig`) for the deliberate
-state-reset rule. Awaiting go.
+(`hmr_refresh`), and a compile-time hook-signature (`__RUI_HOOK_SIG`) for the deliberate
+state-reset rule. **IMPLEMENTED** on `feat/hmr-fast-refresh` (addon 0.8.0) — see the HMR plan's
+status header for the landing map; hmr_test (37 checks) is in CI.
 
 ## Non-goals / parked
 - **Live checks for setup-value markup** (`var x = ( <Tag/> )` as-you-type): the compile tier

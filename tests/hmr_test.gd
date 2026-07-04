@@ -23,6 +23,9 @@ func _initialize() -> void:
 	_test_unmount_prunes_registry()
 	_test_multi_root()
 	_test_compiled_component_end_to_end()
+	_test_mixed_batch_component_and_module()
+	_test_rapid_resave_idempotent()
+	_test_reload_with_pending_update()
 	_cleanup_dir()
 	if _failed > 0:
 		print("[hmr_test] FAILED (%d passed, %d failed)" % [_passed, _failed])
@@ -300,6 +303,62 @@ func _strip_class_name(gd: String) -> String:
 	if gd.begins_with("class_name "):
 		return gd.substr(gd.find("\n") + 1)
 	return gd
+
+## One sweep can carry a component AND a module change (e.g. Foo.guitkx + Foo.hooks.guitkx
+## saved together): global re-render fires, the component's new code shows, resets still apply.
+func _test_mixed_batch_component_and_module() -> void:
+	var ap := DIR + "/counter_x.gd"
+	var bp := DIR + "/sib_x.gd"
+	var mp := DIR + "/mod_x.gd"
+	_write(ap, _counter_src("x1", "useState"))
+	_write(bp, _sibling_src("sib"))
+	_write(mp, "extends RefCounted\nstatic func use_x() -> int:\n\treturn 1\n")
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var mod: GDScript = load(mp)
+	assert(mod != null)
+	var m := _mount(a, b)
+	_click_plus(m["root"], m["rec"])
+	var sib_before: int = b.renders
+	_write(ap, _counter_src("x2", "useState"))
+	_write(mp, "extends RefCounted\nstatic func use_x() -> int:\n\treturn 2\n")
+	var res: Dictionary = RUIHmr_.apply([ap, mp])
+	_check_true(bool(res["global"]) and int(res["reloaded"]) == 2, "mixed batch: both reloaded, global set (got %s)" % str(res))
+	_check_true("x2-1" in _labels_text(m["root"]), "component code swapped with state kept (x2-1)")
+	_check_true(int(b.renders) == sib_before + 1, "module change re-ran the sibling in the same pass")
+	_teardown(m)
+
+## Rapid double-save of identical content: the second apply must skip (byte-identical) and
+## touch nothing -- the editor's forced sweeps rewrite files without changing them.
+func _test_rapid_resave_idempotent() -> void:
+	var ap := DIR + "/counter_r.gd"
+	_write(ap, _counter_src("r1", "useState"))
+	var a: GDScript = load(ap)
+	var m := _mount(a, a)
+	_write(ap, _counter_src("r2", "useState"))
+	var res1: Dictionary = RUIHmr_.apply([ap])
+	var res2: Dictionary = RUIHmr_.apply([ap])   # same bytes again
+	_check_true(int(res1["reloaded"]) == 1 and int(res2["reloaded"]) == 0,
+		"identical re-apply skips (got %s then %s)" % [str(res1), str(res2)])
+	_check_true("r2-0" in _labels_text(m["root"]), "UI stable across the idempotent re-apply")
+	_teardown(m)
+
+## A click can land right before the save: its deferred update is still pending when the
+## reload arrives. The synchronous HMR flush must commit BOTH -- new code and the queued
+## state change -- in one pass.
+func _test_reload_with_pending_update() -> void:
+	var ap := DIR + "/counter_p.gd"
+	_write(ap, _counter_src("p1", "useState"))
+	var a: GDScript = load(ap)
+	var m := _mount(a, a)
+	var btn := _find_first(m["root"], "Button") as Button
+	btn.pressed.emit()   # deliberately NOT pumped -- the update is queued, not committed
+	_write(ap, _counter_src("p2", "useState"))
+	var res: Dictionary = RUIHmr_.apply([ap])
+	_check_true(int(res["reloaded"]) == 1, "reload applied over a pending update")
+	_check_true("p2-1" in _labels_text(m["root"]),
+		"one atomic pass: new code AND the queued click both landed (got %s)" % str(_labels_text(m["root"])))
+	_teardown(m)
 
 func _cleanup_dir() -> void:
 	var d := DirAccess.open(DIR)
