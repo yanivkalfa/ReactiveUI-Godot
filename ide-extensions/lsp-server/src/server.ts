@@ -163,25 +163,32 @@ function armWorkspaceComplete(): void {
 // The path→class map keeps the set honest: a deleted .gd un-harvests its name unless another
 // file still declares it.
 const gdClassNames = new Set<string>();
-const gdClassByPath = new Map<string, string>();
+const gdClassByPath = new Map<string, string>(); // keys normalized via normFsPath
 let componentUniverseReady = false;
+// Map keys must survive the different path spellings the harvest sources produce (library walk
+// vs watcher events vs sibling derivation): lowercase + single separator form.
+function normFsPath(p: string): string {
+  return p.toLowerCase().replace(/\//g, "\\");
+}
 function harvestClassName(fsPath: string, text: string): void {
+  const key = normFsPath(fsPath);
   const m = /^[ \t]*class_name[ \t]+([A-Za-z_][A-Za-z0-9_]*)/m.exec(text);
   const next = m ? m[1] : null;
-  const prev = gdClassByPath.get(fsPath);
+  const prev = gdClassByPath.get(key);
   if (prev && prev !== next) {
-    gdClassByPath.delete(fsPath);
+    gdClassByPath.delete(key);
     if (![...gdClassByPath.values()].includes(prev)) gdClassNames.delete(prev);
   }
   if (next) {
-    gdClassByPath.set(fsPath, next);
+    gdClassByPath.set(key, next);
     gdClassNames.add(next);
   }
 }
 function unharvestClassName(fsPath: string): void {
-  const prev = gdClassByPath.get(fsPath);
+  const key = normFsPath(fsPath);
+  const prev = gdClassByPath.get(key);
   if (!prev) return;
-  gdClassByPath.delete(fsPath);
+  gdClassByPath.delete(key);
   if (![...gdClassByPath.values()].includes(prev)) gdClassNames.delete(prev);
 }
 
@@ -272,10 +279,30 @@ function handleWatchedPath(fsPath: string, deleted: boolean): void {
     return;
   }
   if (!fsPath.endsWith(".gd")) {
-    // Possibly a directory event: a deleted folder must evict every tracked .gd underneath it
-    // (no per-file events arrive), a created/renamed-in folder must load its .gd + .guitkx files.
+    // Possibly a directory event: a deleted folder must evict EVERYTHING underneath it — VS
+    // Code coalesces bulk deletes into ONE folder event, so no per-file events ever arrive.
+    // Analyzer libraries were always closed here; the .guitkx index entries and harvested
+    // generated classes were NOT (field capture 2026-07-04: deleting a component's FOLDER left
+    // its consumers squiggle-free until an unrelated save).
     if (deleted) {
       analyzer.closeUnder(pathToFileURL(fsPath).toString() + "/");
+      const prefix = normFsPath(fsPath) + "\\";
+      for (const uri of index.uris()) {
+        let p: string;
+        try {
+          p = uriToProjectPath(uri);
+        } catch {
+          continue;
+        }
+        if (normFsPath(p).startsWith(prefix)) {
+          index.evict(uri);
+          syncGuitkxLibrary(uri);
+        }
+      }
+      for (const key of [...gdClassByPath.keys()]) {
+        if (key.startsWith(prefix)) unharvestClassName(key);
+      }
+      scheduleRepublish();
       return;
     }
     let isDir = false;
@@ -287,6 +314,7 @@ function handleWatchedPath(fsPath: string, deleted: boolean): void {
     if (isDir) {
       for (const f of gdFilesUnder(fsPath)) upsertLibraryFile(f);
       scanWorkspace(index, fsPath);
+      scheduleRepublish(); // a moved-in folder can clear (or arm) other docs' diagnostics
     }
     return;
   }
@@ -320,6 +348,10 @@ function reindexGuitkxFile(fsPath: string, deleted: boolean): void {
     // user happens to save something (field capture 2026-07-04). The open buffer keeps its own
     // diagnostics; if the user re-saves it, the created-file event re-indexes it right back.
     index.evict(uri);
+    // Un-harvest the generated sibling's class NOW instead of waiting ~2s for Godot's orphan
+    // sweep to delete the .gd (whose deletion event would do it) -- the live unknown-component
+    // squiggle should appear on the watcher tick, not on the compiler's schedule.
+    unharvestClassName(fsPath.replace(/\.guitkx$/i, ".gd"));
     syncGuitkxLibrary(uri); // no entries left -> closes the virtual library
     scheduleRepublish(); // open docs referencing the vanished component must squiggle NOW
     return;
