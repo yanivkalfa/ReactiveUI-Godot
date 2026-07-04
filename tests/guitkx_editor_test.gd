@@ -418,3 +418,10 @@ func _test_rich_hover() -> void:
 		"diagnostic prepends to the symbol card")
 	_ok(ce.compose_hover("just symbol", 0) == "just symbol", "clean line passes the card through")
 	ce.free()
+
+	# The resource loader must NEVER return an error for an unreadable file — ResourceLoader
+	# caches failures, permanently red-✕ing the file in the dock (field capture).
+	const Loader := preload("res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd")
+	var ldr := Loader.new()
+	var out: Variant = ldr._load("res://tests/__no_such_file_ever.guitkx", "", false, 0)
+	_ok(out is Resource, "loader returns an (empty) resource for an unreadable path, never an error")

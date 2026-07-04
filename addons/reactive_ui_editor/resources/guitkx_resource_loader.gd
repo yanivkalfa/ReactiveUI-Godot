@@ -33,5 +33,11 @@ func _load(path: String, _original_path: String, _use_sub_threads: bool, _cache_
 		res.from_text(f.get_as_text())
 		f.close()
 	else:
-		return FileAccess.get_open_error()
+		# NEVER return the error: a transiently-unreadable file (mid-save lock, mid-rename, the
+		# watcher writing) gets CACHED by ResourceLoader as a load FAILURE — red ✕ in the dock,
+		# and every later double-click receives the cached failure instead of reaching _edit,
+		# so the file can never open in the editor again this session. The view re-reads from
+		# disk on open anyway, so an empty-source resource routes correctly and self-heals.
+		# [field capture: one red-✕ file, then "no new file will open in the addon"]
+		push_warning("[reactive_ui_editor] %s unreadable right now (error %d) — returning an empty resource; the editor re-reads on open." % [path, FileAccess.get_open_error()])
 	return res
