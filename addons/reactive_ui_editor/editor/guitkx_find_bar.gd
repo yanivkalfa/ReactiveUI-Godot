@@ -98,8 +98,15 @@ func find_step(forward: bool) -> void:
 		line = _target.get_selection_to_line()
 		col = _target.get_selection_to_column()
 	elif not forward and _target.has_selection():
+		# Step BEFORE the current match. A match starting at column 0 must hop to the previous
+		# line's end (clamping to column 0 would re-find the same match and stand still).
 		line = _target.get_selection_from_line()
-		col = maxi(0, _target.get_selection_from_column() - 1)
+		col = _target.get_selection_from_column() - 1
+		if col < 0:
+			line -= 1
+			if line < 0:
+				line = _target.get_line_count() - 1
+			col = _target.get_line(line).length()
 	var hit := _target.search(q, flags, line, col)
 	if hit.x < 0:
 		# Wrap: restart from the top (forward) or from the very end (backward).
