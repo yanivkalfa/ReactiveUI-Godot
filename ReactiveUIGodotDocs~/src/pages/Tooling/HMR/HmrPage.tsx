@@ -28,159 +28,118 @@ const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, chil
 export const HmrPage: FC = () => (
   <Box sx={Styles.root}>
     <Typography variant="h4" component="h1" gutterBottom>
-      Live Reload
+      Hot Reload (Fast Refresh)
     </Typography>
     <Typography variant="body1" paragraph>
-      Editing a <code>.guitkx</code> file and saving it updates the running UI in
-      the Godot editor without a manual rebuild. This works by riding Godot&apos;s
-      own GDScript hot-reload — there is no separate HMR subsystem to configure.
+      Since <strong>0.8.0</strong>, editing a <code>.guitkx</code> file while your game runs
+      under <strong>F5</strong> updates the running UI in place — new markup and logic appear
+      within a couple of seconds, and <strong>hook state is preserved</strong>: a counter keeps
+      its count while you restyle its label. Editing while only the editor is open keeps the
+      generated scripts fresh for the next run, exactly as before.
     </Typography>
     <Alert severity="info" sx={{ mb: 1 }}>
-      This is deliberately different from the Unity reference&apos;s HMR. Godot has
-      no Roslyn / domain-reload / assembly-swap machinery, and the library needs
-      none: a <code>.guitkx</code> compiles to a real sibling <code>.gd</code>{' '}
-      script that Godot compiles and reloads for free.
+      Godot&apos;s built-in &quot;Synchronize Script Changes&quot; can not drive this: it only
+      fires for scripts saved in the <em>built-in</em> script editor, never for files written
+      by a compiler (godot#72825). The library therefore ships its own push: the watcher tells
+      each running play session exactly which generated <code>.gd</code> files it just
+      produced, over the debugger connection that F5 already gives you.
     </Alert>
 
     <Section title="Quick Start">
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<>Enable the <strong>reactive_ui</strong> editor plugin (<strong>Project → Project Settings → Plugins</strong>). The runtime works without it; the plugin is what compiles <code>.guitkx</code>.</>} />
+          <ListItemText primary={<>Enable the <strong>reactive_ui</strong> editor plugin (<strong>Project → Project Settings → Plugins</strong>) and run your game with <strong>F5</strong> (from the editor — that&apos;s what creates the debugger session).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Edit and save any <code>.guitkx</code> file.</>} />
+          <ListItemText primary={<>Edit and save any <code>.guitkx</code> — from VS Code, the in-Godot editor, anything that writes the file.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>The plugin regenerates the sibling <code>.gd</code> and nudges the editor filesystem; Godot hot-reloads the script and the mounted UI updates in place.</>} />
+          <ListItemText primary={<>Watch the Output: <code>[guitkx] compiled -&gt; …</code> then <code>[guitkx] hot-reloaded 1 script(s) -&gt; 1 component(s) re-rendered in 12 ms</code>. The running UI is already showing the change.</>} />
         </ListItem>
       </List>
     </Section>
 
     <Section title="How It Works">
       <Typography variant="body1" paragraph>
-        The toolchain is a single <code>@tool EditorPlugin</code>{' '}
-        (<code>addons/reactive_ui/plugin.gd</code>):
+        Two halves, meeting over the debugger protocol:
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<>On enable, the plugin subscribes to <code>EditorFileSystem.filesystem_changed</code> and compiles all <code>.guitkx</code> under <code>res://</code>.</>} />
+          <ListItemText primary={<><strong>Editor:</strong> the watcher (<code>plugin.gd</code>) notices the save (2&nbsp;s poll + filesystem events), compiles <code>Foo.guitkx</code> → sibling <code>Foo.gd</code>, and pushes the paths of everything that compiled <em>and parses</em> to every active play session (<code>editor/hmr_debugger.gd</code>, message <code>rui_hmr:reload</code>). A game is never asked to load a script the engine would reject.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Each <code>Foo.guitkx</code> is lexed, parsed, and lowered by <code>RUIGuitkxCodegen</code> to a sibling <code>Foo.gd</code> — a real GDScript source file with a <code>render(props, children)</code> function.</>} />
+          <ListItemText primary={<><strong>Game:</strong> <code>RUIHmr</code> (<code>core/hmr.gd</code>) reloads each script <em>in place</em> — <code>source_code</code> + <code>reload(keep_state = true)</code> on the same GDScript resource. Method-reference Callables like <code>DemoBox.render</code> keep their identity <em>and</em> dispatch the new code, so the reconciler&apos;s fiber matching still recognises every mounted component — that is why hook state survives.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>The plugin calls <code>EditorFileSystem.update_file()</code> on the emitted <code>.gd</code> so Godot picks it up.</>} />
+          <ListItemText primary={<><strong>Re-render:</strong> a reload alone changes nothing on screen (the reconciler&apos;s bailout would keep serving its cached output), so the runtime marks exactly the fibers whose component script changed and flushes synchronously — one atomic swap-and-commit inside the debugger callback, no frame where old handlers meet new code.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Godot recompiles and hot-reloads the <code>.gd</code> script itself — the library does not swap delegates or reload assemblies. The next reactive render runs the new <code>render</code> body.</>} />
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemText primary={<>An mtime staleness guard makes the loop self-terminating: writing the <code>.gd</code> makes it newer than its <code>.guitkx</code>, so the next <code>filesystem_changed</code> finds nothing stale and stops. A re-entry guard prevents overlapping compiles.</>} />
+          <ListItemText primary={<><strong>Report:</strong> the game replies with what it did (scripts reloaded, components re-rendered, milliseconds, state resets), printed in the editor Output next to the sweep lines.</>} />
         </ListItem>
       </List>
-      <Typography variant="body1" paragraph>
-        Because the generated <code>.gd</code> is an ordinary script, everything
-        that follows — reload, error reporting, the debugger — is stock Godot
-        behaviour, not a bespoke pipeline.
-      </Typography>
     </Section>
 
     <Section title="State Across a Reload">
       <Typography variant="body1" paragraph>
-        Reactive state lives in each component&apos;s <code>RUIComponentState</code>{' '}
-        (a positional array of hook slots) held by the reconciler, <em>not</em> on
-        the script instance. So a re-render after a script reload runs the new{' '}
-        <code>render</code> body against the existing hook slots, and the table
-        below describes how each hook behaves:
+        Reactive state lives in each component&apos;s <code>RUIComponentState</code> (a
+        positional array of hook slots) held by the reconciler, <em>not</em> on the script. A
+        refresh runs the new <code>render</code> body against the existing slots:
       </Typography>
       <TableContainer component={Paper} variant="outlined" sx={Styles.table}>
         <Table size="small">
           <TableHead>
             <TableRow>
               <TableCell><strong>Hook</strong></TableCell>
-              <TableCell><strong>Behaviour after a reload / re-render</strong></TableCell>
+              <TableCell><strong>Behaviour after a hot reload</strong></TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             <TableRow>
               <TableCell><code>useState</code> / <code>useReducer</code></TableCell>
-              <TableCell>Current values are retained in the slot; the setter / dispatch identity is stable.</TableCell>
+              <TableCell>Current values retained; setter / dispatch identity stable.</TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>useRef</code></TableCell>
-              <TableCell>The <code>{'{ "current": … }'}</code> box is preserved; <code>current</code> is unchanged.</TableCell>
+              <TableCell>The <code>{'{ "current": … }'}</code> box is preserved.</TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>useEffect</code> / <code>useLayoutEffect</code></TableCell>
-              <TableCell>The factory is refreshed with the new closure; it re-runs (after cleanup) when its deps change.</TableCell>
+              <TableCell>Factory refreshed with the new closure; re-runs (after cleanup) when deps change.</TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>useMemo</code> / <code>useCallback</code></TableCell>
-              <TableCell>Recomputed with the new function body when deps change; the cached value survives otherwise.</TableCell>
+              <TableCell>Recomputed with the new body when deps change; cached value survives otherwise.</TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>useContext</code></TableCell>
-              <TableCell>Stateless — reads the current provider value without occupying a slot; always reflects the latest value.</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell><code>useStableCallback</code> / <code>useStableAction</code></TableCell>
-              <TableCell>Wrapper identity preserved; the inner closure is silently replaced with the new body.</TableCell>
+              <TableCell>Stateless — always reflects the latest provider value.</TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>useSignal</code> / <code>useSignalKey</code></TableCell>
-              <TableCell>Re-bound each render; the subscription persists (or re-subscribes if the signal instance changed).</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell><code>useDeferredValue</code></TableCell>
-              <TableCell>Recalculated from the new upstream value on the next render.</TableCell>
+              <TableCell>Subscription persists; re-binds if the signal instance changed.</TableCell>
             </TableRow>
           </TableBody>
         </Table>
       </TableContainer>
-      <Alert severity="warning" sx={{ mt: 2 }}>
-        The hooks contract still applies. If an edit changes the number, order, or
-        kind of hooks, the positional-slot model desyncs. In debug builds the
-        hook-order validator (<code>RUIConfig.enable_hook_validation</code>)
-        detects this across renders and reports it via <code>RUIDiagnostics</code>{' '}
-        + <code>push_error</code>. Re-mount the component (or restart the scene) to
-        reset its slots cleanly.
+      <Alert severity="success" sx={{ mt: 2 }}>
+        <strong>Changed hook shape? Deliberate reset, not corruption.</strong> Every compiled
+        component embeds its ordered hook-call fingerprint (<code>__RUI_HOOK_SIG</code>). If an
+        edit adds, removes, or reorders hooks, the runtime detects the changed fingerprint
+        across the reload and <em>resets that component&apos;s state</em> (running its effect
+        cleanups first) — React Fast Refresh semantics. Components whose shape did not change
+        keep their state.
       </Alert>
     </Section>
 
-    <Section title="Companion Files">
-      <Typography variant="body1" paragraph>
-        Companion <code>.guitkx</code> files compile to sibling <code>.gd</code>s
-        the same way, and reload the same way:
-      </Typography>
+    <Section title="Companion & Module Files">
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Hook files</strong> (e.g. <code>MyComponent.hooks.guitkx</code>, a <code>hook use_foo(...) {'{ … }'}</code> declaration) — heavy logic (game loops, effects) that a sibling <code>.guitkx</code> imports. Edit and save to reload the hook body.</>} />
+          <ListItemText primary={<><strong>Hook files</strong> (e.g. <code>MyComponent.hooks.guitkx</code>) and <strong>modules</strong> reload the same way — but since any component may call them, a module change triggers a <em>global</em> re-render (every mounted component re-runs, state preserved).</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Style / utility modules</strong> (e.g. <code>MyComponent.style.guitkx</code>, a <code>module {'{ … }'}</code> of <code>const</code> / <code>static</code> style values or helper functions) — recompiled to a <code>.gd</code> and reloaded by Godot.</>} />
+          <ListItemText primary={<><strong>New components</strong> just work: the sweep compiles them, and a running game picks them up the first time something renders them (never-loaded scripts are read fresh from disk).</>} />
         </ListItem>
       </List>
-    </Section>
-
-    <Section title="New Components">
-      <Typography variant="body1" paragraph>
-        Creating a brand-new <code>.guitkx</code> just works: the plugin&apos;s{' '}
-        <code>compile_all</code> pass picks it up on the next{' '}
-        <code>filesystem_changed</code>, emits its sibling <code>.gd</code>, and
-        Godot loads it as a normal script. Reference it from a parent with{' '}
-        <code>{'V.fc(preload("res://…/Child.guitkx").render, { … })'}</code> — the
-        compiled <code>.gd</code> is a real class, so <code>preload</code> and hot
-        reload both work with no registry step.
-      </Typography>
-    </Section>
-
-    <Section title="Mounting a Component">
-      <Typography variant="body1" paragraph>
-        A component is mounted onto a container node with{' '}
-        <code>ReactiveRoot.create(container, V.fc(Comp.render))</code>. That root
-        keeps its component states alive across reloads, which is exactly why hook
-        state persists when the underlying <code>.gd</code> is recompiled.
-      </Typography>
     </Section>
 
     <Section title="Limitations">
@@ -194,34 +153,35 @@ export const HmrPage: FC = () => (
           </TableHead>
           <TableBody>
             <TableRow>
-              <TableCell>Hook signature changes reset state</TableCell>
+              <TableCell>Dev-only by construction</TableCell>
               <TableCell>
-                Adding / removing / reordering hooks desyncs the positional slots;
-                re-mount the component to recover cleanly.
+                Everything is gated on an attached debugger session
+                (<code>EngineDebugger.is_active()</code>). Exported builds and games launched
+                outside the editor carry zero HMR behaviour.
               </TableCell>
             </TableRow>
             <TableRow>
-              <TableCell>Compile errors block the update</TableCell>
+              <TableCell>Compile errors keep the last good UI</TableCell>
               <TableCell>
-                A <code>GUITKX####</code> error emits a stub <code>.gd</code> that{' '}
-                <code>push_error</code>s; fix the error and re-save to resume.
+                A <code>GUITKX####</code> error means nothing is pushed for that file — the
+                running game keeps its last good code, the dock and VS Code show the error,
+                and the next clean save resumes hot reload (state intact).
               </TableCell>
             </TableRow>
             <TableRow>
-              <TableCell>Editor-plugin scope</TableCell>
+              <TableCell>Renaming a component remounts it</TableCell>
+              <TableCell>A new <code>class_name</code> is a new script — fresh state (same as Unity).</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell><code>static var</code> in hand-written modules</TableCell>
               <TableCell>
-                Compilation is driven by the <code>@tool EditorPlugin</code>, so
-                it runs in the editor. For a running game, the reload path is
-                Godot&apos;s standard script reload of the already-generated{' '}
-                <code>.gd</code>.
+                Values are not migrated across reloads (Godot #105667). Generated components
+                are statics-free by design, so this only affects hand-written code.
               </TableCell>
             </TableRow>
             <TableRow>
-              <TableCell>Reload granularity is per-script</TableCell>
-              <TableCell>
-                Godot reloads at the <code>.gd</code> level; the reactive render
-                then reconciles only what changed in the vnode tree.
-              </TableCell>
+              <TableCell>Latency is poll-dominated</TableCell>
+              <TableCell>Save → screen is ≈2–3 s, mostly the watcher&apos;s 2 s poll; the reload + re-render itself is milliseconds.</TableCell>
             </TableRow>
           </TableBody>
         </Table>
@@ -230,32 +190,26 @@ export const HmrPage: FC = () => (
 
     <Section title="Troubleshooting">
       <Typography variant="h6" component="h3" gutterBottom>
-        Changes don&apos;t appear
+        The running game doesn&apos;t update
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<>Confirm the <strong>reactive_ui</strong> editor plugin is enabled.</>} />
+          <ListItemText primary={<>The game must be launched with <strong>F5 from the editor</strong> — a standalone run has no debugger session, so there is no channel to push over.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="Confirm the file is saved, and look for a [guitkx] compiled -> … line in the Output panel." />
+          <ListItemText primary={<>Check the Output for the pair of lines: <code>[guitkx] compiled -&gt; …</code> (the sweep) and <code>[guitkx] hot-reloaded …</code> (the game&apos;s report). Compiled but not hot-reloaded usually means the generated script failed the parse check — fix the reported error.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Check for <code>[guitkx]</code> <code>push_error</code> / <code>push_warning</code> messages, or read the sibling <code>.guitkx.diags.json</code>.</>} />
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemText primary={<>Verify the file is under <code>res://</code> (the scanned root).</>} />
+          <ListItemText primary={<>No <code>[guitkx] sweep:</code> line at all after the editor starts? The plugin isn&apos;t running — re-enable it in <strong>Project Settings → Plugins</strong>.</>} />
         </ListItem>
       </List>
 
       <Typography variant="h6" component="h3" gutterBottom sx={{ mt: 2 }}>
-        State is lost after an edit
+        State was lost after an edit
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary="The hook order or count likely changed — this desyncs the positional hook slots." />
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemText primary={<>Check the Output for a <code>[Hooks][order]</code> message and re-mount the component (restart the scene).</>} />
+          <ListItemText primary={<>That&apos;s the deliberate reset: the edit changed the component&apos;s hook shape (the Output line says <code>… (1 state reset: hook shape changed)</code>). Same-shape edits preserve state.</>} />
         </ListItem>
       </List>
     </Section>
