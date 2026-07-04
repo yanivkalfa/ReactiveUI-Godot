@@ -110,11 +110,23 @@ func _exit_tree() -> void:
 		_view = null
 
 ## Godot asks every plugin for unsaved state before quitting: a non-empty string joins the editor's
-## own quit-confirmation dialog (parity plan L4 — without this, quit silently drops the buffer).
+## own quit-confirmation dialog (parity plan L4 — without this, quit silently drops buffers).
 func _get_unsaved_status(for_scene: String) -> String:
-	if for_scene.is_empty() and _view != null and _view.is_dirty():
-		return "Reactive UI Editor: '%s' has unsaved changes." % _view.current_path()
+	if for_scene.is_empty() and _view != null:
+		var dirty: Array = _view.dirty_files()
+		if not dirty.is_empty():
+			return "Reactive UI Editor: unsaved changes in %s." % ", ".join(dirty)
 	return ""
+
+## Session persistence across editor restarts (G17): open files, current tab, carets, zoom, wrap
+## ride Godot's own editor-layout store.
+func _get_window_layout(configuration: ConfigFile) -> void:
+	if _view != null:
+		configuration.set_value(PLUGIN_NAME, "session", _view.session_state())
+
+func _set_window_layout(configuration: ConfigFile) -> void:
+	if _view != null and configuration.has_section_key(PLUGIN_NAME, "session"):
+		_view.restore_session(configuration.get_value(PLUGIN_NAME, "session"))
 
 ## Godot's own save flows (Save All, save-on-quit confirm) flush our buffer as "external data".
 func _save_external_data() -> void:
@@ -129,8 +141,8 @@ func _apply_changes() -> void:
 
 func _on_file_moved(old_file: String, new_file: String) -> void:
 	cleanup_moved_guitkx(old_file, new_file)
-	if _view != null and _view.current_path() == old_file:
-		_view.retarget_path(new_file)
+	if _view != null:
+		_view.retarget_path(new_file, old_file)
 
 ## A dock rename/move of a .guitkx leaves its generated outputs (.gd/.uid/sidecar) under the OLD
 ## name until the watcher's next sweep (~2s) — long enough for rapid renames to stack multiple
@@ -162,22 +174,23 @@ static func cleanup_moved_guitkx(old_source: String, new_source: String = "") ->
 func _on_folder_moved(old_folder: String, new_folder: String) -> void:
 	if _view == null:
 		return
-	var cur: String = _view.current_path()
 	var prefix := old_folder if old_folder.ends_with("/") else old_folder + "/"
-	if cur.begins_with(prefix):
-		var dst := new_folder if new_folder.ends_with("/") else new_folder + "/"
-		_view.retarget_path(dst + cur.substr(prefix.length()))
+	var dst := new_folder if new_folder.ends_with("/") else new_folder + "/"
+	for p in _view.open_paths():
+		if str(p).begins_with(prefix):
+			_view.retarget_path(dst + str(p).substr(prefix.length()), str(p))
 
 func _on_file_removed(file: String) -> void:
-	if _view != null and _view.current_path() == file:
-		_view.mark_detached()
+	if _view != null:
+		_view.mark_detached(file)
 
 func _on_folder_removed(folder: String) -> void:
 	if _view == null:
 		return
 	var prefix := folder if folder.ends_with("/") else folder + "/"
-	if _view.current_path().begins_with(prefix):
-		_view.mark_detached()
+	for p in _view.open_paths():
+		if str(p).begins_with(prefix):
+			_view.mark_detached(str(p))
 
 func _on_fs_changed() -> void:
 	if _fs_debounce != null and _fs_debounce.is_inside_tree():

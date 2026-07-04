@@ -21,21 +21,55 @@ const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diag
 const ConfigScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
 const RefsScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_refs.gd")
 
-var _code_edit: GuitkxCodeEdit
+# Multi-file model (M2/G16): ONE GuitkxCodeEdit per open file, stacked with only the current one
+# visible — undo history, caret, scroll, decorations, and dirty/conflict state all survive file
+# switches for free. `_current` is the active editor; the properties below delegate to it so the
+# whole single-buffer pipeline (diagnostics, save, hover, dialogs) reads/writes per-file state
+# without knowing about the stack.
+var _current: GuitkxCodeEdit
+var _editors: Dictionary = {}   # path ("" = the scratch buffer) -> GuitkxCodeEdit
+var _editor_stack: Control
+var _open_list: ItemList
+var _wrap_toggle: CheckBox
+
 var _file_label: Label
 var _find_bar: HBoxContainer  # GuitkxFindBar (typed loosely; see FindBarScript note)
 var _debounce: Timer
 var _problems: GuitkxProblemsPanel
 var _err_icon: Texture2D
 var _warn_icon: Texture2D
-var _current_path: String = ""
 
-# Buffer state (W2, parity plan G32/G25/L1/L2). _loading suppresses the text_changed handler while
-# WE set the buffer (loads, format rewrites), so only user edits mark it dirty.
-var _dirty := false
+# _loading suppresses the text_changed handler while WE set a buffer (loads, format rewrites),
+# so only user edits mark files dirty.
 var _loading := false
-var _detached := false          # the source file was deleted/moved away on disk
-var _loaded_mtime := 0          # disk mtime the buffer was loaded from / last saved to
+
+var _code_edit: GuitkxCodeEdit:
+	get:
+		return _current
+var _current_path: String:
+	get:
+		return _current.file_path if _current != null else ""
+	set(v):
+		if _current != null:
+			_current.file_path = v
+var _dirty: bool:
+	get:
+		return _current != null and _current.dirty
+	set(v):
+		if _current != null:
+			_current.dirty = v
+var _detached: bool:
+	get:
+		return _current != null and _current.detached
+	set(v):
+		if _current != null:
+			_current.detached = v
+var _loaded_mtime: int:
+	get:
+		return _current.loaded_mtime if _current != null else 0
+	set(v):
+		if _current != null:
+			_current.loaded_mtime = v
 
 # Cross-file compile context (W3, G13/P2): project_bindings() costs ~35ms over ~100 files, so it is
 # cached and recomputed only when the filesystem shape changes — never per debounce tick.
@@ -52,15 +86,34 @@ func _init() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
+	var split := HSplitContainer.new()
+	split.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	split.split_offset = 180
+	add_child(split)
+
+	# Left: the open-files list (script-editor style). Click switches; middle-click closes.
+	_open_list = ItemList.new()
+	_open_list.custom_minimum_size = Vector2(150, 0)
+	_open_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_open_list.item_selected.connect(_on_open_list_selected)
+	_open_list.item_clicked.connect(_on_open_list_clicked)
+	split.add_child(_open_list)
+
 	var vbox := VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(vbox)
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(vbox)
 
 	var toolbar := HBoxContainer.new()
 	vbox.add_child(toolbar)
 	toolbar.add_child(_make_button("Open", _on_open_pressed))
+	toolbar.add_child(_make_button("New", _on_new_pressed))
 	toolbar.add_child(_make_button("Save", _on_save_pressed))
 	toolbar.add_child(_make_button("Format", _on_format_pressed))
+	_wrap_toggle = CheckBox.new()
+	_wrap_toggle.text = "Wrap"
+	_wrap_toggle.tooltip_text = "Soft-wrap long lines (E15)"
+	_wrap_toggle.toggled.connect(_on_wrap_toggled)
+	toolbar.add_child(_wrap_toggle)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar.add_child(spacer)
@@ -68,24 +121,167 @@ func _init() -> void:
 	_file_label.text = "(no file)"
 	toolbar.add_child(_file_label)
 
-	_code_edit = GuitkxCodeEdit.new()
-	_code_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_code_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_code_edit.text_changed.connect(_on_text_changed)
-	_code_edit.gutter_diagnostic_clicked.connect(_on_gutter_diagnostic_clicked)
-	_code_edit.definition_requested.connect(_on_definition_requested)
-	vbox.add_child(_code_edit)
-
 	_find_bar = FindBarScript.new()
-	_find_bar.attach(_code_edit)
 	vbox.add_child(_find_bar)
-	vbox.move_child(_find_bar, 1)  # between the toolbar and the editor
+
+	_editor_stack = Control.new()
+	_editor_stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_editor_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_editor_stack)
 
 	_debounce = Timer.new()
 	_debounce.one_shot = true
 	_debounce.wait_time = DEBOUNCE_SEC
 	_debounce.timeout.connect(_refresh_diagnostics)
 	add_child(_debounce)
+
+	# The scratch buffer: always exists so `_current` is never null.
+	_switch_to(_ensure_editor(""))
+
+## --- Multi-file plumbing (G16) ---
+
+func _ensure_editor(path: String) -> GuitkxCodeEdit:
+	if _editors.has(path):
+		return _editors[path]
+	var ed := GuitkxCodeEdit.new()
+	ed.file_path = path
+	ed.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ed.text_changed.connect(_on_editor_text_changed.bind(ed))
+	ed.gutter_diagnostic_clicked.connect(_on_gutter_diagnostic_clicked)
+	ed.definition_requested.connect(_on_definition_requested)
+	ed.visible = false
+	ed.apply_zoom()
+	if _wrap_toggle != null and _wrap_toggle.button_pressed:
+		ed.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_editor_stack.add_child(ed)
+	_editors[path] = ed
+	var idx := _open_list.add_item(_list_label(ed))
+	_open_list.set_item_metadata(idx, path)
+	_open_list.set_item_tooltip(idx, path if path != "" else "(scratch buffer)")
+	return ed
+
+func _switch_to(ed: GuitkxCodeEdit) -> void:
+	if _current == ed:
+		return
+	if _current != null:
+		_current.visible = false
+	_current = ed
+	ed.visible = true
+	_find_bar.attach(ed)
+	_update_file_label()
+	for i in _open_list.item_count:
+		if str(_open_list.get_item_metadata(i)) == ed.file_path:
+			_open_list.select(i)
+			break
+	_refresh_diagnostics()
+	if ed.is_inside_tree():
+		ed.grab_focus()
+
+func _list_label(ed: GuitkxCodeEdit) -> String:
+	var label := ed.file_path.get_file() if ed.file_path != "" else "(scratch)"
+	if ed.detached:
+		label += " (deleted)"
+	if ed.dirty:
+		label += " *"
+	return label
+
+func _refresh_list_row(ed: GuitkxCodeEdit) -> void:
+	for i in _open_list.item_count:
+		if str(_open_list.get_item_metadata(i)) == ed.file_path:
+			_open_list.set_item_text(i, _list_label(ed))
+			return
+
+func _on_open_list_selected(idx: int) -> void:
+	var path := str(_open_list.get_item_metadata(idx))
+	if _editors.has(path):
+		_switch_to(_editors[path])
+
+func _on_open_list_clicked(idx: int, _pos: Vector2, mouse_button: int) -> void:
+	if mouse_button == MOUSE_BUTTON_MIDDLE:
+		close_file(str(_open_list.get_item_metadata(idx)))
+
+## Close a file (middle-click). Dirty buffers confirm; the last editor standing is the scratch.
+func close_file(path: String) -> void:
+	if not _editors.has(path):
+		return
+	var ed: GuitkxCodeEdit = _editors[path]
+	if ed.dirty:
+		var do_save := func():
+			if _write_editor(ed):
+				_close_editor(path)
+		var do_discard := func():
+			_close_editor(path)
+		_confirm_two("Close %s?" % (path if path != "" else "the scratch buffer"),
+			"Save & Close", do_save, "Discard & Close", do_discard)
+		return
+	_close_editor(path)
+
+func _close_editor(path: String) -> void:
+	var ed: GuitkxCodeEdit = _editors[path]
+	_editors.erase(path)
+	for i in _open_list.item_count:
+		if str(_open_list.get_item_metadata(i)) == path:
+			_open_list.remove_item(i)
+			break
+	var was_current := _current == ed
+	ed.queue_free()
+	if was_current:
+		_current = null
+		if _editors.is_empty():
+			_switch_to(_ensure_editor(""))
+		else:
+			_switch_to(_editors[_editors.keys()[_editors.size() - 1]])
+
+## All real (non-scratch) open file paths — the plugin's folder-lifecycle handlers iterate these.
+func open_paths() -> Array:
+	var out: Array = []
+	for path in _editors:
+		if str(path) != "":
+			out.append(str(path))
+	return out
+
+## Every open file with unsaved changes (feeds the quit-confirmation via the plugin).
+func dirty_files() -> Array:
+	var out: Array = []
+	for path in _editors:
+		if (_editors[path] as GuitkxCodeEdit).dirty:
+			out.append(path if path != "" else "(scratch)")
+	return out
+
+## Session snapshot (G17): open files, the current one, carets, zoom, wrap.
+func session_state() -> Dictionary:
+	var carets := {}
+	for path in _editors:
+		if path == "":
+			continue
+		var ed: GuitkxCodeEdit = _editors[path]
+		carets[path] = [ed.get_caret_line(), ed.get_caret_column()]
+	return {
+		"files": carets.keys(), "current": _current_path, "carets": carets,
+		"zoom": GuitkxCodeEdit.zoom_font_size,
+		"wrap": _wrap_toggle != null and _wrap_toggle.button_pressed,
+	}
+
+func restore_session(state: Dictionary) -> void:
+	GuitkxCodeEdit.zoom_font_size = int(state.get("zoom", 0))
+	if _wrap_toggle != null:
+		_wrap_toggle.button_pressed = bool(state.get("wrap", false))
+	var carets: Dictionary = state.get("carets", {})
+	for path in state.get("files", []):
+		if FileAccess.file_exists(str(path)):
+			_open_path_now(str(path))
+			var c: Array = carets.get(path, [])
+			if c.size() == 2 and _current != null:
+				_current.set_caret_line(int(c[0]))
+				_current.set_caret_column(int(c[1]))
+	var cur := str(state.get("current", ""))
+	if _editors.has(cur):
+		_switch_to(_editors[cur])
+
+func _on_wrap_toggled(on: bool) -> void:
+	for path in _editors:
+		(_editors[path] as GuitkxCodeEdit).wrap_mode = \
+			TextEdit.LINE_WRAPPING_BOUNDARY if on else TextEdit.LINE_WRAPPING_NONE
 
 func _ready() -> void:
 	if not Engine.is_editor_hint():
@@ -144,21 +340,43 @@ func _shortcut_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_APPLICATION_FOCUS_IN:
 		return
-	if _current_path.is_empty() or _loading:
+	if _loading:
 		return
-	if not FileAccess.file_exists(_current_path):
-		if not _detached:
-			mark_detached()
+	for path in _editors.keys():
+		if str(path) == "":
+			continue
+		_check_editor_staleness(_editors[path])
+
+## External-change watch for one buffer: missing file -> detached; returned file + clean buffer ->
+## auto-reload (heals git restore); changed-on-disk + clean -> auto-reload; dirty conflicts resolve
+## at Save time with an explicit choice.
+func _check_editor_staleness(ed: GuitkxCodeEdit) -> void:
+	if ed.file_path.is_empty():
 		return
-	if _detached:
-		# The file came back (git restore / undo of a delete): a clean buffer reloads and heals;
-		# a dirty one keeps the edits and resolves at Save time (Overwrite/Reload choice).
-		if not _dirty:
-			open_path(_current_path)
+	if not FileAccess.file_exists(ed.file_path):
+		if not ed.detached:
+			ed.detached = true
+			_refresh_list_row(ed)
+			if ed == _current:
+				_update_file_label()
 		return
-	var disk := FileAccess.get_modified_time(_current_path)
-	if _loaded_mtime != 0 and disk != _loaded_mtime and not _dirty:
-		open_path(_current_path)
+	if ed.detached or (ed.loaded_mtime != 0 and FileAccess.get_modified_time(ed.file_path) != ed.loaded_mtime):
+		if not ed.dirty:
+			_reload_editor(ed)
+
+func _reload_editor(ed: GuitkxCodeEdit) -> void:
+	var text := FileAccess.get_file_as_string(ed.file_path)
+	_loading = true
+	ed.text = text
+	ed.clear_undo_history()
+	_loading = false
+	ed.dirty = false
+	ed.detached = false
+	ed.loaded_mtime = FileAccess.get_modified_time(ed.file_path)
+	_refresh_list_row(ed)
+	if ed == _current:
+		_update_file_label()
+		_refresh_diagnostics()
 
 ## Wire the shared bottom Problems panel (owned by the plugin).
 func set_problems_panel(panel: GuitkxProblemsPanel) -> void:
@@ -172,38 +390,54 @@ func is_dirty() -> bool:
 func current_path() -> String:
 	return _current_path
 
-## The open file was renamed/moved on disk (FileSystemDock signal via the plugin): follow it, keep
-## the buffer + dirty state. Without this, Save would resurrect the OLD filename and the user's
-## edits would silently diverge into a zombie file (parity plan L1).
-func retarget_path(new_path: String) -> void:
-	_current_path = new_path
-	_detached = false
-	_loaded_mtime = FileAccess.get_modified_time(new_path) if FileAccess.file_exists(new_path) else 0
-	_update_file_label()
+## A file was renamed/moved on disk (FileSystemDock signal via the plugin): whichever OPEN editor
+## holds it follows, keeping buffer + dirty state — Save must never resurrect the OLD filename
+## (parity plan L1). Works for any open file, not just the current one.
+func retarget_path(new_path: String, old_path: String = "") -> void:
+	var key := old_path if old_path != "" else _current_path
+	if not _editors.has(key):
+		return
+	var ed: GuitkxCodeEdit = _editors[key]
+	_editors.erase(key)
+	_editors[new_path] = ed
+	ed.file_path = new_path
+	ed.detached = false
+	ed.loaded_mtime = FileAccess.get_modified_time(new_path) if FileAccess.file_exists(new_path) else 0
+	for i in _open_list.item_count:
+		if str(_open_list.get_item_metadata(i)) == key:
+			_open_list.set_item_metadata(i, new_path)
+			_open_list.set_item_text(i, _list_label(ed))
+			_open_list.set_item_tooltip(i, new_path)
+			break
+	if ed == _current:
+		_update_file_label()
 
-## The open file was deleted on disk (parity plan L2). The buffer stays (it may be the only copy of
-## the user's work) but is marked detached; Save asks before recreating the file. Detached does NOT
-## imply dirty — the buffer may still be exactly the file's last content, and keeping the two flags
-## separate is what lets a clean buffer HEAL automatically when the file comes back (git restore,
-## undo of a dock delete). [field capture: a git-restored file left the view stuck on
-## "(deleted on disk) *" with no way to reload]
-func mark_detached() -> void:
-	_detached = true
-	_update_file_label()
+## A file was deleted on disk (parity plan L2): its buffer stays (it may be the only copy of the
+## user's work) but is marked detached; Save asks before recreating. Detached does NOT imply
+## dirty — that split is what lets a clean buffer HEAL automatically when the file comes back.
+func mark_detached(path: String = "") -> void:
+	var key := path if path != "" else _current_path
+	if not _editors.has(key):
+		return
+	var ed: GuitkxCodeEdit = _editors[key]
+	ed.detached = true
+	_refresh_list_row(ed)
+	if ed == _current:
+		_update_file_label()
 
 ## --- Opening ---
 
-## Open a .guitkx from disk (Open button, Problems-panel navigation, double-click route). Guards the
-## dirty buffer: same-file reopen with edits just focuses (never clobbers); switching away from a
-## dirty buffer asks Save / Discard / Cancel first.
+## Open a .guitkx (Open button, Problems/References navigation, double-click route). With per-file
+## editors, switching never loses anything: an already-open file just becomes current (its edits,
+## caret, and undo history intact — after a staleness check); a new file gets its own editor.
 func open_path(path: String) -> void:
-	if _dirty and path == _current_path and not _loading:
-		# Re-opening the file we're already editing (double-click in the dock): keep the edits.
-		if _code_edit.is_inside_tree():
-			_code_edit.grab_focus()
-		return
-	if _dirty and not _current_path.is_empty() and path != _current_path:
-		_confirm_unsaved_switch(path)
+	if _editors.has(path):
+		var ed: GuitkxCodeEdit = _editors[path]
+		_check_editor_staleness(ed)
+		_switch_to(ed)
+		if _pending_jump_offset >= 0:
+			_goto_offset(_pending_jump_offset)
+			_pending_jump_offset = -1
 		return
 	_open_path_now(path)
 
@@ -215,6 +449,11 @@ func _open_path_now(path: String) -> void:
 	var text := f.get_as_text()
 	f.close()
 	_load_text(path, text)
+	# A pristine scratch buffer has served its purpose once a real file opens.
+	if _editors.has("") and path != "":
+		var scratch: GuitkxCodeEdit = _editors[""]
+		if not scratch.dirty and scratch.text.strip_edges().is_empty():
+			_close_editor("")
 
 ## Open from a double-clicked GuitkxResource (plugin _edit route).
 func open_resource(res: GuitkxResource) -> void:
@@ -261,32 +500,36 @@ func on_workspace_changed() -> void:
 	_refresh_diagnostics()
 
 func _load_text(path: String, text: String) -> void:
+	var ed := _ensure_editor(path)
 	_loading = true
-	_current_path = path
-	_code_edit.text = text
-	_code_edit.clear_undo_history()
+	ed.text = text
+	ed.clear_undo_history()
 	_loading = false
-	_dirty = false
-	_detached = false
-	_loaded_mtime = FileAccess.get_modified_time(path) if (not path.is_empty() and FileAccess.file_exists(path)) else 0
+	ed.dirty = false
+	ed.detached = false
+	ed.loaded_mtime = FileAccess.get_modified_time(path) if (not path.is_empty() and FileAccess.file_exists(path)) else 0
+	_refresh_list_row(ed)
+	_switch_to(ed)
 	_update_file_label()
 	_refresh_diagnostics()
 	if _pending_jump_offset >= 0:
 		_goto_offset(_pending_jump_offset)
 		_pending_jump_offset = -1
 
-func _on_text_changed() -> void:
+func _on_editor_text_changed(ed: GuitkxCodeEdit) -> void:
 	if _loading:
 		return
-	if not _dirty:
-		_dirty = true
-		_update_file_label()
-	if _debounce.is_inside_tree():
+	if not ed.dirty:
+		ed.dirty = true
+		_refresh_list_row(ed)
+		if ed == _current:
+			_update_file_label()
+	if ed == _current and _debounce.is_inside_tree():
 		_debounce.start()
 
 func _update_file_label() -> void:
-	if _current_path.is_empty():
-		_file_label.text = "(no file)"
+	if _current == null or _current_path.is_empty():
+		_file_label.text = "(scratch)" if _current != null else "(no file)"
 		return
 	var label := _current_path
 	if _detached:
@@ -294,6 +537,7 @@ func _update_file_label() -> void:
 	if _dirty:
 		label += "  *"
 	_file_label.text = label
+	_refresh_list_row(_current)
 
 ## --- Diagnostics pipeline ---
 
@@ -488,52 +732,67 @@ func _on_save_pressed() -> void:
 		return
 	_write_buffer()
 
-## The unconditional write path (all guards passed). Formats when enabled, writes, and hands the
-## change to the reactive_ui watcher via a targeted update_file — the same cadence an external
-## editor's save gets (a full scan() momentarily gated the watcher's own triggers; L8).
 func _write_buffer() -> void:
-	var text := _code_edit.text
+	_write_editor(_current)
+
+## The unconditional write path for one editor (all guards passed). Formats when enabled, writes,
+## and hands the change to the reactive_ui watcher via a targeted update_file — the same cadence
+## an external editor's save gets (a full scan() momentarily gated the watcher's triggers; L8).
+func _write_editor(ed: GuitkxCodeEdit) -> bool:
+	if ed == null or ed.file_path.is_empty():
+		return false
+	var text: String = ed.text
 	if RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_FORMAT_ON_SAVE):
-		text = _formatted(text)
-	if text != _code_edit.text:
+		text = _format_text(text, ed.file_path)
+	if text != ed.text:
 		_loading = true
-		_code_edit.set_text_undoable(text)
+		ed.set_text_undoable(text)
 		_loading = false
-	var f := FileAccess.open(_current_path, FileAccess.WRITE)
+	var f := FileAccess.open(ed.file_path, FileAccess.WRITE)
 	if f == null:
 		# Visible failure (L3): push_error alone leaves the user believing the save happened.
 		_alert("Could not write %s (error %d).\nThe buffer still holds your changes." % [
-			_current_path, FileAccess.get_open_error()])
-		push_error("[reactive_ui_editor] cannot write %s (%d)" % [_current_path, FileAccess.get_open_error()])
-		return
+			ed.file_path, FileAccess.get_open_error()])
+		push_error("[reactive_ui_editor] cannot write %s (%d)" % [ed.file_path, FileAccess.get_open_error()])
+		return false
 	f.store_string(text)
 	f.close()
-	_dirty = false
-	_detached = false
-	_loaded_mtime = FileAccess.get_modified_time(_current_path)
+	ed.dirty = false
+	ed.detached = false
+	ed.loaded_mtime = FileAccess.get_modified_time(ed.file_path)
 	_bindings_valid = false  # our own save can change the project's class/binding shape
-	_update_file_label()
-	EditorInterface.get_resource_filesystem().update_file(_current_path)
+	_refresh_list_row(ed)
+	if ed == _current:
+		_update_file_label()
+	EditorInterface.get_resource_filesystem().update_file(ed.file_path)
 	# Keep the component index fresh so renamed/added components complete without a full rescan.
-	GuitkxWorkspace.reindex(_current_path, _code_edit.text)
-	_refresh_diagnostics()
+	GuitkxWorkspace.reindex(ed.file_path, ed.text)
+	if ed == _current:
+		_refresh_diagnostics()
+	return true
 
-## Dialog-free save for Godot's own flows (Save All / quit / Play via the plugin's
-## _save_external_data / _apply_changes). Refuses on conflict rather than prompting mid-flow;
-## the buffer stays dirty and the user resolves it in the editor.
+## Dialog-free save of EVERY dirty buffer, for Godot's own flows (Save All / quit / Play via the
+## plugin's _save_external_data / _apply_changes). Refuses conflicted/detached files rather than
+## prompting mid-flow; those stay dirty and the user resolves them in the editor.
 func save_silent() -> bool:
-	if _current_path.is_empty() or not _dirty:
-		return true
-	if _detached:
-		push_error("[reactive_ui_editor] %s was deleted on disk — not recreating it during an editor save. Save it explicitly in the Reactive UI editor." % _current_path)
-		return false
-	if FileAccess.file_exists(_current_path):
-		var disk := FileAccess.get_modified_time(_current_path)
-		if _loaded_mtime != 0 and disk != _loaded_mtime:
-			push_error("[reactive_ui_editor] %s changed on disk — not overwriting during an editor save. Resolve it in the Reactive UI editor." % _current_path)
-			return false
-	_write_buffer()
-	return not _dirty
+	var all_ok := true
+	for path in _editors.keys():
+		var ed: GuitkxCodeEdit = _editors[path]
+		if str(path) == "" or not ed.dirty:
+			continue
+		if ed.detached:
+			push_error("[reactive_ui_editor] %s was deleted on disk — not recreating it during an editor save. Save it explicitly in the Reactive UI editor." % ed.file_path)
+			all_ok = false
+			continue
+		if FileAccess.file_exists(ed.file_path):
+			var disk := FileAccess.get_modified_time(ed.file_path)
+			if ed.loaded_mtime != 0 and disk != ed.loaded_mtime:
+				push_error("[reactive_ui_editor] %s changed on disk — not overwriting during an editor save. Resolve it in the Reactive UI editor." % ed.file_path)
+				all_ok = false
+				continue
+		if not _write_editor(ed):
+			all_ok = false
+	return all_ok
 
 func _on_format_pressed() -> void:
 	var text := _formatted(_code_edit.text)
@@ -568,10 +827,37 @@ func _on_gutter_diagnostic_clicked(line: int, record: Variant) -> void:
 # corrupts. Honors the nearest guitkx.config.json (G26) exactly like the VS Code extension, so
 # one project formats identically in both editors.
 func _formatted(text: String) -> String:
-	var r: Dictionary = RUIGuitkxFormatter.format(text, ConfigScript.formatter_opts_for(_current_path))
+	return _format_text(text, _current_path)
+
+func _format_text(text: String, path: String) -> String:
+	var r: Dictionary = RUIGuitkxFormatter.format(text, ConfigScript.formatter_opts_for(path))
 	if r.get("ok", false):
 		return r.get("text", text)
 	return text
+
+## "New" (G18): pick a path, seed a minimal component skeleton named after the file, open it.
+func _on_new_pressed() -> void:
+	var dlg := EditorFileDialog.new()
+	dlg.file_mode = EditorFileDialog.FILE_MODE_SAVE_FILE
+	dlg.access = EditorFileDialog.ACCESS_RESOURCES
+	dlg.clear_filters()
+	dlg.add_filter("*.guitkx", "GUITKX files")
+	dlg.file_selected.connect(func(p: String):
+		if not p.ends_with(".guitkx"):
+			p += ".guitkx"
+		if not FileAccess.file_exists(p):
+			var comp := p.get_file().get_basename().to_pascal_case()
+			var f := FileAccess.open(p, FileAccess.WRITE)
+			if f != null:
+				f.store_string("component %s {\n  return (\n    <Label text=\"%s\" />\n  )\n}\n" % [comp, comp])
+				f.close()
+				EditorInterface.get_resource_filesystem().update_file(p)
+				GuitkxWorkspace.reindex(p, FileAccess.get_file_as_string(p))
+		open_path(p)
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.popup_file_dialog()
 
 ## --- Dialog helpers (one-shot, self-freeing) ---
 
@@ -613,21 +899,8 @@ func _confirm_two(text: String, ok_label: String, on_ok: Callable, alt_label: St
 	add_child(dlg)
 	dlg.popup_centered()
 
-## Switching away from a dirty buffer: Save & Open / Discard & Open / Cancel (G32).
-func _confirm_unsaved_switch(next_path: String) -> void:
-	_confirm_two("Unsaved changes in:\n%s" % _current_path,
-		"Save, Then Open", func():
-			_on_save_pressed_then(func(): _open_path_now(next_path)),
-		"Discard My Edits", func():
-			_dirty = false
-			_open_path_now(next_path))
-
-## Save, then run `after` — but only if the save actually cleared the dirty flag (a conflict or
-## write failure keeps the buffer, and the pending open is dropped rather than losing edits).
-func _on_save_pressed_then(after: Callable) -> void:
-	_on_save_pressed()
-	if not _dirty:
-		after.call()
+# (The W2 switch-away Save/Discard/Cancel prompt is gone by design: per-file editors mean
+# switching never loses anything — dirty buffers simply persist in their own tab.)
 
 ## --- References + rename (G2/G3) ---
 
@@ -682,11 +955,15 @@ func _apply_rename(old_tag: String, new_tag: String) -> void:
 	var touched := 0
 	for path in edits:
 		var file_edits: Array = edits[path]
-		if str(path) == _current_path:
-			# The open buffer: one undoable operation, then save through the normal flow so the
-			# watcher recompiles and the label/dirty state stay coherent.
-			_code_edit.set_text_undoable(RefsScript.apply_edits_to_text(_code_edit.text, file_edits, new_tag))
-			_write_buffer()
+		if _editors.has(str(path)):
+			# ANY open buffer (current or background tab): apply through its editor as one
+			# undoable operation and save via the normal flow — writing its disk file behind
+			# the buffer would leave a stale tab that conflicts at its next save.
+			var ed: GuitkxCodeEdit = _editors[str(path)]
+			_loading = true
+			ed.set_text_undoable(RefsScript.apply_edits_to_text(ed.text, file_edits, new_tag))
+			_loading = false
+			_write_editor(ed)
 		else:
 			var text := FileAccess.get_file_as_string(str(path))
 			var f := FileAccess.open(str(path), FileAccess.WRITE)

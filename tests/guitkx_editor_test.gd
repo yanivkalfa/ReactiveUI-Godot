@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_wave2_completion()
 	_test_comment_toggle()
 	_test_refs_and_rename()
+	_test_multifile()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -147,7 +148,7 @@ func _test_buffer_state() -> void:
 
 	var v: Control = ViewScript.new()
 	_ok(not v.is_dirty(), "fresh view is clean")
-	_ok(v._file_label.text == "(no file)", "fresh view labeled (no file)")
+	_ok(v._file_label.text == "(scratch)", "fresh view starts on the scratch buffer")
 
 	# An untouched scratch buffer must not be diagnosed (field capture: red X on an empty editor).
 	v._refresh_diagnostics()
@@ -160,7 +161,7 @@ func _test_buffer_state() -> void:
 	_ok(v._loaded_mtime != 0, "load records the disk mtime")
 	_ok(not v._code_edit.has_undo(), "load clears undo history")
 
-	v._on_text_changed()
+	v._on_editor_text_changed(v._code_edit)
 	_ok(v.is_dirty(), "user edit marks dirty")
 	_ok(v._file_label.text.ends_with("*"), "dirty shown in the file label")
 
@@ -195,7 +196,7 @@ func _test_buffer_state() -> void:
 	_ok(not v._file_label.text.contains("deleted"), "healed label drops the deleted marker")
 
 	# Same-file reopen with edits must NOT clobber the buffer (the double-click self-open trap).
-	v._on_text_changed()
+	v._on_editor_text_changed(v._code_edit)
 	var before: String = v._code_edit.text
 	v._code_edit.text = before + "\n# local edit"
 	v.open_path(TMP_PATH)
@@ -690,4 +691,77 @@ func _test_refs_and_rename() -> void:
 
 	for p in [a_path, b_path]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
+	GuitkxWorkspace.rescan()
+
+# M2 wave 4 — multi-file editors (G16), session state (G17), zoom (E11), wrap (E15).
+func _test_multifile() -> void:
+	var a := "res://tests/__mf_a.guitkx"
+	var b := "res://tests/__mf_b.guitkx"
+	for pair in [[a, "component MfA() {\n\treturn (\n\t\t<Label text=\"a\" />\n\t)\n}\n"],
+			[b, "component MfB() {\n\treturn (\n\t\t<Label text=\"b\" />\n\t)\n}\n"]]:
+		var f := FileAccess.open(pair[0], FileAccess.WRITE)
+		f.store_string(pair[1])
+		f.close()
+
+	var v: Control = ViewScript.new()
+	v.open_path(a)
+	_ok(v.current_path() == a, "first file becomes current")
+	_ok(not v._editors.has(""), "pristine scratch closes once a real file opens")
+
+	# Edit A, then open B: switching preserves A's edits, dirty flag, and undo history.
+	v._code_edit.insert_text_at_caret("# edit-a\n")
+	v._on_editor_text_changed(v._code_edit)  # text_changed is deferred; no frames run headless
+	_ok(v.is_dirty(), "A dirty after edit")
+	v.open_path(b)
+	_ok(v.current_path() == b, "switch to B")
+	_ok(not v.is_dirty(), "B is clean (dirty state is per-file)")
+	var ed_a: CodeEdit = v._editors[a]
+	_ok(ed_a.dirty and ed_a.text.contains("# edit-a"), "A keeps its edits in the background")
+	_ok(ed_a.has_undo(), "A keeps its undo history across the switch")
+
+	_ok(v.open_paths().size() == 2, "open_paths lists both files")
+	_ok(v.dirty_files() == [a], "dirty_files names exactly the edited file")
+
+	# Background rename (L1 multi-file): retarget by OLD path, not just the current file.
+	var a2 := "res://tests/__mf_a2.guitkx"
+	v.retarget_path(a2, a)
+	_ok(not v._editors.has(a) and v._editors.has(a2), "background retarget moves the editor key")
+	_ok(v.current_path() == b, "current file untouched by background retarget")
+	v.retarget_path(a, a2)
+
+	# Switching back: same editor object, caret/undo intact; label follows.
+	v.open_path(a)
+	_ok(v._code_edit == ed_a, "switching back reuses the same editor instance")
+	_ok(v._file_label.text.ends_with("*"), "label shows A's dirty state again")
+
+	# Session state round-trip.
+	var state: Dictionary = v.session_state()
+	_ok((state.get("files", []) as Array).size() == 2 and str(state.get("current", "")) == a,
+		"session snapshot carries files + current")
+
+	# E15 wrap toggle applies to every editor.
+	v._on_wrap_toggled(true)
+	_ok(ed_a.wrap_mode == TextEdit.LINE_WRAPPING_BOUNDARY
+		and (v._editors[b] as CodeEdit).wrap_mode == TextEdit.LINE_WRAPPING_BOUNDARY,
+		"wrap toggle hits all editors")
+	v._on_wrap_toggled(false)
+
+	# E11 zoom: static-shared, applied per editor.
+	(v._code_edit as CodeEdit).set_zoom(20)
+	_ok(v._code_edit.get_theme_font_size("font_size") == 20, "zoom overrides the font size")
+	(v._code_edit as CodeEdit).set_zoom(0)
+	CodeEditScript.zoom_font_size = 0
+
+	# close_file: clean B closes instantly; closing the last file leaves a scratch.
+	v._code_edit.dirty = false
+	ed_a.dirty = false
+	v.close_file(b)
+	_ok(not v._editors.has(b), "clean file closes")
+	v.close_file(a)
+	_ok(v._editors.has("") and v.current_path() == "", "last close falls back to a scratch buffer")
+
+	v.free()
+	for p in [a, b]:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
 	GuitkxWorkspace.rescan()

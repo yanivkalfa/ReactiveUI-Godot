@@ -14,6 +14,16 @@ signal definition_requested(path: String, offset: int)
 
 var diag_gutter: int = -1
 
+## Per-file buffer state (M2/G16 — one GuitkxCodeEdit per open file, so undo history, caret,
+## scroll, and dirty/conflict state all survive file switches; the view reads/writes these).
+var file_path: String = ""
+var dirty := false
+var detached := false           # the source file was deleted/moved away on disk
+var loaded_mtime := 0           # disk mtime the buffer was loaded from / last saved to
+
+## Editor font zoom (E11), shared across all open editors and the session.
+static var zoom_font_size := 0  # 0 = theme default
+
 var _highlighter: GuitkxCodeHighlighter
 var _theme_source: Control
 var _line_diags: Dictionary = {}  # line (int) -> Array of diagnostic records (from the view)
@@ -119,14 +129,48 @@ func _on_theme_changed() -> void:
 		_highlighter.update_colors()
 		queue_redraw()
 
-## Ctrl+/ comment toggle (E12): comments the caret line / every selected line with `# `, or
-## uncomments when they all already are — one undoable operation, like the built-in script editor.
+## Ctrl+/ comment toggle (E12) + Ctrl+wheel / Ctrl+=/-/0 font zoom (E11).
 func _gui_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
-	if k != null and k.pressed and not k.echo and k.is_command_or_control_pressed() \
-			and (k.keycode == KEY_SLASH or k.keycode == KEY_KP_DIVIDE):
-		toggle_comment()
-		accept_event()
+	if k != null and k.pressed and not k.echo and k.is_command_or_control_pressed():
+		match k.keycode:
+			KEY_SLASH, KEY_KP_DIVIDE:
+				toggle_comment()
+				accept_event()
+			KEY_EQUAL, KEY_KP_ADD:
+				zoom_step(1)
+				accept_event()
+			KEY_MINUS, KEY_KP_SUBTRACT:
+				zoom_step(-1)
+				accept_event()
+			KEY_0, KEY_KP_0:
+				set_zoom(0)
+				accept_event()
+		return
+	var mb := event as InputEventMouseButton
+	if mb != null and mb.pressed and mb.ctrl_pressed:
+		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom_step(1)
+			accept_event()
+		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			zoom_step(-1)
+			accept_event()
+
+func zoom_step(dir: int) -> void:
+	var base := get_theme_font_size("font_size")
+	var cur := zoom_font_size if zoom_font_size > 0 else base
+	set_zoom(clampi(cur + dir, 8, 48))
+
+## `size` 0 resets to the theme default. Static-shared: every open editor follows.
+func set_zoom(size: int) -> void:
+	zoom_font_size = size
+	apply_zoom()
+
+func apply_zoom() -> void:
+	if zoom_font_size > 0:
+		add_theme_font_size_override("font_size", zoom_font_size)
+	else:
+		remove_theme_font_size_override("font_size")
 
 func toggle_comment() -> void:
 	var from_line := get_caret_line()
