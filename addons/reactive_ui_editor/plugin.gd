@@ -206,20 +206,24 @@ func _edit(object: Object) -> void:
 		if _view != null:
 			_view.open_resource(object)
 
-## Make .guitkx searchable by Godot's project-wide "Search in Files" (parity plan E18): the search
-## only indexes script + textfile extensions, and .guitkx is neither, so component markup was
-## invisible to Ctrl+Shift+F. This is a PER-USER editor setting (not project state) — set once,
-## idempotently, and deliberately never unset on plugin disable (other projects may rely on it).
-## Double-click routing is unaffected: the ResourceFormatLoader route still wins over textfiles.
+## REVERSAL of the earlier E18 registration, and it must stay a reversal: listing "guitkx" in
+## docks/filesystem/textfile_extensions let Godot's built-in Script editor adopt .guitkx files
+## whenever our routing was momentarily down — and the Script editor persists its adoptees in
+## THREE places (script_editor_cache.cfg, editor_layout.cfg open_scripts, project_metadata.cfg
+## history), each replaying as a boot error ('Parameter "seb" is null': it restores the entry,
+## then can't build a text editor for what is now a GuitkxResource). Actively STRIP the
+## extension so the Script editor is structurally unable to touch .guitkx. Trade-off: Godot's
+## Search in Files no longer sees .guitkx — replaced by the addon's own project search (M2).
 func _register_searchable_extension() -> void:
 	var es := EditorInterface.get_editor_settings()
 	if es == null:
 		return
 	var key := "docks/filesystem/textfile_extensions"
 	var cur: String = str(es.get_setting(key))
-	var parts: PackedStringArray = cur.split(",", false)
-	if not parts.has("guitkx"):
-		es.set_setting(key, (cur + ",guitkx") if cur != "" else "guitkx")
+	var parts: Array = Array(cur.split(",", false))
+	if parts.has("guitkx"):
+		parts.erase("guitkx")
+		es.set_setting(key, ",".join(PackedStringArray(parts)))
 
 func _register_loader() -> void:
 	if _loader == null:

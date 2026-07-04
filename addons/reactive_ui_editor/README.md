@@ -37,8 +37,9 @@ Requires **Godot 4.4+**.
 - **Hover** for tags, attributes, directives, and your own components (Godot 4.4+ tooltip).
 - **Go-to-definition**: Ctrl+click a component tag to jump to its declaration (cross-file).
 - **Find**: Ctrl+F opens a find bar (all-match highlight, match count, F3/Shift+F3 with wrap, case
-  toggle). `.guitkx` files are also registered into Godot's project-wide **Search in Files**
-  (Ctrl+Shift+F) — note this is a per-user editor setting the plugin sets once, idempotently.
+  toggle). `.guitkx` is deliberately NOT registered into Godot's Search in Files — that route lets
+  the built-in Script editor adopt (and endlessly session-restore) `.guitkx` files; an addon-native
+  project-wide search is planned instead.
 - **Ctrl+S saves the `.guitkx`** while the tab is visible; Godot's own Save All / quit-confirmation /
   Play flows also flush the buffer (unsaved changes join the quit dialog; pressing Play saves first
   so the game runs what's on screen).
