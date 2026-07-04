@@ -57,7 +57,10 @@ func _init() -> void:
 func attach(target: CodeEdit) -> void:
 	_target = target
 
-## Open (Ctrl+F): seed from the current selection, focus the query, highlight matches.
+## Open (Ctrl+F): seed from the current selection, focus the query, highlight matches. Focus is
+## DEFERRED: grabbing it in the same frame the bar becomes visible races visibility propagation,
+## and when it loses, every keystroke lands in the code editor instead of the query field.
+## [field capture: "type and nothing happens" on first open]
 func open_bar() -> void:
 	if _target == null:
 		return
@@ -66,8 +69,9 @@ func open_bar() -> void:
 	if sel != "" and not sel.contains("\n"):
 		_query.text = sel
 	_query.select_all()
-	if _query.is_inside_tree():
-		_query.grab_focus()
+	(func():
+		if _query.is_inside_tree():
+			_query.grab_focus()).call_deferred()
 	_update_search()
 
 func close_bar() -> void:

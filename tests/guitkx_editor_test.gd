@@ -170,7 +170,7 @@ func _test_buffer_state() -> void:
 	_ok(v.is_dirty(), "conflict refusal keeps the buffer dirty")
 	v._loaded_mtime = FileAccess.get_modified_time(TMP_PATH)
 
-	# L2: deletion detach -> label + dirty + silent-save refusal (never resurrect during Save All).
+	# L2: deletion detach -> label + silent-save refusal (never resurrect during Save All).
 	v.mark_detached()
 	_ok(v._file_label.text.contains("(deleted on disk)"), "detached shown in the file label")
 	_ok(not v.save_silent(), "save_silent refuses to recreate a deleted file")
@@ -179,6 +179,14 @@ func _test_buffer_state() -> void:
 	v._detached = false
 	v._dirty = false
 	_ok(v.save_silent(), "save_silent no-ops cleanly when nothing is dirty")
+
+	# Detach does NOT imply dirty, and a clean detached buffer HEALS on focus once the file is
+	# back on disk (the git-restore recovery; field capture: stuck "(deleted on disk) *").
+	v.mark_detached()
+	_ok(not v.is_dirty(), "detach alone does not dirty the buffer")
+	v._notification(NOTIFICATION_APPLICATION_FOCUS_IN)
+	_ok(not v._detached, "focus-in heals a clean detached buffer when the file is back")
+	_ok(not v._file_label.text.contains("deleted"), "healed label drops the deleted marker")
 
 	# Same-file reopen with edits must NOT clobber the buffer (the double-click self-open trap).
 	v._on_text_changed()

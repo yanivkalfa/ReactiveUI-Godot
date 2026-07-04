@@ -138,6 +138,12 @@ func _notification(what: int) -> void:
 		if not _detached:
 			mark_detached()
 		return
+	if _detached:
+		# The file came back (git restore / undo of a delete): a clean buffer reloads and heals;
+		# a dirty one keeps the edits and resolves at Save time (Overwrite/Reload choice).
+		if not _dirty:
+			open_path(_current_path)
+		return
 	var disk := FileAccess.get_modified_time(_current_path)
 	if _loaded_mtime != 0 and disk != _loaded_mtime and not _dirty:
 		open_path(_current_path)
@@ -164,10 +170,13 @@ func retarget_path(new_path: String) -> void:
 	_update_file_label()
 
 ## The open file was deleted on disk (parity plan L2). The buffer stays (it may be the only copy of
-## the user's work) but is marked detached; Save asks before recreating the file.
+## the user's work) but is marked detached; Save asks before recreating the file. Detached does NOT
+## imply dirty — the buffer may still be exactly the file's last content, and keeping the two flags
+## separate is what lets a clean buffer HEAL automatically when the file comes back (git restore,
+## undo of a dock delete). [field capture: a git-restored file left the view stuck on
+## "(deleted on disk) *" with no way to reload]
 func mark_detached() -> void:
 	_detached = true
-	_dirty = true
 	_update_file_label()
 
 ## --- Opening ---
