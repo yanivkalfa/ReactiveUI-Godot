@@ -1,7 +1,11 @@
 # NATIVE_EDITOR_PARITY_PLAN — `reactive_ui_editor` → parity with the VS Code extension
 
-**Status: PLANNED 2026-07-04, second-pass audited same day** (added G24–G30 + the verified
-no-gap notes; all ❌/🟡 claims and M1 premises are in-code confirmed, not inferred).
+**Status: PLANNED 2026-07-04, three audit passes same day.** Pass 1 = feature inventories
+(language surface). Pass 2 = host-editor affordances → G24–G30. Pass 3 = daily-driver
+interaction flows → G31–G34 (Ctrl+S steals to Save-Scene, silent discard on file switch,
+undo wiped by every format-on-save, codes missing from Problems rows). All ❌/🟡 claims and M1
+premises are in-code confirmed, not inferred; save-failure handling was checked and is fine
+(`push_error`, `guitkx_editor_view.gd:170-172`).
 Evidence: full feature inventories of both surfaces taken this day
 (VS Code/LSP `ide-extensions/` at 0.8.6; addon `addons/reactive_ui_editor/` at 0.2.0), diffed
 against the mechanism constraints in `GODOT_EDITOR_EXTENSION_PLAN.md` §2/§6 and the deep-tier
@@ -78,6 +82,10 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Mechanisms are from `GODOT_EDIT
 | G28 | Completion offers BOTH event spellings (`onClick` **and** native `on_<signal>` — `events.ts:78-95`) | 🟡 camelCase only; `schema.godot_signals()` is implemented but never called (`lsp/guitkx_completion.gd:41-51`) | wire the existing method into attrName completion | same | M2 |
 | G29 | Host-vs-component tag color distinction (VS Code semantic overlay: host→`type`, component→`class` — `semanticTokens.ts:49-196`) | 🟡 one flat "tag" color for both | highlighter consults schema (host set) + workspace (component set) for two palette keys | per-line tokenizer + highlighter | M2 |
 | G30 | Tag-aware Enter indentation (VS Code onEnter rules: indent between `<Tag>`…`</Tag>`, outdent after `/>` — `language-configuration.json:31-41`) | 🟡 stock `indent_automatic` only (brackets/`:`) | small `_gui_input` Enter interception when caret sits between a tag pair | CodeEdit input hook | M2 |
+| G31 | **Ctrl+S saves the file** (muscle memory; VS Code native) | ❌ — verified: zero input/shortcut handling in the addon; Ctrl+S while editing `.guitkx` fires Godot's global **Save Scene** — the buffer stays unsaved and format-on-save never runs | `shortcut_input()` on the view (visible + editor focused): Ctrl+S → the toolbar-Save path | EditorPlugin/Control input | **M1** |
+| G32 | **Dirty-state tracking + discard guards** (VS Code: dot on tab + save prompts) | ❌ — verified: no dirty flag anywhere; double-clicking another `.guitkx` replaces the buffer **silently discarding unsaved edits**; no asterisk on the file label; no prompt on plugin exit | track text-changed-since-save; `*` on the label; ConfirmationDialog before open-replace / exit with dirty buffer | signals + ConfirmationDialog | **M1** |
+| G33 | **Undo survives Format** (VS Code: format is an undoable edit) | ❌ — verified: `_set_text_preserving_caret` assigns `_code_edit.text =` (`guitkx_editor_view.gd:201`), which **clears CodeEdit's undo history** — and format-on-save is default-on, so today EVERY save wipes Ctrl+Z | apply as one undoable op: `begin_complex_operation()` + select-all + `insert_text_at_caret()` + `end_complex_operation()` | TextEdit complex ops | **M1** |
+| G34 | Problems rows show the diagnostic **code** (VS Code: code chip + `codeDescription` link to the hosted warnings reference — `server.ts:785-793`) | 🟡 rows show marker + message + line only (`guitkx_problems_panel.gd:45`) | prepend `[GUITKX####]`; row tooltip carries the reference URL | ItemList text/tooltip | M2 |
 
 **Store/packaging gaps (submission-blocking):**
 
@@ -95,10 +103,11 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Mechanisms are from `GODOT_EDIT
 
 ## 3. Milestones
 
-### M1 — Store-submittable (target: ~3–4 focused days)
-The bar: **honest, robust, packaged** — not feature-complete. (Find + clobber-guard added on the
-second-pass audit: a reviewer's first minutes are open file → Ctrl+F → edit → save; both paths
-must not embarrass or destroy data.)
+### M1 — Store-submittable (target: ~4–5 focused days)
+The bar: **honest, robust, packaged** — not feature-complete. (Second/third-pass audits grew this:
+a reviewer's first minutes are open file → Ctrl+F → edit → **Ctrl+S** → undo; none of those may
+embarrass or destroy work. Today Ctrl+S saves the *scene*, switching files discards edits
+silently, and every format-on-save wipes the undo stack.)
 
 1. **S1+S2 graceful dependency**: runtime-load all `reactive_ui` references; single startup check
    (`type_exists("RUIGuitkx")` etc.); absent → EditorToaster/dialog message + addon idles cleanly.
@@ -110,16 +119,22 @@ must not embarrass or destroy data.)
 4. **G15 index freshness**: `filesystem_changed` → debounced `GuitkxWorkspace.rescan()`.
 5. **G24 find bar (basic)**: Ctrl+F, F3/Shift+F3, match count over `TextEdit.search()`
    (replace lands M2).
-6. **G25 external-modification guard**: mtime at load; compare on save + window-focus; prompt
-   reload/keep — kills the silent-clobber path.
-7. **S3 CI**: `guitkx_lsp_test.gd` into `test.yml` + `publish.yml`; add checks for G1/G13 logic
-   (lookup resolution; unknown-component diag with a planted two-file fixture).
-8. **S4 publish leg + S6 packaging**: `release-editor-addon` job (tag `editor-v0.3.0`), zip
+6. **Editing-safety trio**: **G31** Ctrl+S intercept → file save; **G32** dirty tracking (`*` on
+   label, confirm before open-replace/exit); **G25** external-modification guard (mtime compare
+   on save + focus, reload/keep prompt).
+7. **G33 undo-preserving text application**: replace every `_code_edit.text =` rewrite (Format,
+   format-on-save) with one `begin/end_complex_operation` edit so Ctrl+Z survives.
+8. **S3 CI**: `guitkx_lsp_test.gd` into `test.yml` + `publish.yml`; add checks for G1/G13 logic
+   (lookup resolution; unknown-component diag with a planted two-file fixture). Acceptance check
+   (manual, once): in-editor save → watcher sweep regenerates the sibling `.gd` → HMR push line —
+   confirming our save path behaves exactly like an external-editor save.
+9. **S4 publish leg + S6 packaging**: `release-editor-addon` job (tag `editor-v0.3.0`), zip
    includes LICENSE; also fix the main `release-addon` zip to include LICENSE (store guideline:
    license must be inside the download — currently satisfied only by my hand-built zip).
-9. **S5+S7 listing prep**: addon README refresh, thumbnail, field sheet; bump `plugin.cfg` →
-   **0.3.0** (additive: goto-def, find). Submit to the new store (manual) as a **second asset**
-   that declares the Reactive UI dependency; AL listing optional/later.
+10. **S5+S7 listing prep**: addon README refresh, thumbnail, field sheet; declare **min Godot
+    4.7** on the listing (matches the tested main addon, though code guards down to 4.4); bump
+    `plugin.cfg` → **0.3.0** (additive: goto-def, find). Submit to the new store (manual) as a
+    **second asset** that declares the Reactive UI dependency; AL listing optional/later.
 
 ### M2 — Markup-tier parity (target: ~2–3 weeks, ship in 2–4 releases)
 Order by user value; each lands with headless checks + a changelog entry, versions 0.4.x…:
@@ -135,8 +150,8 @@ Order by user value; each lands with headless checks + a changelog entry, versio
    exactly like the TS gate; hooks jump to `core/hooks.gd`).
 4. **G12 outline** + **G16 multi-file open list** + **G17 session state** (one UX wave — they
    touch the same main-screen layout).
-5. **G14 project-wide Problems** (sidecar aggregation) + **G19 gutter popup** + **G24 replace /
-   replace-all** (completes the M1 find bar).
+5. **G14 project-wide Problems** (sidecar aggregation) + **G19 gutter popup** + **G34 codes in
+   Problems rows** + **G24 replace / replace-all** (completes the M1 find bar).
 6. **G4 signature help** (hand-drawn popup; markup `on_<signal>` tier only until M3).
 7. **G11 embedded sub-highlighting** + **G29 host-vs-component tag colors** + **G30 tag-aware
    Enter indent** + **G18 new-file** + **G20 snippet caret** (polish wave).
@@ -181,7 +196,8 @@ requires `ScriptLanguageExtension` and stays rejected).
 
 ## 6. Decisions for the user
 1. **M1 scope OK?** (graceful-dep + goto-def + known-components + freshness + find bar +
-   external-clobber guard + CI + publish leg + listing at 0.3.0 — then submit.)
+   editing-safety trio (Ctrl+S / dirty guards / external-clobber) + undo-preserving format +
+   CI + publish leg + listing at 0.3.0 — then submit. ~4–5 days.)
 2. **Second listing name** — proposal: **"Reactive UI Editor (.guitkx tooling)"**, publisher
    yaniv-kalfa, slug `reactive-ui-editor`.
 3. **M2 ordering** — the list above is my value-ranking; reorder freely.
