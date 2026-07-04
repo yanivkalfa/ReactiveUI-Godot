@@ -118,8 +118,36 @@ func _apply_changes() -> void:
 		_view.save_silent()
 
 func _on_file_moved(old_file: String, new_file: String) -> void:
+	cleanup_moved_guitkx(old_file, new_file)
 	if _view != null and _view.current_path() == old_file:
 		_view.retarget_path(new_file)
+
+## A dock rename/move of a .guitkx leaves its generated outputs (.gd/.uid/sidecar) under the OLD
+## name until the watcher's next sweep (~2s) — long enough for rapid renames to stack multiple
+## generated files declaring the SAME class_name, which wounds Godot's global class registry
+## [field capture: "after 1-2 renames it breaks — the .gd files stay behind"]. Clean the old
+## name's outputs synchronously in the rename event and nudge the new name toward compilation.
+##
+## Static + load()-indirected (never naming RUIGuitkx* here): plugin.gd must stay compilable
+## with the reactive_ui addon absent so the W5 dependency dialog can show.
+static func cleanup_moved_guitkx(old_source: String, new_source: String = "") -> void:
+	if old_source.get_extension().to_lower() != "guitkx":
+		return
+	if not FileAccess.file_exists("res://addons/reactive_ui/guitkx/guitkx_codegen.gd"):
+		return
+	var codegen: GDScript = load("res://addons/reactive_ui/guitkx/guitkx_codegen.gd")
+	var old_gd: String = codegen.gd_path_for(old_source)
+	# Reuse the sweep's own orphan test (AUTO-GENERATED header + source gone) so hand-written
+	# .gd files stay untouchable here exactly as they are in the watcher.
+	if FileAccess.file_exists(old_gd) and codegen._is_orphaned_output(old_gd, {}):
+		codegen._remove_orphaned_output(old_gd)
+	else:
+		# Never compiled (or already swept): still drop a stale sidecar left under the old name.
+		var sidecar := old_source + ".diags.json"
+		if FileAccess.file_exists(sidecar):
+			DirAccess.remove_absolute(sidecar)
+	if new_source != "" and Engine.is_editor_hint():
+		EditorInterface.get_resource_filesystem().update_file(new_source)
 
 func _on_folder_moved(old_folder: String, new_folder: String) -> void:
 	if _view == null:

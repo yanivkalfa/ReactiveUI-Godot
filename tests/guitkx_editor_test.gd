@@ -425,3 +425,31 @@ func _test_rich_hover() -> void:
 	var ldr := Loader.new()
 	var out: Variant = ldr._load("res://tests/__no_such_file_ever.guitkx", "", false, 0)
 	_ok(out is Resource, "loader returns an (empty) resource for an unreadable path, never an error")
+
+	# Rapid-rename hygiene (field capture: "after 1-2 renames it breaks — the .gd stays behind"):
+	# moving a .guitkx must synchronously remove the OLD name's generated outputs, or stacked
+	# renames leave multiple .gd files declaring the same class_name.
+	const PluginScript := preload("res://addons/reactive_ui_editor/plugin.gd")
+	var mv_src := "res://tests/__editor_test_move.guitkx"
+	var fmv := FileAccess.open(mv_src, FileAccess.WRITE)
+	fmv.store_string("component EditorTmpMove() {\n\treturn (\n\t\t<Label text=\"m\" />\n\t)\n}\n")
+	fmv.close()
+	RUIGuitkxCodegen.compile_file(mv_src)
+	var mv_gd: String = RUIGuitkxCodegen.gd_path_for(mv_src)
+	_ok(FileAccess.file_exists(mv_gd), "move fixture compiled its .gd")
+	var mv_dst := "res://tests/__editor_test_moved.guitkx"
+	DirAccess.rename_absolute(ProjectSettings.globalize_path(mv_src), ProjectSettings.globalize_path(mv_dst))
+	PluginScript.cleanup_moved_guitkx(mv_src)
+	_ok(not FileAccess.file_exists(mv_gd), "old-name .gd removed synchronously on move")
+	_ok(not FileAccess.file_exists(mv_src + ".diags.json"), "old-name sidecar removed on move")
+	# Hand-written .gd safety: a non-generated file under the old name must survive.
+	var hw_src := "res://tests/__editor_test_hw.guitkx"
+	var hw_gd := "res://tests/__editor_test_hw.gd"
+	var fhw := FileAccess.open(hw_gd, FileAccess.WRITE)
+	fhw.store_string("class_name EditorTmpHw\nextends RefCounted\n")
+	fhw.close()
+	PluginScript.cleanup_moved_guitkx(hw_src)
+	_ok(FileAccess.file_exists(hw_gd), "hand-written .gd under the old name is untouchable")
+	for junk in [mv_dst, mv_dst + ".diags.json", RUIGuitkxCodegen.gd_path_for(mv_dst), hw_gd, mv_gd + ".uid", hw_gd + ".uid"]:
+		if FileAccess.file_exists(junk):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(junk)))
