@@ -1176,6 +1176,47 @@ func _test_codegen() -> void:
 	for lf in [d_orig, Codegen.gd_path_for(d_orig), d_orig + ".diags.json", d_new, Codegen.gd_path_for(d_new), d_new + ".diags.json"]:
 		if FileAccess.file_exists(str(lf)):
 			DirAccess.remove_absolute(str(lf))
+	# GUITKX2107: deleting a referenced component flags the DEPENDENT -- which is not mtime-stale
+	# -- at the dangling tag, in the SAME sweep that removes the orphan; restoring the component
+	# heals the dependent on the next sweep (recompile clears the sidecar).
+	var g_dir := "res://tests/__dangling_tmp"
+	DirAccess.make_dir_recursive_absolute(g_dir)
+	if Codegen.compiler_changed():
+		Codegen.compile_all(g_dir)   # settle the fingerprint marker; the 2107 path is non-force
+	var g_child := g_dir + "/child_probe.guitkx"
+	var g_parent := g_dir + "/parent_probe.guitkx"
+	var g_child_src := "@class_name ChildProbe\n\ncomponent ChildProbe {\n\treturn ( <Label text=\"c\" /> )\n}\n"
+	var gf1 := FileAccess.open(g_child, FileAccess.WRITE)
+	gf1.store_string(g_child_src)
+	gf1.close()
+	var gf2 := FileAccess.open(g_parent, FileAccess.WRITE)
+	gf2.store_string("@class_name ParentProbe\n\ncomponent ParentProbe {\n\treturn ( <VBox><ChildProbe /></VBox> )\n}\n")
+	gf2.close()
+	var g_sweep1 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep1["errors"] as Array).is_empty() and (g_sweep1["compiled"] as Array).size() == 2,
+		"dangling fixture compiles clean: " + str(g_sweep1["errors"]))
+	_check(FileAccess.get_file_as_string(Codegen.gd_path_for(g_parent)), "V.comp(", "parent references child by path")
+	DirAccess.remove_absolute(g_child)
+	var g_sweep2 := Codegen.compile_all(g_dir)
+	_check_true(not FileAccess.file_exists(Codegen.gd_path_for(g_child)), "child's orphaned .gd swept")
+	var g_errs: Array = g_sweep2["errors"]
+	var g_hit := false
+	for ge in g_errs:
+		if str((ge as Dictionary).get("path", "")) == g_parent:
+			for gd2 in ((ge as Dictionary).get("diagnostics", []) as Array):
+				if str((gd2 as Dictionary).get("code", "")) == "GUITKX2107":
+					g_hit = true
+	_check_true(g_hit, "dependent flagged GUITKX2107 in the SAME sweep as the deletion: " + str(g_errs))
+	_check_true(FileAccess.file_exists(Codegen.gd_path_for(g_parent)), "dependent's .gd kept (last good code)")
+	var gf3 := FileAccess.open(g_child, FileAccess.WRITE)   # restore -> heal
+	gf3.store_string(g_child_src)
+	gf3.close()
+	var g_sweep3 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep3["errors"] as Array).is_empty(), "restore heals the dependent: " + str(g_sweep3["errors"]))
+	_check_true((g_sweep3["compiled"] as Array).size() == 2, "child recompiled AND dependent healed (recompiled)")
+	for lf2 in [g_child, Codegen.gd_path_for(g_child), g_child + ".diags.json", g_parent, Codegen.gd_path_for(g_parent), g_parent + ".diags.json"]:
+		if FileAccess.file_exists(str(lf2)):
+			DirAccess.remove_absolute(str(lf2))
 
 func _test_cold_open_recovery() -> void:
 	# R0 (0.6.1): the vocabulary the compiler actually uses is the EMBEDDED const projection

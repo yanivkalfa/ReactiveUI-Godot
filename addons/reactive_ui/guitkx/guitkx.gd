@@ -39,6 +39,13 @@ const _VOCAB_GEN = preload("res://addons/reactive_ui/guitkx/guitkx_vocabulary.ge
 const _VOCAB_PATH_DEFAULT := "res://addons/reactive_ui/guitkx/vocabulary.json"
 static var _VOCAB_PATH := _VOCAB_PATH_DEFAULT
 
+## Component references collected during ONE compile() pass (tag -> generated .gd path, filled
+## at the tag chokepoint whenever a guitkx-bound component lowers through V.comp). Compiles are
+## editor-main-thread sequential, so a static accumulator is safe; nested markup re-parses
+## within the same compile share it deliberately. Persisted into the sidecar ("refs") so the
+## sweep can flag DANGLING references when a component's file vanishes (GUITKX2107).
+static var _ref_accum := {}
+
 static func vocab() -> Dictionary:
 	if _VOCAB.is_empty():
 		_VOCAB = _load_vocabulary()
@@ -137,6 +144,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 			D.make("GUITKX2507", D.ERROR, "compiler environment not ready: vocabulary.json could not be loaded -- retrying on the next compile", 0, 0),
 		] }
 	var diags: Array = []
+	_ref_accum.clear()   # per-compile component-reference collector (see the tag chokepoint)
 	var known := {}
 	for kc in known_components:
 		known[str(kc)] = true
@@ -341,7 +349,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	return { "ok": true, "gd": gd, "diagnostics": diags }
+	return { "ok": true, "gd": gd, "diagnostics": diags, "refs": _ref_accum.duplicate() }
 
 ## Parse ONE component declaration at `ci`. Returns { ok, name, params, setup, root, next }
 ## (next = index just past the closing brace) or { ok:false } with diagnostics appended.
@@ -845,7 +853,7 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 		out += body_block + "\n"
 	if not _has_statement(body_block):
 		out += "\tpass\n"
-	return { "ok": true, "gd": out, "diagnostics": diags }
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": _ref_accum.duplicate() }
 
 ## Parse ONE hook declaration at `hi`. Returns { ok, name, params, body, next } or { ok:false }.
 static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
@@ -984,7 +992,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	# T1.1: emit-time errors (GUITKX0026, nested-body parse errors) fail the module compile as well.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	return { "ok": true, "gd": out, "diagnostics": diags }
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": _ref_accum.duplicate() }
 
 # --- body splitter: choose the LAST top-level markup return (T1.4, Unity useLastReturn parity) ---
 # "Top-level" is the GDScript equivalent of Unity's brace-depth-0: the `return` is the FIRST token on
@@ -1801,6 +1809,7 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			var kv = (ctx.get("known_components", {}) as Dictionary).get(tag)
 			if kv is String:
 				fn = "V.comp(%s)" % _gd_str(str(kv))
+				_ref_accum[tag] = str(kv)   # recorded in the sidecar -> vanish detection (2107)
 			else:
 				fn = tag + ".render"
 		var args2 := "%s, %s" % [fn, props_dict]

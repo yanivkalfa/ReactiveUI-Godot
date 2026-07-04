@@ -147,6 +147,7 @@ const DATA: Dictionary = {
 		"GUITKX2104": "error",
 		"GUITKX2105": "error",
 		"GUITKX2106": "error",
+		"GUITKX2107": "error",
 		"GUITKX2203": "warning",
 		"GUITKX2210": "error",
 		"GUITKX2504": "error",
