@@ -63,3 +63,6 @@ jobs:
 
       - name: GUITKX compiler tests (.guitkx -> .gd + codegen mechanism)
         run: godot --headless --path . --script res://tests/guitkx_test.gd
+
+      - name: Fast Refresh tests (runtime HMR — in-place reload + targeted re-render)
+        run: godot --headless --path . --script res://tests/hmr_test.gd

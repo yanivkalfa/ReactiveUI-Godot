@@ -4,6 +4,43 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-07-04
+
+**Runtime Fast Refresh (hot reload) — edit a `.guitkx` while your game runs under F5 and the
+UI updates in place, hook state preserved.** Unity-toolkit parity, Godot-native mechanics: the
+watcher pushes freshly-compiled scripts into the running session over the debugger protocol,
+the game reloads them **in place** (`source_code` + `reload(keep_state=true)` — Callable
+identity survives, so fiber matching keeps every component's hooks), and exactly the affected
+components re-render (a synchronous, unsliced flush inside the debugger callback — no frame
+where old handlers meet new code).
+
+### Added
+- **`core/hmr.gd` (`RUIHmr`)** — the game-side runtime: reload batches with per-file error
+  isolation (a broken file keeps its last good code and is reported; the rest of the batch
+  still swaps), empty-read holds, byte-identical skips, and component vs hooks-module
+  classification (module change ⇒ **global** re-render, since any component may call it).
+- **`editor/hmr_debugger.gd`** — the editor side: pushes each sweep's output (only scripts
+  that passed the post-write parse check) to every active play session, and prints the game's
+  report next to the sweep lines:
+  `[guitkx] hot-reloaded 1 script(s) -> 1 component(s) re-rendered in 12 ms`.
+- **`__RUI_HOOK_SIG`** — every compiled component embeds its ordered hook-call fingerprint.
+  Same shape ⇒ state survives the swap; changed shape (hook added/removed/reordered) ⇒ that
+  component's state **deliberately resets** (effect cleanups included) instead of silently
+  corrupting — React Fast Refresh semantics.
+- A live-root registry on the reconciler + `hmr_refresh` (targeted dirty-marking that defeats
+  the bailout cache — the reason a reload alone never repainted anything).
+- `tests/hmr_test.gd` (30 checks) incl. a real compiler→reload→reset end-to-end; suite wired
+  into CI.
+
+### Notes & limits
+- Dev-only by construction: everything is gated on an attached debugger session
+  (`EngineDebugger.is_active()`); exported/standalone builds carry zero HMR behavior.
+- Renaming a component remounts it (fresh state) — same as Unity. `static var`s in
+  hand-written modules are not migrated across reloads (Godot #105667); generated components
+  are statics-free by design.
+- Requires the game to be launched from the editor (F5). Save → screen latency is dominated
+  by the 2 s watch poll.
+
 ## [0.7.2] — 2026-07-04
 
 **THE "Godot never recompiles" root cause — static initializers don't run in the editor.**

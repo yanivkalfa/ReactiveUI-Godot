@@ -19,6 +19,7 @@ extends EditorPlugin
 
 const Codegen = preload("res://addons/reactive_ui/guitkx/guitkx_codegen.gd")
 const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
+const HmrDebugger = preload("res://addons/reactive_ui/editor/hmr_debugger.gd")
 
 var _efs: EditorFileSystem
 var _busy := false
@@ -42,6 +43,8 @@ var _env_retry_announced := false
 # hash-skipped in has_stale, so this never busy-recompiles a file that still errors.
 const _POLL_SECS := 2.0
 var _poll_timer: Timer
+# Phase H: the Fast Refresh push channel into running play sessions (editor/hmr_debugger.gd).
+var _hmr_dbg = null
 # First sweep prints its summary even when nothing was stale -- cold-open proof of life. A silent
 # Output after startup therefore means the PLUGIN IS NOT RUNNING, never "maybe nothing to do".
 var _first_sweep_done := false
@@ -56,6 +59,8 @@ func _enter_tree() -> void:
 	_poll_timer.timeout.connect(_on_poll_timeout)
 	add_child(_poll_timer)
 	_poll_timer.start()
+	_hmr_dbg = HmrDebugger.new()
+	add_debugger_plugin(_hmr_dbg)
 	_kick_initial_sweep()
 
 # 0.6.2: the initial sweep must WAIT OUT the editor's first filesystem scan. Sweeping inside it
@@ -92,6 +97,9 @@ func _exit_tree() -> void:
 	if _efs and _efs.filesystem_changed.is_connected(_on_fs_changed):
 		_efs.filesystem_changed.disconnect(_on_fs_changed)
 	_efs = null
+	if _hmr_dbg != null:
+		remove_debugger_plugin(_hmr_dbg)
+		_hmr_dbg = null
 
 func _notification(what: int) -> void:
 	# Tab back into the Godot editor -> recompile any changed .guitkx. This is the reliable trigger:
@@ -125,6 +133,15 @@ func _compile_all() -> void:
 	_busy = true
 	_busy_since = Time.get_ticks_msec()
 	var res: Dictionary = Codegen.compile_all("res://")
+	# Phase H: hot-push what this sweep produced into running play sessions. Only scripts the
+	# engine will accept (gd_ok -- the post-write parse check) are pushed; a running game must
+	# never be asked to load a script that would fail to compile.
+	if _hmr_dbg != null:
+		var hot: Array = []
+		for entry in res["compiled"]:
+			if bool(entry.get("gd_ok", true)):
+				hot.append(entry["gd_path"])
+		_hmr_dbg.push_reload(hot)
 	for entry in res["compiled"]:
 		_efs.update_file(entry["gd_path"])
 		# A file that previously errored now compiles clean -> announce it and forget its stale errors

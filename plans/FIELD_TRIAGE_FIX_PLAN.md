@@ -424,26 +424,18 @@ Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, 
   calls in markup exprs are 0016 errors regardless). Contract goldens byte-identical; regression
   pins the 0105 offset to the opening tag name with two aliases in front of it.
 
-## Phase H — runtime Fast Refresh for running games (PROPOSED, not started)
+## Phase H — runtime Fast Refresh for running games (PLANNED — see `plans/HMR_FAST_REFRESH_PLAN.md`)
 
-Field expectation capture (2026-07-04): edit a `.guitkx` while the demos run under F5 → the
-running UI should update. **Today RG has no runtime hot-reload at all** (grep-verified: zero
-refresh/HMR machinery in `addons/reactive_ui`): the watcher keeps generated `.gd` fresh for the
-EDITOR and the next run; a running game only sees changes on restart. Unity-side parity target:
-ReactiveUIToolKit's HMR hot-swaps delegates/modules in ~50–200 ms without a domain reload and
-re-renders mounted trees with hook state preserved (Fast Refresh families).
-
-Sketch (each step needs research/validation before commitment):
-1. **Editor→game push**: after a sweep compiles files while a session is running, push the new
-   script sources to the running game (Godot 4.2+ script hot-reload paths: the script editor's
-   reload-on-save plumbing / `EditorDebuggerNode`; find the API that works for EXTERNAL writes
-   of generated `.gd`).
-2. **Game-side re-render**: a reload listener walks live `ReactiveRoot`s and re-renders from the
-   root. Fast Refresh semantics: preserve hook state per component identity (class name), reset
-   only when the hook signature changed — mirror Unity's Refresh families.
-3. **Change scoping**: the generated `.gd` can embed a content hash so unchanged subtrees bail.
-4. **Acceptance**: headless GDScript.reload() simulation + a scripted field test (edit → running
-   demo updates without F5).
+Research COMPLETE (2026-07-04), feasibility CONFIRMED. Full design + phases H0–H6 live in
+**`plans/HMR_FAST_REFRESH_PLAN.md`**. The headline finding: Godot's in-place
+`script.reload(keep_state=true)` natively provides what Unity's whole Family-indirection layer
+was built for — method-reference Callables (`DemoBox.render`) keep their identity AND dispatch
+the new code, so RG's Callable-equality fiber matching preserves hook state for free. The four
+missing pieces (all with verified mechanisms): an `EditorDebuggerPlugin` push channel from the
+watcher into the running game, a live-root registry, a reconciler bailout-bypass
+(`hmr_refresh`), and a compile-time hook-signature (`__RUI_HOOK_SIG`) for the deliberate
+state-reset rule. **IMPLEMENTED** on `feat/hmr-fast-refresh` (addon 0.8.0) — see the HMR plan's
+status header for the landing map; hmr_test (37 checks) is in CI.
 
 ## Non-goals / parked
 - **Live checks for setup-value markup** (`var x = ( <Tag/> )` as-you-type): the compile tier

@@ -22,6 +22,15 @@ extends RefCounted
 ##     via explicit cycle-severing.
 
 const F = preload("res://addons/reactive_ui/core/fiber.gd")
+const Hmr = preload("res://addons/reactive_ui/core/hmr.gd")
+
+## --- Fast Refresh registry (Phase H) ---------------------------------------------------------
+## Live reconcilers. Registration is unconditional (one WeakRef append per root — negligible,
+## and it keeps HMR headless-testable); the debugger-channel hookup in hmr.gd is what gates the
+## actual feature to editor-attached runs. WeakRefs: roots are RefCounted-owned by their
+## creators and HMR must never extend a lifetime; dead refs are pruned on every use and on
+## unmount. hmr.gd walks this list to re-render after an in-place script reload.
+static var _hmr_live: Array = []
 
 var _container: Node
 var _root_vnode: RUIVNode = null
@@ -51,6 +60,8 @@ func _init(container: Node) -> void:
 	root.type = "__root__"
 	root.node = container
 	_root_current = root
+	_hmr_live.append(weakref(self))   # Fast Refresh (Phase H); ensure_registered self-gates
+	Hmr.ensure_registered()
 
 # --------------------------------------------------------------------------
 # Scheduling
@@ -970,6 +981,13 @@ func _release(fiber: RUIFiber) -> void:
 
 func unmount() -> void:
 	_cancel_pending_tick()
+	if not _hmr_live.is_empty():   # drop our Fast Refresh registration (and any dead refs with it)
+		var kept: Array = []
+		for wr in _hmr_live:
+			var rec = wr.get_ref()
+			if rec != null and rec != self:
+				kept.append(wr)
+		_hmr_live = kept
 	if _root_current == null:
 		return
 	var c := _root_current.child
@@ -981,3 +999,65 @@ func unmount() -> void:
 	_release(_root_current)
 	_root_current = null
 	_root_vnode = null
+
+# --------------------------------------------------------------------------
+# Fast Refresh (Phase H) — see core/hmr.gd for the pipeline overview
+# --------------------------------------------------------------------------
+
+## Re-render after an in-place script reload, across every live root. `scripts` are the
+## reloaded GDScript resources; `resets` the subset whose hook signature changed (their
+## components get a deliberate state reset); `global_rerender` = a hooks/module file changed,
+## so EVERY function fiber re-runs (any component may call it). Returns fibers refreshed.
+static func hmr_refresh_all(scripts: Array, resets: Array, global_rerender: bool) -> int:
+	var total := 0
+	var alive: Array = []
+	for wr in _hmr_live:
+		var rec = wr.get_ref()
+		if rec == null:
+			continue
+		alive.append(wr)
+		total += rec.hmr_refresh(scripts, resets, global_rerender)
+	_hmr_live = alive
+	return total
+
+## One root's refresh: mark the affected fibers dirty (defeating the bailout's cached-output
+## reuse — the whole reason a reload alone changes nothing on screen), then FLUSH SYNCHRONOUSLY
+## and unsliced. The reload already happened, so any handler still wired to live UI was minted
+## by the old script version; committing before control returns to the main loop means no input
+## event can ever run in the half-swapped world.
+func hmr_refresh(scripts: Array, resets: Array, global_rerender: bool) -> int:
+	if _root_current == null:
+		return 0
+	var marked := _hmr_mark(_root_current, scripts, resets, global_rerender)
+	if marked > 0:
+		var sliced: bool = RUIConfig.time_slicing
+		RUIConfig.time_slicing = false
+		_tick()
+		RUIConfig.time_slicing = sliced
+	return marked
+
+func _hmr_mark(fiber: RUIFiber, scripts: Array, resets: Array, global_rerender: bool) -> int:
+	var n := 0
+	if fiber.tag == F.Tag.FUNCTION:
+		var obj = fiber.component.get_object()
+		if global_rerender or scripts.has(obj):
+			if resets.has(obj):
+				_hmr_reset_state(fiber)
+			schedule_update_on_fiber(fiber, null)
+			n += 1
+	var c := fiber.child
+	while c != null:
+		n += _hmr_mark(c, scripts, resets, global_rerender)
+		c = c.sibling
+	return n
+
+## Deliberate state reset (Unity FullResetComponentState parity): the component's hook SHAPE
+## changed, so its slots no longer line up — run its effect cleanups, drop subscriptions, and
+## null the state; the next render (scheduled by the caller) primes a fresh RUIComponentState
+## and the hook-order guard re-locks on it. Children keep their own state unless their script
+## changed too — reset is strictly per-fiber.
+func _hmr_reset_state(fiber: RUIFiber) -> void:
+	if fiber.state == null:
+		return
+	_run_cleanups(fiber)
+	_dispose_fiber_state(fiber)
