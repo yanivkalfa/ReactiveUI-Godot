@@ -142,6 +142,11 @@ func _test_buffer_state() -> void:
 	_ok(not v.is_dirty(), "fresh view is clean")
 	_ok(v._file_label.text == "(no file)", "fresh view labeled (no file)")
 
+	# An untouched scratch buffer must not be diagnosed (field capture: red X on an empty editor).
+	v._refresh_diagnostics()
+	_ok(v._code_edit.get_line_gutter_icon(0, v._code_edit.diag_gutter) == null,
+		"empty pathless buffer carries no diagnostics")
+
 	v.open_path(TMP_PATH)
 	_ok(v.current_path() == TMP_PATH, "open_path sets current path")
 	_ok(not v.is_dirty(), "freshly opened buffer is clean")

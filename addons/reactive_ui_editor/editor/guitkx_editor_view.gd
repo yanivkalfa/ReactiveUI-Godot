@@ -285,6 +285,14 @@ func _refresh_diagnostics() -> void:
 			_problems.clear()
 		return
 	var text := _code_edit.text
+	# A pathless, empty scratch buffer (fresh tab, nothing typed) is not a compile error — don't
+	# greet the user with a red "missing declaration" icon on an untouched editor.
+	if _current_path.is_empty() and text.strip_edges().is_empty():
+		GuitkxDiagnosticsRenderer.clear(_code_edit, _code_edit.diag_gutter)
+		_code_edit.set_dim_lines({})
+		if _problems != null:
+			_problems.clear()
+		return
 	if text.length() > MAX_LIVE_COMPILE:
 		# Too large to compile on every keystroke — clear stale decorations so nothing mis-anchors as
 		# the text shifts, and rely on the Save-time compile instead.
