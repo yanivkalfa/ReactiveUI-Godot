@@ -1163,6 +1163,8 @@ func _test_cold_open_recovery() -> void:
 	_check_true((ok_sweep["held"] as Array).is_empty() and (ok_sweep["errors"] as Array).is_empty(),
 		"recovered sweep holds nothing: " + str(ok_sweep))
 	_check_true((ok_sweep["compiled"] as Array).size() == 1, "recovered sweep compiles the previously-held file")
+	_check_true(bool(((ok_sweep["compiled"] as Array)[0] as Dictionary).get("gd_ok", false)),
+		"sweep entries carry gd_ok (the HMR push filters on it)")
 	_check_true(FileAccess.file_exists(marker), "fingerprint marker written once the forced sweep actually ran")
 	# The persisted marker must be THIS process's healthily-computed fingerprint — never "" and
 	# never a value hashed over scan-window empty reads (compiler_fingerprint returns "" then and

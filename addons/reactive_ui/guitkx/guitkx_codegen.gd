@@ -353,7 +353,9 @@ static func compile_all(root: String = "res://") -> Dictionary:
 				continue
 		var r := compile_file(path, known)
 		if r["ok"]:
-			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"] })
+			# gd_ok: the generated script also PARSES (the throwaway GDScript.new check). The
+			# HMR push filters on it -- never hot-load a script the engine would reject.
+			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"], "gd_ok": bool(r.get("gd_parse_ok", true)) })
 		elif bool(r.get("env_error", false)):
 			held.append(path)
 		else:
