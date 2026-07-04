@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_undoable_set_text()
 	_test_buffer_state()
 	_test_intelligence_wiring()
+	_test_find_bar()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -235,3 +236,41 @@ func _test_intelligence_wiring() -> void:
 	_ok(absf(ViewScript._adaptive_wait(3000.0) - 2.0) < 0.001, "debounce capped at 2s")
 
 	v.free()
+
+# W4/G24 — find bar: open seeds from selection, counts, steps forward/back with wrap, case toggle.
+func _test_find_bar() -> void:
+	const FindBar := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = "alpha beta\ngamma alpha\nALPHA end"
+	var bar: HBoxContainer = FindBar.new()
+	bar.attach(ce)
+
+	_ok(not bar.visible, "find bar hidden by default")
+	ce.select(0, 0, 0, 5)  # "alpha"
+	bar.open_bar()
+	_ok(bar.visible, "open shows the bar")
+	_ok(bar.query_text() == "alpha", "open seeds the query from the selection")
+	_ok(bar.armed_search() == "alpha", "all-match highlight armed")
+	_ok(bar._count.text.begins_with("3 match"), "case-insensitive count includes ALPHA")
+
+	# Live-jump landed on match 2 (after the caret); stepping selects match 3, then wraps to match 1.
+	bar.find_step(true)
+	_ok(ce.get_selected_text().to_lower() == "alpha", "next selects a match")
+	_ok(ce.get_caret_line() == 2, "next advances to the last match")
+	bar.find_step(true)
+	_ok(ce.get_caret_line() == 0, "forward search wraps to the top")
+
+	bar.find_step(false)
+	_ok(ce.get_caret_line() == 2, "backward search wraps to the bottom")
+
+	# Case-sensitive narrows to the two lowercase hits.
+	bar._case.button_pressed = true
+	bar._update_search()
+	_ok(bar._count.text.begins_with("2 match"), "case-sensitive count excludes ALPHA")
+
+	bar.close_bar()
+	_ok(not bar.visible, "close hides the bar")
+	_ok(bar.armed_search() == "", "close clears the match highlight")
+
+	bar.free()
+	ce.free()

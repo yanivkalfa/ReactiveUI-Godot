@@ -20,6 +20,7 @@ var _fs_debounce: Timer
 
 func _enter_tree() -> void:
 	RUIEditorSettings.register_all()
+	_register_searchable_extension()
 
 	_view = GuitkxEditorView.new()
 	EditorInterface.get_editor_main_screen().add_child(_view)
@@ -154,6 +155,21 @@ func _edit(object: Object) -> void:
 		_make_visible(true)
 		if _view != null:
 			_view.open_resource(object)
+
+## Make .guitkx searchable by Godot's project-wide "Search in Files" (parity plan E18): the search
+## only indexes script + textfile extensions, and .guitkx is neither, so component markup was
+## invisible to Ctrl+Shift+F. This is a PER-USER editor setting (not project state) — set once,
+## idempotently, and deliberately never unset on plugin disable (other projects may rely on it).
+## Double-click routing is unaffected: the ResourceFormatLoader route still wins over textfiles.
+func _register_searchable_extension() -> void:
+	var es := EditorInterface.get_editor_settings()
+	if es == null:
+		return
+	var key := "docks/filesystem/textfile_extensions"
+	var cur := str(es.get_setting(key))
+	var parts := cur.split(",", false)
+	if not parts.has("guitkx"):
+		es.set_setting(key, (cur + ",guitkx") if cur != "" else "guitkx")
 
 func _register_loader() -> void:
 	if _loader == null:

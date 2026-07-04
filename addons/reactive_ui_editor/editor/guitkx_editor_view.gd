@@ -14,8 +14,13 @@ const MAX_LIVE_COMPILE := 150_000  # chars; above this, compile on Save only. Me
                                    # the MAIN thread, so 150K ≈ 300ms worst-case stall per pause (P1).
 const DEBOUNCE_SEC := 0.3
 
+# Preload (not the global class name): a freshly-added class_name is absent from the global class
+# cache on cold checkouts/headless runs, which would fail this whole script's parse.
+const FindBarScript := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
+
 var _code_edit: GuitkxCodeEdit
 var _file_label: Label
+var _find_bar: HBoxContainer  # GuitkxFindBar (typed loosely; see FindBarScript note)
 var _debounce: Timer
 var _problems: GuitkxProblemsPanel
 var _err_icon: Texture2D
@@ -68,6 +73,11 @@ func _init() -> void:
 	_code_edit.definition_requested.connect(_on_definition_requested)
 	vbox.add_child(_code_edit)
 
+	_find_bar = FindBarScript.new()
+	_find_bar.attach(_code_edit)
+	vbox.add_child(_find_bar)
+	vbox.move_child(_find_bar, 1)  # between the toolbar and the editor
+
 	_debounce = Timer.new()
 	_debounce.one_shot = true
 	_debounce.wait_time = DEBOUNCE_SEC
@@ -84,18 +94,36 @@ func _ready() -> void:
 		if theme.has_icon("StatusWarning", "EditorIcons"):
 			_warn_icon = theme.get_icon("StatusWarning", "EditorIcons")
 
-## Ctrl+S saves the .guitkx while this screen is visible. Without this, Godot's global Save Scene
-## shortcut eats the keystroke and the buffer silently stays unsaved (parity plan G31). Godot's own
-## save flows still reach us when the screen is NOT visible, via the plugin's _save_external_data.
+## Editor shortcuts while this screen is visible: Ctrl+S saves the .guitkx (without this, Godot's
+## global Save Scene eats the keystroke and the buffer silently stays unsaved — G31), Ctrl+F opens
+## the find bar, F3/Shift+F3 step matches, Esc closes the bar (G24). Godot's own save flows still
+## reach us when the screen is NOT visible, via the plugin's _save_external_data.
 func _shortcut_input(event: InputEvent) -> void:
 	if not is_visible_in_tree():
 		return
 	var k := event as InputEventKey
 	if k == null or not k.pressed or k.echo:
 		return
-	if k.keycode == KEY_S and k.is_command_or_control_pressed() and not k.shift_pressed and not k.alt_pressed:
-		_on_save_pressed()
-		accept_event()
+	if k.is_command_or_control_pressed() and not k.shift_pressed and not k.alt_pressed:
+		match k.keycode:
+			KEY_S:
+				_on_save_pressed()
+				accept_event()
+			KEY_F:
+				_find_bar.open_bar()
+				accept_event()
+		return
+	match k.keycode:
+		KEY_F3:
+			if not _find_bar.query_text().is_empty():
+				if not _find_bar.visible:
+					_find_bar.visible = true
+				_find_bar.find_step(not k.shift_pressed)
+				accept_event()
+		KEY_ESCAPE:
+			if _find_bar.visible:
+				_find_bar.close_bar()
+				accept_event()
 
 ## External-change watch (parity plan G25): when the editor window regains focus and the file changed
 ## on disk underneath a CLEAN buffer, reload silently (VS Code behavior). A DIRTY buffer is left
