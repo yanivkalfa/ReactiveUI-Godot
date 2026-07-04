@@ -1,5 +1,8 @@
 # Bug Split — analyzer vs ReactiveUI-Godot
 
+> **ARCHIVED 2026-07-04 (plans audit): all rows RESOLVED** — including the G-series marked
+> "left for now" below (G5–G9 shipped via the syntax-parity execution plan). Historical index.
+
 Quick index for the [`BUG_AUDIT.md`](BUG_AUDIT.md) catalog. Which repo owns each bug, priority, effort,
 status, and dependencies. **The analyzer bugs are the ones queued for implementation; the Godot bugs are
 documented but left for now.**

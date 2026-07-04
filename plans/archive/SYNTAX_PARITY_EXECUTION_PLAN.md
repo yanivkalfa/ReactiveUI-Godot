@@ -1,5 +1,12 @@
 # .guitkx → .uitkx Syntax Parity — Execution Plan
 
+> **ARCHIVED 2026-07-04 (plans audit): executed and shipped — 31 of 32 tasks ✅.** The one open
+> item, **T6.1** (docs authoring: concordance page, differences rewrite, directive-mapping
+> table), moves to the docs wave (Wave 3; see `ASSET_STORE_PLAN.md` §6). Note two statements
+> below were later superseded by events: the "keep bare-markup directive bodies" non-goal
+> (0.7.0 made them return-based, Unity-convergent) and global-class-name codegen (path-based
+> `V.comp` since 0.8.1).
+>
 > **Companion docs.** Evidence base: [`UITKX_GUITKX_SYNTAX_PARITY.md`](UITKX_GUITKX_SYNTAX_PARITY.md)
 > (the divergence matrix — every claim there carries file:line evidence; this plan references its rows
 > as "matrix row N"). Filed bugs G5–G9: [`BUG_AUDIT.md`](BUG_AUDIT.md) §4. This plan **subsumes G5–G9**

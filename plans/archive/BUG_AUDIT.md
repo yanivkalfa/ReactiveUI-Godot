@@ -1,5 +1,10 @@
 # Bug Audit — ReactiveUI-Godot `.guitkx` toolchain + gdscript-analyzer
 
+> **ARCHIVED 2026-07-04 (plans audit): every bug in this catalog is RESOLVED.** The analyzer
+> bugs (A-series) shipped from `gdscript-analyzer`; the Godot-side G-series shipped here —
+> G5–G9 via the syntax-parity execution (`archive/SYNTAX_PARITY_EXECUTION_PLAN.md`), the rest
+> across 0.5.x–0.8.x. Kept as the root-cause record.
+
 Researched root-cause + fix for every bug surfaced in the `.guitkx` tooling work. Each entry cites
 the **exact source location** and a **production-grade fix** (no bandaids). Two repos are involved:
 
