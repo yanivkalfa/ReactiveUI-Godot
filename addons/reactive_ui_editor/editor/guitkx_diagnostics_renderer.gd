@@ -9,7 +9,16 @@ extends RefCounted
 ## source -- so the line is EXACT (offset -> line via RUIGuitkxDiag.line_col), no token-search
 ## guessing. A diagnostic with offset -1 ("whole file") anchors to line 0.
 
-const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
+# Lazy cross-addon load, NOT a parse-time preload: a const preload of a reactive_ui path makes
+# this script (and everything that names it) fail to compile whenever the dependency is absent —
+# before the plugin's friendly dependency check can run (parity plan S1). The plugin gates all
+# loads on RUIEditorDeps.satisfied(), so by the time render() runs the file exists.
+static var _diag: GDScript = null
+
+static func _diag_cls() -> GDScript:
+	if _diag == null:
+		_diag = load("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
+	return _diag
 
 ## Clear all prior diagnostic decorations from `gutter` and reset line backgrounds.
 static func clear(code_edit: CodeEdit, gutter: int) -> void:
@@ -27,20 +36,21 @@ static func render(code_edit: CodeEdit, gutter: int, diagnostics: Array,
 	var text := code_edit.text
 	var line_count := code_edit.get_line_count()
 	var records: Array = []
+	var diag := _diag_cls()
 	for d in diagnostics:
 		if not (d is Dictionary):
 			continue
 		var dd := d as Dictionary
 		var off := int(dd.get("offset", -1))
-		var lc := Diag.line_col(text, off) if off >= 0 else { "line": 0, "col": 0 }
+		var lc: Dictionary = diag.line_col(text, off) if off >= 0 else { "line": 0, "col": 0 }
 		var ln := clampi(int(lc["line"]), 0, maxi(0, line_count - 1))
-		var sev := int(dd.get("severity", Diag.ERROR))
+		var sev := int(dd.get("severity", diag.ERROR))
 		var rec := {
-			"code": dd.get("code", ""), "severity": Diag.severity_name(sev),
+			"code": dd.get("code", ""), "severity": diag.severity_name(sev),
 			"message": str(dd.get("message", "")), "line": ln, "col": int(lc["col"]),
 		}
 		records.append(rec)
-		var is_err := sev == Diag.ERROR
+		var is_err: bool = sev == diag.ERROR
 		var icon := err_icon if is_err else warn_icon
 		if icon != null:
 			code_edit.set_line_gutter_icon(ln, gutter, icon)

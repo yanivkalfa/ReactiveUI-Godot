@@ -11,22 +11,42 @@ extends EditorPlugin
 
 const PLUGIN_NAME := "ReactiveUITK"
 const LoaderScript := preload("res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd")
+# Preload (own addon, dependency-free): fresh class_names are absent from cold class caches.
+const Deps := preload("res://addons/reactive_ui_editor/rui_editor_deps.gd")
 
-var _view: GuitkxEditorView
-var _problems: GuitkxProblemsPanel
+# Deliberately untyped (Control/Node): naming GuitkxEditorView here would chain-compile the whole
+# editor layer — and its RUIGuitkx* references — at plugin load, turning a missing reactive_ui
+# into a raw script error instead of the friendly dependency message below (S1/S2/F9).
+var _view: Control
+var _problems: Control
 var _problems_button: Button
 var _loader: ResourceFormatLoader
 var _fs_debounce: Timer
+var _deps_ok := false
 
 func _enter_tree() -> void:
+	# Dependency handshake FIRST — nothing that references reactive_ui classes loads before this.
+	var check: Dictionary = Deps.satisfied()
+	_deps_ok = bool(check.get("ok", false))
+	if not _deps_ok:
+		push_error("[reactive_ui_editor] disabled: " + str(check.get("reason", "")))
+		var dlg := AcceptDialog.new()
+		dlg.title = "Reactive UI Editor"
+		dlg.dialog_text = str(check.get("reason", ""))
+		dlg.confirmed.connect(dlg.queue_free)
+		dlg.canceled.connect(dlg.queue_free)
+		EditorInterface.get_base_control().add_child(dlg)
+		dlg.popup_centered()
+		return
+
 	RUIEditorSettings.register_all()
 	_register_searchable_extension()
 
-	_view = GuitkxEditorView.new()
+	_view = load("res://addons/reactive_ui_editor/editor/guitkx_editor_view.gd").new()
 	EditorInterface.get_editor_main_screen().add_child(_view)
 	_make_visible(false)
 
-	_problems = GuitkxProblemsPanel.new()
+	_problems = load("res://addons/reactive_ui_editor/editor/guitkx_problems_panel.gd").new()
 	_view.set_problems_panel(_problems)
 	_problems.diagnostic_activated.connect(_on_problem_activated)
 	_problems_button = add_control_to_bottom_panel(_problems, "Problems")
@@ -55,6 +75,8 @@ func _enter_tree() -> void:
 		_register_loader()
 
 func _exit_tree() -> void:
+	if not _deps_ok:
+		return
 	_unregister_loader()
 	var efs := EditorInterface.get_resource_filesystem()
 	if efs.filesystem_changed.is_connected(_on_fs_changed):
@@ -102,7 +124,7 @@ func _on_file_moved(old_file: String, new_file: String) -> void:
 func _on_folder_moved(old_folder: String, new_folder: String) -> void:
 	if _view == null:
 		return
-	var cur := _view.current_path()
+	var cur: String = _view.current_path()
 	var prefix := old_folder if old_folder.ends_with("/") else old_folder + "/"
 	if cur.begins_with(prefix):
 		var dst := new_folder if new_folder.ends_with("/") else new_folder + "/"
@@ -166,8 +188,8 @@ func _register_searchable_extension() -> void:
 	if es == null:
 		return
 	var key := "docks/filesystem/textfile_extensions"
-	var cur := str(es.get_setting(key))
-	var parts := cur.split(",", false)
+	var cur: String = str(es.get_setting(key))
+	var parts: PackedStringArray = cur.split(",", false)
 	if not parts.has("guitkx"):
 		es.set_setting(key, (cur + ",guitkx") if cur != "" else "guitkx")
 

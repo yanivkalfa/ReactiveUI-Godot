@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_buffer_state()
 	_test_intelligence_wiring()
 	_test_find_bar()
+	_test_deps_handshake()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -29,13 +30,22 @@ func _cleanup_tmp() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP_PATH))
 
 # Editor-layer scripts only load inside a live editor; a parse error there would otherwise ship
-# unseen. load() compiles them headlessly.
+# unseen. load() returns a script object even for a broken script, so gate on can_instantiate()
+# (false when compilation failed), not on null.
 func _test_parses() -> void:
-	_ok(load("res://addons/reactive_ui_editor/plugin.gd") != null, "plugin.gd parses")
-	_ok(load("res://addons/reactive_ui_editor/editor/guitkx_editor_view.gd") != null, "editor_view parses")
-	_ok(load("res://addons/reactive_ui_editor/editor/guitkx_code_edit.gd") != null, "code_edit parses")
-	_ok(load("res://addons/reactive_ui_editor/resources/guitkx_resource.gd") != null, "resource parses")
-	_ok(load("res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd") != null, "loader parses")
+	for p in [
+		"res://addons/reactive_ui_editor/plugin.gd",
+		"res://addons/reactive_ui_editor/rui_editor_deps.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_editor_view.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_code_edit.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_diagnostics_renderer.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_problems_panel.gd",
+		"res://addons/reactive_ui_editor/resources/guitkx_resource.gd",
+		"res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd",
+	]:
+		var s: GDScript = load(p)
+		_ok(s != null and s.can_instantiate(), "%s compiles" % str(p).get_file())
 
 func _ok(cond: bool, msg: String) -> void:
 	if cond:
@@ -274,3 +284,16 @@ func _test_find_bar() -> void:
 
 	bar.free()
 	ce.free()
+
+# W5/F9 — dependency handshake facts + the numeric version comparator.
+func _test_deps_handshake() -> void:
+	const Deps := preload("res://addons/reactive_ui_editor/rui_editor_deps.gd")
+	var check: Dictionary = Deps.satisfied()
+	_ok(bool(check.get("ok", false)), "handshake passes in this repo (reactive_ui present)")
+	var ver: String = Deps.installed_version()
+	_ok(ver != "" and ver.split(".").size() == 3, "installed reactive_ui version parses (got '%s')" % ver)
+	_ok(not Deps._version_lt(ver, Deps.MIN_REACTIVE_UI), "installed version satisfies MIN_REACTIVE_UI")
+	_ok(Deps._version_lt("0.8.1", "0.8.2"), "semver: 0.8.1 < 0.8.2")
+	_ok(Deps._version_lt("0.9.9", "0.10.0"), "semver: numeric, not lexicographic")
+	_ok(not Deps._version_lt("0.8.2", "0.8.2"), "semver: equal is not less")
+	_ok(not Deps._version_lt("1.0.0", "0.9.9"), "semver: major dominates")
