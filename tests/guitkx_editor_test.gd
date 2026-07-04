@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_sidecar_overlay()
 	_test_wave2_completion()
 	_test_comment_toggle()
+	_test_refs_and_rename()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -630,3 +631,63 @@ func _test_comment_toggle() -> void:
 	ce.undo()
 	_ok(ce.get_line(0) == "x", "toggle is a single undo step")
 	ce.free()
+
+# M2 wave 3 — references (G2), rename (G3), hook goto-def (G27).
+func _test_refs_and_rename() -> void:
+	const Refs := preload("res://addons/reactive_ui_editor/lsp/guitkx_refs.gd")
+	# Two fixture files: a component + a consumer referencing it twice (+ a comparison decoy).
+	var a_path := "res://tests/__refs_a.guitkx"
+	var b_path := "res://tests/__refs_b.guitkx"
+	var a_src := "@class_name RefsWidget\n\ncomponent RefsWidget() {\n\treturn (\n\t\t<Label text=\"w\" />\n\t)\n}\n"
+	var b_src := "component RefsHost() {\n\tvar x = 1\n\tvar y = x <RefsWidgetFake_not_a_tag\n\treturn (\n\t\t<VBox>\n\t\t\t<RefsWidget />\n\t\t\t<RefsWidget key=\"2\" />\n\t\t</VBox>\n\t)\n}\n"
+	for pair in [[a_path, a_src], [b_path, b_src]]:
+		var f := FileAccess.open(pair[0], FileAccess.WRITE)
+		f.store_string(pair[1])
+		f.close()
+	GuitkxWorkspace.rescan()
+
+	# In-file scan: decl + @class_name in A; two opens in B; the comparison is not a reference.
+	var ra: Array = Refs.tag_refs_in(a_src, "RefsWidget")
+	var kinds := ra.map(func(r): return str((r as Dictionary).get("kind", "")))
+	_ok(kinds.has("decl") and kinds.has("class_name"), "declaration + @class_name tokens found")
+	var rb: Array = Refs.tag_refs_in(b_src, "RefsWidget")
+	_ok(rb.size() == 2, "two tag references in the consumer (comparison decoy skipped), got %d" % rb.size())
+
+	# Project-wide, with previews.
+	var proj: Array = Refs.project_refs("RefsWidget")
+	_ok(proj.size() == 4, "project refs = decl + class_name + 2 usages (got %d)" % proj.size())
+	_ok(str((proj[0] as Dictionary).get("preview", "")) != "", "reference rows carry a line preview")
+
+	# Rename gates.
+	_ok(not bool(Refs.rename_edits("RefsWidget", "Label").get("ok")), "host-tag collision refused")
+	_ok(not bool(Refs.rename_edits("RefsWidget", "RefsHost").get("ok")), "existing-component collision refused")
+	_ok(not bool(Refs.rename_edits("RefsWidget", "lower").get("ok")), "non-PascalCase refused")
+	_ok(not bool(Refs.rename_edits("NoSuchThing", "Xyz").get("ok")), "unknown source refused")
+	_ok(not bool(Refs.rename_edits("RefsWidget", "DemoBox").get("ok")), "global-class collision refused")
+
+	# Apply: splice edits into both files (text-level check of the plan).
+	var plan: Dictionary = Refs.rename_edits("RefsWidget", "RefsGadget")
+	_ok(bool(plan.get("ok")), "valid rename plan accepted")
+	var edits: Dictionary = plan.get("edits", {})
+	var new_a: String = Refs.apply_edits_to_text(a_src, edits.get(a_path, []), "RefsGadget")
+	var new_b: String = Refs.apply_edits_to_text(b_src, edits.get(b_path, []), "RefsGadget")
+	_ok(new_a.contains("@class_name RefsGadget") and new_a.contains("component RefsGadget"),
+		"declaration + override renamed")
+	_ok(new_b.count("<RefsGadget") == 2 and not new_b.contains("<RefsWidget ")
+		and not new_b.contains("<RefsWidget/"), "usages renamed (decoy substring excluded)")
+	_ok(new_b.contains("RefsWidgetFake_not_a_tag"), "comparison decoy untouched")
+
+	# G27: hooks resolve to core/hooks.gd through the widget's lookup path.
+	var ce: CodeEdit = CodeEditScript.new()
+	var got: Array = []
+	ce.definition_requested.connect(func(p: String, o: int):
+		got.append(p)
+		got.append(o))
+	ce._on_symbol_lookup("useState", 0, 0)
+	_ok(got.size() == 2 and str(got[0]).ends_with("core/hooks.gd") and int(got[1]) > 0,
+		"useState jumps into core/hooks.gd")
+	ce.free()
+
+	for p in [a_path, b_path]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
+	GuitkxWorkspace.rescan()

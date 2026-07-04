@@ -19,6 +19,7 @@ const DEBOUNCE_SEC := 0.3
 const FindBarScript := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
 const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
 const ConfigScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
+const RefsScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_refs.gd")
 
 var _code_edit: GuitkxCodeEdit
 var _file_label: Label
@@ -124,6 +125,13 @@ func _shortcut_input(event: InputEvent) -> void:
 				if not _find_bar.visible:
 					_find_bar.visible = true
 				_find_bar.find_step(not k.shift_pressed)
+				accept_event()
+		KEY_F2:
+			_rename_dialog()
+			accept_event()
+		KEY_F12:
+			if k.shift_pressed:
+				_show_references()
 				accept_event()
 		KEY_ESCAPE:
 			if _find_bar.visible:
@@ -620,6 +628,79 @@ func _on_save_pressed_then(after: Callable) -> void:
 	_on_save_pressed()
 	if not _dirty:
 		after.call()
+
+## --- References + rename (G2/G3) ---
+
+signal references_requested(tag: String, records: Array)
+
+func _component_at_caret() -> String:
+	var text := _code_edit.text
+	var off := GuitkxContext.offset_of(text, _code_edit.get_caret_line(), _code_edit.get_caret_column())
+	var word := GuitkxHover.word_at(text, off)
+	return word if GuitkxWorkspace.is_component(word) else ""
+
+## Shift+F12: project-wide references for the component under the caret, delivered to the
+## References bottom panel via the plugin.
+func _show_references() -> void:
+	var tag := _component_at_caret()
+	if tag.is_empty():
+		_alert("Place the caret on a component tag to find its references.")
+		return
+	references_requested.emit(tag, RefsScript.project_refs(tag))
+
+## F2: rename the component under the caret across the whole project — collision-refusing,
+## applied to the open buffer as ONE undoable edit and to every other file on disk.
+func _rename_dialog() -> void:
+	var tag := _component_at_caret()
+	if tag.is_empty():
+		_alert("Place the caret on a component tag to rename it.")
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Rename Component"
+	var edit := LineEdit.new()
+	edit.text = tag
+	edit.select_all()
+	dlg.add_child(edit)
+	dlg.register_text_enter(edit)
+	dlg.ok_button_text = "Rename Everywhere"
+	dlg.confirmed.connect(func():
+		_apply_rename(tag, edit.text.strip_edges())
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered()
+	edit.grab_focus.call_deferred()
+
+func _apply_rename(old_tag: String, new_tag: String) -> void:
+	if new_tag == old_tag or new_tag.is_empty():
+		return
+	var plan: Dictionary = RefsScript.rename_edits(old_tag, new_tag)
+	if not bool(plan.get("ok", false)):
+		_alert("Cannot rename: %s" % str(plan.get("reason", "")))
+		return
+	var edits: Dictionary = plan.get("edits", {})
+	var touched := 0
+	for path in edits:
+		var file_edits: Array = edits[path]
+		if str(path) == _current_path:
+			# The open buffer: one undoable operation, then save through the normal flow so the
+			# watcher recompiles and the label/dirty state stay coherent.
+			_code_edit.set_text_undoable(RefsScript.apply_edits_to_text(_code_edit.text, file_edits, new_tag))
+			_write_buffer()
+		else:
+			var text := FileAccess.get_file_as_string(str(path))
+			var f := FileAccess.open(str(path), FileAccess.WRITE)
+			if f == null:
+				_alert("Rename partially applied: cannot write %s." % str(path))
+				continue
+			f.store_string(RefsScript.apply_edits_to_text(text, file_edits, new_tag))
+			f.close()
+			EditorInterface.get_resource_filesystem().update_file(str(path))
+		touched += 1
+	GuitkxWorkspace.rescan()
+	_bindings_valid = false
+	_refresh_diagnostics()
+	print("[reactive_ui_editor] renamed <%s> -> <%s> across %d file(s)" % [old_tag, new_tag, touched])
 
 ## Ctrl+G (E13): jump to a 1-based line number.
 func _goto_line_dialog() -> void:

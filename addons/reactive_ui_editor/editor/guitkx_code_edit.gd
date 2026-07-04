@@ -210,14 +210,23 @@ func _kind_of(kind: String) -> int:
 		_:
 			return CodeEdit.KIND_PLAIN_TEXT
 
+const HOOKS_GD := "res://addons/reactive_ui/core/hooks.gd"
+
 func _on_symbol_validate(symbol: String) -> void:
-	set_symbol_lookup_word_as_valid(GuitkxWorkspace.is_component(symbol))
+	set_symbol_lookup_word_as_valid(GuitkxWorkspace.is_component(symbol) or GuitkxHover.HOOKS.has(symbol))
 
 func _on_symbol_lookup(symbol: String, _line: int, _column: int) -> void:
 	var hit := GuitkxWorkspace.lookup(symbol)
-	if hit.is_empty():
+	if not hit.is_empty():
+		definition_requested.emit(str(hit.get("path", "")), int(hit.get("offset", 0)))
 		return
-	definition_requested.emit(str(hit.get("path", "")), int(hit.get("offset", 0)))
+	# Hooks jump to their implementation in core/hooks.gd (G27 — the VS Code server chains
+	# through virtual-doc stubs; natively a name scan suffices, hooks.gd functions are camelCase).
+	if GuitkxHover.HOOKS.has(symbol) and FileAccess.file_exists(HOOKS_GD):
+		var src := FileAccess.get_file_as_string(HOOKS_GD)
+		var at := src.find("func %s(" % symbol)
+		if at >= 0:
+			definition_requested.emit(HOOKS_GD, at + 5)
 
 ## Diagnostics for the current buffer, keyed by line — folded into the hover card so the message
 ## (and its did-you-mean) is readable without clicking the gutter. [field ask]

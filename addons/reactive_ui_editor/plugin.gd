@@ -20,6 +20,7 @@ const Deps := preload("res://addons/reactive_ui_editor/rui_editor_deps.gd")
 var _view: Control
 var _problems: Control
 var _problems_button: Button
+var _references: Control
 var _fs_debounce: Timer
 var _deps_ok := false
 
@@ -49,6 +50,13 @@ func _enter_tree() -> void:
 	_view.set_problems_panel(_problems)
 	_problems.diagnostic_activated.connect(_on_problem_activated)
 	_problems_button = add_control_to_bottom_panel(_problems, "Problems")
+
+	# References results (Shift+F12) get their own bottom panel so the diagnostics refresh can
+	# never clobber a result list mid-read (G2).
+	_references = load("res://addons/reactive_ui_editor/editor/guitkx_references_panel.gd").new()
+	_references.location_activated.connect(_on_reference_activated)
+	add_control_to_bottom_panel(_references, "References")
+	_view.references_requested.connect(_on_references_requested)
 
 	# Follow the open file through dock renames/moves/deletes (parity plan L1/L2) — otherwise the
 	# view's path goes stale and Save resurrects the old filename with the user's edits in it.
@@ -92,6 +100,10 @@ func _exit_tree() -> void:
 		remove_control_from_bottom_panel(_problems)
 		_problems.queue_free()
 		_problems = null
+	if _references != null:
+		remove_control_from_bottom_panel(_references)
+		_references.queue_free()
+		_references = null
 	_problems_button = null
 	if _view != null:
 		_view.queue_free()
@@ -224,6 +236,19 @@ func _register_searchable_extension() -> void:
 	if parts.has("guitkx"):
 		parts.erase("guitkx")
 		es.set_setting(key, ",".join(PackedStringArray(parts)))
+
+func _on_references_requested(tag: String, records: Array) -> void:
+	if _references == null:
+		return
+	_references.show_references(tag, records)
+	make_bottom_panel_item_visible(_references)
+
+func _on_reference_activated(path: String, line: int) -> void:
+	EditorInterface.set_main_screen_editor(PLUGIN_NAME)
+	_make_visible(true)
+	if _view != null:
+		_view.open_path(path)
+		_view.goto_line(line)
 
 func _on_problem_activated(line: int) -> void:
 	EditorInterface.set_main_screen_editor(PLUGIN_NAME)
