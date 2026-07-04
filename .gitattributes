@@ -15,3 +15,7 @@
 /godotLogo.png export-ignore
 /godotLogo100.png export-ignore
 /CLAUDE.md export-ignore
+# Never let an addon install clobber the user's own project files.
+/project.godot export-ignore
+/icon.png export-ignore
+/.asset-template.json.hb export-ignore
