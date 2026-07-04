@@ -386,8 +386,28 @@ Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, 
   - Follow-up (parked, needs a live-editor capture): if the next session's Output shows NO sweep
     line, the plugin isn't loading at all in the user's editor — a different hunt (plugin-load
     error higher in the Output), now unambiguously diagnosable.
+- **R3.3 — THE root cause, found and fixed (addon 0.7.2, branch `fix/editor-static-vocab-path`).** ✅
+  The user's follow-up ("saving repeatedly, several times") killed the race theories; the
+  worktree's `--editor --quit` capture showed the plugin LOADING fine and every compile getting
+  HELD on "vocabulary.json could not be read" — at the DEFAULT path, where the embedded const
+  should have served. Instrumented editor run proved it: `_VOCAB_PATH` printed `<> len=0
+  is_default=false` — **GDScript `static var` initializers do not run during the editor's early
+  script indexing**, so production fell into the test-seam file branch, read path `""`, and held
+  every compile of every editor session forever. Headless (tests/CI/probes) always initialize
+  statics — exactly why nothing ever caught it, all the way back to the 0.6.0 "vocab read wall"
+  (the 0.6.1 const embedding was right, but the branch guarding it was itself a static var).
+  Fix: an empty path means DEFAULT (const, no read, no hold) + regression test pinning `""`;
+  `_on_fs_changed` now ignores mid-scan events (flaky reads, unregistered classes) like the poll
+  and initial sweep already did; held-only retries no longer print a summary per retry. Verified
+  end-to-end: the same instrumented editor run compiles all 42 files with the fix in place.
+  Also verified: the user's `var component = (<VdsBs></VdsBs>)` field case compiles to a clean
+  `GUITKX0105: unknown element <VdsBs>` — spliced setup markup IS compile-validated; only the
+  LIVE (as-you-type) tier doesn't scan setup-value markup yet (parked below).
 
 ## Non-goals / parked
+- **Live checks for setup-value markup** (`var x = ( <Tag/> )` as-you-type): the compile tier
+  validates it (0105 etc. via the sidecar on save), but liveMarkup/scanWindow only walk return
+  windows and directive-body returns. Natural next live-tier wave.
 - **Setup markup as a value** (`var x = <Label/>` — Unity's bare-JSX ranges): natural C-follow-up,
   not in C's acceptance. Track after C lands.
 - **Analyzer redeclaration check** (duplicate `var rev` unflagged): gdscript-analyzer repo
@@ -418,3 +438,11 @@ Two same-night field captures on the freshly-published 0.8.0/0.7.0 (2026-07-04, 
   sweep proof-of-life. Gates: lsp 174/174 + smoke (now 14 checks incl. the clean-body inverse
   gate), GD suite incl. new codegen staleness tests, pristine-worktree full suite, ext build.
   Release: addon **0.7.1**, ext/lsp **0.8.1**.
+- 2026-07-04 — **Phase R3.3 COMPLETE** on `fix/editor-static-vocab-path`: THE "Godot never
+  recompiles" root cause — GDScript `static var` initializers don't run during the editor's early
+  script indexing, so `_VOCAB_PATH` read `""` and production fell into the test-seam file branch,
+  holding every compile of every editor session forever (headless always healthy — why no suite
+  ever caught it). Empty path now = embedded const; `_on_fs_changed` mid-scan gate; held-retry
+  summary spam fixed. Proven by instrumented editor runs before/after (hold → 42 compiles), plus
+  the VdsBs field case verified compiling to a clean GUITKX0105. Release: addon **0.7.2**
+  (GD-only; ext/lsp stay 0.8.1).
