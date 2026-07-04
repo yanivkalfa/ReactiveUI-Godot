@@ -1116,6 +1116,136 @@ func _test_codegen() -> void:
 	_check_true(int(hsweep.get("total", -1)) == 1, "sweep reports the tracked total")
 	DirAccess.remove_absolute(hgx + ".diags.json")
 	DirAccess.remove_absolute(hgx)   # (the probe .gd was already T1.1-deleted by the broken compile)
+	# 0.8.1: renaming/deleting a .guitkx must not leak its generated outputs (field capture
+	# 2026-07-04: renaming components/deep_tree.guitkx left an orphaned deep_tree.gd whose
+	# class_name DUPLICATED the real demo's -- project-wide resolution chaos). The sweep removes
+	# outputs whose AUTO-GENERATED source is gone; hand-written .gd files are never touched.
+	var o_dir := "res://tests/__orphan_tmp"
+	DirAccess.make_dir_recursive_absolute(o_dir)
+	var ogx := o_dir + "/orig.guitkx"
+	var of := FileAccess.open(ogx, FileAccess.WRITE)
+	of.store_string("component Orig() {\n\treturn ( <Label text=\"o\" /> )\n}\n")
+	of.close()
+	_check_true(Codegen.compile_file(ogx)["ok"], "orphan fixture compiles")
+	var ogd := Codegen.gd_path_for(ogx)
+	var hand := o_dir + "/handwritten.gd"
+	var hf3 := FileAccess.open(hand, FileAccess.WRITE)
+	hf3.store_string("extends RefCounted\nfunc hi() -> int:\n\treturn 1\n")
+	hf3.close()
+	DirAccess.remove_absolute(ogx)   # the rename/delete: source gone, outputs remain
+	_check_true(Codegen.has_stale(o_dir), "an orphaned output makes the poll predicate hot")
+	var o_sweep := Codegen.compile_all(o_dir)
+	_check_true((o_sweep.get("removed", []) as Array).has(ogd), "sweep reports the removed orphan: " + str(o_sweep))
+	_check_true(not FileAccess.file_exists(ogd), "orphaned .gd deleted")
+	_check_true(not FileAccess.file_exists(ogx + ".diags.json"), "orphaned sidecar deleted")
+	_check_true(FileAccess.file_exists(hand), "hand-written .gd is never touched")
+	_check_true(not Codegen.has_stale(o_dir), "poll predicate settles after the cleanup")
+	DirAccess.remove_absolute(hand)
+	# GUITKX2106: the copy-paste flow -- a SECOND source binding the same class errors with no
+	# output written (the incumbent keeps compiling), so a duplicate class_name can never exist
+	# on disk; the project converges the moment the copy is renamed, and the loser's orphaned
+	# sidecar is swept with it.
+	var dd := "res://tests/__dupe_tmp"
+	DirAccess.make_dir_recursive_absolute(dd)
+	var d_orig := dd + "/a_orig.guitkx"
+	var d_copy := dd + "/z_copy.guitkx"
+	var d_src := "@class_name DupeProbe\n\ncomponent DupeProbe {\n\treturn ( <Label text=\"1\" /> )\n}\n"
+	var df1 := FileAccess.open(d_orig, FileAccess.WRITE)
+	df1.store_string(d_src)
+	df1.close()
+	_check_true(Codegen.compile_file(d_orig)["ok"], "dupe incumbent compiles")
+	var df2 := FileAccess.open(d_copy, FileAccess.WRITE)
+	df2.store_string(d_src)
+	df2.close()
+	var d_sweep := Codegen.compile_all(dd)
+	_check_true((d_sweep["errors"] as Array).size() == 1 and str(((d_sweep["errors"] as Array)[0] as Dictionary)["path"]) == d_copy,
+		"the COPY errors, the incumbent does not: " + str(d_sweep["errors"]))
+	var d_diag: Dictionary = (((d_sweep["errors"] as Array)[0] as Dictionary)["diagnostics"] as Array)[0]
+	_check_true(str(d_diag["code"]) == "GUITKX2106", "the copy is flagged GUITKX2106 (got %s)" % str(d_diag))
+	_check_true(not FileAccess.file_exists(Codegen.gd_path_for(d_copy)), "the copy never produces a .gd -- no duplicate class can exist")
+	_check_true(FileAccess.file_exists(Codegen.gd_path_for(d_orig)), "the incumbent's .gd survives")
+	DirAccess.remove_absolute(d_copy)   # the rename: copy becomes its own class
+	var d_new := dd + "/renamed.guitkx"
+	var df3 := FileAccess.open(d_new, FileAccess.WRITE)
+	df3.store_string("@class_name RenamedProbe\n\ncomponent RenamedProbe {\n\treturn ( <Label text=\"2\" /> )\n}\n")
+	df3.close()
+	var d_sweep2 := Codegen.compile_all(dd)
+	_check_true((d_sweep2["errors"] as Array).is_empty(), "post-rename sweep is clean: " + str(d_sweep2["errors"]))
+	_check_true(FileAccess.file_exists(Codegen.gd_path_for(d_new)), "the renamed component compiles")
+	_check_true(not FileAccess.file_exists(d_copy + ".diags.json"), "the dupe-loser's orphaned sidecar was swept")
+	for lf in [d_orig, Codegen.gd_path_for(d_orig), d_orig + ".diags.json", d_new, Codegen.gd_path_for(d_new), d_new + ".diags.json"]:
+		if FileAccess.file_exists(str(lf)):
+			DirAccess.remove_absolute(str(lf))
+	# GUITKX2107: deleting a referenced component flags the DEPENDENT -- which is not mtime-stale
+	# -- at the dangling tag, in the SAME sweep that removes the orphan; restoring the component
+	# heals the dependent on the next sweep (recompile clears the sidecar).
+	var g_dir := "res://tests/__dangling_tmp"
+	DirAccess.make_dir_recursive_absolute(g_dir)
+	if Codegen.compiler_changed():
+		Codegen.compile_all(g_dir)   # settle the fingerprint marker; the 2107 path is non-force
+	var g_child := g_dir + "/child_probe.guitkx"
+	var g_parent := g_dir + "/parent_probe.guitkx"
+	var g_child_src := "@class_name ChildProbe\n\ncomponent ChildProbe {\n\treturn ( <Label text=\"c\" /> )\n}\n"
+	var gf1 := FileAccess.open(g_child, FileAccess.WRITE)
+	gf1.store_string(g_child_src)
+	gf1.close()
+	var gf2 := FileAccess.open(g_parent, FileAccess.WRITE)
+	gf2.store_string("@class_name ParentProbe\n\ncomponent ParentProbe {\n\treturn ( <VBox><ChildProbe /></VBox> )\n}\n")
+	gf2.close()
+	var g_sweep1 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep1["errors"] as Array).is_empty() and (g_sweep1["compiled"] as Array).size() == 2,
+		"dangling fixture compiles clean: " + str(g_sweep1["errors"]))
+	_check(FileAccess.get_file_as_string(Codegen.gd_path_for(g_parent)), "V.comp(", "parent references child by path")
+	DirAccess.remove_absolute(g_child)
+	var g_sweep2 := Codegen.compile_all(g_dir)
+	_check_true(not FileAccess.file_exists(Codegen.gd_path_for(g_child)), "child's orphaned .gd swept")
+	var g_errs: Array = g_sweep2["errors"]
+	var g_hit := false
+	for ge in g_errs:
+		if str((ge as Dictionary).get("path", "")) == g_parent:
+			for gd2 in ((ge as Dictionary).get("diagnostics", []) as Array):
+				if str((gd2 as Dictionary).get("code", "")) == "GUITKX2107":
+					g_hit = true
+	_check_true(g_hit, "dependent flagged GUITKX2107 in the SAME sweep as the deletion: " + str(g_errs))
+	_check_true(FileAccess.file_exists(Codegen.gd_path_for(g_parent)), "dependent's .gd kept (last good code)")
+	# a RE-SAVE of the flagged (unchanged) dependent bumps its mtime but must NOT wake the poll:
+	# the 2107 branch re-surfaces without compiling, so an mtime-stale verdict here looped the
+	# sweep every 2s forever (field capture 2026-07-04). Known-broken content is not stale.
+	var g_same := FileAccess.get_file_as_string(g_parent)
+	var gf_rs := FileAccess.open(g_parent, FileAccess.WRITE)
+	gf_rs.store_string(g_same)
+	gf_rs.close()
+	_check_true(not Codegen.has_stale(g_dir), "re-saving the flagged dependent does not wake the poll (no sweep loop)")
+	var g_sweep2b := Codegen.compile_all(g_dir)
+	_check_true((g_sweep2b["compiled"] as Array).is_empty() and (g_sweep2b["errors"] as Array).size() == 1,
+		"a sweep after the re-save only re-surfaces (no compile churn): " + str(g_sweep2b["errors"]))
+	var gf3 := FileAccess.open(g_child, FileAccess.WRITE)   # restore -> heal
+	gf3.store_string(g_child_src)
+	gf3.close()
+	var g_sweep3 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep3["errors"] as Array).is_empty(), "restore heals the dependent: " + str(g_sweep3["errors"]))
+	_check_true((g_sweep3["compiled"] as Array).size() == 2, "child recompiled AND dependent healed (recompiled)")
+	# FOLDER deletion: source AND outputs vanish together -- no orphan left for the poll to
+	# notice, and the dependent isn't mtime-stale (field capture 2026-07-04: the 2107 only
+	# landed when a save/focus happened to cause a sweep). The dangling-refs pass must make the
+	# poll hot anyway, settle once flagged, go hot again on restore (heal work), then settle.
+	for lf3 in [g_child, Codegen.gd_path_for(g_child), g_child + ".diags.json"]:
+		if FileAccess.file_exists(str(lf3)):
+			DirAccess.remove_absolute(str(lf3))
+	_check_true(Codegen.has_stale(g_dir), "folder-style deletion (no orphans) still makes the poll hot")
+	var g_sweep4 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep4["errors"] as Array).size() == 1, "folder-style deletion flags 2107: " + str(g_sweep4["errors"]))
+	_check_true(not Codegen.has_stale(g_dir), "poll settles once the flag lands")
+	var gf4 := FileAccess.open(g_child, FileAccess.WRITE)
+	gf4.store_string(g_child_src)
+	gf4.close()
+	_check_true(Codegen.has_stale(g_dir), "restoring the component makes the poll hot again (heal work)")
+	var g_sweep5 := Codegen.compile_all(g_dir)
+	_check_true((g_sweep5["errors"] as Array).is_empty(), "the heal sweep clears everything: " + str(g_sweep5["errors"]))
+	_check_true(not Codegen.has_stale(g_dir), "poll settles clean after the heal")
+	for lf2 in [g_child, Codegen.gd_path_for(g_child), g_child + ".diags.json", g_parent, Codegen.gd_path_for(g_parent), g_parent + ".diags.json"]:
+		if FileAccess.file_exists(str(lf2)):
+			DirAccess.remove_absolute(str(lf2))
 
 func _test_cold_open_recovery() -> void:
 	# R0 (0.6.1): the vocabulary the compiler actually uses is the EMBEDDED const projection

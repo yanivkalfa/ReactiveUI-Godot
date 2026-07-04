@@ -4,6 +4,56 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] — 2026-07-04
+
+**Renaming or deleting a `.guitkx` no longer leaks its generated outputs.** Field capture,
+minutes into 0.8.0: renaming `components/deep_tree.guitkx` left the old generated
+`deep_tree.gd` behind — still declaring `class_name DemoDeepTree`, now a **duplicate** of the
+real demo's global class, breaking resolution project-wide. The sweep (and the watch poll) now
+detect generated outputs whose source is gone — identified by the `AUTO-GENERATED` header, so
+hand-written scripts are never touched — and remove the whole family (`.gd`, sidecar, `.uid`s),
+with a dock line per removal. Empty reads (editor scan window) never count as an orphan verdict.
+
+### Added
+- **`GUITKX2106` — duplicate class binding.** Copy-pasting a `.guitkx` used to poison the
+  project *instantly*: the watch poll compiled the copy before you could rename it, producing a
+  second `.gd` with the same `class_name`. Now the incumbent keeps compiling and the copy
+  errors (`class \`X\` is already bound by <path> — rename this component`) with **no output
+  written** — a duplicate class can never reach disk, and everything converges the moment you
+  rename the copy.
+
+- **Generated code no longer depends on the global class registry — components reference each
+  other by path.** `<Card />` now compiles to `V.fc(V.comp("res://ui/card.gd"), …)` — a lazy,
+  cached, path-based resolver — instead of `Card.render`. This removes an entire failure class
+  at the root: a component created seconds ago mid-play-session, a game launched before the
+  class existed, the editor's own rescan lag, and Godot's built-in "Synchronize Script Changes"
+  loading a young reference — none of them can choke anymore, because the generated script
+  parses with zero registry knowledge. Lazy loading also makes self-recursive and cyclic
+  component graphs safe by construction. Hand-written `class_name` components and user
+  expressions (`DemoHello.render` in your own code) keep the classic global-name form.
+- **Brand-new components hot-link into a running game.** Godot registers global `class_name`s
+  at launch, so a component created *after* F5 is unresolvable by name — the hot reload now
+  detects the failure and retries with the class **linked by path** (an injected `preload`
+  const, using the sweep's class→file map), keeping the session and all its state. Create a
+  component, reference it, save: it appears in the running UI —
+  `(1 new component(s) linked live)` in the Output. After the next restart the global registers
+  and the linking naturally no-ops. Only classes from outside the guitkx pipeline still need a
+  restart. (The push is deliberately **not** gated on the editor-side parse check anymore — that
+  check fails transiently for exactly this case while the *editor's* registry catches up; the
+  game's per-file isolation and the injection retry own the risk.)
+- **`GUITKX2107` — deleting or renaming a referenced component errors at the dangling tag.**
+  Dependents aren't mtime-stale, so nothing used to flag them — the first symptom was a runtime
+  load failure at the next launch. Every compile now records the components a file references
+  (in its sidecar); the sweep that removes a vanished component's outputs flags every dependent
+  **in the same pass** — dock line, sidecar, VS Code squiggle at the tag — while its last good
+  code keeps running (in the editor *and* in a live game, same as any compile error). Restore
+  the component, or edit the reference away, and the next sweep heals the file automatically.
+  The VS Code server (0.8.3+) pairs with it live: open documents re-validate whenever the
+  component universe changes, and a deleted generated class is un-harvested instead of
+  suppressing the unknown-component check forever. Re-saving a flagged-but-unchanged dependent
+  is recognized as known-broken content (not stale), so the watch poll settles instead of
+  sweeping every 2 seconds forever.
+
 ## [0.8.0] — 2026-07-04
 
 **Runtime Fast Refresh (hot reload) — edit a `.guitkx` while your game runs under F5 and the

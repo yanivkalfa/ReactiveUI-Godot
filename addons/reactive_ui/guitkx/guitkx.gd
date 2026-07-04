@@ -39,6 +39,13 @@ const _VOCAB_GEN = preload("res://addons/reactive_ui/guitkx/guitkx_vocabulary.ge
 const _VOCAB_PATH_DEFAULT := "res://addons/reactive_ui/guitkx/vocabulary.json"
 static var _VOCAB_PATH := _VOCAB_PATH_DEFAULT
 
+## Component references collected during ONE compile() pass (tag -> generated .gd path, filled
+## at the tag chokepoint whenever a guitkx-bound component lowers through V.comp). Compiles are
+## editor-main-thread sequential, so a static accumulator is safe; nested markup re-parses
+## within the same compile share it deliberately. Persisted into the sidecar ("refs") so the
+## sweep can flag DANGLING references when a component's file vanishes (GUITKX2107).
+static var _ref_accum := {}
+
 static func vocab() -> Dictionary:
 	if _VOCAB.is_empty():
 		_VOCAB = _load_vocabulary()
@@ -127,7 +134,7 @@ static func _load_vocabulary() -> Dictionary:
 ## .guitkx bindings + global script classes) -- the plugin/codegen supplies them so <UnknownComp/>
 ## errors (T1.5). Empty (headless/test callers) = the PascalCase check is skipped; lowercase tags
 ## are always checked against the vocabulary.
-static func compile(source: String, basename: String = "Component", known_components: Array = []) -> Dictionary:
+static func compile(source: String, basename: String = "Component", known_components: Array = [], component_paths: Dictionary = {}) -> Dictionary:
 	if vocab().is_empty():
 		# The compiler ITSELF is not ready (vocabulary unreadable — e.g. the editor's first-scan
 		# environment). `env_error` distinguishes this from a source error: callers must keep any
@@ -137,9 +144,16 @@ static func compile(source: String, basename: String = "Component", known_compon
 			D.make("GUITKX2507", D.ERROR, "compiler environment not ready: vocabulary.json could not be loaded -- retrying on the next compile", 0, 0),
 		] }
 	var diags: Array = []
+	_ref_accum.clear()   # per-compile component-reference collector (see the tag chokepoint)
 	var known := {}
 	for kc in known_components:
 		known[str(kc)] = true
+	# guitkx-bound components also carry their generated-.gd path (value = String instead of
+	# true): the emitter lowers their tags through the lazy path resolver (V.comp) so the
+	# output never depends on the global class registry. Hand-written class_name scripts stay
+	# `true` and lower to the classic global-name reference.
+	for cls in component_paths:
+		known[str(cls)] = str(component_paths[cls])
 	var uss_path := ""
 	var uss_at := -1
 	# 1. Preamble: optional `@class_name X` (other directives skipped for the skeleton).
@@ -335,7 +349,7 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	return { "ok": true, "gd": gd, "diagnostics": diags }
+	return { "ok": true, "gd": gd, "diagnostics": diags, "refs": _ref_accum.duplicate() }
 
 ## Parse ONE component declaration at `ci`. Returns { ok, name, params, setup, root, next }
 ## (next = index just past the closing brace) or { ok:false } with diagnostics appended.
@@ -839,7 +853,7 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 		out += body_block + "\n"
 	if not _has_statement(body_block):
 		out += "\tpass\n"
-	return { "ok": true, "gd": out, "diagnostics": diags }
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": _ref_accum.duplicate() }
 
 ## Parse ONE hook declaration at `hi`. Returns { ok, name, params, body, next } or { ok:false }.
 static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
@@ -978,7 +992,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	# T1.1: emit-time errors (GUITKX0026, nested-body parse errors) fail the module compile as well.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	return { "ok": true, "gd": out, "diagnostics": diags }
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": _ref_accum.duplicate() }
 
 # --- body splitter: choose the LAST top-level markup return (T1.4, Unity useLastReturn parity) ---
 # "Top-level" is the GDScript equivalent of Unity's brace-depth-0: the `return` is the FIRST token on
@@ -1780,9 +1794,24 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			args += (", []" if children_src == "[]" else "") + ", " + key_expr
 		return "V.%s(%s)" % [factory, args]
 	else:
-		# child component -> V.fc(Tag.render, ...); a module-local component is a bare sibling
-		# static func -> V.fc(Tag, ...) (see _compile_module).
-		var fn := tag if (ctx.get("module_comps", {}) as Dictionary).has(tag) else (tag + ".render")
+		# child component reference, by precedence:
+		#   module-local        -> bare sibling static func:      V.fc(Tag, ...)
+		#   guitkx-bound        -> lazy PATH resolver:            V.fc(V.comp("res://....gd"), ...)
+		#   hand-written class  -> classic global-name reference: V.fc(Tag.render, ...)
+		# The path form is what makes generated code registry-independent: it parses whether or
+		# not the class is registered yet (new components mid-session, game-launch cache races,
+		# the editor's own rescan lag) -- the load is lazy and cached in V, so cycles and
+		# self-recursion are fine too.
+		var fn: String
+		if (ctx.get("module_comps", {}) as Dictionary).has(tag):
+			fn = tag
+		else:
+			var kv = (ctx.get("known_components", {}) as Dictionary).get(tag)
+			if kv is String:
+				fn = "V.comp(%s)" % _gd_str(str(kv))
+				_ref_accum[tag] = str(kv)   # recorded in the sidecar -> vanish detection (2107)
+			else:
+				fn = tag + ".render"
 		var args2 := "%s, %s" % [fn, props_dict]
 		if children_src != "[]":
 			args2 += ", " + children_src

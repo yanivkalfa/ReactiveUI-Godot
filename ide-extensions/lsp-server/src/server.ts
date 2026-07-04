@@ -138,7 +138,12 @@ connection.onInitialized(() => {
   }
   connection.client
     .register(DidChangeWatchedFilesNotification.type, {
-      watchers: [{ globPattern: "**/*.gd" }, { globPattern: "**/*.guitkx" }, { globPattern: "**/project.godot" }, { globPattern: "**/*.guitkx.diags.json" }],
+      // "**" and not per-extension globs: FOLDER events only get delivered for patterns that
+      // match the folder path itself, and deleting a component's directory arrives as exactly
+      // one such event (field capture 2026-07-04: with file-only globs the folder-deletion
+      // handler was correct and UNREACHABLE in production). handleWatchedPath routes cheaply;
+      // irrelevant file events fall through a couple of string checks.
+      watchers: [{ globPattern: "**" }],
     })
     .then(() => armWorkspaceComplete())
     .catch(() => startNativeWatcher()); // client refused — try the in-process fallback
@@ -155,14 +160,55 @@ function armWorkspaceComplete(): void {
   for (const doc of documents.all()) publishDiagnosticsFor(doc);
 }
 
-// The project's `.gd` `class_name`s, harvested during the library walks. Only ever grows (a
-// deleted file leaves its name behind) — deliberately: the set gates a diagnostic OFF, so a
-// stale entry can only suppress, never false-flag.
+// The project's `.gd` `class_name`s, harvested during the library walks. This set used to be
+// grow-only ("a stale entry can only suppress, never false-flag") — safe when every .gd was
+// hand-written, WRONG once .gd files are generated: deleting/renaming a component removed its
+// script, but the leftover name kept suppressing the live unknown-component check forever
+// (field capture 2026-07-04: dangling <ThirdComponent /> references stayed squiggle-free).
+// The path→class map keeps the set honest: a deleted .gd un-harvests its name unless another
+// file still declares it.
 const gdClassNames = new Set<string>();
+const gdClassByPath = new Map<string, string>(); // keys normalized via normFsPath
 let componentUniverseReady = false;
-function harvestClassName(text: string): void {
+// Map keys must survive the different path spellings the harvest sources produce (library walk
+// vs watcher events vs sibling derivation): lowercase + single separator form.
+function normFsPath(p: string): string {
+  return p.toLowerCase().replace(/\//g, "\\");
+}
+function harvestClassName(fsPath: string, text: string): void {
+  const key = normFsPath(fsPath);
   const m = /^[ \t]*class_name[ \t]+([A-Za-z_][A-Za-z0-9_]*)/m.exec(text);
-  if (m) gdClassNames.add(m[1]);
+  const next = m ? m[1] : null;
+  const prev = gdClassByPath.get(key);
+  if (prev && prev !== next) {
+    gdClassByPath.delete(key);
+    if (![...gdClassByPath.values()].includes(prev)) gdClassNames.delete(prev);
+  }
+  if (next) {
+    gdClassByPath.set(key, next);
+    gdClassNames.add(next);
+  }
+}
+function unharvestClassName(fsPath: string): void {
+  const key = normFsPath(fsPath);
+  const prev = gdClassByPath.get(key);
+  if (!prev) return;
+  gdClassByPath.delete(key);
+  if (![...gdClassByPath.values()].includes(prev)) gdClassNames.delete(prev);
+}
+
+// Cross-file re-validation: a .guitkx or .gd appearing/changing/vanishing can flip diagnostics
+// in every OPEN document (a component universe change arms or clears unknown-component
+// squiggles), but document events only fire for the edited file itself — so schedule a
+// coalesced re-publish of all open docs after workspace-shape changes (100 ms absorbs the
+// event storms of bulk deletes/renames).
+let republishTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleRepublish(): void {
+  if (republishTimer) clearTimeout(republishTimer);
+  republishTimer = setTimeout(() => {
+    republishTimer = null;
+    for (const doc of documents.all()) publishDiagnosticsFor(doc);
+  }, 100);
 }
 
 // In-process watcher fallback for clients without dynamic watcher registration. fs.watch storms
@@ -238,10 +284,30 @@ function handleWatchedPath(fsPath: string, deleted: boolean): void {
     return;
   }
   if (!fsPath.endsWith(".gd")) {
-    // Possibly a directory event: a deleted folder must evict every tracked .gd underneath it
-    // (no per-file events arrive), a created/renamed-in folder must load its .gd + .guitkx files.
+    // Possibly a directory event: a deleted folder must evict EVERYTHING underneath it — VS
+    // Code coalesces bulk deletes into ONE folder event, so no per-file events ever arrive.
+    // Analyzer libraries were always closed here; the .guitkx index entries and harvested
+    // generated classes were NOT (field capture 2026-07-04: deleting a component's FOLDER left
+    // its consumers squiggle-free until an unrelated save).
     if (deleted) {
       analyzer.closeUnder(pathToFileURL(fsPath).toString() + "/");
+      const prefix = normFsPath(fsPath) + "\\";
+      for (const uri of index.uris()) {
+        let p: string;
+        try {
+          p = uriToProjectPath(uri);
+        } catch {
+          continue;
+        }
+        if (normFsPath(p).startsWith(prefix)) {
+          index.evict(uri);
+          syncGuitkxLibrary(uri);
+        }
+      }
+      for (const key of [...gdClassByPath.keys()]) {
+        if (key.startsWith(prefix)) unharvestClassName(key);
+      }
+      scheduleRepublish();
       return;
     }
     let isDir = false;
@@ -253,16 +319,20 @@ function handleWatchedPath(fsPath: string, deleted: boolean): void {
     if (isDir) {
       for (const f of gdFilesUnder(fsPath)) upsertLibraryFile(f);
       scanWorkspace(index, fsPath);
+      scheduleRepublish(); // a moved-in folder can clear (or arm) other docs' diagnostics
     }
     return;
   }
   if (deleted) {
     analyzer.close(pathToFileURL(fsPath).toString());
+    unharvestClassName(fsPath); // a generated component's class must not suppress 0105 forever
     resyncSiblingGuitkxLibrary(fsPath); // the generated .gd vanished -> the virtual twin returns
+    scheduleRepublish();
     return;
   }
   upsertLibraryFile(fsPath);
   resyncSiblingGuitkxLibrary(fsPath); // the generated .gd appeared -> the virtual twin retires
+  scheduleRepublish();
 }
 
 // A watched `.gd` may be the GENERATED sibling of an indexed `.guitkx` — its appearance/removal
@@ -277,15 +347,25 @@ function resyncSiblingGuitkxLibrary(gdFsPath: string): void {
 function reindexGuitkxFile(fsPath: string, deleted: boolean): void {
   if (resPathFor(fsPath) === null) return; // outside the project / hidden dirs
   const uri = pathToFileURL(fsPath).toString();
-  if (documents.get(uri)) return;
   if (deleted) {
+    // Evict EVEN when the document is open: VS Code keeps a deleted file's tab alive, but the
+    // component no longer exists on disk -- consumers must squiggle immediately, not after the
+    // user happens to save something (field capture 2026-07-04). The open buffer keeps its own
+    // diagnostics; if the user re-saves it, the created-file event re-indexes it right back.
     index.evict(uri);
+    // Un-harvest the generated sibling's class NOW instead of waiting ~2s for Godot's orphan
+    // sweep to delete the .gd (whose deletion event would do it) -- the live unknown-component
+    // squiggle should appear on the watcher tick, not on the compiler's schedule.
+    unharvestClassName(fsPath.replace(/\.guitkx$/i, ".gd"));
     syncGuitkxLibrary(uri); // no entries left -> closes the virtual library
+    scheduleRepublish(); // open docs referencing the vanished component must squiggle NOW
     return;
   }
+  if (documents.get(uri)) return; // an OPEN document's buffer is the source of truth for edits
   try {
     index.reindex(uri, readFileSync(fsPath, "utf8"));
     syncGuitkxLibrary(uri);
+    scheduleRepublish(); // a new/renamed component can clear (or arm) other docs' diagnostics
   } catch {
     /* unreadable mid-write — the next event retries */
   }
@@ -320,7 +400,7 @@ function upsertLibraryFile(fsPath: string): void {
   if (resPath === null) return;
   try {
     const text = readFileSync(fsPath, "utf8");
-    harvestClassName(text);
+    harvestClassName(fsPath, text);
     analyzer.upsertLibrary(pathToFileURL(fsPath).toString(), text, resPath);
   } catch {
     /* unreadable mid-write — the next change event retries */
@@ -937,7 +1017,7 @@ function loadLibraries(): boolean {
     if (resPath === null) continue; // hidden dirs (res://.godot/** etc.) are intentionally skipped
     try {
       const text = readFileSync(file, "utf8");
-      harvestClassName(text);
+      harvestClassName(file, text);
       analyzer.upsertLibrary(pathToFileURL(file).toString(), text, resPath);
     } catch {
       err.failed = true; // unreadable .gd — a name we cannot prove absent

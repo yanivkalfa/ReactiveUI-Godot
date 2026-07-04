@@ -16,6 +16,23 @@ extends RefCounted
 static func fc(render_fn: Callable, props := {}, children = null, key = null) -> RUIVNode:
 	return RUIVNode.make_component(render_fn, props, _norm(children), _key(props, key))
 
+## Lazy path-based component resolver. Generated code references sibling .guitkx components by
+## FILE PATH (`V.fc(V.comp("res://ui/card.gd"), ...)`) instead of by global class_name, so the
+## emitted script parses and runs with ZERO dependence on the global class registry — a class
+## created seconds ago (mid-play-session), an editor cache that hasn't rescanned yet, a game
+## launched before the class existed: all immune by construction (field captures 2026-07-04).
+## The load is deferred to first render and cached; an in-place hot reload keeps the script
+## resource's identity, so the cached Callable keeps dispatching the newest code and the
+## reconciler's fiber matching is unaffected. Deferred loading also makes self-recursion and
+## cross-file component cycles safe (nothing loads at parse time).
+static var _comp_cache := {}
+static func comp(path: String) -> Callable:
+	var c = _comp_cache.get(path)
+	if c == null:
+		c = Callable(load(path), "render")
+		_comp_cache[path] = c
+	return c
+
 ## Merge an ordered list of prop dictionaries left-to-right (later keys win) into a NEW dict — the
 ## runtime backing `{...spread}` in guitkx markup (`<C {...base} x={1} />`). Non-dict segments are
 ## skipped defensively. Merges into a fresh dict (Godot 4.0+ Dictionary.merge), never mutating a source.
