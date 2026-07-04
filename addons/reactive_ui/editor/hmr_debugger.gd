@@ -13,14 +13,16 @@ extends EditorDebuggerPlugin
 ## built-in script editor, and every .gd in this pipeline is written by the compiler
 ## (godot#72825) -- hence this channel.
 
-## Push freshly-compiled generated .gd paths into every live play session.
-func push_reload(gd_paths: Array) -> void:
+## Push freshly-compiled generated .gd paths into every live play session. `bindings` is the
+## project's full class -> generated-.gd map: the game uses it to hot-LINK components whose
+## global class_name was created after launch (unresolvable by name until the next run).
+func push_reload(gd_paths: Array, bindings: Dictionary = {}) -> void:
 	if gd_paths.is_empty():
 		return
 	for s in get_sessions():
 		var session := s as EditorDebuggerSession
 		if session != null and session.is_active():
-			session.send_message("rui_hmr:reload", [gd_paths])
+			session.send_message("rui_hmr:reload", [gd_paths, bindings])
 
 func _has_capture(capture: String) -> bool:
 	return capture == "rui_hmr"
@@ -37,6 +39,8 @@ func _capture(message: String, data: Array, _session_id: int) -> bool:
 			int(d.get("reloaded", 0)), int(d.get("refreshed", 0)), int(d.get("ms", 0))]
 		if int(d.get("reset", 0)) > 0:
 			line += " (%d state reset: hook shape changed)" % int(d.get("reset", 0))
+		if int(d.get("linked", 0)) > 0:
+			line += " (%d new component(s) linked live)" % int(d.get("linked", 0))
 		if bool(d.get("global", false)):
 			line += " (global re-render: a hooks module changed)"
 		print_rich("[color=cyan]%s[/color]" % line)

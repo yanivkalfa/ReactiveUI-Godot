@@ -173,12 +173,15 @@ export const HmrPage: FC = () => (
               <TableCell>A new <code>class_name</code> is a new script — fresh state (same as Unity). The old generated <code>.gd</code> is cleaned up by the next sweep (0.8.1).</TableCell>
             </TableRow>
             <TableRow>
-              <TableCell>Brand-new components need one restart</TableCell>
+              <TableCell>Brand-new components hot-<em>link</em></TableCell>
               <TableCell>
                 Godot registers global <code>class_name</code>s at launch, so a component
-                created <em>after</em> F5 can&apos;t be resolved by hot-reloaded parents until
-                the next run — the reload reports it and keeps the last good UI. Restart the
-                run once; from then on the new component hot-reloads like any other.
+                created <em>after</em> F5 is unresolvable by name — the runtime detects this
+                and links it by path instead (an injected <code>preload</code> const), keeping
+                the session and its state. The Output says
+                <code> (1 new component(s) linked live)</code>. Only classes from <em>outside</em>{' '}
+                the guitkx pipeline (hand-written <code>class_name</code> scripts added
+                mid-run) still need a restart.
               </TableCell>
             </TableRow>
             <TableRow>

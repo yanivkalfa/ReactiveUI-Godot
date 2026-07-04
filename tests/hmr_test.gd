@@ -26,6 +26,7 @@ func _initialize() -> void:
 	_test_mixed_batch_component_and_module()
 	_test_rapid_resave_idempotent()
 	_test_reload_with_pending_update()
+	_test_new_component_hot_link()
 	_cleanup_dir()
 	if _failed > 0:
 		print("[hmr_test] FAILED (%d passed, %d failed)" % [_passed, _failed])
@@ -358,6 +359,34 @@ func _test_reload_with_pending_update() -> void:
 	_check_true(int(res["reloaded"]) == 1, "reload applied over a pending update")
 	_check_true("p2-1" in _labels_text(m["root"]),
 		"one atomic pass: new code AND the queued click both landed (got %s)" % str(_labels_text(m["root"])))
+	_teardown(m)
+
+## THE field case (2026-07-04): a BRAND-NEW component created while the game runs. Its global
+## class_name is unregistered in this session -- Godot registers globals at LAUNCH, and a
+## headless run never registers new ones at all, which simulates the frozen registry exactly --
+## so the edited parent's reload fails by name and must be hot-LINKED via the injected preload
+## const, with the session and its state intact.
+func _test_new_component_hot_link() -> void:
+	var ap := DIR + "/counter_n.gd"
+	_write(ap, _counter_src("n1", "useState"))
+	var a: GDScript = load(ap)
+	var m := _mount(a, a)
+	_click_plus(m["root"], m["rec"])
+	var np := DIR + "/new_comp.gd"
+	_write(np, "class_name HmrNewComp\nextends RefCounted\n## AUTO-GENERATED from new_comp.guitkx -- do not edit.\n\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\treturn V.label({ \"text\": \"fresh!\" })\n")
+	# the edited parent references the new component by GLOBAL NAME, exactly like generated code
+	_write(ap, "extends RefCounted\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\tvar n = Hooks.useState(0)\n\treturn V.vbox({}, [\n\t\tV.label({ \"text\": \"n2-\" + str(n[0]) }),\n\t\tV.button({ \"text\": \"+\", \"onClick\": func(): n[1].call(n[0] + 1) }),\n\t\tV.fc(HmrNewComp.render, {}),\n\t])\n")
+	var res: Dictionary = RUIHmr_.apply([ap], { "HmrNewComp": np })
+	_check_true(int(res.get("linked", 0)) == 1 and (res["errors"] as Array).is_empty(),
+		"parent hot-LINKED the unregistered new component (got %s)" % str(res))
+	var texts := _labels_text(m["root"])
+	_check_true("n2-1" in texts, "parent swapped with state intact: n2-1 (got %s)" % str(texts))
+	_check_true("fresh!" in texts, "the NEW component rendered live (got %s)" % str(texts))
+	# and the linked parent keeps hot-reloading normally afterwards
+	_write(ap, "extends RefCounted\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\tvar n = Hooks.useState(0)\n\treturn V.vbox({}, [\n\t\tV.label({ \"text\": \"n3-\" + str(n[0]) }),\n\t\tV.button({ \"text\": \"+\", \"onClick\": func(): n[1].call(n[0] + 1) }),\n\t\tV.fc(HmrNewComp.render, {}),\n\t])\n")
+	var res2: Dictionary = RUIHmr_.apply([ap], { "HmrNewComp": np })
+	_check_true(int(res2.get("linked", 0)) == 1 and "n3-1" in _labels_text(m["root"]),
+		"subsequent edits keep hot-linking (n3-1, got %s / %s)" % [str(res2), str(_labels_text(m["root"]))])
 	_teardown(m)
 
 func _cleanup_dir() -> void:

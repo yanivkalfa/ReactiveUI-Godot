@@ -22,10 +22,14 @@ with a dock line per removal. Empty reads (editor scan window) never count as an
   written** — a duplicate class can never reach disk, and everything converges the moment you
   rename the copy.
 
-### Changed
-- The in-game reload-failure message now explains the most likely cause: a hot-reloaded file
-  referencing a component **created after the game started** (Godot registers global
-  `class_name`s at launch — restart the run once; documented in the Hot Reload page's limits).
+- **Brand-new components hot-link into a running game.** Godot registers global `class_name`s
+  at launch, so a component created *after* F5 is unresolvable by name — the hot reload now
+  detects the failure and retries with the class **linked by path** (an injected `preload`
+  const, using the sweep's class→file map), keeping the session and all its state. Create a
+  component, reference it, save: it appears in the running UI —
+  `(1 new component(s) linked live)` in the Output. After the next restart the global registers
+  and the linking naturally no-ops. Only classes from outside the guitkx pipeline still need a
+  restart.
 
 ## [0.8.0] — 2026-07-04
 

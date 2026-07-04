@@ -141,7 +141,7 @@ func _compile_all() -> void:
 		for entry in res["compiled"]:
 			if bool(entry.get("gd_ok", true)):
 				hot.append(entry["gd_path"])
-		_hmr_dbg.push_reload(hot)
+		_hmr_dbg.push_reload(hot, res.get("bindings", {}))
 	for orphan in res.get("removed", []):
 		print("[guitkx] removed orphaned output %s (its .guitkx is gone -- renamed or deleted)" % orphan)
 	for entry in res["compiled"]:

@@ -380,21 +380,23 @@ static func compile_all(root: String = "res://") -> Dictionary:
 		if gn != "" and not known.has(gn):
 			known.append(gn)
 	var dupe_losers := {}
+	var bindings := {}   # class -> generated .gd path (the winner's) -- the HMR push ships this
 	for cls in by_class:
 		var binders: Array = by_class[cls]
-		if binders.size() < 2:
-			continue
 		binders.sort()
-		var winner = null
-		for p3 in binders:
-			if FileAccess.file_exists(gd_path_for(str(p3))):
-				winner = p3
-				break
-		if winner == null:
-			winner = binders[0]
-		for p3 in binders:
-			if p3 != winner:
-				dupe_losers[p3] = { "class": cls, "winner": winner }
+		var winner = binders[0]
+		if binders.size() > 1:
+			winner = null
+			for p3 in binders:
+				if FileAccess.file_exists(gd_path_for(str(p3))):
+					winner = p3
+					break
+			if winner == null:
+				winner = binders[0]
+			for p3 in binders:
+				if p3 != winner:
+					dupe_losers[p3] = { "class": cls, "winner": winner }
+		bindings[cls] = gd_path_for(str(winner))
 	for path in all_paths:
 		if dupe_losers.has(path):
 			var dl: Dictionary = dupe_losers[path]
@@ -453,7 +455,7 @@ static func compile_all(root: String = "res://") -> Dictionary:
 		if not sources.has(sc_src) and not FileAccess.file_exists(sc_src):
 			DirAccess.remove_absolute(str(sc))
 			removed.append(str(sc))
-	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size(), "removed": removed }
+	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size(), "removed": removed, "bindings": bindings }
 
 ## Recursively collect all .guitkx paths under `dir` (skips Godot's hidden cache dirs).
 static func find_all(dir: String = "res://") -> Array:
