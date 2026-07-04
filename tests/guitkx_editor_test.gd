@@ -23,6 +23,8 @@ func _initialize() -> void:
 	_test_schema_sync()
 	_test_scan_diags()
 	_test_rich_hover()
+	_test_formatter_config()
+	_test_sidecar_overlay()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -476,3 +478,77 @@ func _test_rich_hover() -> void:
 	for junk in [mv_dst, mv_dst + ".diags.json", RUIGuitkxCodegen.gd_path_for(mv_dst), hw_gd, mv_gd + ".uid", hw_gd + ".uid"]:
 		if FileAccess.file_exists(junk):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(junk)))
+
+# M2 wave 1b / G26 — guitkx.config.json discovery + end-to-end formatter plumbing.
+func _test_formatter_config() -> void:
+	const Config := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
+	var dir := "res://tests/__cfg_tmp"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir + "/nested"))
+	var w := func(p: String, s: String):
+		var f := FileAccess.open(p, FileAccess.WRITE)
+		f.store_string(s)
+		f.close()
+	w.call(dir + "/guitkx.config.json", '{"formatter": {"printWidth": 40, "insertSpaceBeforeSelfClose": false, "bogusKey": 1}}')
+
+	var opts: Dictionary = Config.formatter_opts_for(dir + "/nested/x.guitkx")
+	_ok(int(opts.get("printWidth", -1)) == 40, "nearest config found via parent walk")
+	_ok(opts.get("insertSpaceBeforeSelfClose") == false, "bool option passes through")
+	_ok(not opts.has("bogusKey"), "unknown keys filtered")
+	_ok(Config.formatter_opts_for("res://tests/x.guitkx").is_empty(), "no config -> {} (formatter defaults)")
+
+	# Malformed config: skipped without exploding.
+	w.call(dir + "/nested/guitkx.config.json", "{not json")
+	_ok(Config.formatter_opts_for(dir + "/nested/x.guitkx").is_empty(), "malformed nearest config -> {}")
+
+	# End-to-end: the view formats with the discovered options (insertSpaceBeforeSelfClose=false).
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + "/nested/guitkx.config.json"))
+	var v: Control = ViewScript.new()
+	var src := "component CfgT() {\n  return (\n    <Label text=\"a\" />\n  )\n}\n"
+	w.call(dir + "/cfg_t.guitkx", src)
+	v.open_path(dir + "/cfg_t.guitkx")
+	var out: String = v._formatted(src)
+	_ok(out.contains("<Label text=\"a\"/>"), "view formatting honors insertSpaceBeforeSelfClose=false")
+	v.free()
+
+	for p in [dir + "/cfg_t.guitkx", dir + "/guitkx.config.json"]:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + "/nested"))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir))
+
+# M2 wave 1b / D3+D5 — sidecar overlay (2106/2107 reach the editor) + hint rendering tier.
+func _test_sidecar_overlay() -> void:
+	# @class_name matches the declared name so GUITKX0103 (name-vs-filename warning) stays out of
+	# the picture — this test owns lines 0 and the tag line exclusively.
+	var src := "@class_name ScT\n\ncomponent ScT() {\n\treturn (\n\t\t<ScOther />\n\t)\n}\n"
+	var fa := FileAccess.open(TMP_PATH, FileAccess.WRITE)
+	fa.store_string(src)
+	fa.close()
+	# Plant a sweep-style sidecar with a 2107 anchored at the tag (only the sweep can produce it).
+	var at := src.find("ScOther")
+	RUIGuitkxCodegen.write_diags_sidecar(TMP_PATH, src, [{
+		"code": "GUITKX2107", "severity": RUIGuitkxDiag.ERROR,
+		"message": "component <ScOther> resolves to res://gone.gd, which no longer exists",
+		"offset": at, "length": 7,
+	}], { "ScOther": "res://gone.gd" })
+
+	var v: Control = ViewScript.new()
+	v.open_path(TMP_PATH)
+	var line := int(RUIGuitkxDiag.line_col(src, at).get("line", -1))
+	var meta: Variant = v._code_edit.get_line_gutter_metadata(line, v._code_edit.diag_gutter)
+	_ok(meta is Dictionary and str((meta as Dictionary).get("code", "")) == "GUITKX2107",
+		"hash-matched sidecar 2107 anchors at the reference line")
+
+	# Diverge the buffer: the anchored row must collapse into a line-0 hint naming the code.
+	v._code_edit.text = src + "\n# edited"
+	v._refresh_diagnostics()
+	var l0: Variant = v._code_edit.get_line_gutter_metadata(0, v._code_edit.diag_gutter)
+	_ok(l0 is Dictionary and str((l0 as Dictionary).get("code", "")).contains("GUITKX2107")
+		and str((l0 as Dictionary).get("severity", "")) == "hint",
+		"diverged buffer collapses sidecar-only codes into a line-0 hint")
+	_ok(v._code_edit.get_line_gutter_icon(0, v._code_edit.diag_gutter) == null,
+		"D5: hints carry no gutter icon")
+	_ok(v._code_edit.get_line_background_color(0).a == 0.0, "D5: hints carry no line tint")
+	v.free()
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(str(RUIGuitkxCodegen.diags_path_for(TMP_PATH))))

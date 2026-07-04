@@ -18,6 +18,7 @@ const DEBOUNCE_SEC := 0.3
 # cache on cold checkouts/headless runs, which would fail this whole script's parse.
 const FindBarScript := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
 const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
+const ConfigScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
 
 var _code_edit: GuitkxCodeEdit
 var _file_label: Label
@@ -332,6 +333,13 @@ func _refresh_diagnostics() -> void:
 	for sd in ScanDiags.unknown_tags(text, pb.get("known", [])):
 		if not seen.has("%s@%d" % [str(sd.get("code", "")), int(sd.get("offset", -1))]):
 			diags.append(sd)
+	# Sidecar overlay (M2/D3): the watcher's sweep computes two PROJECT-level codes the live
+	# compile can never produce — GUITKX2106 (duplicate class binding) and GUITKX2107 (dangling
+	# component reference) — and persists them in the file's .diags.json. Hash-gated exactly like
+	# the VS Code server's merge: anchored entries appear only while the buffer matches the
+	# compiled content; on divergence the sidecar-only codes collapse into one line-0 hint row
+	# instead of mis-anchoring into shifted text.
+	_merge_sidecar(text, diags)
 	var records := GuitkxDiagnosticsRenderer.render(
 		_code_edit, _code_edit.diag_gutter, diags, _err_icon, _warn_icon)
 	if _problems != null:
@@ -357,6 +365,58 @@ func _project_bindings() -> Dictionary:
 ## 2s — a 30ms file keeps the snappy 0.3s; a 200ms file waits ~0.8s between compiles.
 static func _adaptive_wait(compile_ms: float) -> float:
 	return clampf(compile_ms * 4.0 / 1000.0, DEBOUNCE_SEC, 2.0)
+
+func _merge_sidecar(text: String, diags: Array) -> void:
+	if _current_path.is_empty():
+		return
+	var sc_path: String = RUIGuitkxCodegen.diags_path_for(_current_path)
+	var raw := FileAccess.get_file_as_string(sc_path)
+	if raw.is_empty():
+		return
+	var parsed: Variant = JSON.parse_string(raw)
+	if not (parsed is Dictionary):
+		return
+	var sc := parsed as Dictionary
+	var entries: Array = sc.get("diagnostics", [])
+	if entries.is_empty():
+		return
+	var live_codes := {}
+	var live_at := {}
+	for d in diags:
+		if d is Dictionary:
+			live_codes[str((d as Dictionary).get("code", ""))] = true
+			live_at["%s@%d" % [str((d as Dictionary).get("code", "")), int((d as Dictionary).get("offset", -1))]] = true
+	if int(sc.get("src_hash", -1)) == RUIGuitkxCodegen.src_hash(text):
+		# Buffer == compiled content: merge precisely (sidecar keys are off/len; live uses
+		# offset/length). Compile-time codes are already in the live set — only sweep-only
+		# entries actually land.
+		for e in entries:
+			if not (e is Dictionary):
+				continue
+			var ed := e as Dictionary
+			var key := "%s@%d" % [str(ed.get("code", "")), int(ed.get("off", -1))]
+			if live_at.has(key):
+				continue
+			diags.append({
+				"code": ed.get("code", ""), "severity": int(ed.get("severity", 0)),
+				"message": str(ed.get("message", "")),
+				"offset": int(ed.get("off", -1)), "length": int(ed.get("len", 0)),
+			})
+		return
+	# Diverged buffer: never anchor stale offsets. Name the codes the last compile found that the
+	# live tiers can't see, in one informational row.
+	var hidden: Array = []
+	for e in entries:
+		if e is Dictionary and not live_codes.has(str((e as Dictionary).get("code", ""))):
+			var c := str((e as Dictionary).get("code", ""))
+			if not hidden.has(c):
+				hidden.append(c)
+	if not hidden.is_empty():
+		diags.append({
+			"code": ", ".join(hidden), "severity": 2,
+			"message": "the last compile reported %s in this file — positions are hidden while the buffer has unsaved changes (save to re-anchor)" % ", ".join(hidden),
+			"offset": -1, "length": 0,
+		})
 
 ## Fade the lines after each component's markup return (unreachable code). [BUG-V6]
 func _apply_unreachable_dim(text: String) -> void:
@@ -493,9 +553,11 @@ func _on_gutter_diagnostic_clicked(line: int, record: Variant) -> void:
 	add_child(pop)
 	pop.popup(Rect2i(DisplayServer.mouse_get_position(), Vector2i(500, 0)))
 
-# RUIGuitkxFormatter.format() returns the source verbatim on any parse error, so this never corrupts.
+# RUIGuitkxFormatter.format() returns the source verbatim on any parse error, so this never
+# corrupts. Honors the nearest guitkx.config.json (G26) exactly like the VS Code extension, so
+# one project formats identically in both editors.
 func _formatted(text: String) -> String:
-	var r: Dictionary = RUIGuitkxFormatter.format(text)
+	var r: Dictionary = RUIGuitkxFormatter.format(text, ConfigScript.formatter_opts_for(_current_path))
 	if r.get("ok", false):
 		return r.get("text", text)
 	return text
