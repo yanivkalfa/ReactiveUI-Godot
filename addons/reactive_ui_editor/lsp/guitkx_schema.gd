@@ -112,6 +112,27 @@ static func godot_properties(godot_class: String) -> Array:
 		out.append({ "name": nm, "type": type_string(int(p.get("type", TYPE_NIL))) })
 	return out
 
+## Property info for a single settable property on `godot_class`: { type:int (Variant.Type),
+## hint:int, hint_string:String }, or {} when the class/property is unknown. Drives attribute
+## VALUE completion (bool -> true/false, enum -> the hint names).
+static func property_info(godot_class: String, prop: String) -> Dictionary:
+	if godot_class == "" or prop == "" or not ClassDB.class_exists(godot_class):
+		return {}
+	for p in ClassDB.class_get_property_list(godot_class, false):
+		if str(p.get("name", "")) == prop:
+			return {
+				"type": int(p.get("type", TYPE_NIL)),
+				"hint": int(p.get("hint", PROPERTY_HINT_NONE)),
+				"hint_string": str(p.get("hint_string", "")),
+			}
+	return {}
+
+## The RUIStyle vocabulary (the `style={ {...} }` dict keys), from the bundled schema:
+## [{name, type, detail}]. Godot's own tooling has no vocabulary for these.
+static func style_keys() -> Array:
+	_ensure_loaded()
+	return _schema.get("styleKeys", [])
+
 ## React-style events applicable to a host class + the Godot signal each binds to, as
 ## [{name, signal}] -- computed live: an alias is offered only if the class actually has one of its
 ## candidate signals (so `onClick` shows on buttons, not on a Label).

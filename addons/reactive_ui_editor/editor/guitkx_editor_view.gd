@@ -114,6 +114,9 @@ func _shortcut_input(event: InputEvent) -> void:
 			KEY_F:
 				_find_bar.open_bar()
 				accept_event()
+			KEY_G:
+				_goto_line_dialog()
+				accept_event()
 		return
 	match k.keycode:
 		KEY_F3:
@@ -617,6 +620,23 @@ func _on_save_pressed_then(after: Callable) -> void:
 	_on_save_pressed()
 	if not _dirty:
 		after.call()
+
+## Ctrl+G (E13): jump to a 1-based line number.
+func _goto_line_dialog() -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Go to Line"
+	var edit := LineEdit.new()
+	edit.placeholder_text = "Line number (1-%d)" % _code_edit.get_line_count()
+	dlg.add_child(edit)
+	dlg.register_text_enter(edit)
+	dlg.confirmed.connect(func():
+		if edit.text.is_valid_int():
+			goto_line(int(edit.text) - 1)
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered()
+	edit.grab_focus.call_deferred()
 
 func _make_button(text: String, cb: Callable) -> Button:
 	var b := Button.new()

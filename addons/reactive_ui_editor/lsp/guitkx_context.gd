@@ -39,6 +39,7 @@ static func classify(text: String, offset: int) -> Dictionary:
 	var i := 0
 	var in_str := false
 	var str_ch := 0
+	var str_start := -1
 	var in_tag := false
 	var tag_lt := -1
 	var brace_body: Array[bool] = []   # stack: true = body brace ({ of component/@for/...), false = {expr}
@@ -62,6 +63,7 @@ static func classify(text: String, offset: int) -> Dictionary:
 		if c == 34 or c == 39:     # '"' or "'"
 			in_str = true
 			str_ch = c
+			str_start = i
 			i += 1
 			continue
 		if c == 123:               # '{'
@@ -92,9 +94,12 @@ static func classify(text: String, offset: int) -> Dictionary:
 	var in_expr_brace := not brace_body.is_empty() and not brace_body[brace_body.size() - 1]
 
 	if in_str:
-		# Inside a quoted attribute value vs. an embedded string literal.
+		# Inside a quoted attribute value vs. an embedded string literal. `attr` names the
+		# attribute whose value the string belongs to (drives bool/enum/style-key completion) —
+		# _attr_name_before skips `{`s, so both `visible="|"` and `style={ {"|` resolve it.
 		if in_tag:
-			return { "kind": KIND_ATTR_VALUE, "tag": _tag_name_at(text, tag_lt), "word": _word_before(text, offset) }
+			return { "kind": KIND_ATTR_VALUE, "tag": _tag_name_at(text, tag_lt),
+				"attr": _attr_name_before(text, str_start), "word": _word_before(text, offset) }
 		return { "kind": KIND_EMBEDDED, "tag": "", "word": _word_before(text, offset) }
 
 	if in_tag:
@@ -130,6 +135,30 @@ static func classify(text: String, offset: int) -> Dictionary:
 	return { "kind": KIND_MARKUP, "tag": "", "word": _word_before(text, offset) }
 
 # --- helpers -----------------------------------------------------------------------------------
+
+## The attribute name owning a value that starts at `from` (a quote or expr position): walks back
+## over whitespace and `{` openers to `=`, then reads the identifier. "" when not a value position.
+static func _attr_name_before(text: String, from: int) -> String:
+	var i := from - 1
+	while i >= 0:
+		var c := text.unicode_at(i)
+		if c == 32 or c == 9 or c == 10 or c == 123:  # space/tab/newline/'{'
+			i -= 1
+			continue
+		break
+	if i < 0 or text.unicode_at(i) != 61:  # '='
+		return ""
+	i -= 1
+	while i >= 0 and (text.unicode_at(i) == 32 or text.unicode_at(i) == 9):
+		i -= 1
+	var e := i
+	while i >= 0:
+		var c2 := text.unicode_at(i)
+		if c2 == 95 or (c2 >= 48 and c2 <= 57) or (c2 >= 65 and c2 <= 90) or (c2 >= 97 and c2 <= 122):
+			i -= 1
+			continue
+		break
+	return text.substr(i + 1, e - i)
 
 static func _is_body_brace(text: String, brace_pos: int) -> bool:
 	# A body brace ({ of component/hook/module/@if/@for/@while/@match/@case/@else/@default) is

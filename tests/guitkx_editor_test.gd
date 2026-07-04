@@ -25,6 +25,8 @@ func _initialize() -> void:
 	_test_rich_hover()
 	_test_formatter_config()
 	_test_sidecar_overlay()
+	_test_wave2_completion()
+	_test_comment_toggle()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -552,3 +554,79 @@ func _test_sidecar_overlay() -> void:
 	v.free()
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(str(RUIGuitkxCodegen.diags_path_for(TMP_PATH))))
+
+# M2 wave 2 — completion contexts (G5/G6/G7/G8/G28) + the comment toggle (E12).
+func _test_wave2_completion() -> void:
+	var RET := "component X() {\n\treturn (\n\t\t"
+	var END := "\n\t)\n}\n"
+
+	# G5: bool property value -> true/false.
+	var s1 := RET + "<Label visible=\"" + END
+	var items: Array = GuitkxCompletion.for_caret(s1, (RET + "<Label visible=\"").length())
+	var names := items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("true") and names.has("false"), "bool attr value offers true/false")
+
+	# G5: enum property value -> hint names (Label.horizontal_alignment is an enum).
+	var s2 := RET + "<Label horizontal_alignment=\"" + END
+	items = GuitkxCompletion.for_caret(s2, (RET + "<Label horizontal_alignment=\"").length())
+	_ok(items.size() >= 2, "enum attr value offers the hint names (got %d)" % items.size())
+
+	# G6: style-dict keys inside style={ {"...
+	var s3 := RET + "<Label style={ {\"" + END
+	items = GuitkxCompletion.for_caret(s3, (RET + "<Label style={ {\"").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("bg_color") and names.has("font_color") and names.has("separation"),
+		"style dict offers the RUIStyle keys")
+	_ok(GuitkxSchema.style_keys().size() == 46, "schema carries all 46 style keys")
+
+	# G7: builtin members after `Color.` in embedded code.
+	var s4 := "component X() {\n\tvar c = Color." + "\n\treturn (\n\t\t<Label />" + END
+	items = GuitkxCompletion.for_caret(s4, ("component X() {\n\tvar c = Color.").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("WHITE") and names.has("CRIMSON"), "Color. offers builtin constants")
+
+	# G8: hook names while typing `use` on a setup line.
+	var s5 := "component X() {\n\tvar s = use" + "\n\treturn (\n\t\t<Label />" + END
+	items = GuitkxCompletion.for_caret(s5, ("component X() {\n\tvar s = use").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("useState") and names.has("useEffect"), "use… offers the hook names")
+
+	# G28: the native on_<signal> spelling joins the React aliases.
+	var s6 := RET + "<Button " + END
+	items = GuitkxCompletion.for_caret(s6, (RET + "<Button ").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("onClick") and names.has("on_pressed"), "both event spellings offered")
+	_ok(names.has("on_gui_input"), "verbatim escape hatch covers every signal")
+
+	# Context: the attr name resolves through braces (style value) and plain quotes.
+	var c1 := GuitkxContext.classify(s3, (RET + "<Label style={ {\"").length())
+	_ok(str(c1.get("attr", "")) == "style", "value context names its attribute through { {")
+	var c2 := GuitkxContext.classify(s1, (RET + "<Label visible=\"").length())
+	_ok(str(c2.get("attr", "")) == "visible", "value context names its attribute (quoted)")
+
+# E12 — Ctrl+/ comment toggle: comment, uncomment, mixed selection, single undo step.
+func _test_comment_toggle() -> void:
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = "\tline_a\n\tline_b\n\n\tline_c"
+	ce.clear_undo_history()
+	ce.select(0, 0, 3, 7)
+	ce.toggle_comment()
+	_ok(ce.get_line(0) == "\t# line_a" and ce.get_line(1) == "\t# line_b" and ce.get_line(3) == "\t# line_c",
+		"toggle comments every non-empty selected line at its indent")
+	_ok(ce.get_line(2) == "", "blank lines untouched")
+	ce.toggle_comment()
+	_ok(ce.get_line(0) == "\tline_a" and ce.get_line(3) == "\tline_c", "second toggle uncomments")
+	# Mixed state: one commented line -> everything COMMENTS (VS Code semantics).
+	ce.set_line(0, "\t# line_a")
+	ce.select(0, 0, 1, 7)
+	ce.toggle_comment()
+	_ok(ce.get_line(1) == "\t# line_b", "mixed selection comments the uncommented lines")
+	# Undo granularity: one toggle = one undo.
+	ce.text = "x"
+	ce.clear_undo_history()
+	ce.set_caret_line(0)
+	ce.toggle_comment()
+	_ok(ce.get_line(0) == "# x", "caret-line toggle without selection")
+	ce.undo()
+	_ok(ce.get_line(0) == "x", "toggle is a single undo step")
+	ce.free()

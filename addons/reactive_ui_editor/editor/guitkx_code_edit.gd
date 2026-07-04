@@ -88,10 +88,11 @@ func configure() -> void:
 	if not gutter_clicked.is_connected(_on_gutter_clicked):
 		gutter_clicked.connect(_on_gutter_clicked)
 
-	# Markup completion (Phase 1). Trigger on `<` (tags), `@` (directives) and space (attributes); the
-	# context classifier decides what to offer per caret position. KEY_COMPLETION is honoured live.
+	# Markup completion. Triggers: `<` (tags), `@` (directives), space (attributes), `.` (builtin
+	# members like Color./Vector2.), `"` (attribute values + style-dict keys); the context
+	# classifier decides what to offer per caret position. KEY_COMPLETION is honoured live.
 	code_completion_enabled = true
-	code_completion_prefixes = PackedStringArray(["<", "@", " "])
+	code_completion_prefixes = PackedStringArray(["<", "@", " ", ".", "\""])
 
 	# Markup hover: Godot 4.4+ CodeEdit emits `symbol_hovered` while the mouse rests on a symbol —
 	# but ONLY when `symbol_tooltip_on_hover` is set; without it the signal never fires and hover is
@@ -117,6 +118,46 @@ func _on_theme_changed() -> void:
 	if _highlighter != null:
 		_highlighter.update_colors()
 		queue_redraw()
+
+## Ctrl+/ comment toggle (E12): comments the caret line / every selected line with `# `, or
+## uncomments when they all already are — one undoable operation, like the built-in script editor.
+func _gui_input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if k != null and k.pressed and not k.echo and k.is_command_or_control_pressed() \
+			and (k.keycode == KEY_SLASH or k.keycode == KEY_KP_DIVIDE):
+		toggle_comment()
+		accept_event()
+
+func toggle_comment() -> void:
+	var from_line := get_caret_line()
+	var to_line := from_line
+	if has_selection():
+		from_line = get_selection_from_line()
+		to_line = get_selection_to_line()
+		# A selection ending at column 0 shouldn't drag the next line into the toggle.
+		if to_line > from_line and get_selection_to_column() == 0:
+			to_line -= 1
+	var all_commented := true
+	for ln in range(from_line, to_line + 1):
+		var t := get_line(ln).strip_edges()
+		if t != "" and not t.begins_with("#"):
+			all_commented = false
+			break
+	begin_complex_operation()
+	for ln in range(from_line, to_line + 1):
+		var line := get_line(ln)
+		if line.strip_edges() == "":
+			continue
+		if all_commented:
+			var idx := line.find("#")
+			var rest := line.substr(idx + 1)
+			if rest.begins_with(" "):
+				rest = rest.substr(1)
+			set_line(ln, line.substr(0, idx) + rest)
+		else:
+			var ws := line.length() - line.strip_edges(true, false).length()
+			set_line(ln, line.substr(0, ws) + "# " + line.substr(ws))
+	end_complex_operation()
 
 ## Replaces the whole buffer as ONE undoable edit. Assigning `.text` clears the undo history —
 ## with format-on-save enabled that meant every Save destroyed Ctrl+Z (parity plan G33). The
