@@ -17,6 +17,7 @@ const DEBOUNCE_SEC := 0.3
 # Preload (not the global class name): a freshly-added class_name is absent from the global class
 # cache on cold checkouts/headless runs, which would fail this whole script's parse.
 const FindBarScript := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
+const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
 
 var _code_edit: GuitkxCodeEdit
 var _file_label: Label
@@ -312,6 +313,16 @@ func _refresh_diagnostics() -> void:
 	# instead of freezing the editor on every typing pause (measured 189ms @ 90KB).
 	_debounce.wait_time = _adaptive_wait(_last_compile_ms)
 	var diags: Array = result.get("diagnostics", [])
+	# Scan-tier unknown tags: the compiler's 0105 lives in its EMIT phase, so a parse error (the
+	# classic: typo'd open tag -> mismatched close) masks the one report that explains the typo.
+	# The parse-independent scan fills that hole; compiler-emitted diagnostics win on overlap.
+	var seen := {}
+	for d in diags:
+		if d is Dictionary:
+			seen["%s@%d" % [str(d.get("code", "")), int(d.get("offset", -1))]] = true
+	for sd in ScanDiags.unknown_tags(text, pb.get("known", [])):
+		if not seen.has("%s@%d" % [str(sd.get("code", "")), int(sd.get("offset", -1))]):
+			diags.append(sd)
 	var records := GuitkxDiagnosticsRenderer.render(
 		_code_edit, _code_edit.diag_gutter, diags, _err_icon, _warn_icon)
 	if _problems != null:

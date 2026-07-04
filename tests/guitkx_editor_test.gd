@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_find_bar()
 	_test_deps_handshake()
 	_test_schema_sync()
+	_test_scan_diags()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -328,3 +329,57 @@ func _test_schema_sync() -> void:
 		if tag != "" and not vocab_tags.has(tag):
 			missing.append(tag)
 	_ok(missing.is_empty(), "schema hostElements ⊆ compiler vocabulary (unknown: %s)" % str(missing))
+
+# Field captures from the M1 acceptance pass: fixture pollution + parse-masked 0105.
+func _test_scan_diags() -> void:
+	const Scan := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
+
+	# .gdignore honored: the contract fixtures (duplicate/broken decls) never reach the index.
+	GuitkxWorkspace.rescan()
+	var polluted := false
+	for p in GuitkxWorkspace.all_paths():
+		if str(p).contains("/contract/fixtures/"):
+			polluted = true
+	_ok(not polluted, ".gdignore folders excluded from the workspace scan")
+	var demo_box := GuitkxWorkspace.lookup("DemoBox")
+	_ok(str(demo_box.get("path", "")).contains("examples/demos"),
+		"DemoBox resolves to the real demo, not a fixture (got %s)" % str(demo_box.get("path", "")))
+
+	# Severity constant stays pinned to the compiler's.
+	_ok(Scan.SEVERITY_ERROR == RUIGuitkxDiag.ERROR, "scan severity matches RUIGuitkxDiag.ERROR")
+
+	# The user's exact shape: typo'd open + original close -> parse error masks compiler 0105;
+	# the scan still flags the typo with a did-you-mean.
+	var src := "component T() {\n\treturn (\n\t\t<DemoaBox>\n\t\t\t<Label text=\"x\" />\n\t\t</DemoBox>\n\t)\n}\n"
+	var recs: Array = Scan.unknown_tags(src, ["DemoBox"])
+	_ok(recs.size() == 1, "scan flags exactly the typo'd tag (got %d)" % recs.size())
+	if recs.size() == 1:
+		var r: Dictionary = recs[0]
+		_ok(str(r.get("code")) == "GUITKX0105", "scan record carries 0105")
+		_ok(str(r.get("message")).contains("did you mean <DemoBox>"), "did-you-mean names the real component")
+		_ok(int(r.get("offset")) == src.find("DemoaBox"), "scan anchors at the tag name")
+
+	# No false positives: known tags, hosts, module-locals, comparisons, strings.
+	_ok(Scan.unknown_tags("component T() {\n\treturn (\n\t\t<Label text=\"a\" />\n\t)\n}", []).is_empty(),
+		"host tags pass")
+	_ok(Scan.unknown_tags("component Card() {\n\treturn (\n\t\t<Card2 />\n\t)\n}\ncomponent Card2() {\n\treturn (\n\t\t<Label />\n\t)\n}", []).is_empty(),
+		"module-local components pass without any known set")
+	_ok(Scan.unknown_tags("component T() {\n\tvar x = a <level\n\treturn (\n\t\t<Label />\n\t)\n}", []).is_empty(),
+		"comparisons are not tags")
+	_ok(Scan.unknown_tags("component T() {\n\tvar s = \"<FakeTag>\"\n\treturn (\n\t\t<Label />\n\t)\n}", []).is_empty(),
+		"tags inside strings are skipped")
+	var low: Array = Scan.unknown_tags("component T() {\n\treturn (\n\t\t<vboxx />\n\t)\n}", [])
+	_ok(low.size() == 1 and str((low[0] as Dictionary).get("message")).contains("vboxx"),
+		"unknown lowercase factory flagged")
+
+	# End-to-end: the view merges scan records into the gutter (parse error present).
+	var fa := FileAccess.open(TMP_PATH, FileAccess.WRITE)
+	fa.store_string(src)
+	fa.close()
+	var v: Control = ViewScript.new()
+	v.open_path(TMP_PATH)
+	var line := 2  # <DemoaBox> line
+	var meta: Variant = v._code_edit.get_line_gutter_metadata(line, v._code_edit.diag_gutter)
+	_ok(meta is Dictionary and str((meta as Dictionary).get("code", "")) == "GUITKX0105",
+		"view surfaces the scan-tier 0105 in the gutter despite the parse error")
+	v.free()

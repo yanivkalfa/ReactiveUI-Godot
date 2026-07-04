@@ -103,6 +103,12 @@ static func _index_source(path: String, text: String) -> void:
 
 static func _collect_guitkx(root: String) -> Array:
 	var out: Array = []
+	# Honor `.gdignore`, exactly like the watcher's codegen walk — tests/contract/fixtures (and any
+	# user-ignored folder) contains deliberately-broken/duplicate declarations that must never
+	# reach the component index, hover, goto-def, or the known-components universe. [field capture:
+	# hover resolved <DemoBox> to the contract FIXTURE copy]
+	if FileAccess.file_exists(root.path_join(".gdignore")):
+		return out
 	var dir := DirAccess.open(root)
 	if dir == null:
 		return out
