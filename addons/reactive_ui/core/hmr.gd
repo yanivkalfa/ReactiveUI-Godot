@@ -35,11 +35,14 @@ static func ensure_registered() -> void:
 ## callback: no frame boundary between the script swap and the commit, so live signal handlers
 ## minted by the old code can never fire in a half-swapped world.
 static func _on_message(message: String, data: Array) -> bool:
-	if message != "reload":
+	if message != "reload" and message != "rui_hmr:reload":   # engine versions differ on prefix stripping
 		return false
 	var t0 := Time.get_ticks_msec()
 	var paths: Array = (data[0] as Array) if data.size() > 0 and data[0] is Array else []
 	var bindings: Dictionary = (data[1] as Dictionary) if data.size() > 1 and data[1] is Dictionary else {}
+	# Ack BEFORE doing anything: its presence in the editor Output proves delivery + capture,
+	# so a crash inside apply() can never masquerade as "the message never arrived".
+	EngineDebugger.send_message("rui_hmr:ack", [paths.size()])
 	var res := apply(paths, bindings)
 	res["ms"] = Time.get_ticks_msec() - t0
 	EngineDebugger.send_message("rui_hmr:status", [res])
@@ -53,22 +56,27 @@ static func apply(paths: Array, bindings: Dictionary = {}) -> Dictionary:
 	var changed: Array = []   # GDScript resources reloaded in place
 	var resets: Array = []    # subset whose hook signature changed -> deliberate state reset
 	var errors: Array = []
+	var outcomes := {}        # path -> what happened (the editor prints this when nothing reloads)
 	var linked := 0           # reloads that succeeded via new-component const injection
 	var global_rerender := false
 	for p in paths:
 		var path := str(p)
 		if not ResourceLoader.has_cached(path):
-			continue   # never loaded by this game -- the next load() reads the new file anyway
+			outcomes[path] = "uncached"   # never loaded by this game -- next load() reads the new file
+			continue
 		var scr = load(path)
 		if not (scr is GDScript):
+			outcomes[path] = "not-a-script"
 			continue
 		var src := FileAccess.get_file_as_string(path)
 		if src.is_empty():
 			# The editor may still be mid-write; the next sweep pushes this path again.
+			outcomes[path] = "empty-read"
 			errors.append("%s: source read came back empty -- kept the old code" % path)
 			continue
 		if src == (scr as GDScript).source_code:
-			continue   # byte-identical (e.g. a forced sweep re-wrote it) -- nothing to swap
+			outcomes[path] = "identical"   # e.g. a forced sweep re-wrote the same bytes
+			continue
 		var old_sig := _hook_sig(scr)
 		(scr as GDScript).source_code = src
 		var err: int = (scr as GDScript).reload(true)
@@ -85,10 +93,14 @@ static func apply(paths: Array, bindings: Dictionary = {}) -> Dictionary:
 				err = (scr as GDScript).reload(true)
 				if err == OK:
 					linked += 1
+					outcomes[path] = "linked"
 			if err != OK:
 				(scr as GDScript).source_code = src   # leave the honest disk bytes in memory
+				outcomes[path] = "failed err %d" % err
 				errors.append("%s: in-place reload failed (err %d) -- fix the file and save again (or restart the run if it references classes from outside the guitkx pipeline)" % [path, err])
 				continue
+		else:
+			outcomes[path] = "reloaded"
 		changed.append(scr)
 		if _is_module(scr):
 			global_rerender = true
@@ -99,7 +111,7 @@ static func apply(paths: Array, bindings: Dictionary = {}) -> Dictionary:
 		refreshed = RUIReconciler.hmr_refresh_all(changed, resets, global_rerender)
 	return {
 		"reloaded": changed.size(), "reset": resets.size(), "refreshed": refreshed,
-		"linked": linked, "global": global_rerender, "errors": errors,
+		"linked": linked, "global": global_rerender, "errors": errors, "outcomes": outcomes,
 	}
 
 ## `const X = preload("<path>")` lines for every pushed binding that (a) this game does NOT

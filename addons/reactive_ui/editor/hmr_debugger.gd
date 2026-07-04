@@ -33,9 +33,14 @@ func push_reload(gd_paths: Array, bindings: Dictionary = {}) -> void:
 func _has_capture(capture: String) -> bool:
 	return capture == "rui_hmr"
 
-## The game's post-reload report. Engine versions differ on whether the prefix is stripped for
-## editor-side captures, so accept both spellings.
+## The game's replies. Engine versions differ on whether the prefix is stripped for editor-side
+## captures, so accept both spellings. The ACK fires before the game does any work (delivery
+## proof); the STATUS always prints a verdict -- when nothing reloaded, the per-file outcomes
+## say WHY (uncached / identical / failed), so game-side behavior can never be silent.
 func _capture(message: String, data: Array, _session_id: int) -> bool:
+	if message == "ack" or message == "rui_hmr:ack":
+		print("[guitkx] hmr: game acknowledged %d script(s)" % (int(data[0]) if data.size() > 0 else -1))
+		return true
 	if message != "status" and message != "rui_hmr:status":
 		return false
 	var d: Dictionary = data[0] if (data.size() > 0 and data[0] is Dictionary) else {}
@@ -50,6 +55,12 @@ func _capture(message: String, data: Array, _session_id: int) -> bool:
 		if bool(d.get("global", false)):
 			line += " (global re-render: a hooks module changed)"
 		print_rich("[color=cyan]%s[/color]" % line)
+	else:
+		var bits: Array = []
+		var outs: Dictionary = d.get("outcomes", {})
+		for path in outs:
+			bits.append("%s: %s" % [str(path).get_file(), str(outs[path])])
+		print("[guitkx] hmr: nothing reloaded (%s)" % ("; ".join(bits) if not bits.is_empty() else "no outcomes reported"))
 	for e in errs:
 		push_warning("[guitkx] hmr: %s" % str(e))
 	return true
