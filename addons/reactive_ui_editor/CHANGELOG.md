@@ -4,18 +4,28 @@ All notable changes to the **Reactive UI Editor** Godot addon are documented her
 The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
 of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
 
-## [0.4.0] — 2026-07-04
+## [0.4.0] — 2026-07-05
 
-The store-readiness milestone (parity plan M1): the editor stops losing work, stops lying, and
-gains the daily-driver features a code editor is judged by in its first five minutes.
+The store-readiness milestone (parity plan M1) plus a hard field-testing round: the editor stops
+losing work, stops lying, gains the daily-driver features a code editor is judged by in its first
+five minutes — and survived a two-day torture campaign of save-spam, rename storms, deletes, and
+git restores.
 
 ### Added
 - **Go-to-definition** — Ctrl+click a component tag jumps to its declaration, cross-file (the
   hover text has promised this since 0.3.0; now it's true).
 - **Find bar** — Ctrl+F (seeded from the selection), all-match highlight, match counter,
-  F3/Shift+F3 stepping with wrap in both directions, case toggle, Esc to close. `.guitkx` is also
-  registered into Godot's project-wide **Search in Files**, which previously could not see the
-  format at all (per-user editor setting, set once).
+  F3/Shift+F3 stepping with wrap in both directions, case toggle, Esc to close.
+- **Rich hover** — cards render as formatted text at show time (the old native-tooltip path
+  stacked two delays and often needed a second hover pass), and hovering a **diagnosed line puts
+  the error message — including its did-you-mean — right in the card**. Clicking a gutter icon
+  opens the full diagnostic in a popup at the mouse instead of a line lost in Output.
+- **Hook signature cards** — hovering `useState`, `useEffect`, `provideContext`, … in setup code
+  shows the real signature (all 23 built-in hooks; previously the editor said nothing there).
+- **Scan-tier unknown-component errors** — the compiler's own unknown-tag check lives in its emit
+  phase, so the classic typo (open tag changed, close tag now mismatched = parse error) masked the
+  one error that explained it. A parse-independent scan now flags unknown tags with a did-you-mean
+  even while the file doesn't parse.
 - **Ctrl+S saves the file** while the editor tab is visible (it used to fall through to Godot's
   Save Scene, leaving the buffer silently unsaved). Godot's **Save All**, **quit confirmation**,
   and **Play** now also see the buffer: unsaved `.guitkx` changes join the quit dialog, and
@@ -34,8 +44,29 @@ gains the daily-driver features a code editor is judged by in its first five min
   caret blink, smooth scroll, scroll-past-end, print-width ruler.
 
 ### Fixed
+- **The one that explained everything: the `.guitkx` resource loader now survives script reloads.**
+  Godot removes all custom format loaders on every script-reload cycle (which the Reactive UI
+  watcher triggers on each save, by regenerating a `.gd`) and re-adds only global-class ones — the
+  old manually-registered loader silently died minutes into every session. Everything downstream
+  followed: failed loads got cached (permanent red ✕ in the dock, "no file opens anymore"), and
+  routing fell through to the built-in Script editor, which session-restored `.guitkx` ghosts as
+  boot errors forever. The loader is now a global class the engine owns and re-adds itself.
+- **Dock renames clean up after themselves** — renaming a `.guitkx` left its generated `.gd`
+  under the old name until the watcher's next sweep, long enough for rapid renames to stack
+  duplicate `class_name` declarations. The old outputs are now removed synchronously in the
+  rename event (hand-written `.gd` files are untouchable, as in the watcher's own sweep).
+- **A deleted-then-restored file heals** — `git restore` (or un-deleting) used to leave the buffer
+  stuck on "(deleted on disk)"; a clean buffer now reloads automatically the moment the file is
+  back, and detach no longer falsely marks the buffer as edited.
+- **A momentarily-unreadable file can no longer poison the session** — the loader never returns a
+  load error (failures get cached as a permanent red ✕); reloads update the cached resource in
+  place so every holder keeps one coherent object.
+- **`.guitkx` is deliberately NOT in Godot's Search-in-Files extensions** — that registration let
+  the built-in Script editor adopt the files and endlessly session-restore them; an addon-native
+  project search replaces it in an upcoming release.
 - **Hover never fired** — `symbol_tooltip_on_hover` was never enabled, so the 0.3.0 hover feature
   was unreachable. It works now.
+- **An untouched empty tab no longer greets you with a red "missing declaration" icon.**
 - **Undo survived nothing** — Format (and format-on-save, which is default-on) replaced the buffer
   via `text =`, wiping the undo history on every save. Formatting is now a single undoable edit
   with the caret preserved.

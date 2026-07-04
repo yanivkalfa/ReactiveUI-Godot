@@ -4,6 +4,18 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.3] — 2026-07-05
+
+**The addon is now fully self-contained for store installs.** First user feedback on the Asset
+Library listing, implemented: a store download no longer places README/CHANGELOG/LICENSE at your
+project root (where they could collide with your own files) — `addons/reactive_ui/` carries its
+own addon-focused `README.md`, a mirrored `CHANGELOG.md`, and its `LICENSE`, and the repository
+root copies are excluded from release archives. No runtime code changes.
+
+Ships alongside the new **Reactive UI Editor 0.4.0** (a separate asset): the in-Godot `.guitkx`
+editor grew go-to-definition, find, cross-file diagnostics, rich hover, and a long list of
+data-safety guarantees — see its own changelog in `addons/reactive_ui_editor/CHANGELOG.md`.
+
 ## [0.8.2] — 2026-07-04
 
 **Deleting a component's whole folder is now caught by the watch poll, not just by the next save.**
