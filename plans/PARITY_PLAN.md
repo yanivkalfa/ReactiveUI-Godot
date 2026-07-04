@@ -1,5 +1,19 @@
 # Godot Port — Parity Plan & Live Status (ReactiveUIToolKit → ReactiveUI-Godot)
 
+> **STATUS UPDATE — 2026-07-04 (plans audit).** Corrections since 2026-06-30 that the body below
+> does not reflect:
+> - **HMR/Fast Refresh SHIPPED** (addon 0.8.0): running games hot-reload on save with hook state
+>   preserved (`plans/archive/HMR_FAST_REFRESH_PLAN.md`). Anything below calling HMR
+>   "partial" or "future" is superseded.
+> - **The native Godot editor SHIPPED** (`reactive_ui_editor` 0.2.0): main-screen editor,
+>   highlighting, diagnostics, completion/hover/workspace intelligence in pure GDScript.
+>   The remaining depth work is the gdext analyzer binding (`GODOT_ANALYZER_INTEGRATION_PLAN.md`).
+> - **Directive bodies are return-based since 0.7.0** (Unity-convergent), and **generated
+>   component references are path-based (`V.comp`) since 0.8.1** — pre-0.7 grammar or
+>   global-class-name codegen claims below are historical.
+> - README refreshed (23 hooks / ~60 factories). Remaining open parity work: the G2 docs
+>   phases (9/10) + the T6.1 authoring pass — now tracked as the docs wave (Wave 3).
+
 > **STATUS UPDATE — 2026-06-30.** This file is the living source of truth for *where we stand*. Two
 > things changed since the original 2026-06-21 gap analysis, and the older design docs never captured them:
 >

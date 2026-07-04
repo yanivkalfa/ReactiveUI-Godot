@@ -78,6 +78,10 @@ jobs:
   release-addon:
     name: Package addon + GitHub release (idempotent)
     runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,6 +149,42 @@ jobs:
           name: Reactive UI ${{ steps.ver.outputs.version }}
           generate_release_notes: true
           files: dist/reactive_ui-${{ steps.ver.outputs.version }}.zip
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Classic Godot Asset Library — post a version "edit" for each new addon release.
+  # The AL is deprecated but still serves every Godot ≤4.6 editor in-app, and it is the only
+  # venue with a publishing API today; the NEW Asset Store (store.godotengine.org, 4.7+) needs a
+  # manual version-add in the publisher dashboard (~2 min) until it ships an API — see
+  # plans/ASSET_STORE_PLAN.md. A job (not an `on: release` workflow) because the release above
+  # is created with GITHUB_TOKEN, whose events never trigger other workflows.
+  # INERT until armed: set repo VARIABLE ASSETLIB_ASSET_ID (from the approved listing's URL)
+  # and SECRETS ASSETLIB_USERNAME / ASSETLIB_PASSWORD. Edits are moderated server-side.
+  # ════════════════════════════════════════════════════════════════════════════
+  assetlib-update:
+    name: Classic Asset Library edit (inert until armed)
+    needs: release-addon
+    if: needs.release-addon.outputs.exists == 'false' && vars.ASSETLIB_ASSET_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize the asset template for this release
+        run: |
+          sed -e 's|{{ version }}|${{ needs.release-addon.outputs.version }}|g' \
+              -e 's|{{ commit }}|${{ github.sha }}|g' \
+              .asset-template.json.hb > .asset-template.resolved.json.hb
+          cat .asset-template.resolved.json.hb
+
+      - name: Post the version edit to the classic Asset Library
+        uses: deep-entertainment/godot-asset-lib-action@v0.6.0
+        with:
+          username: ${{ secrets.ASSETLIB_USERNAME }}
+          password: ${{ secrets.ASSETLIB_PASSWORD }}
+          assetId: ${{ vars.ASSETLIB_ASSET_ID }}
+          assetTemplate: .asset-template.resolved.json.hb
+
+      - name: New Asset Store reminder (no API yet)
+        run: echo "::notice title=Godot Asset Store::Classic AL edit posted for ${{ needs.release-addon.outputs.tag }}. The NEW store (store.godotengine.org) still needs its manual version-add in the publisher dashboard."
 
   # ════════════════════════════════════════════════════════════════════════════
   # VS Code extension — VS Marketplace + Open VSX, publishes only if version changed

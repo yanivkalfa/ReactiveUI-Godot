@@ -1,3 +1,8 @@
+> **BACKFILL NEEDED (2026-07-04 plans audit):** newest entry below is IDE 0.5.3 / addon-0.4-era —
+> everything since (return-based directive bodies 0.7.0, Fast Refresh/HMR 0.8.0, `V.comp`
+> codegen + orphan sweep + GUITKX2106/2107 in 0.8.1, IDE 0.5.4→0.8.6) is unposted. Write-ups
+> belong to the docs wave (Wave 3).
+
 ## [IDE 0.5.3] - 2026-07-02
 
 ### A header typo no longer takes the whole file down with it

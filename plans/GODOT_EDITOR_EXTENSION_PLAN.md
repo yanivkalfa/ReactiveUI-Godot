@@ -6,7 +6,12 @@ hover, go-to-definition, find-references, rename, signature help, inlay hints, c
 symbols, formatting, and semantic highlighting — with **complete parity** to the IDE tooling of both
 ReactiveUIToolKit (Unity) and ReactiveUI-Godot.
 
-Status: PLAN (research complete, all claims source-cited against Godot 4.2–4.5 docs + engine source).
+Status: **P1–P2 SHIPPED** (2026-07 plans audit) as `addons/reactive_ui_editor` 0.1.0/0.2.0 —
+main-screen editor, highlighter/tokenizer, live diagnostics, and the `lsp/` markup intelligence
+(schema/context/completion/hover/workspace modules + 39-check headless suite), all pure GDScript.
+**Remaining: P3 only** — deep embedded-GDScript intelligence via the native gdext analyzer
+binding; design of record is `GODOT_ANALYZER_INTEGRATION_PLAN.md`. The research below stays as
+the evidence base.
 
 **Settled decisions (user):**
 1. **Engine floor = Godot 4.4+.** Unlocks `OS.execute_with_pipe` (stdio) and `symbol_hovered` /
