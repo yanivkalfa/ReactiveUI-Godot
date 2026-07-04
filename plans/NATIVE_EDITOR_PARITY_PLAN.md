@@ -1,6 +1,8 @@
 # NATIVE_EDITOR_PARITY_PLAN — `reactive_ui_editor` → parity with the VS Code extension
 
-**Status: PLANNED 2026-07-04.** Evidence: full feature inventories of both surfaces taken this day
+**Status: PLANNED 2026-07-04, second-pass audited same day** (added G24–G30 + the verified
+no-gap notes; all ❌/🟡 claims and M1 premises are in-code confirmed, not inferred).
+Evidence: full feature inventories of both surfaces taken this day
 (VS Code/LSP `ide-extensions/` at 0.8.6; addon `addons/reactive_ui_editor/` at 0.2.0), diffed
 against the mechanism constraints in `GODOT_EDITOR_EXTENSION_PLAN.md` §2/§6 and the deep-tier
 design in `GODOT_ANALYZER_INTEGRATION_PLAN.md`. Driver: **submit the editor addon to the Godot
@@ -31,6 +33,13 @@ into CI**.
 in-engine compiler = the *real* diagnostic catalog on the live buffer (VS Code only approximates
 it between saves), theme-integrated colors.
 
+**Verified NO-gap (second pass, in-code confirmation):** rules-of-hooks live diagnostics
+(GUITKX0013–0016 are in the compiler — `guitkx/guitkx.gd:473-512`) and did-you-mean texts
+(misspelled decl keyword at `:233`; unknown tag `0105` "did you mean <X>?" at `:1686-1708`)
+already reach the editor through the live `compile()` — the VS Code server re-implements these
+because it *can't* run the compiler; the addon gets them from the source of truth. G13 (passing
+`known_components`) therefore delivers 0105 **with** suggestions, not bare.
+
 ---
 
 ## 2. The gap table (feature → status → mechanism → milestone)
@@ -44,7 +53,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Mechanisms are from `GODOT_EDIT
 | G3 | Rename: component atomic (usages + decl + `@class_name`), collision-refusing | ❌ | port `server.ts:1332-1368` gate + edit set | toolbar/context action + `EditorFileDialog`-less popup; apply to open buffer + on-disk files via `FileAccess` | M2 |
 | G4 | Signature help: `on_<signal>={ func(` param tracking | ❌ | port `signatureHelpAt` (`server.ts:1540-1629`) | no built-in popup — draw a small `PopupPanel` above caret on `(`/`,` | M2 |
 | G5 | Completion: `attrValue` context (bool/enum values) | ❌ (classified, returns `[]` — `lsp/guitkx_completion.gd:19-28`) | serve it | same `_request_code_completion` path | M2 |
-| G6 | Completion: style-dict keys (50 `STYLE_KEYS` inside `style={ {…} }`) | ❌ | port `inStyleDict` (`server.ts:602-620`) + key table (already in schema JSON? — add if not) | same | M2 |
+| G6 | Completion: style-dict keys (50 `STYLE_KEYS` inside `style={ {…} }`) | ❌ (verified: keys NOT in the bundled `data/guitkx-schema.json`) | port `inStyleDict` (`server.ts:602-620`) + add the key table to the bundled schema (shared-shape with the lsp-server vocabulary) | same | M2 |
 | G7 | Completion: `Color.` / `Vector2.` builtin member constants | ❌ | trivial natively: live `ClassDB`/`CoreConstants` beats the TS static table | same | M2 |
 | G8 | Completion: hook names in setup lines (`useState`…) | ❌ (VS Code serves via analyzer; a cheap vocabulary-driven approximation is possible now) | offer hook names + snippets when the caret is on a setup line | same | M2 |
 | G9 | Hooks hover cards (23 curated markdown signatures — `server.ts:652-676`) | ❌ | port `HOOK_HOVER` table into addon data | rich tooltip (G10) | M2 |
@@ -62,6 +71,13 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Mechanisms are from `GODOT_EDIT
 | G21 | Embedded-GDScript completion/hover/diagnostics/signature/inlay/code-actions/semantic overlay | ❌ (explicitly deferred) | **gdext analyzer binding** — `GODOT_ANALYZER_INTEGRATION_PLAN.md` Phases 2–5, incl. virtualDoc + sourceMap + LineIndex ports; feature-detect, degrade to markup-only | gdext (native) | M3 |
 | G22 | Plain-`.gd` intelligence (the extension's 4th tier) | ❌ — and **out of scope**: Godot's own editor already owns `.gd` | n/a | n/a | — |
 | G23 | Format range (selection) | ❌ (VS Code has it; low value in-engine) | non-goal for now; Format is whole-doc + on-save | — | — |
+| G24 | **Find / Replace** (VS Code gets it free from the host editor) | ❌ — verified: no search UI anywhere in the addon; `TextEdit.search()` is programmatic-only | build a slim find bar: Ctrl+F, F3/Shift+F3, match count (**M1**); replace / replace-all (M2). A code editor without Ctrl+F fails the first minute of store-review use | custom `HBoxContainer` over `TextEdit.search()` | **M1**/M2 |
+| G25 | **External-modification guard** (VS Code auto-reloads changed files) | ❌ — verified: no mtime tracking; open buffer + external change (git checkout, generator) + Save = **silent clobber** | record mtime at load; on save + on editor window focus compare; prompt reload/keep (Godot's script editor precedent) | `FileAccess.get_modified_time` + `NOTIFICATION_APPLICATION_FOCUS_IN` | **M1** |
+| G26 | `guitkx.config.json` formatter overrides (VS Code walks up + honors printWidth/indentStyle/indentSize/… — `formatGuitkx.ts:1232-1260`) | ❌ — verified: NO GDScript code reads it; `RUIGuitkxFormatter.format(source, opts)` accepts options but the editor passes `{}` → the same project can format differently in the two editors | port the walk-up loader (~30 lines), pass into `format()`; also use it in format-on-save | `FileAccess` + `JSON` | M2 |
+| G27 | Go-to-definition for hooks → `core/hooks.gd` (VS Code chains through the virtual-doc stub — `server.ts:942-980`) | ❌ | cheap native approximation: hooks are known names → jump to `func <name>` in `hooks.gd` by scan | same `symbol_lookup` path as G1 | M2 |
+| G28 | Completion offers BOTH event spellings (`onClick` **and** native `on_<signal>` — `events.ts:78-95`) | 🟡 camelCase only; `schema.godot_signals()` is implemented but never called (`lsp/guitkx_completion.gd:41-51`) | wire the existing method into attrName completion | same | M2 |
+| G29 | Host-vs-component tag color distinction (VS Code semantic overlay: host→`type`, component→`class` — `semanticTokens.ts:49-196`) | 🟡 one flat "tag" color for both | highlighter consults schema (host set) + workspace (component set) for two palette keys | per-line tokenizer + highlighter | M2 |
+| G30 | Tag-aware Enter indentation (VS Code onEnter rules: indent between `<Tag>`…`</Tag>`, outdent after `/>` — `language-configuration.json:31-41`) | 🟡 stock `indent_automatic` only (brackets/`:`) | small `_gui_input` Enter interception when caret sits between a tag pair | CodeEdit input hook | M2 |
 
 **Store/packaging gaps (submission-blocking):**
 
@@ -79,8 +95,10 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Mechanisms are from `GODOT_EDIT
 
 ## 3. Milestones
 
-### M1 — Store-submittable (target: ~2–3 focused days)
-The bar: **honest, robust, packaged** — not feature-complete.
+### M1 — Store-submittable (target: ~3–4 focused days)
+The bar: **honest, robust, packaged** — not feature-complete. (Find + clobber-guard added on the
+second-pass audit: a reviewer's first minutes are open file → Ctrl+F → edit → save; both paths
+must not embarrass or destroy data.)
 
 1. **S1+S2 graceful dependency**: runtime-load all `reactive_ui` references; single startup check
    (`type_exists("RUIGuitkx")` etc.); absent → EditorToaster/dialog message + addon idles cleanly.
@@ -88,31 +106,40 @@ The bar: **honest, robust, packaged** — not feature-complete.
    open in our main screen + caret to stored offset. Also makes the existing hover text truthful.
    (Small: the index side is already built.)
 3. **G13 known-components in live compile**: reuse `Codegen.project_bindings()` (cheap, cached per
-   debounce tick) so in-editor buffers get 0105/did-you-mean exactly like the watcher sweep.
+   debounce tick) so in-editor buffers get 0105 + did-you-mean exactly like the watcher sweep.
 4. **G15 index freshness**: `filesystem_changed` → debounced `GuitkxWorkspace.rescan()`.
-5. **S3 CI**: `guitkx_lsp_test.gd` into `test.yml` + `publish.yml`; add checks for G1/G13 logic
+5. **G24 find bar (basic)**: Ctrl+F, F3/Shift+F3, match count over `TextEdit.search()`
+   (replace lands M2).
+6. **G25 external-modification guard**: mtime at load; compare on save + window-focus; prompt
+   reload/keep — kills the silent-clobber path.
+7. **S3 CI**: `guitkx_lsp_test.gd` into `test.yml` + `publish.yml`; add checks for G1/G13 logic
    (lookup resolution; unknown-component diag with a planted two-file fixture).
-6. **S4 publish leg + S6 packaging**: `release-editor-addon` job (tag `editor-v0.3.0`), zip
+8. **S4 publish leg + S6 packaging**: `release-editor-addon` job (tag `editor-v0.3.0`), zip
    includes LICENSE; also fix the main `release-addon` zip to include LICENSE (store guideline:
    license must be inside the download — currently satisfied only by my hand-built zip).
-7. **S5+S7 listing prep**: addon README refresh, thumbnail, field sheet; bump `plugin.cfg` →
-   **0.3.0** (additive: goto-def). Submit to the new store (manual) as a **second asset** that
-   declares the Reactive UI dependency; AL listing optional/later.
+9. **S5+S7 listing prep**: addon README refresh, thumbnail, field sheet; bump `plugin.cfg` →
+   **0.3.0** (additive: goto-def, find). Submit to the new store (manual) as a **second asset**
+   that declares the Reactive UI dependency; AL listing optional/later.
 
 ### M2 — Markup-tier parity (target: ~2–3 weeks, ship in 2–4 releases)
 Order by user value; each lands with headless checks + a changelog entry, versions 0.4.x…:
 
 1. **G10 rich hover** (`_make_custom_tooltip` + BBCode) → then **G9 hooks cards** (port the
-   curated table; single data file shared-shape with `server.ts:652-676`).
-2. **G5/G6/G7/G8 completion contexts**: attrValue, style-dict keys, builtin members (native
-   ClassDB), setup-line hook names + snippets.
-3. **G2 references + G3 rename** (port `refs.ts` + the rename gate; References tab in the panel;
-   rename applies to disk + open buffer; refuse host-tag/collision exactly like the TS gate).
+   curated table; single data file shared-shape with `server.ts:652-676`) + **G26 formatter
+   config parity** (walk-up `guitkx.config.json` loader into `format()` + format-on-save).
+2. **G5/G6/G7/G8/G28 completion contexts**: attrValue, style-dict keys (add to bundled schema),
+   builtin members (native ClassDB), setup-line hook names + snippets, and the native
+   `on_<signal>` spelling (wire the existing `godot_signals()`).
+3. **G2 references + G3 rename + G27 hook goto-def** (port `refs.ts` + the rename gate;
+   References tab in the panel; rename applies to disk + open buffer; refuse host-tag/collision
+   exactly like the TS gate; hooks jump to `core/hooks.gd`).
 4. **G12 outline** + **G16 multi-file open list** + **G17 session state** (one UX wave — they
    touch the same main-screen layout).
-5. **G14 project-wide Problems** (sidecar aggregation) + **G19 gutter popup**.
+5. **G14 project-wide Problems** (sidecar aggregation) + **G19 gutter popup** + **G24 replace /
+   replace-all** (completes the M1 find bar).
 6. **G4 signature help** (hand-drawn popup; markup `on_<signal>` tier only until M3).
-7. **G11 embedded sub-highlighting** + **G18 new-file** + **G20 snippet caret** (polish wave).
+7. **G11 embedded sub-highlighting** + **G29 host-vs-component tag colors** + **G30 tag-aware
+   Enter indent** + **G18 new-file** + **G20 snippet caret** (polish wave).
 
 **Parity-verification discipline** (mirrors the HMR/formatter precedent): extend the golden-fixture
 corpus so context classification, completion item sets, hover texts, and refs/rename edit sets are
@@ -153,8 +180,8 @@ requires `ScriptLanguageExtension` and stays rejected).
   runtime addon is the product, the editor is tooling).
 
 ## 6. Decisions for the user
-1. **M1 scope OK?** (graceful-dep + goto-def + known-components + freshness + CI + publish leg +
-   listing at 0.3.0 — then submit.)
+1. **M1 scope OK?** (graceful-dep + goto-def + known-components + freshness + find bar +
+   external-clobber guard + CI + publish leg + listing at 0.3.0 — then submit.)
 2. **Second listing name** — proposal: **"Reactive UI Editor (.guitkx tooling)"**, publisher
    yaniv-kalfa, slug `reactive-ui-editor`.
 3. **M2 ordering** — the list above is my value-ranking; reorder freely.
