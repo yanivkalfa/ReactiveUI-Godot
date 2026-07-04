@@ -17,46 +17,81 @@ func _ready() -> void:
 	if not Engine.is_editor_hint():
 		return
 
-	# Editing UX — tabs to match the compiler/formatter default (indent_use_spaces=false).
-	indent_use_spaces = false
-	indent_size = 4
+	configure()
+
+	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
+	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload. Editor-only:
+	# the highlighter reads EditorSettings theme colours.
+	_highlighter = GuitkxCodeHighlighter.new()
+	syntax_highlighter = _highlighter
+
+	# Refresh highlight colours when the editor theme changes.
+	_theme_source = EditorInterface.get_base_control()
+	if _theme_source != null and not _theme_source.theme_changed.is_connected(_on_theme_changed):
+		_theme_source.theme_changed.connect(_on_theme_changed)
+
+## Applies the whole editing substrate: indentation, delimiters, brace pairs, gutters, view
+## comforts, completion triggers, and hover. Pure CodeEdit state with no editor-singleton
+## dependency, so the headless suite instantiates a GuitkxCodeEdit and asserts this directly
+## (tests/guitkx_editor_test.gd).
+func configure() -> void:
+	# Indentation — MUST match the formatter's output (guitkx_formatter.gd defaults: spaces, 2),
+	# or live typing and format-on-save fight each other and every save produces mixed indent.
+	indent_use_spaces = true
+	indent_size = 2
+	indent_automatic = true
+	draw_tabs = true
+
 	if not has_comment_delimiter("#"):
 		add_comment_delimiter("#", "", true)
 	if not has_string_delimiter("\""):
 		add_string_delimiter("\"", "\"")
 	if not has_string_delimiter("'"):
 		add_string_delimiter("'", "'")
+
 	# CodeEdit already ships the default { } ( ) [ ] " " ' ' auto-close pairs; re-adding them throws
-	# "auto brace completion open key '...' already exists", so we just enable the feature.
+	# "auto brace completion open key '...' already exists". `<` -> `>` is ours to add for markup.
 	auto_brace_completion_enabled = true
+	auto_brace_completion_highlight_matching = true
+	if not auto_brace_completion_pairs.has("<"):
+		add_auto_brace_completion_pair("<", ">")
 
-	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
-	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload.
-	_highlighter = GuitkxCodeHighlighter.new()
-	syntax_highlighter = _highlighter
+	# Gutters + view comforts, mirroring the built-in script editor's defaults.
+	gutters_draw_line_numbers = true
+	line_folding = true
+	gutters_draw_fold_gutter = true
+	highlight_current_line = true
+	highlight_all_occurrences = true
+	minimap_draw = true
+	caret_blink = true
+	scroll_smooth = true
+	scroll_past_end_of_file = true
+	# One ruler at the formatter's print width.
+	line_length_guidelines = [100]
 
-	# Diagnostics gutter (icon type), to the right of the built-in gutters.
-	diag_gutter = get_gutter_count()
-	add_gutter(diag_gutter)
-	set_gutter_type(diag_gutter, TextEdit.GUTTER_TYPE_ICON)
-	set_gutter_width(diag_gutter, 24)
-	set_gutter_clickable(diag_gutter, true)
-	gutter_clicked.connect(_on_gutter_clicked)
+	# Diagnostics gutter (icon type), to the right of the built-in gutters. Guarded so a repeat
+	# configure() (plugin reload, re-open) never allocates a duplicate gutter.
+	if diag_gutter == -1:
+		diag_gutter = get_gutter_count()
+		add_gutter(diag_gutter)
+		set_gutter_type(diag_gutter, TextEdit.GUTTER_TYPE_ICON)
+		set_gutter_width(diag_gutter, 24)
+		set_gutter_clickable(diag_gutter, true)
+	if not gutter_clicked.is_connected(_on_gutter_clicked):
+		gutter_clicked.connect(_on_gutter_clicked)
 
 	# Markup completion (Phase 1). Trigger on `<` (tags), `@` (directives) and space (attributes); the
 	# context classifier decides what to offer per caret position. KEY_COMPLETION is honoured live.
 	code_completion_enabled = true
 	code_completion_prefixes = PackedStringArray(["<", "@", " "])
 
-	# Markup hover: Godot 4.4+ CodeEdit emits `symbol_hovered` while the mouse rests on a symbol. We
-	# turn tags/attrs/directives into a tooltip. Guarded so it no-ops on engine builds without it.
+	# Markup hover: Godot 4.4+ CodeEdit emits `symbol_hovered` while the mouse rests on a symbol —
+	# but ONLY when `symbol_tooltip_on_hover` is set; without it the signal never fires and hover is
+	# dead. Both are 4.4+, guarded so older builds no-op.
+	if "symbol_tooltip_on_hover" in self:
+		symbol_tooltip_on_hover = true
 	if has_signal("symbol_hovered") and not is_connected("symbol_hovered", _on_symbol_hovered):
 		connect("symbol_hovered", _on_symbol_hovered)
-
-	# Refresh highlight colours when the editor theme changes.
-	_theme_source = EditorInterface.get_base_control()
-	if _theme_source != null and not _theme_source.theme_changed.is_connected(_on_theme_changed):
-		_theme_source.theme_changed.connect(_on_theme_changed)
 
 func _exit_tree() -> void:
 	if _theme_source != null and _theme_source.theme_changed.is_connected(_on_theme_changed):
