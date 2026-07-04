@@ -78,27 +78,24 @@ static func apply(paths: Array, bindings: Dictionary = {}) -> Dictionary:
 			outcomes[path] = "identical"   # e.g. a forced sweep re-wrote the same bytes
 			continue
 		var old_sig := _hook_sig(scr)
-		(scr as GDScript).source_code = src
+		# Inject BEFORE the first reload, never after a failure: we can already tell which
+		# referenced classes this game cannot resolve (Godot registers global class_names at
+		# LAUNCH, so a component created after F5 is unresolvable by name). A deliberately
+		# failing first attempt would raise a script error that a debugger session BREAKS on,
+		# freezing the whole HMR transaction mid-apply (field capture 2026-07-04). The injected
+		# `const X = preload(path)` resolves exactly like the global would; the new component's
+		# script loads fresh from disk; the session and its state survive.
+		var patched := _inject_unregistered_bindings(src, bindings)
+		(scr as GDScript).source_code = patched
 		var err: int = (scr as GDScript).reload(true)
 		if err != OK:
-			# The editor gd_parse_ok-gates what it pushes, so a failure here almost always means
-			# the file references a GLOBAL CLASS this game has never seen -- Godot registers
-			# class_names at LAUNCH, so a component created after F5 is unresolvable by name.
-			# Retry with `const X = preload(path)` spliced in for every unregistered binding the
-			# source mentions: a local const resolves exactly like the global would, the new
-			# script loads fresh from disk, and the session (with all its state) survives.
-			var patched := _inject_unregistered_bindings(src, bindings)
-			if patched != src:
-				(scr as GDScript).source_code = patched
-				err = (scr as GDScript).reload(true)
-				if err == OK:
-					linked += 1
-					outcomes[path] = "linked"
-			if err != OK:
-				(scr as GDScript).source_code = src   # leave the honest disk bytes in memory
-				outcomes[path] = "failed err %d" % err
-				errors.append("%s: in-place reload failed (err %d) -- fix the file and save again (or restart the run if it references classes from outside the guitkx pipeline)" % [path, err])
-				continue
+			(scr as GDScript).source_code = src   # leave the honest disk bytes in memory
+			outcomes[path] = "failed err %d" % err
+			errors.append("%s: in-place reload failed (err %d) -- fix the file and save again (or restart the run if it references classes from outside the guitkx pipeline)" % [path, err])
+			continue
+		if patched != src:
+			linked += 1
+			outcomes[path] = "linked"
 		else:
 			outcomes[path] = "reloaded"
 		changed.append(scr)
