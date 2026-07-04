@@ -13,11 +13,14 @@ var diag_gutter: int = -1
 var _highlighter: GuitkxCodeHighlighter
 var _theme_source: Control
 
+func _init() -> void:
+	# Pure CodeEdit state — safe in every context (editor, headless tests), so the widget is never
+	# half-configured (a -1 diag_gutter would make the diagnostics renderer index out of bounds).
+	configure()
+
 func _ready() -> void:
 	if not Engine.is_editor_hint():
 		return
-
-	configure()
 
 	# Syntax highlighting (own SyntaxHighlighter route). Always assigned; the highlighter honours
 	# KEY_HIGHLIGHTING per line, so the toggle applies live without a plugin reload. Editor-only:
@@ -101,6 +104,20 @@ func _on_theme_changed() -> void:
 	if _highlighter != null:
 		_highlighter.update_colors()
 		queue_redraw()
+
+## Replaces the whole buffer as ONE undoable edit. Assigning `.text` clears the undo history —
+## with format-on-save enabled that meant every Save destroyed Ctrl+Z (parity plan G33). The
+## caret is preserved (clamped to the new bounds).
+func set_text_undoable(new_text: String) -> void:
+	var l := get_caret_line()
+	var c := get_caret_column()
+	begin_complex_operation()
+	select_all()
+	delete_selection()
+	insert_text_at_caret(new_text)
+	end_complex_operation()
+	set_caret_line(mini(l, maxi(0, get_line_count() - 1)))
+	set_caret_column(mini(c, get_line(get_caret_line()).length()))
 
 ## Fade the given lines (a set: line -> true) as unreachable code. [BUG-V6]
 func set_dim_lines(lines: Dictionary) -> void:

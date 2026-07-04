@@ -9,7 +9,10 @@ extends Resource
 ## serialized to disk (the editor saves the .guitkx via FileAccess and lets the reactive_ui watcher
 ## regenerate the sibling .gd).
 
-var source: String = ""
+# @export_storage: serialization-safe without appearing in the Inspector. Nothing in the normal
+# flow ever ResourceSaver-saves this, but if user code sticks one in an @export slot or a .tres,
+# the text must round-trip rather than silently vanish (parity plan L7).
+@export_storage var source: String = ""
 
 func from_text(text: String) -> void:
 	source = text

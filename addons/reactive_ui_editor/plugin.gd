@@ -16,7 +16,6 @@ var _view: GuitkxEditorView
 var _problems: GuitkxProblemsPanel
 var _problems_button: Button
 var _loader: ResourceFormatLoader
-var _self_edit := false
 
 func _enter_tree() -> void:
 	RUIEditorSettings.register_all()
@@ -30,6 +29,14 @@ func _enter_tree() -> void:
 	_problems.diagnostic_activated.connect(_on_problem_activated)
 	_problems_button = add_control_to_bottom_panel(_problems, "Problems")
 
+	# Follow the open file through dock renames/moves/deletes (parity plan L1/L2) — otherwise the
+	# view's path goes stale and Save resurrects the old filename with the user's edits in it.
+	var dock := EditorInterface.get_file_system_dock()
+	dock.files_moved.connect(_on_file_moved)
+	dock.folder_moved.connect(_on_folder_moved)
+	dock.file_removed.connect(_on_file_removed)
+	dock.folder_removed.connect(_on_folder_removed)
+
 	# open_guitkx_in_editor is structural (it registers a ResourceFormatLoader that changes global
 	# double-click routing), so — unlike highlighting/completion/diagnostics/format — it applies on
 	# plugin reload, not live: flip it, then disable/re-enable the addon for it to take effect.
@@ -38,6 +45,15 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	_unregister_loader()
+	var dock := EditorInterface.get_file_system_dock()
+	if dock.files_moved.is_connected(_on_file_moved):
+		dock.files_moved.disconnect(_on_file_moved)
+	if dock.folder_moved.is_connected(_on_folder_moved):
+		dock.folder_moved.disconnect(_on_folder_moved)
+	if dock.file_removed.is_connected(_on_file_removed):
+		dock.file_removed.disconnect(_on_file_removed)
+	if dock.folder_removed.is_connected(_on_folder_removed):
+		dock.folder_removed.disconnect(_on_folder_removed)
 	if _problems != null:
 		remove_control_from_bottom_panel(_problems)
 		_problems.queue_free()
@@ -46,6 +62,48 @@ func _exit_tree() -> void:
 	if _view != null:
 		_view.queue_free()
 		_view = null
+
+## Godot asks every plugin for unsaved state before quitting: a non-empty string joins the editor's
+## own quit-confirmation dialog (parity plan L4 — without this, quit silently drops the buffer).
+func _get_unsaved_status(for_scene: String) -> String:
+	if for_scene.is_empty() and _view != null and _view.is_dirty():
+		return "Reactive UI Editor: '%s' has unsaved changes." % _view.current_path()
+	return ""
+
+## Godot's own save flows (Save All, save-on-quit confirm) flush our buffer as "external data".
+func _save_external_data() -> void:
+	if _view != null:
+		_view.save_silent()
+
+## Called when the user hits Play: flush the buffer first so the game runs what's on screen (the
+## watcher then recompiles the sibling .gd before launch).
+func _apply_changes() -> void:
+	if _view != null:
+		_view.save_silent()
+
+func _on_file_moved(old_file: String, new_file: String) -> void:
+	if _view != null and _view.current_path() == old_file:
+		_view.retarget_path(new_file)
+
+func _on_folder_moved(old_folder: String, new_folder: String) -> void:
+	if _view == null:
+		return
+	var cur := _view.current_path()
+	var prefix := old_folder if old_folder.ends_with("/") else old_folder + "/"
+	if cur.begins_with(prefix):
+		var dst := new_folder if new_folder.ends_with("/") else new_folder + "/"
+		_view.retarget_path(dst + cur.substr(prefix.length()))
+
+func _on_file_removed(file: String) -> void:
+	if _view != null and _view.current_path() == file:
+		_view.mark_detached()
+
+func _on_folder_removed(folder: String) -> void:
+	if _view == null:
+		return
+	var prefix := folder if folder.ends_with("/") else folder + "/"
+	if _view.current_path().begins_with(prefix):
+		_view.mark_detached()
 
 func _has_main_screen() -> bool:
 	return true
@@ -67,7 +125,7 @@ func _handles(object: Object) -> bool:
 	return object is GuitkxResource
 
 func _edit(object: Object) -> void:
-	if _self_edit or object == null:
+	if object == null:
 		return
 	if object is GuitkxResource:
 		EditorInterface.set_main_screen_editor(PLUGIN_NAME)

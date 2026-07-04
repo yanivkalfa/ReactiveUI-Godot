@@ -2,8 +2,10 @@
 class_name GuitkxEditorView
 extends Control
 ## The main-screen panel: a toolbar (Open / Save / Format + current-file label) over a GuitkxCodeEdit.
-## Owns the edit -> debounced-compile -> diagnostics pipeline. Depends on the reactive_ui addon's
-## global classes RUIGuitkx (compiler) and RUIGuitkxFormatter (formatter).
+## Owns the edit -> debounced-compile -> diagnostics pipeline, the buffer's dirty/conflict state, and
+## every guard that keeps the user's work safe (unsaved-switch confirms, external-change detection,
+## deleted/renamed-source tracking). Depends on the reactive_ui addon's global classes RUIGuitkx
+## (compiler) and RUIGuitkxFormatter (formatter).
 ##
 ## Save writes ONLY the .guitkx text to disk; the reactive_ui plugin's own filesystem watcher owns
 ## regenerating the sibling .gd, so the two never fight over the same file.
@@ -18,6 +20,13 @@ var _problems: GuitkxProblemsPanel
 var _err_icon: Texture2D
 var _warn_icon: Texture2D
 var _current_path: String = ""
+
+# Buffer state (W2, parity plan G32/G25/L1/L2). _loading suppresses the text_changed handler while
+# WE set the buffer (loads, format rewrites), so only user edits mark it dirty.
+var _dirty := false
+var _loading := false
+var _detached := false          # the source file was deleted/moved away on disk
+var _loaded_mtime := 0          # disk mtime the buffer was loaded from / last saved to
 
 func _init() -> void:
 	name = "ReactiveUITK"
@@ -54,6 +63,8 @@ func _init() -> void:
 	add_child(_debounce)
 
 func _ready() -> void:
+	if not Engine.is_editor_hint():
+		return
 	var theme := EditorInterface.get_editor_theme()
 	if theme != null:
 		if theme.has_icon("StatusError", "EditorIcons"):
@@ -61,15 +72,83 @@ func _ready() -> void:
 		if theme.has_icon("StatusWarning", "EditorIcons"):
 			_warn_icon = theme.get_icon("StatusWarning", "EditorIcons")
 
+## Ctrl+S saves the .guitkx while this screen is visible. Without this, Godot's global Save Scene
+## shortcut eats the keystroke and the buffer silently stays unsaved (parity plan G31). Godot's own
+## save flows still reach us when the screen is NOT visible, via the plugin's _save_external_data.
+func _shortcut_input(event: InputEvent) -> void:
+	if not is_visible_in_tree():
+		return
+	var k := event as InputEventKey
+	if k == null or not k.pressed or k.echo:
+		return
+	if k.keycode == KEY_S and k.is_command_or_control_pressed() and not k.shift_pressed and not k.alt_pressed:
+		_on_save_pressed()
+		accept_event()
+
+## External-change watch (parity plan G25): when the editor window regains focus and the file changed
+## on disk underneath a CLEAN buffer, reload silently (VS Code behavior). A DIRTY buffer is left
+## alone — the conflict is resolved at Save time, where the user gets an explicit choice.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_IN:
+		return
+	if _current_path.is_empty() or _loading:
+		return
+	if not FileAccess.file_exists(_current_path):
+		if not _detached:
+			mark_detached()
+		return
+	var disk := FileAccess.get_modified_time(_current_path)
+	if _loaded_mtime != 0 and disk != _loaded_mtime and not _dirty:
+		open_path(_current_path)
+
 ## Wire the shared bottom Problems panel (owned by the plugin).
 func set_problems_panel(panel: GuitkxProblemsPanel) -> void:
 	_problems = panel
 
-## Open a .guitkx from disk (Open button + Problems-panel navigation).
+## --- Buffer state (read by the plugin's _get_unsaved_status / lifecycle handlers) ---
+
+func is_dirty() -> bool:
+	return _dirty
+
+func current_path() -> String:
+	return _current_path
+
+## The open file was renamed/moved on disk (FileSystemDock signal via the plugin): follow it, keep
+## the buffer + dirty state. Without this, Save would resurrect the OLD filename and the user's
+## edits would silently diverge into a zombie file (parity plan L1).
+func retarget_path(new_path: String) -> void:
+	_current_path = new_path
+	_detached = false
+	_loaded_mtime = FileAccess.get_modified_time(new_path) if FileAccess.file_exists(new_path) else 0
+	_update_file_label()
+
+## The open file was deleted on disk (parity plan L2). The buffer stays (it may be the only copy of
+## the user's work) but is marked detached; Save asks before recreating the file.
+func mark_detached() -> void:
+	_detached = true
+	_dirty = true
+	_update_file_label()
+
+## --- Opening ---
+
+## Open a .guitkx from disk (Open button, Problems-panel navigation, double-click route). Guards the
+## dirty buffer: same-file reopen with edits just focuses (never clobbers); switching away from a
+## dirty buffer asks Save / Discard / Cancel first.
 func open_path(path: String) -> void:
+	if _dirty and path == _current_path and not _loading:
+		# Re-opening the file we're already editing (double-click in the dock): keep the edits.
+		if _code_edit.is_inside_tree():
+			_code_edit.grab_focus()
+		return
+	if _dirty and not _current_path.is_empty() and path != _current_path:
+		_confirm_unsaved_switch(path)
+		return
+	_open_path_now(path)
+
+func _open_path_now(path: String) -> void:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
-		push_error("[reactive_ui_editor] cannot open %s (%d)" % [path, FileAccess.get_open_error()])
+		_alert("Cannot open %s (error %d)." % [path, FileAccess.get_open_error()])
 		return
 	var text := f.get_as_text()
 	f.close()
@@ -97,13 +176,38 @@ func goto_line(line: int) -> void:
 	_code_edit.grab_focus()
 
 func _load_text(path: String, text: String) -> void:
+	_loading = true
 	_current_path = path
-	_file_label.text = path if not path.is_empty() else "(unsaved)"
 	_code_edit.text = text
+	_code_edit.clear_undo_history()
+	_loading = false
+	_dirty = false
+	_detached = false
+	_loaded_mtime = FileAccess.get_modified_time(path) if (not path.is_empty() and FileAccess.file_exists(path)) else 0
+	_update_file_label()
 	_refresh_diagnostics()
 
 func _on_text_changed() -> void:
-	_debounce.start()
+	if _loading:
+		return
+	if not _dirty:
+		_dirty = true
+		_update_file_label()
+	if _debounce.is_inside_tree():
+		_debounce.start()
+
+func _update_file_label() -> void:
+	if _current_path.is_empty():
+		_file_label.text = "(no file)"
+		return
+	var label := _current_path
+	if _detached:
+		label += "  (deleted on disk)"
+	if _dirty:
+		label += "  *"
+	_file_label.text = label
+
+## --- Diagnostics pipeline ---
 
 func _refresh_diagnostics() -> void:
 	if _code_edit == null:
@@ -144,6 +248,8 @@ func _basename() -> String:
 		return "Component"
 	return _current_path.get_file().get_basename()
 
+## --- Toolbar actions ---
+
 func _on_open_pressed() -> void:
 	var dlg := EditorFileDialog.new()
 	dlg.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
@@ -159,29 +265,76 @@ func _on_open_pressed() -> void:
 
 func _on_save_pressed() -> void:
 	if _current_path.is_empty():
-		push_warning("[reactive_ui_editor] Open a .guitkx file before saving.")
+		_alert("Open a .guitkx file before saving.")
 		return
+	# External-change conflict (G25): the file changed on disk since we loaded it. Explicit choice —
+	# never silently overwrite someone else's newer content, never silently drop the user's edits.
+	if not _detached and FileAccess.file_exists(_current_path):
+		var disk := FileAccess.get_modified_time(_current_path)
+		if _loaded_mtime != 0 and disk != _loaded_mtime:
+			_confirm_two("The file changed on disk since it was loaded.\n%s" % _current_path,
+				"Overwrite Disk", _write_buffer,
+				"Reload From Disk (discard my edits)", func():
+					_dirty = false
+					_open_path_now(_current_path))
+			return
+	# Deleted-source guard (L2): Save would recreate a file the user deliberately deleted — ask.
+	if _detached:
+		_confirm_one("The source file was deleted (or moved) on disk.\nSave will recreate:\n%s" % _current_path,
+			"Recreate File", _write_buffer)
+		return
+	_write_buffer()
+
+## The unconditional write path (all guards passed). Formats when enabled, writes, and hands the
+## change to the reactive_ui watcher via a targeted update_file — the same cadence an external
+## editor's save gets (a full scan() momentarily gated the watcher's own triggers; L8).
+func _write_buffer() -> void:
 	var text := _code_edit.text
 	if RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_FORMAT_ON_SAVE):
 		text = _formatted(text)
 	if text != _code_edit.text:
-		_set_text_preserving_caret(text)
+		_loading = true
+		_code_edit.set_text_undoable(text)
+		_loading = false
 	var f := FileAccess.open(_current_path, FileAccess.WRITE)
 	if f == null:
+		# Visible failure (L3): push_error alone leaves the user believing the save happened.
+		_alert("Could not write %s (error %d).\nThe buffer still holds your changes." % [
+			_current_path, FileAccess.get_open_error()])
 		push_error("[reactive_ui_editor] cannot write %s (%d)" % [_current_path, FileAccess.get_open_error()])
 		return
 	f.store_string(text)
 	f.close()
-	# Let the reactive_ui watcher pick up the change and regenerate the sibling .gd.
-	EditorInterface.get_resource_filesystem().scan()
+	_dirty = false
+	_detached = false
+	_loaded_mtime = FileAccess.get_modified_time(_current_path)
+	_update_file_label()
+	EditorInterface.get_resource_filesystem().update_file(_current_path)
 	# Keep the component index fresh so renamed/added components complete without a full rescan.
-	GuitkxWorkspace.reindex(_current_path, text)
+	GuitkxWorkspace.reindex(_current_path, _code_edit.text)
 	_refresh_diagnostics()
+
+## Dialog-free save for Godot's own flows (Save All / quit / Play via the plugin's
+## _save_external_data / _apply_changes). Refuses on conflict rather than prompting mid-flow;
+## the buffer stays dirty and the user resolves it in the editor.
+func save_silent() -> bool:
+	if _current_path.is_empty() or not _dirty:
+		return true
+	if _detached:
+		push_error("[reactive_ui_editor] %s was deleted on disk — not recreating it during an editor save. Save it explicitly in the Reactive UI editor." % _current_path)
+		return false
+	if FileAccess.file_exists(_current_path):
+		var disk := FileAccess.get_modified_time(_current_path)
+		if _loaded_mtime != 0 and disk != _loaded_mtime:
+			push_error("[reactive_ui_editor] %s changed on disk — not overwriting during an editor save. Resolve it in the Reactive UI editor." % _current_path)
+			return false
+	_write_buffer()
+	return not _dirty
 
 func _on_format_pressed() -> void:
 	var text := _formatted(_code_edit.text)
 	if text != _code_edit.text:
-		_set_text_preserving_caret(text)
+		_code_edit.set_text_undoable(text)
 	_refresh_diagnostics()
 
 func _on_gutter_diagnostic_clicked(_line: int, record: Variant) -> void:
@@ -195,12 +348,61 @@ func _formatted(text: String) -> String:
 		return r.get("text", text)
 	return text
 
-func _set_text_preserving_caret(text: String) -> void:
-	var l := _code_edit.get_caret_line()
-	var c := _code_edit.get_caret_column()
-	_code_edit.text = text
-	_code_edit.set_caret_line(mini(l, maxi(0, _code_edit.get_line_count() - 1)))
-	_code_edit.set_caret_column(c)
+## --- Dialog helpers (one-shot, self-freeing) ---
+
+func _alert(text: String) -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Reactive UI Editor"
+	dlg.dialog_text = text
+	dlg.confirmed.connect(dlg.queue_free)
+	dlg.canceled.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered()
+
+func _confirm_one(text: String, ok_label: String, on_ok: Callable) -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Reactive UI Editor"
+	dlg.dialog_text = text
+	dlg.ok_button_text = ok_label
+	dlg.confirmed.connect(func():
+		on_ok.call()
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered()
+
+func _confirm_two(text: String, ok_label: String, on_ok: Callable, alt_label: String, on_alt: Callable) -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Reactive UI Editor"
+	dlg.dialog_text = text
+	dlg.ok_button_text = ok_label
+	var alt := dlg.add_button(alt_label, true, "alt")
+	alt.pressed.connect(func():
+		dlg.hide()
+		on_alt.call()
+		dlg.queue_free())
+	dlg.confirmed.connect(func():
+		on_ok.call()
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered()
+
+## Switching away from a dirty buffer: Save & Open / Discard & Open / Cancel (G32).
+func _confirm_unsaved_switch(next_path: String) -> void:
+	_confirm_two("Unsaved changes in:\n%s" % _current_path,
+		"Save, Then Open", func():
+			_on_save_pressed_then(func(): _open_path_now(next_path)),
+		"Discard My Edits", func():
+			_dirty = false
+			_open_path_now(next_path))
+
+## Save, then run `after` — but only if the save actually cleared the dirty flag (a conflict or
+## write failure keeps the buffer, and the pending open is dropped rather than losing edits).
+func _on_save_pressed_then(after: Callable) -> void:
+	_on_save_pressed()
+	if not _dirty:
+		after.call()
 
 func _make_button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
