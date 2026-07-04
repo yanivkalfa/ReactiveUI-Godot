@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.2] - 2026-07-04
+- **Compiler errors now reach VS Code after the save.** The Godot addon's watch poll compiles a
+  saved `.guitkx` ~2 seconds AFTER the save and writes its verdict into the `.diags.json`
+  sidecar — but the server never watched sidecars, so a compiler-only error (e.g.
+  `GUITKX0105: unknown element` in setup-value markup, which the live tier doesn't scan yet)
+  could **never** become a squiggle: the save-time validation read the previous sidecar, and the
+  next keystroke hash-diverges the buffer, which suppresses compiler entries by design. The
+  server now watches `**/*.guitkx.diags.json` and re-validates the matching open document the
+  moment Godot writes or clears a verdict. Smoke-pinned. (Server 0.8.2.)
+
 ## [0.8.1] - 2026-07-04
 - **Fixed bogus `GUITKX0108 … (got 3)` on correct directive bodies.** A pre-0.8 live scanner
   pass still parsed directive bodies as bare markup, counting the `return (` / `)` lines as
