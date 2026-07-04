@@ -29,7 +29,9 @@ with a dock line per removal. Empty reads (editor scan window) never count as an
   component, reference it, save: it appears in the running UI —
   `(1 new component(s) linked live)` in the Output. After the next restart the global registers
   and the linking naturally no-ops. Only classes from outside the guitkx pipeline still need a
-  restart.
+  restart. (The push is deliberately **not** gated on the editor-side parse check anymore — that
+  check fails transiently for exactly this case while the *editor's* registry catches up; the
+  game's per-file isolation and the injection retry own the risk.)
 
 ## [0.8.0] — 2026-07-04
 

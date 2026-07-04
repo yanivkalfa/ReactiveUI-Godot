@@ -133,14 +133,17 @@ func _compile_all() -> void:
 	_busy = true
 	_busy_since = Time.get_ticks_msec()
 	var res: Dictionary = Codegen.compile_all("res://")
-	# Phase H: hot-push what this sweep produced into running play sessions. Only scripts the
-	# engine will accept (gd_ok -- the post-write parse check) are pushed; a running game must
-	# never be asked to load a script that would fail to compile.
+	# Phase H: hot-push EVERYTHING this sweep produced into running play sessions -- including
+	# files whose post-write parse check failed (gd_ok false). That check fails transiently for
+	# the exact case hot-LINKING exists for: a parent referencing a component created seconds
+	# ago, before the EDITOR's own class registry caught up (field capture 2026-07-04: the
+	# gd_ok gate silently dropped the one file the game needed). The game is equipped for the
+	# risk: per-file isolation keeps old code on a failed reload, and the injection retry
+	# resolves fresh classes by path. The parse check keeps its dock-error role only.
 	if _hmr_dbg != null:
 		var hot: Array = []
 		for entry in res["compiled"]:
-			if bool(entry.get("gd_ok", true)):
-				hot.append(entry["gd_path"])
+			hot.append(entry["gd_path"])
 		_hmr_dbg.push_reload(hot, res.get("bindings", {}))
 	for orphan in res.get("removed", []):
 		print("[guitkx] removed orphaned output %s (its .guitkx is gone -- renamed or deleted)" % orphan)
