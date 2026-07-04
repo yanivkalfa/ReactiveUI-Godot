@@ -16,6 +16,7 @@ var diag_gutter: int = -1
 
 var _highlighter: GuitkxCodeHighlighter
 var _theme_source: Control
+var _line_diags: Dictionary = {}  # line (int) -> Array of diagnostic records (from the view)
 
 func _init() -> void:
 	# Pure CodeEdit state — safe in every context (editor, headless tests), so the widget is never
@@ -177,14 +178,42 @@ func _on_symbol_lookup(symbol: String, _line: int, _column: int) -> void:
 		return
 	definition_requested.emit(str(hit.get("path", "")), int(hit.get("offset", 0)))
 
-# Markup hover -> native tooltip. GuitkxHover owns the (tested) logic; here we just render it plain.
+## Diagnostics for the current buffer, keyed by line — folded into the hover card so the message
+## (and its did-you-mean) is readable without clicking the gutter. [field ask]
+func set_line_diagnostics(by_line: Dictionary) -> void:
+	_line_diags = by_line
+
+# Markup hover: GuitkxHover owns the (tested) logic; the text stored in tooltip_text is raw
+# Markdown, rendered rich by _make_custom_tooltip at show time (no stale-tooltip double delay —
+# the previous native-tooltip path often needed a second hover pass to display anything).
 func _on_symbol_hovered(_symbol: String, line: int, column: int) -> void:
 	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_HOVER):
 		tooltip_text = ""
 		return
 	var text := get_text()
-	tooltip_text = _plain_md(GuitkxHover.for_caret(text, GuitkxContext.offset_of(text, line, column)))
+	var md := GuitkxHover.for_caret(text, GuitkxContext.offset_of(text, line, column))
+	tooltip_text = compose_hover(md, line)
 
-# Strip the tiny Markdown subset our hover uses (`code`, **bold**) for a native plain-text tooltip.
-func _plain_md(md: String) -> String:
-	return md.replace("`", "").replace("**", "")
+## Prepend the hovered line's diagnostics (message includes any did-you-mean) to the symbol card.
+func compose_hover(symbol_md: String, line: int) -> String:
+	var parts: Array = []
+	for rec in _line_diags.get(line, []):
+		if rec is Dictionary:
+			parts.append("**%s** `%s` — %s" % [
+				str(rec.get("severity", "error")).to_upper(), str(rec.get("code", "")),
+				str(rec.get("message", ""))])
+	if symbol_md != "":
+		parts.append(symbol_md)
+	return "\n\n".join(parts)
+
+## Rich tooltip: `for_text` is the raw Markdown from _on_symbol_hovered.
+func _make_custom_tooltip(for_text: String) -> Object:
+	if for_text.strip_edges().is_empty():
+		return null
+	var rtl := RichTextLabel.new()
+	rtl.bbcode_enabled = true
+	rtl.fit_content = true
+	rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rtl.custom_minimum_size = Vector2(480, 0)
+	rtl.text = GuitkxHover.md_to_bbcode(for_text)
+	return rtl

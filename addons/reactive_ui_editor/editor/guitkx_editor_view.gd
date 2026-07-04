@@ -336,6 +336,15 @@ func _refresh_diagnostics() -> void:
 		_code_edit, _code_edit.diag_gutter, diags, _err_icon, _warn_icon)
 	if _problems != null:
 		_problems.set_records(records)
+	# Hand the per-line records to the widget so hovering a diagnosed line shows the message
+	# (with its did-you-mean) instead of requiring a gutter click.
+	var by_line := {}
+	for rec in records:
+		var ln := int((rec as Dictionary).get("line", 0))
+		if not by_line.has(ln):
+			by_line[ln] = []
+		(by_line[ln] as Array).append(rec)
+	_code_edit.set_line_diagnostics(by_line)
 	_apply_unreachable_dim(text)
 
 func _project_bindings() -> Dictionary:
@@ -461,9 +470,28 @@ func _on_format_pressed() -> void:
 		_code_edit.set_text_undoable(text)
 	_refresh_diagnostics()
 
-func _on_gutter_diagnostic_clicked(_line: int, record: Variant) -> void:
-	if record is Dictionary:
-		push_warning("[guitkx] %s" % record.get("message", ""))
+## Gutter click -> a popup at the mouse with the full diagnostic (code + message), instead of a
+## line lost in the Output panel (parity plan G19; field ask: the did-you-mean was invisible).
+func _on_gutter_diagnostic_clicked(line: int, record: Variant) -> void:
+	if not (record is Dictionary):
+		return
+	var md: String = _code_edit.compose_hover("", line)
+	if md.is_empty():
+		md = "**%s** `%s` — %s" % [
+			str((record as Dictionary).get("severity", "error")).to_upper(),
+			str((record as Dictionary).get("code", "")),
+			str((record as Dictionary).get("message", ""))]
+	var pop := PopupPanel.new()
+	var rtl := RichTextLabel.new()
+	rtl.bbcode_enabled = true
+	rtl.fit_content = true
+	rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rtl.custom_minimum_size = Vector2(480, 0)
+	rtl.text = GuitkxHover.md_to_bbcode(md)
+	pop.add_child(rtl)
+	pop.popup_hide.connect(pop.queue_free)
+	add_child(pop)
+	pop.popup(Rect2i(DisplayServer.mouse_get_position(), Vector2i(500, 0)))
 
 # RUIGuitkxFormatter.format() returns the source verbatim on any parse error, so this never corrupts.
 func _formatted(text: String) -> String:

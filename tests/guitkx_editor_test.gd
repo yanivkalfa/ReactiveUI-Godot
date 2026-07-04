@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_deps_handshake()
 	_test_schema_sync()
 	_test_scan_diags()
+	_test_rich_hover()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -390,4 +391,30 @@ func _test_scan_diags() -> void:
 	var meta: Variant = v._code_edit.get_line_gutter_metadata(line, v._code_edit.diag_gutter)
 	_ok(meta is Dictionary and str((meta as Dictionary).get("code", "")) == "GUITKX0105",
 		"view surfaces the scan-tier 0105 in the gutter despite the parse error")
+
+	# The diagnosed line's records reach the widget for hover composition (G10/G19).
+	var hover_md: String = v._code_edit.compose_hover("", line)
+	_ok(hover_md.contains("GUITKX0105") and hover_md.contains("did you mean"),
+		"hover on the diagnosed line carries the code and the did-you-mean")
 	v.free()
+
+# M2 wave 1 — hook cards + markdown->bbcode rendering + diag/symbol hover composition.
+func _test_rich_hover() -> void:
+	# Hook cards answer in setup lines (the analyzer tier used to return nothing).
+	var src := "component T() {\n\tvar s = useState(0)\n\treturn (\n\t\t<Label />\n\t)\n}"
+	var md := GuitkxHover.for_caret(src, src.find("useState") + 2)
+	_ok(md.contains("**useState**") and md.contains("Reactive state"), "useState hover card")
+	_ok(GuitkxHover.HOOKS.size() == 23, "all 23 hook cards ported (got %d)" % GuitkxHover.HOOKS.size())
+
+	# Markdown subset -> BBCode, with [ escaped so user text can't inject tags.
+	_ok(GuitkxHover.md_to_bbcode("**b** and `c`") == "[b]b[/b] and [code]c[/code]", "bold+code convert")
+	_ok(GuitkxHover.md_to_bbcode("a [tag] b") == "a [lb]tag] b", "literal [ escaped")
+
+	# Symbol + line-diagnostic composition on the widget.
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.set_line_diagnostics({ 3: [{ "severity": "error", "code": "GUITKX0105", "message": "unknown element <X>" }] })
+	var composed: String = ce.compose_hover("**`<Label>`** — host element", 3)
+	_ok(composed.contains("ERROR") and composed.contains("GUITKX0105") and composed.contains("host element"),
+		"diagnostic prepends to the symbol card")
+	_ok(ce.compose_hover("just symbol", 0) == "just symbol", "clean line passes the card through")
+	ce.free()
