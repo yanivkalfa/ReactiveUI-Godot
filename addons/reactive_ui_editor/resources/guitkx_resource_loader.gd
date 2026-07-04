@@ -27,7 +27,18 @@ func _get_resource_script_class(path: String) -> String:
 	return "GuitkxResource" if path.get_extension().to_lower() == EXT else ""
 
 func _load(path: String, _original_path: String, _use_sub_threads: bool, _cache_mode: int) -> Variant:
-	var res := GuitkxResource.new()
+	# Identity-stable reloads: our editor's Save triggers an EditorFileSystem re-examination of a
+	# file whose Resource is usually already CACHED (it was double-clicked open). Returning a
+	# brand-new object for a cached path invites "Another resource is loaded from path" conflicts
+	# (mixed cache modes across the dock/Inspector/editor all reloading at once) — instead, update
+	# the cached instance in place and return it, so every holder keeps one coherent object.
+	var res: GuitkxResource = null
+	if ResourceLoader.has_cached(path):
+		var cached: Variant = ResourceLoader.get_cached_ref(path)
+		if cached is GuitkxResource:
+			res = cached
+	if res == null:
+		res = GuitkxResource.new()
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f != null:
 		res.from_text(f.get_as_text())
