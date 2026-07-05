@@ -1,7 +1,17 @@
 # GODOT_ANALYZER_INTEGRATION_PLAN — deep `.guitkx` intelligence via a native gdext binding
 
 Resolves the open backend decision in `GODOT_EDITOR_EXTENSION_PLAN.md §4` (Path 1 vs Path 2).
-Status: **PLAN (research complete, 2026-07-01).** Decision-ready; no code written yet.
+Status: **ALL PHASES DONE 2026-07-05.** Phase 1 shipped with editor 0.3.0–0.5.0 (markup tier,
+pure GDScript). Phases 2–5 shipped with editor **0.6.0** + gdscript-analyzer's
+`feat/gdext-binding`: `bindings/gdext` crate (`GdscriptAnalyzer` over `gdscript-session`,
+`reloadable=false`, compat floor 4.4), the `release-gdext` per-OS pipeline (win x64 /
+linux x64+arm64 / mac universal → `reactive-ui-analyzer-<version>.zip` on each `v*` release),
+GDScript ports of virtualDoc/sourceMap + a byte-exact LineIndex (CodeEdit columns confirmed
+code-point-based per §9 Q4), and the feature-detected editor bridge with markup-only
+degradation. §9 answers as shipped: floor 4.4 (Q1); crate in the analyzer repo (Q2); a separate
+optional addon, not bundled (Q3); code-point columns (Q4); parity via the addon suite's
+dual-mode e2e + hook-stub/emitter corpus asserts (Q5); unsigned per-arch-lipo'd universal mac
+dylib, quarantine step documented (Q6).
 
 Goal: give **both** the native Godot editor addon (`reactive_ui_editor`, pure GDScript) **and** the VS Code /
 VS 2022 extensions deep `.guitkx` + embedded-GDScript intelligence, **maximising reuse of what already

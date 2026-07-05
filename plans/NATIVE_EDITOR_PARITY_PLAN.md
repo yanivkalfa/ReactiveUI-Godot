@@ -1,8 +1,15 @@
 # NATIVE_EDITOR_PARITY_PLAN — `reactive_ui_editor` → parity with the VS Code extension
 
-**Status: M1 + M2 DONE 2026-07-05 (branch `feat/native-editor-m2`) — M3 (embedded depth, gdext)
-is the remaining milestone.** M1 shipped as **0.4.0** (store-submittable). M2 shipped as
-**0.5.0** in eight waves on one branch: D3 sidecar overlay + D5 hint tier + G26 formatter config;
+**Status: ALL MILESTONES DONE — M1 + M2 2026-07-05, M3 2026-07-05 (branch
+`feat/native-editor-m3` + gdscript-analyzer `feat/gdext-binding`).** M3 shipped as **0.6.0**:
+the `bindings/gdext` crate in the analyzer repo (GdscriptAnalyzer over the shared
+gdscript-session core, serde→Variant shim, release-gdext per-OS pipeline → the
+`reactive_ui_analyzer` addon zip), GDScript ports of virtualDoc/sourceMap/LineIndex, and the
+feature-detected bridge wiring embedded completions/hover/diagnostics/goto/refs/rename/signature
+into the editor with markup-only degradation (closes G21; dual-mode tested: 382 checks with the
+extension, 364 without). Analyzer-backed inlay hints are the one G21 sub-item not rendered
+(CodeEdit has no inline-hint API — documented limit). M1 shipped as **0.4.0**
+(store-submittable). M2 shipped as **0.5.0** in eight waves on one branch: D3 sidecar overlay + D5 hint tier + G26 formatter config;
 G5/G6/G7/G8/G28 completion + E12/E13; G2 references + G3 rename + G27 hook goto-def; G12 outline
 + G16 multi-file + G17 session + E11 zoom + E15 wrap; G14 project Problems + G34 codes-in-rows +
 G19 gutter popup + L5 watcher-error mirror + G24 replace/replace-all + project search (the E18

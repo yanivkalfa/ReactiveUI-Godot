@@ -21,6 +21,7 @@ const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diag
 const ConfigScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
 const RefsScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_refs.gd")
 const OutlineScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_outline.gd")
+const BridgeScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd")
 
 # Multi-file model (M2/G16): ONE GuitkxCodeEdit per open file, stacked with only the current one
 # visible — undo history, caret, scroll, decorations, and dirty/conflict state all survive file
@@ -515,8 +516,17 @@ func goto_line(line: int) -> void:
 
 ## Ctrl+click go-to-definition (G1): same-file jumps immediately; cross-file remembers the target
 ## offset and opens the file (through the dirty-buffer guard), applied when the load completes.
+## M3: a res://*.gd target (an analyzer definition into real GDScript) routes to Godot's own
+## script editor at the right line — .gd files are the Script editor's domain, not ours.
 func _on_definition_requested(path: String, offset: int) -> void:
 	if path.is_empty():
+		return
+	if path.get_extension() == "gd":
+		if Engine.is_editor_hint():
+			var script: Variant = load(path)
+			if script is Script:
+				var lc: Dictionary = RUIGuitkxDiag.line_col(FileAccess.get_file_as_string(path), offset)
+				EditorInterface.edit_script(script, int(lc.get("line", 0)) + 1, int(lc.get("col", 0)))
 		return
 	if path == _current_path:
 		_goto_offset(offset)
@@ -531,8 +541,16 @@ func _goto_offset(offset: int) -> void:
 
 ## The filesystem shape changed (files added/removed/renamed anywhere): recompute cross-file
 ## bindings on next compile and refresh so 0105/did-you-mean track reality (G13/G15).
+## M3: re-feed the open files' generated siblings into the analyzer session — the watcher just
+## recompiled them, and embedded expressions resolve user components through those .gd files.
 func on_workspace_changed() -> void:
 	_bindings_valid = false
+	var bridge = BridgeScript.instance()
+	if bridge != null:
+		for p in open_paths():
+			var gd_path: String = RUIGuitkxCodegen.gd_path_for(str(p))
+			if FileAccess.file_exists(gd_path):
+				bridge.refresh_script(gd_path)
 	_refresh_diagnostics()
 
 func _load_text(path: String, text: String) -> void:
@@ -634,6 +652,13 @@ func _refresh_diagnostics() -> void:
 	# compiled content; on divergence the sidecar-only codes collapse into one line-0 hint row
 	# instead of mis-anchoring into shifted text.
 	_merge_sidecar(text, diags)
+	# M3: the native analyzer's embedded-GDScript tier — syntax + type diagnostics for {expr} and
+	# setup code, computed on the virtual doc and remapped into .guitkx coords (glue-filtered, so
+	# scaffolding can never squiggle user code). Codes carry a "GD:" prefix so they never collide
+	# with GUITKX#### in dedup or docs. Absent extension -> instance() is null -> markup-only.
+	var bridge = BridgeScript.instance()
+	if bridge != null:
+		diags.append_array(bridge.diagnostics(_current_path, text))
 	var records := GuitkxDiagnosticsRenderer.render(
 		_code_edit, _code_edit.diag_gutter, diags, _err_icon, _warn_icon)
 	if _problems != null:
@@ -956,15 +981,112 @@ func _component_at_caret() -> String:
 func _show_references() -> void:
 	var tag := _component_at_caret()
 	if tag.is_empty():
-		_alert("Place the caret on a component tag to find its references.")
+		# M3: references for the EMBEDDED symbol under the caret, through the analyzer (locals,
+		# hook results, engine members used across this file's expressions).
+		var bridge = BridgeScript.instance()
+		if bridge != null:
+			var text := _code_edit.text
+			var off := GuitkxContext.offset_of(text, _code_edit.get_caret_line(), _code_edit.get_caret_column())
+			var refs: Array = bridge.find_references(_current_path, text, off)
+			if not refs.is_empty():
+				references_requested.emit(_embedded_symbol_at_caret(), _embedded_ref_records(refs))
+				return
+		_alert("Place the caret on a component tag (or an embedded symbol) to find its references.")
 		return
 	references_requested.emit(tag, RefsScript.project_refs(tag))
+
+# Shape analyzer reference hits like RefsScript.project_refs records (path/offset/length/kind/
+# line/preview) so the References panel renders them identically.
+func _embedded_ref_records(refs: Array) -> Array:
+	var out: Array = []
+	for r in refs:
+		var rd := r as Dictionary
+		var p := str(rd.get("path", ""))
+		var off := int(rd.get("offset", 0))
+		var text := _code_edit.text if p == _current_path else FileAccess.get_file_as_string(p)
+		var lc: Dictionary = RUIGuitkxDiag.line_col(text, off)
+		var line := int(lc.get("line", 0))
+		var ls := 0 if line == 0 else text.rfind("\n", maxi(0, off - 1)) + 1
+		var le := text.find("\n", off)
+		if le == -1:
+			le = text.length()
+		out.append({
+			"path": p, "offset": off, "length": 0, "kind": "embedded", "line": line,
+			"preview": text.substr(ls, le - ls).strip_edges(),
+		})
+	return out
+
+# The identifier under the caret (for the References panel headline on embedded lookups).
+func _embedded_symbol_at_caret() -> String:
+	var line := _code_edit.get_line(_code_edit.get_caret_line())
+	var col := _code_edit.get_caret_column()
+	var s := col
+	while s > 0 and _is_word_char(line[s - 1]):
+		s -= 1
+	var e := col
+	while e < line.length() and _is_word_char(line[e]):
+		e += 1
+	return line.substr(s, e - s)
+
+static func _is_word_char(c: String) -> bool:
+	var u := c.unicode_at(0)
+	return (u >= 65 and u <= 90) or (u >= 97 and u <= 122) or (u >= 48 and u <= 57) or u == 95
+
+# M3: rename an embedded-GDScript symbol. Analyzer-gated (it refuses cross-file/glue-touching
+# renames) and applied to the buffer as ONE undoable edit — never to disk, since an embedded
+# local's scope IS this buffer.
+func _embedded_rename_dialog(bridge) -> void:
+	var symbol := _embedded_symbol_at_caret()
+	var text := _code_edit.text
+	var off := GuitkxContext.offset_of(text, _code_edit.get_caret_line(), _code_edit.get_caret_column())
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Rename Symbol (embedded GDScript)"
+	var edit := LineEdit.new()
+	edit.text = symbol
+	edit.select_all()
+	dlg.add_child(edit)
+	dlg.register_text_enter(edit)
+	dlg.ok_button_text = "Rename in Buffer"
+	dlg.confirmed.connect(func():
+		_apply_embedded_rename(bridge, off, edit.text.strip_edges())
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered()
+	edit.grab_focus.call_deferred()
+
+func _apply_embedded_rename(bridge, offset: int, new_name: String) -> void:
+	if not new_name.is_valid_identifier():
+		_alert("'%s' is not a valid identifier." % new_name)
+		return
+	var text := _code_edit.text
+	var r: Dictionary = bridge.rename(_current_path, text, offset, new_name)
+	if not bool(r.get("ok", false)):
+		_alert("Rename refused: %s." % str(r.get("reason", "unknown")))
+		return
+	_code_edit.begin_complex_operation()
+	for e in r.get("edits", []):  # descending offsets — later splices never shift earlier ones
+		var ed := e as Dictionary
+		var o := int(ed["offset"])
+		var lc: Dictionary = RUIGuitkxDiag.line_col(text, o)
+		var lc_end: Dictionary = RUIGuitkxDiag.line_col(text, o + int(ed["length"]))
+		_code_edit.select(int(lc["line"]), int(lc["col"]), int(lc_end["line"]), int(lc_end["col"]))
+		_code_edit.delete_selection()
+		_code_edit.insert_text_at_caret(str(ed["new_text"]))
+	_code_edit.end_complex_operation()
+	_on_editor_text_changed(_code_edit)
+	_refresh_diagnostics()
 
 ## F2: rename the component under the caret across the whole project — collision-refusing,
 ## applied to the open buffer as ONE undoable edit and to every other file on disk.
 func _rename_dialog() -> void:
 	var tag := _component_at_caret()
 	if tag.is_empty():
+		# M3: rename the EMBEDDED symbol under the caret (analyzer-resolved, buffer-scoped).
+		var bridge = BridgeScript.instance()
+		if bridge != null and _embedded_symbol_at_caret() != "":
+			_embedded_rename_dialog(bridge)
+			return
 		_alert("Place the caret on a component tag to rename it.")
 		return
 	var dlg := ConfirmationDialog.new()

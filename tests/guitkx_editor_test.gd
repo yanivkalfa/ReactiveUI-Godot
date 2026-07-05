@@ -40,6 +40,10 @@ func _initialize() -> void:
 		["wave7_editing", _test_wave7_editing],
 		["tokenizer_corpus", _test_tokenizer_corpus],
 		["parity_pins", _test_parity_pins],
+		["line_index", _test_line_index],
+		["source_map", _test_source_map],
+		["virtual_doc", _test_virtual_doc],
+		["analyzer_bridge", _test_analyzer_bridge],
 	]:
 		print("[guitkx_editor_test] -- %s" % t[0])
 		(t[1] as Callable).call()
@@ -68,6 +72,10 @@ func _test_parses() -> void:
 		"res://addons/reactive_ui_editor/editor/guitkx_search_panel.gd",
 		"res://addons/reactive_ui_editor/lsp/guitkx_outline.gd",
 		"res://addons/reactive_ui_editor/lsp/guitkx_signature.gd",
+		"res://addons/reactive_ui_editor/lsp/guitkx_source_map.gd",
+		"res://addons/reactive_ui_editor/lsp/guitkx_line_index.gd",
+		"res://addons/reactive_ui_editor/lsp/guitkx_virtual_doc.gd",
+		"res://addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd",
 		"res://addons/reactive_ui_editor/resources/guitkx_resource.gd",
 		"res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd",
 	]:
@@ -1159,3 +1167,190 @@ func _test_parity_pins() -> void:
 		"gd_path_for maps beside the source")
 	_ok(RUIGuitkxCodegen.diags_path_for("res://a/b.guitkx") == "res://a/b.guitkx.diags.json",
 		"diags_path_for maps the sidecar name")
+
+# M3 — the byte<->char boundary (GuitkxLineIndex): CodeEdit columns are CODE POINTS (probed:
+# "aé😀b" -> length 4, caret col 4, 8 UTF-8 bytes); the analyzer speaks UTF-8 bytes.
+func _test_line_index() -> void:
+	const LI := preload("res://addons/reactive_ui_editor/lsp/guitkx_line_index.gd")
+	var s := "aé😀b"  # 1 + 2 + 4 + 1 UTF-8 bytes; 4 code points
+	_ok(LI.char_to_byte(s, 0) == 0, "char 0 -> byte 0")
+	_ok(LI.char_to_byte(s, 1) == 1, "ascii char -> 1 byte")
+	_ok(LI.char_to_byte(s, 2) == 3, "2-byte char advances by 2")
+	_ok(LI.char_to_byte(s, 3) == 7, "4-byte emoji advances by 4")
+	_ok(LI.char_to_byte(s, 4) == 8, "end char -> total byte length")
+	_ok(LI.byte_to_char(s, 8) == 4, "end byte -> char length")
+	_ok(LI.byte_to_char(s, 7) == 3, "emoji start byte -> its char index")
+	_ok(LI.byte_to_char(s, 5) == 2, "byte inside the emoji clamps to its char")
+	_ok(LI.byte_to_char(s, 0) == 0 and LI.char_to_byte(s, 99) == 8 and LI.byte_to_char(s, 99) == 4,
+		"out-of-range clamps at both ends")
+	var ml := "ab\ncd😀\nef"
+	var eoff := ml.find("f")
+	_ok(LI.byte_to_char(ml, LI.char_to_byte(ml, eoff)) == eoff, "multiline round-trip is identity")
+
+# M3 — GuitkxSourceMap: length-preserving spans translate by constant delta; outside -> -1.
+func _test_source_map() -> void:
+	const SM := preload("res://addons/reactive_ui_editor/lsp/guitkx_source_map.gd")
+	var m: RefCounted = SM.new()
+	m.add_span(100, 10, 5)
+	m.add_span(300, 40, 8)
+	m.add_span(0, 0, 0)  # zero-length spans are dropped
+	_ok(m.span_count() == 2, "zero-length spans are not recorded")
+	_ok(m.to_generated(100) == 10 and m.to_generated(105) == 15, "source->gen translates by delta (inclusive ends)")
+	_ok(m.to_source(44) == 304, "gen->source translates by delta")
+	_ok(m.to_generated(99) == -1 and m.to_generated(200) == -1, "outside every span -> -1")
+	_ok(m.to_source(9) == -1 and m.to_source(30) == -1, "gen glue -> -1")
+
+# M3 — the virtual-document port (GuitkxVirtualDoc): scope-aware emission, verbatim mapping,
+# hook stubs byte-identical to hooks.gd, misspelled-decl recovery, markup neutralization.
+func _test_virtual_doc() -> void:
+	const VD := preload("res://addons/reactive_ui_editor/lsp/guitkx_virtual_doc.gd")
+	var src := "component Probe(title) {\n\tvar b := Button.new()\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ title } />\n\t\t\t@if (b.visible) {\n\t\t\t\t<Label text={ str(b.text) } />\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n"
+	var built: Dictionary = VD.build(src)
+	var gen := str(built["text"])
+	var map: RefCounted = built["map"]
+	_ok(gen.begins_with("extends RefCounted\n"), "virtual doc extends RefCounted")
+	_ok(gen.contains("static func useState(initial = null) -> Array: return Hooks.useState(initial)"),
+		"hook stubs are class-level static wrappers")
+	_ok(gen.contains("## @return-tuple(Variant, Callable)"), "tuple hooks carry the @return-tuple doc")
+	_ok(gen.contains("static func render(props: Dictionary, children: Array) -> RUIVNode:"),
+		"top-level component emits render()")
+	_ok(gen.contains("\tvar title = props.get(\"title\")"), "params destructure from props")
+	_ok(gen.contains("\tvar b := Button.new()"), "setup splices verbatim")
+	_ok(gen.contains("\tif b.visible:"), "@if lowers to a REAL if with the mapped condition")
+	_ok(gen.contains("\t\tvar _e1 = (str(b.text) )"), "nested expr emits INSIDE the branch scope")
+	# Round-trips: expr + setup + condition offsets map to the generated doc and back, identically.
+	for probe: int in [src.find("{ title }") + 2, src.find("Button.new"), src.find("b.visible")]:
+		var g: int = map.to_generated(probe)
+		_ok(g >= 0 and map.to_source(g) == probe, "offset %d round-trips through the map" % probe)
+	_ok(map.to_generated(src.find("<VBox>") + 1) == -1, "markup offsets stay unmapped (glue)")
+
+	# Hook-stub parity: every stub's signature text must appear VERBATIM in hooks.gd (the same
+	# discipline the TS twin asserts in core.test.ts — three implementations, one authority).
+	var hooks_src := FileAccess.get_file_as_string("res://addons/reactive_ui/core/hooks.gd")
+	var stubs_ok := true
+	for h in VD.HOOK_STUBS:
+		var sig := "static func %s(%s)%s" % [str(h["name"]), str(h["params"]), str(h["ret"])]
+		if not hooks_src.contains(sig):
+			stubs_ok = false
+			printerr("  stub drifted from hooks.gd: ", sig)
+	_ok(stubs_ok, "every hook stub signature matches hooks.gd byte-for-byte")
+
+	# Misspelled declaration recovery: embedded GDScript is still analyzed (never goes dark).
+	var typo := "comssponent Foo() {\n\tvar x := 1\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var tgen := str((VD.build(typo) as Dictionary)["text"])
+	_ok(tgen.contains("var x := 1"), "misspelled decl keyword still emits the body (recovery)")
+
+	# Hook declarations keep their real name + mapped params; tuple return hints are dropped.
+	var hsrc := "hook useThing(a: int, b := 2) -> (int, Callable) {\n\treturn [a, func(): pass]\n}\n"
+	var hgen := str((VD.build(hsrc) as Dictionary)["text"])
+	_ok(hgen.contains("static func useThing(a: int, b := 2):"), "hook keeps name+params; tuple hint dropped")
+
+	# Markup nested inside an expression neutralizes to length-preserving null padding.
+	var n := VD._neutralize_markup("open and <Panel/> ")
+	_ok(n.length() == "open and <Panel/> ".length() and n.contains("null") and not n.contains("<Panel"),
+		"nested markup neutralizes length-preserving")
+	var blk := "return <s></a>\nvar ok := 1\n"
+	var nb := VD._neutralize_setup_markup(blk)
+	_ok(nb.length() == blk.length() and nb.count("\n") == blk.count("\n") and nb.contains("return null"),
+		"setup markup neutralizes newline-preserving into `return null`")
+
+# M3 — the analyzer bridge. DUAL-MODE by design: with the reactive_ui_analyzer GDExtension
+# installed (dev machines) the full e2e surface is asserted; without it (CI) the degrade path is
+# asserted — instance() null, editor pipeline unaffected. Both paths stay covered somewhere.
+func _test_analyzer_bridge() -> void:
+	const Bridge := preload("res://addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd")
+	var src := "component Probe(title) {\n\tvar b := Button.new()\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ title } />\n\t\t\t<Label text={ str(b.text) } />\n\t\t</VBox>\n\t)\n}\n"
+	if not Bridge.available():
+		print("[guitkx_editor_test]    (native analyzer ABSENT - asserting the degrade path)")
+		_ok(Bridge.instance() == null, "absent extension -> instance() is null")
+		var dv: Control = ViewScript.new()
+		dv._code_edit.text = src
+		dv._refresh_diagnostics()  # must not crash, and no GD: rows can exist
+		var gd_rows := false
+		for ln in dv._code_edit._line_diags:
+			for rec in dv._code_edit._line_diags[ln]:
+				if str((rec as Dictionary).get("code", "")).begins_with("GD:"):
+					gd_rows = true
+		_ok(not gd_rows, "absent extension -> no analyzer diagnostics, markup tier intact")
+		dv.free()
+		return
+
+	print("[guitkx_editor_test]    (native analyzer %s - asserting the full e2e surface)" % Bridge.native_version())
+	_ok(Bridge.native_version() != "", "native_version reports the library version")
+	var bridge = Bridge.instance()
+	_ok(bridge != null, "instance() constructs the singleton")
+	var p := "res://tests/__m3_probe.guitkx"
+
+	# Shim field-type parity: offsets arrive as Godot ints, codes/messages as Strings.
+	var diags: Array = bridge.diagnostics(p, src)
+	_ok(diags.is_empty(), "clean file -> zero analyzer diagnostics (glue never squiggles)")
+	var bad := src.replace("str(b.text)", "b.text.no_such_member")
+	var bdiags: Array = bridge.diagnostics(p, bad)
+	_ok(not bdiags.is_empty(), "a type error inside {expr} produces an analyzer diagnostic")
+	if not bdiags.is_empty():
+		var d0 := bdiags[0] as Dictionary
+		_ok(str(d0.get("code", "")).begins_with("GD:"), "analyzer codes carry the GD: prefix")
+		_ok(typeof(d0.get("offset")) == TYPE_INT and typeof(d0.get("severity")) == TYPE_INT,
+			"shim delivers integral offsets/severities as Godot ints")
+		_ok(int(d0["offset"]) >= bad.find("b.text.no_such_member")
+			and int(d0["offset"]) <= bad.find("no_such_member") + "no_such_member".length(),
+			"diagnostic remaps onto the offending expression in .guitkx coords")
+
+	# Hover: type-aware, guitkx-anchored.
+	var hov: Dictionary = bridge.hover(p, src, src.find("b.text"))
+	_ok(str(hov.get("ty_label", "")) == "Button", "hover inside {expr} infers the engine type")
+	_ok(int(hov.get("offset", -1)) == src.find("b.text"), "hover range remaps to .guitkx coords")
+
+	# Completions after `b.` inside the expr: engine members, raw analyzer items.
+	var comps: Array = bridge.completions(p, src, src.find("b.text") + 2)
+	_ok(comps.size() > 100, "member completion offers the engine surface (got %d)" % comps.size())
+	var has_set_text := false
+	for c in comps:
+		if str((c as Dictionary).get("label", "")) == "set_text":
+			has_set_text = true
+			break
+	_ok(has_set_text, "Button members include set_text")
+
+	# Goto definition: usage inside {expr} -> the declaration in THIS .guitkx.
+	var defs: Array = bridge.goto_definition(p, src, src.find("b.text"))
+	_ok(defs.size() == 1 and str((defs[0] as Dictionary)["path"]) == p
+		and int((defs[0] as Dictionary)["offset"]) == src.find("b :="),
+		"goto-def lands on the setup declaration, remapped")
+
+	# References: declaration + usage, both in-buffer.
+	var refs: Array = bridge.find_references(p, src, src.find("b.text"))
+	_ok(refs.size() >= 2, "find-references sees declaration + usage (got %d)" % refs.size())
+
+	# Signature help inside a call, active parameter tracking.
+	var csrc := src.replace("var b := Button.new()", "var b := Button.new()\n\tvar q = clampi(1, 2, 3)")
+	var sig: Dictionary = bridge.signature_help(p, csrc, csrc.find("clampi(1, ") + "clampi(1, ".length())
+	var sigs: Array = sig.get("signatures", [])
+	_ok(not sigs.is_empty() and str((sigs[0] as Dictionary).get("label", "")).begins_with("clampi("),
+		"signature help resolves the builtin call")
+	_ok(int(sig.get("active_parameter", -1)) == 1, "active parameter tracks the comma")
+
+	# Rename: buffer-scoped, both occurrences, descending offsets.
+	var ren: Dictionary = bridge.rename(p, src, src.find("b :="), "btn")
+	_ok(bool(ren.get("ok", false)) and (ren.get("edits", []) as Array).size() == 2,
+		"rename resolves declaration + usage")
+	if bool(ren.get("ok", false)):
+		var edits: Array = ren["edits"]
+		_ok(int((edits[0] as Dictionary)["offset"]) > int((edits[1] as Dictionary)["offset"]),
+			"edits arrive descending (splice-safe)")
+
+	# Markup offsets are not the analyzer's domain.
+	_ok(not bridge.is_embedded_offset(p, src, src.find("<VBox>") + 1), "tag offsets stay unmapped")
+	_ok(bridge.completions(p, src, src.find("<VBox>") + 1).is_empty(),
+		"markup-caret queries return empty (markup tier owns them)")
+
+	# View integration: an embedded type error flows into the diagnostics pipeline as a GD: row.
+	var v: Control = ViewScript.new()
+	v._code_edit.text = bad
+	v._refresh_diagnostics()
+	var found_gd := false
+	for ln in v._code_edit._line_diags:
+		for rec in v._code_edit._line_diags[ln]:
+			if str((rec as Dictionary).get("code", "")).begins_with("GD:"):
+				found_gd = true
+	_ok(found_gd, "analyzer diagnostics merge into the editor pipeline (GD: rows)")
+	v.free()

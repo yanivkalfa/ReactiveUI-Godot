@@ -4,6 +4,48 @@ All notable changes to the **Reactive UI Editor** Godot addon are documented her
 The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
 of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
 
+## [0.6.0] — 2026-07-05
+
+**Embedded-GDScript intelligence (plan M3).** The editor's last frontier: the GDScript *inside*
+your markup — `{expr}` values, setup lines, hook bodies — now gets **type-aware** completion,
+hover, diagnostics, go-to-definition, find-references, rename, and signature help, powered by a
+native in-process binding of [gdscript-analyzer](https://github.com/yanivkalfa/gdscript-analyzer).
+No server, no Node, no configuration.
+
+### Added
+- **The `reactive_ui_analyzer` companion addon** (a separate, optional download from the
+  analyzer's GitHub releases): prebuilt GDExtension binaries exposing the full analyzer as one
+  `GdscriptAnalyzer` class. This editor **feature-detects** it — installed, everything below
+  turns on (the Output says so once per session); absent, the editor is exactly the 0.5.0
+  markup-only experience. Windows x86_64 / Linux x86_64+arm64 / macOS universal, Godot 4.4+.
+- **Virtual documents**: each buffer projects its embedded GDScript into a synthetic `.gd`
+  (scope-aware — real `if`/`for`/`match` structure so loop/branch variables resolve; hook calls
+  resolve through class-level stubs pinned byte-identical to `hooks.gd`; markup is neutralized,
+  never parsed as GDScript), with a length-preserving offset source map, mirroring the VS Code
+  server's virtualDoc/sourceMap pair — the third implementation of the same contract.
+- **Type-aware completion** inside expressions and setup code: `b.` on a `Button` local offers
+  the real engine surface (member kinds, typed details), merged after the markup tier's items.
+- **Type-aware hover**: the inferred type/signature leads the card (`**Button**`), engine docs
+  follow; markup hover keeps priority over tags/attributes.
+- **Embedded diagnostics**: analyzer syntax/type errors squiggle at their exact `.guitkx`
+  position, prefixed `GD:` in Problems rows; anything anchored in virtual-doc glue is dropped —
+  scaffolding can never squiggle user code.
+- **Go-to-definition / references / rename for embedded symbols**: same-file hits remap into the
+  buffer; definitions into real `.gd` files open in Godot's own Script editor at the right line;
+  F2 on an embedded local renames it buffer-scoped as one undo step (analyzer-gated, refuses
+  cross-file/glue-touching edits); Shift+F12 lists embedded references in the References panel.
+- **Signature help everywhere**: the G4 strip now also resolves calls inside embedded GDScript
+  (builtins, engine methods, your functions) with active-parameter tracking.
+- **Byte-exact boundary**: a `LineIndex` port converts CodeEdit's code-point columns to the
+  analyzer's UTF-8 byte offsets at every call — multibyte text (emoji, accents) cannot
+  mis-anchor results (pinned by tests).
+
+### Notes
+- The analyzer session feeds every project `.gd` once per editor session (cross-file types —
+  your classes, autoloads, the runtime's `RUIVNode`/`Hooks` — resolve inside expressions) and
+  re-feeds regenerated siblings when the watcher recompiles.
+- Requires `reactive_ui` 0.8.4+ (unchanged from 0.5.0).
+
 ## [0.5.0] — 2026-07-05
 
 **Daily-driver parity (plan M2).** Everything the VS Code extension can do for `.guitkx`, the
