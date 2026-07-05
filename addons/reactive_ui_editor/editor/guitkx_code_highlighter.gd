@@ -7,9 +7,11 @@ extends SyntaxHighlighter
 ## (see guitkx_code_edit.gd) — this class holds no signal connections of its own, keeping its
 ## lifetime trivial.
 ##
-## A whole `{expr}` region is claimed as one default-coloured span on purpose: it stops the markup
-## rules from mis-painting a `<`, `{` or keyword INSIDE embedded GDScript as tag/markup. Full
-## embedded-GDScript highlighting is a later increment.
+## Embedded `{expr}` regions sub-highlight (G11): the tokenizer recurses inside braces in gd_mode,
+## so GDScript keywords/strings/numbers colour correctly while `<` stays an operator there.
+## Tag colours split host vs component (G29): host elements take the engine-class colour
+## (base_type_color), PascalCase components the user-class colour (user_type_color) — the same
+## distinction Godot's own script editor draws between engine and user types.
 
 var _tok := GuitkxTokenizer.new()
 
@@ -18,6 +20,7 @@ var _palette := {
 	"comment": Color("707070"),
 	"string": Color("ffd166"),
 	"tag": Color("5cc6d0"),
+	"tag_component": Color("4ec9b0"),
 	"attr": Color("9cdcfe"),
 	"expr": Color("d4d4d4"),
 	"directive": Color("c586c0"),
@@ -41,6 +44,7 @@ func update_colors() -> void:
 	_palette["comment"] = _es_color(es, "comment_color", _palette["comment"])
 	_palette["string"] = _es_color(es, "string_color", _palette["string"])
 	_palette["tag"] = _es_color(es, "base_type_color", _palette["tag"])
+	_palette["tag_component"] = _es_color(es, "user_type_color", _palette["tag_component"])
 	_palette["attr"] = _es_color(es, "member_variable_color", _palette["attr"])
 	_palette["expr"] = _c_default
 	_palette["directive"] = _es_color(es, "control_flow_keyword_color", _palette["directive"])
@@ -82,9 +86,13 @@ func _get_line_syntax_highlighting(line: int) -> Dictionary:
 	carr.resize(n)
 	carr.fill(_c_default)
 	for t in toks:
-		var col: Color = _palette.get(t["kind"], _c_default)
+		var kind: String = t["kind"]
 		var s: int = t["start"]
 		var e: int = mini(int(t["end"]), n)
+		# G29: a tag that is not in the host vocabulary is a component — paint it as a user class.
+		if kind == "tag" and not GuitkxSchema.is_host_tag(text.substr(s, e - s)):
+			kind = "tag_component"
+		var col: Color = _palette.get(kind, _c_default)
 		for x in range(s, e):
 			carr[x] = col
 	var out := {}

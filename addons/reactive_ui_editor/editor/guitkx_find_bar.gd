@@ -1,13 +1,15 @@
 @tool
 class_name GuitkxFindBar
 extends HBoxContainer
-## In-editor find bar (parity plan G24, M1 scope: find only — replace lands with M2). Drives
-## TextEdit's built-in search painting (set_search_text highlights every match) plus explicit
-## next/prev navigation over TextEdit.search(), which returns Vector2i(column, line) and does not
-## wrap — wrapping is handled here. Ctrl+F/F3/Shift+F3/Esc are wired by the owning view.
+## In-editor find + replace bar (parity plan G24). Drives TextEdit's built-in search painting
+## (set_search_text highlights every match) plus explicit next/prev navigation over
+## TextEdit.search(), which returns Vector2i(column, line) and does not wrap — wrapping is handled
+## here. Replace steps through matches; Replace All is one undoable complex operation.
+## Ctrl+F/F3/Shift+F3/Esc are wired by the owning view.
 
 var _target: CodeEdit
 var _query: LineEdit
+var _replace: LineEdit
 var _count: Label
 var _case: CheckBox
 var _armed := ""  # mirrors set_search_text (TextEdit has no getter) — for state checks + tests
@@ -47,6 +49,23 @@ func _init() -> void:
 	next.tooltip_text = "Next match (F3)"
 	next.pressed.connect(func(): find_step(true))
 	add_child(next)
+
+	_replace = LineEdit.new()
+	_replace.custom_minimum_size = Vector2(140, 0)
+	_replace.placeholder_text = "Replace…"
+	add_child(_replace)
+
+	var rep := Button.new()
+	rep.text = "Replace"
+	rep.tooltip_text = "Replace the selected match, then find the next"
+	rep.pressed.connect(replace_step)
+	add_child(rep)
+
+	var rep_all := Button.new()
+	rep_all.text = "All"
+	rep_all.tooltip_text = "Replace every match (single undo step)"
+	rep_all.pressed.connect(replace_all)
+	add_child(rep_all)
 
 	var close := Button.new()
 	close.text = "✕"
@@ -127,6 +146,61 @@ func find_step(forward: bool) -> void:
 	_target.set_caret_line(match_line)
 	_target.set_caret_column(match_col + q.length())
 	_target.center_viewport_to_caret()
+
+## Replace the selection when it IS the current match, then step to the next occurrence. When
+## nothing is selected yet this just finds the first match (VS Code's Replace-button behavior).
+func replace_step() -> void:
+	if _target == null or _query.text.is_empty():
+		return
+	var q := _query.text
+	var sel := _target.get_selected_text()
+	var selected_is_match := sel == q if _case.button_pressed else sel.to_lower() == q.to_lower()
+	if _target.has_selection() and selected_is_match:
+		_target.begin_complex_operation()
+		_target.delete_selection()
+		_target.insert_text_at_caret(_replace.text)
+		_target.end_complex_operation()
+	find_step(true)
+
+## Replace every match, front to back, as ONE undoable operation. String-level, NOT a
+## TextEdit.search loop: search() clamps an at-line-end from_column back INTO the line, so a
+## replacement containing the query ("a" -> "aa") re-matches its own output and grows the buffer
+## forever [field capture 2026-07-05: hung the headless suite]. Building the result in a plain
+## String makes termination structural — the scan cursor only moves forward past each match, and
+## replacements are never rescanned.
+func replace_all() -> void:
+	if _target == null or _query.text.is_empty():
+		return
+	var src := _target.text
+	var hay := src if _case.button_pressed else src.to_lower()
+	var needle := _query.text if _case.button_pressed else _query.text.to_lower()
+	var out := ""
+	var from := 0
+	var replaced := 0
+	while true:
+		var i := hay.find(needle, from)
+		if i < 0:
+			break
+		out += src.substr(from, i - from) + _replace.text
+		from = i + needle.length()
+		replaced += 1
+	if replaced == 0:
+		_count.text = "0 replaced "
+		return
+	out += src.substr(from)
+	_target.begin_complex_operation()
+	_target.select_all()
+	_target.delete_selection()
+	_target.insert_text_at_caret(out)
+	_target.end_complex_operation()
+	_update_search()
+	_count.text = "%d replaced " % replaced
+
+func replace_text() -> String:
+	return _replace.text
+
+func set_replace_text(t: String) -> void:
+	_replace.text = t
 
 func _flags() -> int:
 	return TextEdit.SEARCH_MATCH_CASE if _case.button_pressed else 0

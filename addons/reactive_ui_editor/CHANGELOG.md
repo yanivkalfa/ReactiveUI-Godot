@@ -4,6 +4,71 @@ All notable changes to the **Reactive UI Editor** Godot addon are documented her
 The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
 of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
 
+## [0.5.0] — 2026-07-05
+
+**Daily-driver parity (plan M2).** Everything the VS Code extension can do for `.guitkx`, the
+in-Godot editor now does natively — plus the workflow features a code editor is judged by once
+you live in it: multi-file sessions, project-wide search, rename, outline, replace, signature
+help. Requires the `reactive_ui` runtime addon 0.8.4+.
+
+### Added
+- **Multi-file editing** — one editor per open file: undo history, caret, scroll, decorations,
+  and dirty/conflict state all survive switching. An open-files list (click switches,
+  middle-click closes) sits above a **document outline** (components ◆, hooks ƒ, modules ▣ and
+  their funcs — activate to jump). Sessions **restore across editor restarts** (open files,
+  current tab, carets, zoom, wrap) via Godot's own layout store; Save All, the quit confirm,
+  and Play flush every dirty buffer, not just the current one.
+- **References + rename** — Shift+F12 lists every use of a component (declaration ◆, tags,
+  `@class_name` bindings) in a References bottom panel; F2 renames project-wide across open
+  buffers AND files on disk, refusing collisions (host tags, existing components, global
+  classes) instead of corrupting. Ctrl+hover/Ctrl+click also resolves **hook names** into
+  `hooks.gd`.
+- **Project-scope Problems** — the Problems panel gains a Current File / Project switch;
+  Project aggregates every compile sidecar in the workspace (including the sweep-only
+  GUITKX2106 duplicate-binding / GUITKX2107 dangling-reference verdicts) with line-resolved,
+  clickable rows. Rows now lead with their `[GUITKX####]` code and carry full-message tooltips.
+- **Project-wide search** — a "Search .guitkx" bottom panel (plain-text, match-case toggle, one
+  row per matching line, activate to open+jump). This is the promised replacement for Godot's
+  Search in Files, which deliberately cannot see `.guitkx` (letting the built-in Script editor
+  adopt those files corrupts its persistence caches).
+- **Find-bar Replace / Replace All** — Replace swaps the selected match and steps; Replace All
+  rewrites every match as ONE undo step, string-level so a replacement containing the query can
+  never loop.
+- **Signature help** — inside an event-handler lambda (`on_toggled={ func (…)` or a React alias
+  like `onChange=`), a strip above the caret shows the bound Godot signal's parameters from the
+  live ClassDB, bolding the active one as you type across commas. Esc dismisses.
+- **Sidecar diagnostics overlay** — the watcher's project-level codes (2106/2107) appear in the
+  buffer hash-gated exactly like the VS Code merge: anchored while the buffer matches the last
+  compile, collapsed to a single line-0 hint once it diverges (never mis-anchored into edits).
+- **Completion, tier 2** — attribute VALUES complete: enum properties offer their hint names,
+  bools offer true/false, and `style={ {"…` offers all 46 RUIStyle keys; `Color.` /
+  `Vector2.`-style builtin constants and hook names complete in embedded code; every signal is
+  offered in both spellings (`onClick` aliases + verbatim `on_<signal>`).
+- **Snippet-shaped inserts** — attributes insert `name=""` / `name={}` and parenthesised
+  directives insert `@if ()`-style tails; confirming with Enter/Tab lands the caret INSIDE the
+  pair, and a `"` immediately arms value completion. (CodeEdit has no tab-stops; accepted.)
+- **New File** — a toolbar button seeds a `.guitkx` with a component skeleton named after the
+  file and opens it.
+- **Editing verbs** — Ctrl+/ comment toggle (selection-aware, one undo step), Ctrl+G go-to-line,
+  Alt+Up/Down move lines, Ctrl+Shift+D duplicate, Ctrl+Shift+K delete line, Ctrl+B bookmark +
+  Ctrl+Shift+B cycle (built-in bookmark gutter), Ctrl+wheel / Ctrl+=/−/0 zoom (shared across
+  files), a word-wrap toggle, and Enter between `>` and `</` splits the tag pair with an
+  indented middle line.
+- **Formatter config** — formatting honours the nearest `guitkx.config.json` (walk-up, nearest
+  wins: printWidth, indentStyle, indentSize, singleAttributePerLine, insertSpaceBeforeSelfClose)
+  so one project formats identically here and in VS Code.
+
+### Changed
+- **Highlighting** — embedded `{expr}` GDScript now sub-highlights for real (keywords, strings,
+  numbers; `<` is an operator there, `name=` an assignment); host tags and component tags split
+  colours the way Godot splits engine vs user classes (base_type_color vs user_type_color).
+- **Hint-tier diagnostics** render as Problems rows only — no gutter icon, no line tint — so
+  hints stop shouting like errors.
+
+### Fixed
+- The dirty-switch prompt is gone: switching files can no longer lose work by design (every
+  file keeps its own editor), so the prompt had nothing left to guard.
+
 ## [0.4.0] — 2026-07-05
 
 The store-readiness milestone (parity plan M1) plus a hard field-testing round: the editor stops

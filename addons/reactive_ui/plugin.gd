@@ -147,6 +147,12 @@ func _compile_all() -> void:
 		_hmr_dbg.push_reload(hot, res.get("bindings", {}))
 	for orphan in res.get("removed", []):
 		print("[guitkx] removed orphaned output %s (its .guitkx is gone -- renamed or deleted)" % orphan)
+	# L9: forget the last-reported error body for sources that no longer exist. Without this, a
+	# file deleted and later RECREATED with the same broken content matches its stale _last_diags
+	# entry and its first error report is silently suppressed.
+	for src_path in _last_diags.keys():
+		if not FileAccess.file_exists(str(src_path)):
+			_last_diags.erase(src_path)
 	for entry in res["compiled"]:
 		_efs.update_file(entry["gd_path"])
 		# A file that previously errored now compiles clean -> announce it and forget its stale errors
@@ -206,6 +212,11 @@ func _report_error(e: Dictionary) -> void:
 	_last_diags[path] = "E:" + body
 	for ln in lines:
 		push_error("[guitkx] " + ln)
+	# Dock push_error entries navigate to THIS call site, not the .guitkx (parity plan L5), while
+	# plain prints get their res:// paths linkified — so give errors the same clickable route the
+	# "compiled ->" success lines already have. (The editor addon's Problems panel, Project scope,
+	# mirrors these diagnostics with line-level navigation via the sidecar.)
+	print_rich("[color=salmon][guitkx] errors in %s (details above)[/color]" % path)
 
 func _report_warnings(path: String, warnings: Array) -> void:
 	for ln in _diag_lines(path, warnings):

@@ -20,6 +20,8 @@ const Deps := preload("res://addons/reactive_ui_editor/rui_editor_deps.gd")
 var _view: Control
 var _problems: Control
 var _problems_button: Button
+var _references: Control
+var _search: Control
 var _fs_debounce: Timer
 var _deps_ok := false
 
@@ -48,7 +50,21 @@ func _enter_tree() -> void:
 	_problems = load("res://addons/reactive_ui_editor/editor/guitkx_problems_panel.gd").new()
 	_view.set_problems_panel(_problems)
 	_problems.diagnostic_activated.connect(_on_problem_activated)
+	_problems.location_activated.connect(_on_reference_activated)
 	_problems_button = add_control_to_bottom_panel(_problems, "Problems")
+
+	# References results (Shift+F12) get their own bottom panel so the diagnostics refresh can
+	# never clobber a result list mid-read (G2).
+	_references = load("res://addons/reactive_ui_editor/editor/guitkx_references_panel.gd").new()
+	_references.location_activated.connect(_on_reference_activated)
+	add_control_to_bottom_panel(_references, "References")
+	_view.references_requested.connect(_on_references_requested)
+
+	# Project-wide .guitkx search (the addon-native replacement promised when E18 stripped our
+	# extension from Godot's Search in Files — see _register_searchable_extension).
+	_search = load("res://addons/reactive_ui_editor/editor/guitkx_search_panel.gd").new()
+	_search.location_activated.connect(_on_reference_activated)
+	add_control_to_bottom_panel(_search, "Search .guitkx")
 
 	# Follow the open file through dock renames/moves/deletes (parity plan L1/L2) — otherwise the
 	# view's path goes stale and Save resurrects the old filename with the user's edits in it.
@@ -92,17 +108,37 @@ func _exit_tree() -> void:
 		remove_control_from_bottom_panel(_problems)
 		_problems.queue_free()
 		_problems = null
+	if _references != null:
+		remove_control_from_bottom_panel(_references)
+		_references.queue_free()
+		_references = null
+	if _search != null:
+		remove_control_from_bottom_panel(_search)
+		_search.queue_free()
+		_search = null
 	_problems_button = null
 	if _view != null:
 		_view.queue_free()
 		_view = null
 
 ## Godot asks every plugin for unsaved state before quitting: a non-empty string joins the editor's
-## own quit-confirmation dialog (parity plan L4 — without this, quit silently drops the buffer).
+## own quit-confirmation dialog (parity plan L4 — without this, quit silently drops buffers).
 func _get_unsaved_status(for_scene: String) -> String:
-	if for_scene.is_empty() and _view != null and _view.is_dirty():
-		return "Reactive UI Editor: '%s' has unsaved changes." % _view.current_path()
+	if for_scene.is_empty() and _view != null:
+		var dirty: Array = _view.dirty_files()
+		if not dirty.is_empty():
+			return "Reactive UI Editor: unsaved changes in %s." % ", ".join(dirty)
 	return ""
+
+## Session persistence across editor restarts (G17): open files, current tab, carets, zoom, wrap
+## ride Godot's own editor-layout store.
+func _get_window_layout(configuration: ConfigFile) -> void:
+	if _view != null:
+		configuration.set_value(PLUGIN_NAME, "session", _view.session_state())
+
+func _set_window_layout(configuration: ConfigFile) -> void:
+	if _view != null and configuration.has_section_key(PLUGIN_NAME, "session"):
+		_view.restore_session(configuration.get_value(PLUGIN_NAME, "session"))
 
 ## Godot's own save flows (Save All, save-on-quit confirm) flush our buffer as "external data".
 func _save_external_data() -> void:
@@ -117,8 +153,8 @@ func _apply_changes() -> void:
 
 func _on_file_moved(old_file: String, new_file: String) -> void:
 	cleanup_moved_guitkx(old_file, new_file)
-	if _view != null and _view.current_path() == old_file:
-		_view.retarget_path(new_file)
+	if _view != null:
+		_view.retarget_path(new_file, old_file)
 
 ## A dock rename/move of a .guitkx leaves its generated outputs (.gd/.uid/sidecar) under the OLD
 ## name until the watcher's next sweep (~2s) — long enough for rapid renames to stack multiple
@@ -150,22 +186,23 @@ static func cleanup_moved_guitkx(old_source: String, new_source: String = "") ->
 func _on_folder_moved(old_folder: String, new_folder: String) -> void:
 	if _view == null:
 		return
-	var cur: String = _view.current_path()
 	var prefix := old_folder if old_folder.ends_with("/") else old_folder + "/"
-	if cur.begins_with(prefix):
-		var dst := new_folder if new_folder.ends_with("/") else new_folder + "/"
-		_view.retarget_path(dst + cur.substr(prefix.length()))
+	var dst := new_folder if new_folder.ends_with("/") else new_folder + "/"
+	for p in _view.open_paths():
+		if str(p).begins_with(prefix):
+			_view.retarget_path(dst + str(p).substr(prefix.length()), str(p))
 
 func _on_file_removed(file: String) -> void:
-	if _view != null and _view.current_path() == file:
-		_view.mark_detached()
+	if _view != null:
+		_view.mark_detached(file)
 
 func _on_folder_removed(folder: String) -> void:
 	if _view == null:
 		return
 	var prefix := folder if folder.ends_with("/") else folder + "/"
-	if _view.current_path().begins_with(prefix):
-		_view.mark_detached()
+	for p in _view.open_paths():
+		if str(p).begins_with(prefix):
+			_view.mark_detached(str(p))
 
 func _on_fs_changed() -> void:
 	if _fs_debounce != null and _fs_debounce.is_inside_tree():
@@ -224,6 +261,19 @@ func _register_searchable_extension() -> void:
 	if parts.has("guitkx"):
 		parts.erase("guitkx")
 		es.set_setting(key, ",".join(PackedStringArray(parts)))
+
+func _on_references_requested(tag: String, records: Array) -> void:
+	if _references == null:
+		return
+	_references.show_references(tag, records)
+	make_bottom_panel_item_visible(_references)
+
+func _on_reference_activated(path: String, line: int) -> void:
+	EditorInterface.set_main_screen_editor(PLUGIN_NAME)
+	_make_visible(true)
+	if _view != null:
+		_view.open_path(path)
+		_view.goto_line(line)
 
 func _on_problem_activated(line: int) -> void:
 	EditorInterface.set_main_screen_editor(PLUGIN_NAME)

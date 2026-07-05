@@ -89,12 +89,15 @@ func _test_completion() -> void:
 	var tags := _cmp(RET + "<|" + END)
 	_ok(_has_insert(tags, "Button") and _has_insert(tags, "DemoBox"), "tag completion offers Button + DemoBox")
 	var mk := _cmp(RET + "|" + END)
-	_ok(_has_insert(mk, "<Button") and _has_insert(mk, "@if"), "markup slot offers <Button + @if")
+	_ok(_has_insert(mk, "<Button") and _has_insert(mk, "@if ()"), "markup slot offers <Button + @if")
 	var at := _cmp(RET + "<Button |" + END)
-	_ok(_has_insert(at, "onClick") and _has_insert(at, "text") and _has_insert(at, "style"), "Button attrs offer onClick + text + style")
-	_ok(not _has_insert(_cmp(RET + "<Label |" + END), "onClick"), "Label attrs exclude onClick")
+	# G20: attribute inserts are snippet-shaped — `=` plus an empty value pair the editor's
+	# confirm steps the caret into (`=""` for String properties, `={}` for events/expressions).
+	_ok(_has_insert(at, "onClick={}") and _has_insert(at, "text=\"\"") and _has_insert(at, "style={}"),
+		"Button attrs offer snippet-shaped onClick + text + style")
+	_ok(not _has_insert(_cmp(RET + "<Label |" + END), "onClick={}"), "Label attrs exclude onClick")
 	var dr := _cmp(RET + "@|" + END)
-	_ok(_has_insert(dr, "if") and _has_display(dr, "@if"), "directive '@' offers insert 'if' / display '@if'")
+	_ok(_has_insert(dr, "if ()") and _has_display(dr, "@if"), "directive '@' offers insert 'if ()' / display '@if'")
 	_ok(_cmp(RET + "<Button text={ |" + END).is_empty(), "embedded {expr} offers nothing")
 
 func _has_insert(items: Array, ins: String) -> bool:

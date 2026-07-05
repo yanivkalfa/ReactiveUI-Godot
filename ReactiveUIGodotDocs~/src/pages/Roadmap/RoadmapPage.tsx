@@ -56,6 +56,9 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Fast Refresh (hot reload) — saving a .guitkx while the game runs under F5 updates the live UI in place, hook state preserved; dev-only, zero footprint in exported builds</>} />
       </ListItem>
       <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Native Godot-editor addon (reactive_ui_editor) — a full .guitkx editor inside Godot: highlighting, live diagnostics, completion, hover, signature help, go-to-definition, references, rename, outline, project search, multi-file sessions, formatting</>} />
+      </ListItem>
+      <ListItem disablePadding>
         <ListItemText primary={<><Chip label="In progress" size="small" color="info" sx={{ mr: 1 }} />This documentation site (ported from the Unity docs, rewritten for Godot)</>} />
       </ListItem>
     </List>
@@ -64,9 +67,6 @@ export const RoadmapPage: FC = () => (
       Planned
     </Typography>
     <List>
-      <ListItem disablePadding>
-        <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />Native Godot-editor addon — full .guitkx language experience inside the editor (diagnostics, completion, hover, go-to-definition, rename, formatting), targeting Godot 4.4+</>} />
-      </ListItem>
       <ListItem disablePadding>
         <ListItemText primary={<><Chip label="Planned" size="small" color="info" sx={{ mr: 1 }} />Custom-draw escape hatch — declarative custom rendering for elements that need _draw()-level control</>} />
       </ListItem>

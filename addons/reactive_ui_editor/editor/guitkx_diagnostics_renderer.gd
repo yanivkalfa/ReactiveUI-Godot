@@ -51,11 +51,16 @@ static func render(code_edit: CodeEdit, gutter: int, diagnostics: Array,
 		}
 		records.append(rec)
 		var is_err: bool = sev == diag.ERROR
-		var icon := err_icon if is_err else warn_icon
-		if icon != null:
-			code_edit.set_line_gutter_icon(ln, gutter, icon)
-			code_edit.set_line_gutter_clickable(ln, gutter, true)
+		var is_hint: bool = sev >= diag.HINT
+		# Hint tier (M2/D5): hints inform (Problems row + hover via metadata) without shouting —
+		# no gutter icon, no line tint. This also ends the 0107 double-signal, where unreachable
+		# code was both dimmed AND wore a warning icon + amber band.
+		if not is_hint:
+			var icon := err_icon if is_err else warn_icon
+			if icon != null:
+				code_edit.set_line_gutter_icon(ln, gutter, icon)
+				code_edit.set_line_gutter_clickable(ln, gutter, true)
+			code_edit.set_line_background_color(ln,
+				Color(0.8, 0.2, 0.2, 0.10) if is_err else Color(0.85, 0.7, 0.15, 0.08))
 		code_edit.set_line_gutter_metadata(ln, gutter, rec)
-		code_edit.set_line_background_color(ln,
-			Color(0.8, 0.2, 0.2, 0.10) if is_err else Color(0.85, 0.7, 0.15, 0.08))
 	return records

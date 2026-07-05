@@ -1,17 +1,27 @@
 # NATIVE_EDITOR_PARITY_PLAN — `reactive_ui_editor` → parity with the VS Code extension
 
-**Status: PLANNED 2026-07-04 — four audit passes + a runtime benchmark, all claims in-code
-verified.** Pass 1 = feature inventories of both surfaces (language parity → G1–G23). Pass 2 =
-host-editor affordances (→ G24–G30). Pass 3 = interaction flows (→ G31–G34). **Pass 4 =
-exhaustive four-lens parallel sweep**: editor substrate (→ E-table), file lifecycle (→ L-table),
+**Status: M1 + M2 DONE 2026-07-05 (branch `feat/native-editor-m2`) — M3 (embedded depth, gdext)
+is the remaining milestone.** M1 shipped as **0.4.0** (store-submittable). M2 shipped as
+**0.5.0** in eight waves on one branch: D3 sidecar overlay + D5 hint tier + G26 formatter config;
+G5/G6/G7/G8/G28 completion + E12/E13; G2 references + G3 rename + G27 hook goto-def; G12 outline
++ G16 multi-file + G17 session + E11 zoom + E15 wrap; G14 project Problems + G34 codes-in-rows +
+G19 gutter popup + L5 watcher-error mirror + G24 replace/replace-all + project search (the E18
+replacement); G4 signature help; G11 embedded sub-highlight + G29 tag colors + G30 Enter indent
++ G18 new-file + G20 snippet caret + E14 line verbs + D6 per-call refs + L9 `_last_diags` erase;
+F1 tokenizer corpus + F3 parity pins + F4 test growth (editor suite 39 → 326 checks) + F5 docs
+page. **E17 + P3 (incremental decoration remap over `lines_edited_from`) consciously SKIPPED:**
+the adaptive compile-time debounce (P1) already bounds felt latency, decorations rebuild in <1 ms
+at the 150 K live-compile cap, and the remap would add order-dependent state to every decoration
+consumer for no observed win — revisit only if a real file shows decoration cost.
+
+Original audit record: Pass 1 = feature inventories of both surfaces (language parity → G1–G23).
+Pass 2 = host-editor affordances (→ G24–G30). Pass 3 = interaction flows (→ G31–G34). Pass 4 =
+exhaustive four-lens parallel sweep: editor substrate (→ E-table), file lifecycle (→ L-table),
 diagnostic sources (→ D-table), tests/docs/release plumbing (→ F-table), plus a headless
 performance benchmark (→ P-table). Driver: **submit the editor addon to the Godot Asset Store
 ASAP** — milestone-ordered: M1 store-submittable → M2 markup-tier parity → M3 embedded depth
 (gdext; `GODOT_ANALYZER_INTEGRATION_PLAN.md`, referenced not repeated). Mechanism constraints:
 `GODOT_EDITOR_EXTENSION_PLAN.md` §2/§6/§9.
-
-**Version note:** the addon is **0.3.0** (in-flight working tree, 2026-07-04; completion+hover
-release). M1 ships as **0.4.0**.
 
 ---
 

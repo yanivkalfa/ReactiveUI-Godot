@@ -13,6 +13,10 @@ extends RefCounted
 ## tokenize_line() returns an ordered, non-overlapping Array of { "start": int, "end": int (exclusive),
 ## "kind": String }. Only classified runs are emitted; anything else is left to the editor's default
 ## text colour. Pure and FileAccess-free, so it is headlessly unit-testable.
+##
+## Embedded `{expr}` regions RECURSE (G11): the inner slice re-tokenizes in gd_mode, where `<` is a
+## plain operator (never a tag) and `name=` is an assignment (never an attribute) — so GDScript
+## inside braces gets real keyword/string/number colouring without the markup rules mis-firing.
 
 enum { K_COMMENT, K_STRING, K_TAG, K_ATTR, K_EXPR, K_DIRECTIVE, K_KEYWORD, K_NUMBER, K_SYMBOL }
 
@@ -36,7 +40,7 @@ const KEYWORDS := {
 
 const _SYMBOLS := "<>/={}()[],.:;+-*%&|!?"
 
-func tokenize_line(text: String) -> Array:
+func tokenize_line(text: String, gd_mode: bool = false) -> Array:
 	var out: Array = []
 	var n := text.length()
 	var i := 0
@@ -50,15 +54,27 @@ func tokenize_line(text: String) -> Array:
 				out.append({"start": i, "end": j, "kind": ("comment" if c == "#" else "string")})
 				i = j
 				continue
-		# 2. Embedded-GDScript expression { ... } — colour the whole balanced region.
+		# 2. Embedded-GDScript expression { ... } — braces as symbols, the inside re-tokenized in
+		#    gd_mode and remapped to absolute columns (G11). Nested braces recurse naturally.
 		if c == "{":
 			var close: int = RUIGuitkxLexer.find_matching(text, i)
 			var end := (close + 1) if close >= 0 else n
-			out.append({"start": i, "end": end, "kind": "expr"})
+			out.append({"start": i, "end": i + 1, "kind": "symbol"})
+			var inner_start := i + 1
+			var inner_end := close if close >= 0 else n
+			if inner_end > inner_start:
+				for t in tokenize_line(text.substr(inner_start, inner_end - inner_start), true):
+					out.append({
+						"start": inner_start + int(t["start"]),
+						"end": inner_start + int(t["end"]), "kind": t["kind"],
+					})
+			if close >= 0:
+				out.append({"start": close, "end": close + 1, "kind": "symbol"})
 			i = end
 			continue
 		# 3. Tag: `<Name`, `</Name` — colour the `<` / `</` as symbol and the name as a tag.
-		if c == "<":
+		#    Not in gd_mode: inside an expression `<` is the less-than operator (case 7).
+		if c == "<" and not gd_mode:
 			var k := i + 1
 			if k < n and text[k] == "/":
 				k += 1
@@ -102,7 +118,8 @@ func tokenize_line(text: String) -> Array:
 			var word := text.substr(i, m - i)
 			if KEYWORDS.has(word):
 				out.append({"start": i, "end": m, "kind": "keyword"})
-			elif _is_attr_name(text, m, n):
+			elif not gd_mode and _is_attr_name(text, m, n):
+				# gd_mode: `x = "s"` / `x = {…}` are assignments, not attributes.
 				out.append({"start": i, "end": m, "kind": "attr"})
 			# else: plain identifier — leave to default colour.
 			i = m

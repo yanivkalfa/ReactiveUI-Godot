@@ -20,6 +20,7 @@ import { UitkxSignalsPage } from './pages/UITKX/Signals/UitkxSignalsPage'
 import { UitkxPortalPage } from './pages/UITKX/Portal/UitkxPortalPage'
 import { UitkxSuspensePage } from './pages/UITKX/Suspense/UitkxSuspensePage'
 import { HmrPage } from './pages/Tooling/HMR/HmrPage'
+import { EditorPage } from './pages/Tooling/Editor/EditorPage'
 import { FAQPage } from './pages/FAQ/FAQPage'
 import { StylingPage } from './pages/UITKX/Styling/StylingPage'
 import { AssetsPage } from './pages/UITKX/Assets/AssetsPage'
@@ -218,6 +219,15 @@ export const sections: DocSection[] = [
         keywords: ['live reload', 'hot reload', 'live editing', 'instant preview'],
         searchContent: 'live reload hot reload edit .guitkx files save updates running ui godot editor without manual rebuild rides godot gdscript hot-reload no separate hmr subsystem compiles to real sibling .gd script quick start enable reactive_ui editor plugin project settings plugins how it works @tool EditorPlugin plugin.gd EditorFileSystem filesystem_changed compiles all guitkx res:// RUIGuitkxCodegen lexed parsed lowered render props children EditorFileSystem update_file godot recompiles hot-reloads script mtime staleness guard re-entry guard state across reload RUIComponentState positional array hook slots reconciler useState useReducer retained useRef box preserved useEffect useLayoutEffect useMemo useCallback useContext useStableCallback useStableAction useSignal useSignalKey useDeferredValue companion files hooks module styles utils compile_all new components preload ReactiveRoot.create V.fc mounting hook state persists limitations GUITKX compile error stub push_error per-script granularity troubleshooting [guitkx] compiled output panel .guitkx.diags.json push_warning hook-order validator RUIConfig.enable_hook_validation RUIDiagnostics',
         element: () => <HmrPage />,
+      },
+      {
+        id: 'editor-page',
+        canonicalId: 'editor',
+        title: 'In-Godot Editor',
+        path: '/tooling/editor',
+        keywords: ['editor', 'ide', 'addon', 'diagnostics', 'completion', 'rename', 'search'],
+        searchContent: 'in-godot editor reactive_ui_editor addon main-screen guitkx editor double-click filesystem dock open syntax highlighting theme-matched host component tag colours embedded expression sub-highlighting live compiler diagnostics gutter icons did-you-mean problems bottom panel project scope sidecar aggregation GUITKX codes completion tags attributes snippet caret inside quotes attribute values enum true false style-dict keys directives Color builtin constants hook names onClick on_signal both spellings hover tooltips signature help event lambda parameter strip navigation ctrl+click go to definition shift+f12 references panel ctrl+g go to line outline tree declarations f2 rename project-wide collision refusing find replace replace-all one undo step search .guitkx bottom panel project-wide comment toggle move lines duplicate delete bookmark zoom word wrap enter between tags multi-file open list session restore retarget detach format guitkx.config.json printWidth indentStyle format-on-save new file component skeleton project settings reactive_ui_editor toggles open_guitkx_in_editor watcher sibling gd save all quit confirmation play flush GUITKX2106 GUITKX2107 hash-gated overlay search in files exclusion script editor adoption 150k live compile adaptive debounce native analyzer roadmap',
+        element: () => <EditorPage />,
       },
       {
         id: 'portal-page',

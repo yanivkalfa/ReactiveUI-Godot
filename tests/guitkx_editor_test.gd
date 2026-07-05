@@ -13,16 +13,36 @@ var _failed := 0
 var _passed := 0
 
 func _initialize() -> void:
-	_test_parses()
-	_test_substrate()
-	_test_undoable_set_text()
-	_test_buffer_state()
-	_test_intelligence_wiring()
-	_test_find_bar()
-	_test_deps_handshake()
-	_test_schema_sync()
-	_test_scan_diags()
-	_test_rich_hover()
+	# One marker line per section (flushed immediately): when a regression HANGS the suite, the
+	# partial log names the culprit instead of leaving a blank file [field capture 2026-07-05].
+	for t: Array in [
+		["parses", _test_parses],
+		["substrate", _test_substrate],
+		["undoable", _test_undoable_set_text],
+		["buffer_state", _test_buffer_state],
+		["intelligence", _test_intelligence_wiring],
+		["find_bar", _test_find_bar],
+		["deps", _test_deps_handshake],
+		["schema_sync", _test_schema_sync],
+		["scan_diags", _test_scan_diags],
+		["rich_hover", _test_rich_hover],
+		["formatter_config", _test_formatter_config],
+		["sidecar_overlay", _test_sidecar_overlay],
+		["wave2_completion", _test_wave2_completion],
+		["comment_toggle", _test_comment_toggle],
+		["refs_and_rename", _test_refs_and_rename],
+		["multifile", _test_multifile],
+		["outline", _test_outline],
+		["replace", _test_replace],
+		["project_search", _test_project_search],
+		["problems_project", _test_problems_project],
+		["signature", _test_signature],
+		["wave7_editing", _test_wave7_editing],
+		["tokenizer_corpus", _test_tokenizer_corpus],
+		["parity_pins", _test_parity_pins],
+	]:
+		print("[guitkx_editor_test] -- %s" % t[0])
+		(t[1] as Callable).call()
 	_cleanup_tmp()
 	print("[guitkx_editor_test] %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -44,6 +64,10 @@ func _test_parses() -> void:
 		"res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd",
 		"res://addons/reactive_ui_editor/editor/guitkx_diagnostics_renderer.gd",
 		"res://addons/reactive_ui_editor/editor/guitkx_problems_panel.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_references_panel.gd",
+		"res://addons/reactive_ui_editor/editor/guitkx_search_panel.gd",
+		"res://addons/reactive_ui_editor/lsp/guitkx_outline.gd",
+		"res://addons/reactive_ui_editor/lsp/guitkx_signature.gd",
 		"res://addons/reactive_ui_editor/resources/guitkx_resource.gd",
 		"res://addons/reactive_ui_editor/resources/guitkx_resource_loader.gd",
 	]:
@@ -142,7 +166,7 @@ func _test_buffer_state() -> void:
 
 	var v: Control = ViewScript.new()
 	_ok(not v.is_dirty(), "fresh view is clean")
-	_ok(v._file_label.text == "(no file)", "fresh view labeled (no file)")
+	_ok(v._file_label.text == "(scratch)", "fresh view starts on the scratch buffer")
 
 	# An untouched scratch buffer must not be diagnosed (field capture: red X on an empty editor).
 	v._refresh_diagnostics()
@@ -155,7 +179,7 @@ func _test_buffer_state() -> void:
 	_ok(v._loaded_mtime != 0, "load records the disk mtime")
 	_ok(not v._code_edit.has_undo(), "load clears undo history")
 
-	v._on_text_changed()
+	v._on_editor_text_changed(v._code_edit)
 	_ok(v.is_dirty(), "user edit marks dirty")
 	_ok(v._file_label.text.ends_with("*"), "dirty shown in the file label")
 
@@ -190,7 +214,7 @@ func _test_buffer_state() -> void:
 	_ok(not v._file_label.text.contains("deleted"), "healed label drops the deleted marker")
 
 	# Same-file reopen with edits must NOT clobber the buffer (the double-click self-open trap).
-	v._on_text_changed()
+	v._on_editor_text_changed(v._code_edit)
 	var before: String = v._code_edit.text
 	v._code_edit.text = before + "\n# local edit"
 	v.open_path(TMP_PATH)
@@ -476,3 +500,662 @@ func _test_rich_hover() -> void:
 	for junk in [mv_dst, mv_dst + ".diags.json", RUIGuitkxCodegen.gd_path_for(mv_dst), hw_gd, mv_gd + ".uid", hw_gd + ".uid"]:
 		if FileAccess.file_exists(junk):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(junk)))
+
+# M2 wave 1b / G26 — guitkx.config.json discovery + end-to-end formatter plumbing.
+func _test_formatter_config() -> void:
+	const Config := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
+	var dir := "res://tests/__cfg_tmp"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir + "/nested"))
+	var w := func(p: String, s: String):
+		var f := FileAccess.open(p, FileAccess.WRITE)
+		f.store_string(s)
+		f.close()
+	w.call(dir + "/guitkx.config.json", '{"formatter": {"printWidth": 40, "insertSpaceBeforeSelfClose": false, "bogusKey": 1}}')
+
+	var opts: Dictionary = Config.formatter_opts_for(dir + "/nested/x.guitkx")
+	_ok(int(opts.get("printWidth", -1)) == 40, "nearest config found via parent walk")
+	_ok(opts.get("insertSpaceBeforeSelfClose") == false, "bool option passes through")
+	_ok(not opts.has("bogusKey"), "unknown keys filtered")
+	_ok(Config.formatter_opts_for("res://tests/x.guitkx").is_empty(), "no config -> {} (formatter defaults)")
+
+	# Malformed config: skipped without exploding.
+	w.call(dir + "/nested/guitkx.config.json", "{not json")
+	_ok(Config.formatter_opts_for(dir + "/nested/x.guitkx").is_empty(), "malformed nearest config -> {}")
+
+	# End-to-end: the view formats with the discovered options (insertSpaceBeforeSelfClose=false).
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + "/nested/guitkx.config.json"))
+	var v: Control = ViewScript.new()
+	var src := "component CfgT() {\n  return (\n    <Label text=\"a\" />\n  )\n}\n"
+	w.call(dir + "/cfg_t.guitkx", src)
+	v.open_path(dir + "/cfg_t.guitkx")
+	var out: String = v._formatted(src)
+	_ok(out.contains("<Label text=\"a\"/>"), "view formatting honors insertSpaceBeforeSelfClose=false")
+	v.free()
+
+	for p in [dir + "/cfg_t.guitkx", dir + "/guitkx.config.json"]:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + "/nested"))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir))
+
+# M2 wave 1b / D3+D5 — sidecar overlay (2106/2107 reach the editor) + hint rendering tier.
+func _test_sidecar_overlay() -> void:
+	# @class_name matches the declared name so GUITKX0103 (name-vs-filename warning) stays out of
+	# the picture — this test owns lines 0 and the tag line exclusively.
+	var src := "@class_name ScT\n\ncomponent ScT() {\n\treturn (\n\t\t<ScOther />\n\t)\n}\n"
+	var fa := FileAccess.open(TMP_PATH, FileAccess.WRITE)
+	fa.store_string(src)
+	fa.close()
+	# Plant a sweep-style sidecar with a 2107 anchored at the tag (only the sweep can produce it).
+	var at := src.find("ScOther")
+	RUIGuitkxCodegen.write_diags_sidecar(TMP_PATH, src, [{
+		"code": "GUITKX2107", "severity": RUIGuitkxDiag.ERROR,
+		"message": "component <ScOther> resolves to res://gone.gd, which no longer exists",
+		"offset": at, "length": 7,
+	}], { "ScOther": "res://gone.gd" })
+
+	var v: Control = ViewScript.new()
+	v.open_path(TMP_PATH)
+	var line := int(RUIGuitkxDiag.line_col(src, at).get("line", -1))
+	var meta: Variant = v._code_edit.get_line_gutter_metadata(line, v._code_edit.diag_gutter)
+	_ok(meta is Dictionary and str((meta as Dictionary).get("code", "")) == "GUITKX2107",
+		"hash-matched sidecar 2107 anchors at the reference line")
+
+	# Diverge the buffer: the anchored row must collapse into a line-0 hint naming the code.
+	v._code_edit.text = src + "\n# edited"
+	v._refresh_diagnostics()
+	var l0: Variant = v._code_edit.get_line_gutter_metadata(0, v._code_edit.diag_gutter)
+	_ok(l0 is Dictionary and str((l0 as Dictionary).get("code", "")).contains("GUITKX2107")
+		and str((l0 as Dictionary).get("severity", "")) == "hint",
+		"diverged buffer collapses sidecar-only codes into a line-0 hint")
+	_ok(v._code_edit.get_line_gutter_icon(0, v._code_edit.diag_gutter) == null,
+		"D5: hints carry no gutter icon")
+	_ok(v._code_edit.get_line_background_color(0).a == 0.0, "D5: hints carry no line tint")
+	v.free()
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(str(RUIGuitkxCodegen.diags_path_for(TMP_PATH))))
+
+# M2 wave 2 — completion contexts (G5/G6/G7/G8/G28) + the comment toggle (E12).
+func _test_wave2_completion() -> void:
+	var RET := "component X() {\n\treturn (\n\t\t"
+	var END := "\n\t)\n}\n"
+
+	# G5: bool property value -> true/false.
+	var s1 := RET + "<Label visible=\"" + END
+	var items: Array = GuitkxCompletion.for_caret(s1, (RET + "<Label visible=\"").length())
+	var names := items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("true") and names.has("false"), "bool attr value offers true/false")
+
+	# G5: enum property value -> hint names (Label.horizontal_alignment is an enum).
+	var s2 := RET + "<Label horizontal_alignment=\"" + END
+	items = GuitkxCompletion.for_caret(s2, (RET + "<Label horizontal_alignment=\"").length())
+	_ok(items.size() >= 2, "enum attr value offers the hint names (got %d)" % items.size())
+
+	# G6: style-dict keys inside style={ {"...
+	var s3 := RET + "<Label style={ {\"" + END
+	items = GuitkxCompletion.for_caret(s3, (RET + "<Label style={ {\"").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("bg_color") and names.has("font_color") and names.has("separation"),
+		"style dict offers the RUIStyle keys")
+	_ok(GuitkxSchema.style_keys().size() == 46, "schema carries all 46 style keys")
+
+	# G7: builtin members after `Color.` in embedded code.
+	var s4 := "component X() {\n\tvar c = Color." + "\n\treturn (\n\t\t<Label />" + END
+	items = GuitkxCompletion.for_caret(s4, ("component X() {\n\tvar c = Color.").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("WHITE") and names.has("CRIMSON"), "Color. offers builtin constants")
+
+	# G8: hook names while typing `use` on a setup line.
+	var s5 := "component X() {\n\tvar s = use" + "\n\treturn (\n\t\t<Label />" + END
+	items = GuitkxCompletion.for_caret(s5, ("component X() {\n\tvar s = use").length())
+	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("useState") and names.has("useEffect"), "use… offers the hook names")
+
+	# G28: the native on_<signal> spelling joins the React aliases (displays); G20: the inserts
+	# carry `=` + an empty value pair the editor steps the caret into.
+	var s6 := RET + "<Button " + END
+	items = GuitkxCompletion.for_caret(s6, (RET + "<Button ").length())
+	names = items.map(func(it): return str((it as Dictionary).get("display", "")))
+	_ok(names.has("onClick") and names.has("on_pressed"), "both event spellings offered")
+	_ok(names.has("on_gui_input"), "verbatim escape hatch covers every signal")
+	var inserts: Array = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(inserts.has("onClick={}") and inserts.has("text=\"\""), "attr inserts are snippet-shaped (G20)")
+
+	# Context: the attr name resolves through braces (style value) and plain quotes.
+	var c1 := GuitkxContext.classify(s3, (RET + "<Label style={ {\"").length())
+	_ok(str(c1.get("attr", "")) == "style", "value context names its attribute through { {")
+	var c2 := GuitkxContext.classify(s1, (RET + "<Label visible=\"").length())
+	_ok(str(c2.get("attr", "")) == "visible", "value context names its attribute (quoted)")
+
+# E12 — Ctrl+/ comment toggle: comment, uncomment, mixed selection, single undo step.
+func _test_comment_toggle() -> void:
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = "\tline_a\n\tline_b\n\n\tline_c"
+	ce.clear_undo_history()
+	ce.select(0, 0, 3, 7)
+	ce.toggle_comment()
+	_ok(ce.get_line(0) == "\t# line_a" and ce.get_line(1) == "\t# line_b" and ce.get_line(3) == "\t# line_c",
+		"toggle comments every non-empty selected line at its indent")
+	_ok(ce.get_line(2) == "", "blank lines untouched")
+	ce.toggle_comment()
+	_ok(ce.get_line(0) == "\tline_a" and ce.get_line(3) == "\tline_c", "second toggle uncomments")
+	# Mixed state: one commented line -> everything COMMENTS (VS Code semantics).
+	ce.set_line(0, "\t# line_a")
+	ce.select(0, 0, 1, 7)
+	ce.toggle_comment()
+	_ok(ce.get_line(1) == "\t# line_b", "mixed selection comments the uncommented lines")
+	# Undo granularity: one toggle = one undo.
+	ce.text = "x"
+	ce.clear_undo_history()
+	ce.set_caret_line(0)
+	ce.toggle_comment()
+	_ok(ce.get_line(0) == "# x", "caret-line toggle without selection")
+	ce.undo()
+	_ok(ce.get_line(0) == "x", "toggle is a single undo step")
+	ce.free()
+
+# M2 wave 3 — references (G2), rename (G3), hook goto-def (G27).
+func _test_refs_and_rename() -> void:
+	const Refs := preload("res://addons/reactive_ui_editor/lsp/guitkx_refs.gd")
+	# Two fixture files: a component + a consumer referencing it twice (+ a comparison decoy).
+	var a_path := "res://tests/__refs_a.guitkx"
+	var b_path := "res://tests/__refs_b.guitkx"
+	var a_src := "@class_name RefsWidget\n\ncomponent RefsWidget() {\n\treturn (\n\t\t<Label text=\"w\" />\n\t)\n}\n"
+	var b_src := "component RefsHost() {\n\tvar x = 1\n\tvar y = x <RefsWidgetFake_not_a_tag\n\treturn (\n\t\t<VBox>\n\t\t\t<RefsWidget />\n\t\t\t<RefsWidget key=\"2\" />\n\t\t</VBox>\n\t)\n}\n"
+	for pair in [[a_path, a_src], [b_path, b_src]]:
+		var f := FileAccess.open(pair[0], FileAccess.WRITE)
+		f.store_string(pair[1])
+		f.close()
+	GuitkxWorkspace.rescan()
+
+	# In-file scan: decl + @class_name in A; two opens in B; the comparison is not a reference.
+	var ra: Array = Refs.tag_refs_in(a_src, "RefsWidget")
+	var kinds := ra.map(func(r): return str((r as Dictionary).get("kind", "")))
+	_ok(kinds.has("decl") and kinds.has("class_name"), "declaration + @class_name tokens found")
+	var rb: Array = Refs.tag_refs_in(b_src, "RefsWidget")
+	_ok(rb.size() == 2, "two tag references in the consumer (comparison decoy skipped), got %d" % rb.size())
+
+	# Project-wide, with previews.
+	var proj: Array = Refs.project_refs("RefsWidget")
+	_ok(proj.size() == 4, "project refs = decl + class_name + 2 usages (got %d)" % proj.size())
+	_ok(str((proj[0] as Dictionary).get("preview", "")) != "", "reference rows carry a line preview")
+
+	# Rename gates.
+	_ok(not bool(Refs.rename_edits("RefsWidget", "Label").get("ok")), "host-tag collision refused")
+	_ok(not bool(Refs.rename_edits("RefsWidget", "RefsHost").get("ok")), "existing-component collision refused")
+	_ok(not bool(Refs.rename_edits("RefsWidget", "lower").get("ok")), "non-PascalCase refused")
+	_ok(not bool(Refs.rename_edits("NoSuchThing", "Xyz").get("ok")), "unknown source refused")
+	_ok(not bool(Refs.rename_edits("RefsWidget", "DemoBox").get("ok")), "global-class collision refused")
+
+	# Apply: splice edits into both files (text-level check of the plan).
+	var plan: Dictionary = Refs.rename_edits("RefsWidget", "RefsGadget")
+	_ok(bool(plan.get("ok")), "valid rename plan accepted")
+	var edits: Dictionary = plan.get("edits", {})
+	var new_a: String = Refs.apply_edits_to_text(a_src, edits.get(a_path, []), "RefsGadget")
+	var new_b: String = Refs.apply_edits_to_text(b_src, edits.get(b_path, []), "RefsGadget")
+	_ok(new_a.contains("@class_name RefsGadget") and new_a.contains("component RefsGadget"),
+		"declaration + override renamed")
+	_ok(new_b.count("<RefsGadget") == 2 and not new_b.contains("<RefsWidget ")
+		and not new_b.contains("<RefsWidget/"), "usages renamed (decoy substring excluded)")
+	_ok(new_b.contains("RefsWidgetFake_not_a_tag"), "comparison decoy untouched")
+
+	# G27: hooks resolve to core/hooks.gd through the widget's lookup path.
+	var ce: CodeEdit = CodeEditScript.new()
+	var got: Array = []
+	ce.definition_requested.connect(func(p: String, o: int):
+		got.append(p)
+		got.append(o))
+	ce._on_symbol_lookup("useState", 0, 0)
+	_ok(got.size() == 2 and str(got[0]).ends_with("core/hooks.gd") and int(got[1]) > 0,
+		"useState jumps into core/hooks.gd")
+	ce.free()
+
+	for p in [a_path, b_path]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
+	GuitkxWorkspace.rescan()
+
+# M2 wave 4 — multi-file editors (G16), session state (G17), zoom (E11), wrap (E15).
+func _test_multifile() -> void:
+	var a := "res://tests/__mf_a.guitkx"
+	var b := "res://tests/__mf_b.guitkx"
+	for pair in [[a, "component MfA() {\n\treturn (\n\t\t<Label text=\"a\" />\n\t)\n}\n"],
+			[b, "component MfB() {\n\treturn (\n\t\t<Label text=\"b\" />\n\t)\n}\n"]]:
+		var f := FileAccess.open(pair[0], FileAccess.WRITE)
+		f.store_string(pair[1])
+		f.close()
+
+	var v: Control = ViewScript.new()
+	v.open_path(a)
+	_ok(v.current_path() == a, "first file becomes current")
+	_ok(not v._editors.has(""), "pristine scratch closes once a real file opens")
+
+	# Edit A, then open B: switching preserves A's edits, dirty flag, and undo history.
+	v._code_edit.insert_text_at_caret("# edit-a\n")
+	v._on_editor_text_changed(v._code_edit)  # text_changed is deferred; no frames run headless
+	_ok(v.is_dirty(), "A dirty after edit")
+	v.open_path(b)
+	_ok(v.current_path() == b, "switch to B")
+	_ok(not v.is_dirty(), "B is clean (dirty state is per-file)")
+	var ed_a: CodeEdit = v._editors[a]
+	_ok(ed_a.dirty and ed_a.text.contains("# edit-a"), "A keeps its edits in the background")
+	_ok(ed_a.has_undo(), "A keeps its undo history across the switch")
+
+	_ok(v.open_paths().size() == 2, "open_paths lists both files")
+	_ok(v.dirty_files() == [a], "dirty_files names exactly the edited file")
+
+	# Background rename (L1 multi-file): retarget by OLD path, not just the current file.
+	var a2 := "res://tests/__mf_a2.guitkx"
+	v.retarget_path(a2, a)
+	_ok(not v._editors.has(a) and v._editors.has(a2), "background retarget moves the editor key")
+	_ok(v.current_path() == b, "current file untouched by background retarget")
+	v.retarget_path(a, a2)
+
+	# Switching back: same editor object, caret/undo intact; label follows.
+	v.open_path(a)
+	_ok(v._code_edit == ed_a, "switching back reuses the same editor instance")
+	_ok(v._file_label.text.ends_with("*"), "label shows A's dirty state again")
+
+	# Session state round-trip.
+	var state: Dictionary = v.session_state()
+	_ok((state.get("files", []) as Array).size() == 2 and str(state.get("current", "")) == a,
+		"session snapshot carries files + current")
+
+	# E15 wrap toggle applies to every editor.
+	v._on_wrap_toggled(true)
+	_ok(ed_a.wrap_mode == TextEdit.LINE_WRAPPING_BOUNDARY
+		and (v._editors[b] as CodeEdit).wrap_mode == TextEdit.LINE_WRAPPING_BOUNDARY,
+		"wrap toggle hits all editors")
+	v._on_wrap_toggled(false)
+
+	# E11 zoom: static-shared, applied per editor.
+	(v._code_edit as CodeEdit).set_zoom(20)
+	_ok(v._code_edit.get_theme_font_size("font_size") == 20, "zoom overrides the font size")
+	(v._code_edit as CodeEdit).set_zoom(0)
+	CodeEditScript.zoom_font_size = 0
+
+	# close_file: clean B closes instantly; closing the last file leaves a scratch.
+	v._code_edit.dirty = false
+	ed_a.dirty = false
+	v.close_file(b)
+	_ok(not v._editors.has(b), "clean file closes")
+	v.close_file(a)
+	_ok(v._editors.has("") and v.current_path() == "", "last close falls back to a scratch buffer")
+
+	v.free()
+	for p in [a, b]:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
+	GuitkxWorkspace.rescan()
+
+# W5/G12 — document outline: pure declaration scan, offsets anchored at the NAME.
+func _test_outline() -> void:
+	const Outline := preload("res://addons/reactive_ui_editor/lsp/guitkx_outline.gd")
+	var src := "hook useThing(x):\n\treturn x\n\nmodule Helpers\n\tfunc one():\n\t\tpass\n\tstatic func two():\n\t\tpass\n"
+	var entries: Array = Outline.outline_of(src)
+	_ok(entries.size() == 4, "outline lists hook + module + 2 member funcs")
+	var names: Array = entries.map(func(e): return str((e as Dictionary).get("name", "")))
+	_ok(names == ["useThing", "Helpers", "one", "two"], "outline sorted by offset")
+	var kinds: Array = entries.map(func(e): return str((e as Dictionary).get("kind", "")))
+	_ok(kinds == ["hook", "module", "func", "func"], "outline kinds classified")
+	var anchored := true
+	for e in entries:
+		var ed := e as Dictionary
+		if src.substr(int(ed["offset"]), str(ed["name"]).length()) != str(ed["name"]):
+			anchored = false
+	_ok(anchored, "every outline offset lands exactly on its name")
+
+	# A single-component file keeps its internal funcs OFF the tree (no module — signal over noise).
+	var comp := "component Foo() {\n\tfunc local():\n\t\tpass\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var centries: Array = Outline.outline_of(comp)
+	_ok(centries.size() == 1, "component file outlines only the component")
+	_ok(str((centries[0] as Dictionary).get("name", "")) == "Foo", "component name listed")
+	_ok(Outline.outline_of("").is_empty(), "empty text -> empty outline")
+	_ok(Outline.outline_of("# just a comment\n").is_empty(), "no declarations -> empty outline")
+
+# W5/G24 — find-bar replace: step replaces the selected match, All is one undo step and
+# terminates even when the replacement contains the query.
+func _test_replace() -> void:
+	const FindBar := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = "alpha beta\ngamma alpha\nALPHA end"
+	var bar: HBoxContainer = FindBar.new()
+	bar.attach(ce)
+	bar._query.text = "alpha"  # set_text emits no text_changed; drive the refresh directly
+	bar._update_search()       # selects the first match at/after the caret: (0,0)-(0,5)
+	bar._replace.text = "X"
+	bar.replace_step()
+	_ok(ce.get_line(0) == "X beta", "replace_step rewrites the selected match")
+	_ok(ce.get_selected_text().to_lower() == "alpha", "replace_step advances to the next match")
+
+	bar._replace.text = "Y"
+	bar.replace_all()
+	_ok(not ce.text.to_lower().contains("alpha"), "replace_all clears every remaining match")
+	_ok(ce.get_line(1) == "gamma Y" and ce.get_line(2) == "Y end",
+		"replace_all is case-insensitive by default")
+	_ok(bar._count.text.begins_with("2 replaced"), "replace_all reports the count")
+	ce.undo()
+	_ok(ce.get_line(1) == "gamma alpha" and ce.get_line(2) == "ALPHA end",
+		"replace_all undoes as ONE step")
+	_ok(ce.get_line(0) == "X beta", "undo stops at the replace_all boundary")
+
+	# Growth guard: replacing "a" with "aa" must terminate (search resumes AFTER the insertion).
+	var ce2: CodeEdit = CodeEditScript.new()
+	ce2.text = "b a b a"
+	var bar2: HBoxContainer = FindBar.new()
+	bar2.attach(ce2)
+	bar2._query.text = "a"
+	bar2._case.button_pressed = true
+	bar2._replace.text = "aa"
+	bar2.replace_all()
+	_ok(ce2.text == "b aa b aa", "replacement containing the query terminates")
+	bar2.free()
+	ce2.free()
+	bar.free()
+	ce.free()
+
+# W5/E18-replacement — project-wide .guitkx search over the workspace index.
+func _test_project_search() -> void:
+	const SearchPanel := preload("res://addons/reactive_ui_editor/editor/guitkx_search_panel.gd")
+	var a := "res://tests/__w5_a.guitkx"
+	var b := "res://tests/__w5_b.guitkx"
+	for pair in [[a, "component W5A() {\n\treturn (\n\t\t<Label text=\"needle needle\" />\n\t)\n}\n"],
+			[b, "component W5B() {\n\treturn (\n\t\t<Label text=\"needle\" />\n\t)\n}\n"]]:
+		var f := FileAccess.open(pair[0], FileAccess.WRITE)
+		f.store_string(pair[1])
+		f.close()
+	GuitkxWorkspace.rescan()
+
+	var mine := func(records: Array) -> Array:
+		return records.filter(func(r): return str((r as Dictionary).get("path", "")) in [a, b])
+	var hits: Array = mine.call(SearchPanel.search("needle", false))
+	_ok(hits.size() == 2, "search finds one row per matching LINE (dupes on a line collapse)")
+	var by_path := {}
+	for h in hits:
+		by_path[str((h as Dictionary).get("path", ""))] = h
+	_ok(by_path.has(a) and by_path.has(b), "search covers every indexed file")
+	_ok(int((by_path[a] as Dictionary).get("line", -1)) == 2, "search line is 0-based and correct")
+	_ok(str((by_path[a] as Dictionary).get("preview", "")).contains("needle needle"),
+		"search rows carry the line preview")
+	_ok((mine.call(SearchPanel.search("NEEDLE", true)) as Array).is_empty(),
+		"match-case excludes lowercase hits")
+	_ok((mine.call(SearchPanel.search("NEEDLE", false)) as Array).size() == 2,
+		"case-insensitive matches regardless")
+	_ok(SearchPanel.search("   ", false).is_empty(), "blank query returns nothing")
+
+	for p in [a, b]:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
+	GuitkxWorkspace.rescan()
+
+# W5/G14+G34 — project-scope Problems: sidecar aggregation with resolved lines, codes in rows,
+# and project-row activation emitting (path, line).
+func _test_problems_project() -> void:
+	const ProblemsPanel := preload("res://addons/reactive_ui_editor/editor/guitkx_problems_panel.gd")
+	var a := "res://tests/__w5_diag.guitkx"
+	var src := "component W5Diag() {\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n"
+	var f := FileAccess.open(a, FileAccess.WRITE)
+	f.store_string(src)
+	f.close()
+	RUIGuitkxCodegen.write_diags_sidecar(a, src, [
+		{ "code": "GUITKX9901", "severity": 0, "message": "boom", "offset": src.find("<Label"), "length": 6 },
+	])
+	GuitkxWorkspace.rescan()
+
+	var recs: Array = ProblemsPanel.project_records().filter(
+		func(r): return str((r as Dictionary).get("path", "")) == a)
+	_ok(recs.size() == 1, "project_records aggregates the sidecar diagnostic")
+	if recs.size() == 1:
+		var rec := recs[0] as Dictionary
+		_ok(str(rec.get("code", "")) == "GUITKX9901", "record carries the GUITKX code")
+		_ok(str(rec.get("severity", "")) == "error", "sidecar int severity maps to a name")
+		_ok(int(rec.get("line", -1)) == 2, "sidecar offset resolves to the line on disk")
+
+	# Row rendering (G34) + project-row activation -> (path, line).
+	var panel: Control = ProblemsPanel.new()
+	var got: Array = []
+	panel.location_activated.connect(func(p: String, l: int): got.append([p, l]))
+	panel._scope.select(1)  # Project scope (id 1) — activation routes to location_activated
+	panel._render_rows([{ "code": "GUITKX0105", "severity": "error", "message": "unknown tag",
+		"line": 3, "path": "res://x.guitkx" }], true)
+	_ok(panel._list.item_count == 1, "project scope renders sidecar rows")
+	_ok(panel._list.get_item_text(0).contains("[GUITKX0105]"), "rows lead with the code (G34)")
+	_ok(panel._list.get_item_text(0).contains("x.guitkx:4"), "project rows show path:line (1-based)")
+	panel._on_item_activated(0)
+	_ok(got == [["res://x.guitkx", 3]], "activating a project row emits location_activated")
+	panel.free()
+
+	for p in [a, RUIGuitkxCodegen.diags_path_for(a)]:
+		if FileAccess.file_exists(str(p)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
+	GuitkxWorkspace.rescan()
+
+# W6/G4 — signature help: the back-scan arms only inside an event-handler lambda's parameter list
+# on a HOST tag, resolves the bound signal via ClassDB, and tracks the active parameter.
+func _test_signature() -> void:
+	const Sig := preload("res://addons/reactive_ui_editor/lsp/guitkx_signature.gd")
+	var src := "component S() {\n\treturn (\n\t\t<CheckBox on_toggled={ func (t): pass } />\n\t)\n}\n"
+	var off := src.find("func (") + "func (".length()
+	var sig: Dictionary = Sig.signature_at(src, off)
+	_ok(not sig.is_empty(), "arms inside an on_<signal> lambda param list")
+	_ok(str(sig.get("signal", "")) == "toggled", "resolves the verbatim on_<signal> name")
+	_ok(str(sig.get("label", "")) == "toggled(toggled_on: bool)", "label carries ClassDB param types")
+	_ok(int(sig.get("active", -1)) == 0, "first param active at the open paren")
+
+	# Active-parameter tracking across top-level commas (nested parens/strings don't count).
+	var src2 := "component S() {\n\treturn (\n\t\t<ItemList on_item_clicked={ func (i, Vector2(0,0), b): pass } />\n\t)\n}\n"
+	var after_second_comma := src2.find("), b") + ")".length() + ", ".length()
+	var sig2: Dictionary = Sig.signature_at(src2, after_second_comma)
+	_ok(int(sig2.get("active", -1)) == 2, "active param counts only top-level commas")
+	_ok((sig2.get("params", []) as Array).size() == 3, "item_clicked exposes all three params")
+
+	# React alias: onChange on OptionButton binds item_selected.
+	var src3 := "component S() {\n\treturn (\n\t\t<OptionButton onChange={ func (idx): pass } />\n\t)\n}\n"
+	var sig3: Dictionary = Sig.signature_at(src3, src3.find("func (") + "func (".length())
+	_ok(str(sig3.get("signal", "")) == "item_selected", "React alias resolves polymorphically")
+
+	# Negatives: a method REFERENCE, a non-event attribute, a component tag, caret outside parens.
+	var mref := "component S() {\n\treturn (\n\t\t<Button on_pressed={_on_click} />\n\t)\n}\n"
+	_ok(Sig.signature_at(mref, mref.find("_on_click") + 4).is_empty(), "method reference offers no help")
+	var nonev := "component S() {\n\treturn (\n\t\t<Label text={ func (x): pass } />\n\t)\n}\n"
+	_ok(Sig.signature_at(nonev, nonev.find("func (") + "func (".length()).is_empty(),
+		"non-event attribute offers no help")
+	var comp := "component S() {\n\treturn (\n\t\t<MyThing on_toggled={ func (t): pass } />\n\t)\n}\n"
+	_ok(Sig.signature_at(comp, comp.find("func (") + "func (".length()).is_empty(),
+		"component tags (no ClassDB signals) offer no help")
+	_ok(Sig.signature_at(src, src.find("<CheckBox") + 3).is_empty(), "caret outside a param list is silent")
+
+	# Widget: the strip shows while the caret is in context and hides when it leaves (G4 UI).
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = src
+	var lc: Dictionary = RUIGuitkxDiag.line_col(src, off)
+	ce.set_caret_line(int(lc["line"]))
+	ce.set_caret_column(int(lc["col"]))
+	ce._signature_refresh()
+	_ok(ce.signature_visible(), "strip appears with the caret in a param list")
+	_ok(ce._sig_label.text.contains("toggled"), "strip renders the signal label")
+	ce.set_caret_line(0)
+	ce.set_caret_column(0)
+	ce._signature_refresh()
+	_ok(not ce.signature_visible(), "strip hides when the caret leaves the context")
+	ce.free()
+
+# W7 — G11 embedded sub-highlighting, G30 Enter-between-tags, G20 snippet confirm, E14 line
+# verbs + bookmarks, D6 per-call compile refs.
+func _test_wave7_editing() -> void:
+	# G11: inside {expr}, GDScript classifies for real — keyword/number/string — braces are
+	# symbols, and `<` is a comparison operator, never a tag. Outside, markup rules unchanged.
+	var tok := GuitkxTokenizer.new()
+	var line := "<Label text={ 1 if a < 2 else \"hi\" } />"
+	var toks: Array = tok.tokenize_line(line)
+	var kind_at := func(col: int) -> String:
+		for t in toks:
+			if int((t as Dictionary)["start"]) <= col and col < int((t as Dictionary)["end"]):
+				return str((t as Dictionary)["kind"])
+		return ""
+	_ok(kind_at.call(1) == "tag", "host tag still classified")
+	_ok(kind_at.call(line.find("text")) == "attr", "attr before ={ still classified")
+	_ok(kind_at.call(line.find("{")) == "symbol", "expr open brace is a symbol")
+	_ok(kind_at.call(line.find("1")) == "number", "number inside expr classified")
+	_ok(kind_at.call(line.find("if")) == "keyword", "keyword inside expr classified")
+	_ok(kind_at.call(line.find("\"hi\"") + 1) == "string", "string inside expr classified")
+	_ok(kind_at.call(line.find("<", 5)) == "symbol", "`<` inside expr is an operator, not a tag")
+	_ok(kind_at.call(line.find("}")) == "symbol", "expr close brace is a symbol")
+	# gd_mode does NOT paint assignments as attributes.
+	var gtoks: Array = tok.tokenize_line("x = \"s\"", true)
+	var has_attr := false
+	for t in gtoks:
+		if str((t as Dictionary)["kind"]) == "attr":
+			has_attr = true
+	_ok(not has_attr, "gd_mode treats name= as assignment, not attribute")
+
+	# G30: Enter with the caret between >|</ splits the pair around an indented middle line.
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = "\t\t<VBox></VBox>"
+	ce.set_caret_line(0)
+	ce.set_caret_column("\t\t<VBox>".length())
+	_ok(ce.handle_enter_between_tags(), "enter-between-tags arms on >|</")
+	_ok(ce.get_line_count() == 3, "pair splits onto three lines")
+	_ok(ce.get_line(1) == "\t\t  ", "middle line indents one level deeper")
+	_ok(ce.get_line(2) == "\t\t</VBox>", "closing tag keeps the base indent")
+	_ok(ce.get_caret_line() == 1 and ce.get_caret_column() == 4, "caret lands on the middle line")
+	ce.undo()
+	_ok(ce.get_line_count() == 1, "the split is one undo step")
+	ce.set_caret_line(0)
+	ce.set_caret_column(2)
+	_ok(not ce.handle_enter_between_tags(), "elsewhere, Enter is left alone")
+	ce.free()
+
+	# G20: confirming a completion steps the caret back inside the trailing empty pair.
+	var ce2: CodeEdit = CodeEditScript.new()
+	ce2.text = "te"
+	ce2.set_caret_line(0)
+	ce2.set_caret_column(2)
+	ce2.add_code_completion_option(CodeEdit.KIND_MEMBER, "text", "text=\"\"")
+	ce2.update_code_completion_options(true)
+	ce2.confirm_with_snippet_caret()
+	_ok(ce2.get_line(0) == "text=\"\"", "confirm inserts the snippet body")
+	_ok(ce2.get_caret_column() == 6, "caret steps back inside the quotes (G20)")
+	ce2.free()
+
+	# E14: line verbs ride the CodeEdit built-ins; bookmarks toggle and cycle.
+	var ce3: CodeEdit = CodeEditScript.new()
+	ce3.text = "aaa\nbbb\nccc"
+	ce3.set_caret_line(2)
+	ce3.set_caret_column(0)
+	ce3.move_lines_up()
+	_ok(ce3.get_line(1) == "ccc" and ce3.get_line(2) == "bbb", "move-line-up swaps with the neighbor")
+	var before_dup := ce3.get_line_count()
+	ce3.duplicate_lines()
+	_ok(ce3.get_line_count() == before_dup + 1, "duplicate adds a copy")
+	ce3.delete_lines()
+	_ok(ce3.get_line_count() == before_dup, "delete removes the line")
+	ce3.set_caret_line(0)
+	ce3.toggle_bookmark()
+	_ok(ce3.is_line_bookmarked(0), "Ctrl+B bookmarks the caret line")
+	ce3.set_caret_line(2)
+	ce3.goto_next_bookmark()
+	_ok(ce3.get_caret_line() == 0, "bookmark cycle wraps to the first mark")
+	ce3.toggle_bookmark()
+	_ok(not ce3.is_line_bookmarked(0), "second toggle clears the bookmark")
+	ce3.free()
+
+	# D6: compile() returns PER-CALL refs — populated when a guitkx-bound component lowers, and
+	# structurally empty on the next call (no static bleed between compiles).
+	var src := "component RA() {\n\treturn (\n\t\t<Dep />\n\t)\n}\n"
+	var r1: Dictionary = RUIGuitkx.compile(src, "ra", ["Dep"], { "Dep": "res://x/dep.gd" })
+	_ok(str((r1.get("refs", {}) as Dictionary).get("Dep", "")) == "res://x/dep.gd",
+		"compile returns the per-call component refs")
+	var r2: Dictionary = RUIGuitkx.compile(
+		"component RB() {\n\treturn (\n\t\t<Label />\n\t)\n}\n", "rb", [], {})
+	_ok((r2.get("refs", {}) as Dictionary).is_empty(), "next compile starts with empty refs (D6)")
+
+# F1 — tokenizer case table: the classification promises "headlessly unit-testable" finally pinned.
+# Each case probes the KIND at specific columns (resilient to symbol-run splitting).
+func _test_tokenizer_corpus() -> void:
+	var tok := GuitkxTokenizer.new()
+	# [line, {col: expected_kind}] — "" expects unclassified (default colour).
+	var cases: Array = [
+		["# a comment", { 0: "comment", 10: "comment" }],
+		["\"text run\"", { 0: "string", 9: "string" }],
+		["'sq'", { 0: "string" }],
+		["<Label />", { 0: "symbol", 1: "tag", 5: "tag", 7: "symbol", 8: "symbol" }],
+		["</VBox>", { 0: "symbol", 1: "symbol", 2: "tag", 6: "symbol" }],
+		["< 5", { 0: "symbol", 2: "number" }],
+		["@if cond", { 0: "directive", 2: "directive", 4: "" }],
+		["@ x", { 0: "symbol" }],
+		["123 0xFF 1.5", { 0: "number", 4: "number", 9: "number" }],
+		["component Foo() {", { 0: "keyword", 10: "", 16: "symbol" }],
+		["text=\"v\"", { 0: "attr", 4: "symbol", 5: "string" }],
+		["x = 5", { 0: "", 2: "symbol", 4: "number" }],
+		["on_pressed={ handler }", { 0: "attr", 11: "symbol", 13: "" }],
+		["{ var s = \"x\" }", { 0: "symbol", 2: "keyword", 10: "string", 14: "symbol" }],
+		["{ a < b }", { 4: "symbol" }],
+		["style={ {\"bg_color\": 4} }", { 0: "attr", 8: "symbol", 9: "string", 21: "number" }],
+		["{ unterminated", { 0: "symbol", 2: "" }],
+	]
+	for case in cases:
+		var line := str(case[0])
+		var toks: Array = tok.tokenize_line(line)
+		for col in (case[1] as Dictionary):
+			var want := str((case[1] as Dictionary)[col])
+			var got := ""
+			for t in toks:
+				if int((t as Dictionary)["start"]) <= int(col) and int(col) < int((t as Dictionary)["end"]):
+					got = str((t as Dictionary)["kind"])
+					break
+			_ok(got == want, "tokenize '%s' col %d -> '%s' (got '%s')" % [line, col, want, got])
+	# Spans are ordered and non-overlapping — the highlighter's boundary-map precondition.
+	var ordered := true
+	for line_case in cases:
+		var prev_end := -1
+		for t in tok.tokenize_line(str(line_case[0])):
+			if int((t as Dictionary)["start"]) < prev_end:
+				ordered = false
+			prev_end = int((t as Dictionary)["end"])
+	_ok(ordered, "token spans stay ordered and non-overlapping across the corpus")
+
+# F3 — TS-twin parity pins: behaviors the VS Code server pins that the addon inherited untested.
+func _test_parity_pins() -> void:
+	# onChange polymorphism resolves by candidate ORDER against the live class.
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "OptionButton") == "item_selected",
+		"onChange on OptionButton -> item_selected (order: before toggled)")
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "SpinBox") == "value_changed",
+		"onChange on SpinBox -> value_changed")
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "LineEdit") == "text_changed",
+		"onChange on LineEdit -> text_changed")
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "CheckBox") == "toggled",
+		"onChange on CheckBox -> toggled")
+	var evs: Array = GuitkxSchema.events_for_class("OptionButton")
+	var on_change_sig := ""
+	for e in evs:
+		if str((e as Dictionary).get("name", "")) == "onChange":
+			on_change_sig = str((e as Dictionary).get("signal", ""))
+	_ok(on_change_sig == "item_selected", "events_for_class carries the resolved onChange binding")
+
+	# @class_name override binds the generated class (compile + codegen surface).
+	var src := "@class_name Zed\ncomponent OvR() {\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var r: Dictionary = RUIGuitkx.compile(src, "ovr")
+	_ok(bool(r.get("ok", false)) and str(r.get("gd", "")).contains("class_name Zed"),
+		"@class_name override names the generated class")
+
+	# Index eviction: a deleted file's component leaves the workspace on rescan.
+	var p := "res://tests/__evict_me.guitkx"
+	var f := FileAccess.open(p, FileAccess.WRITE)
+	f.store_string("component EvictMe() {\n\treturn (\n\t\t<Label />\n\t)\n}\n")
+	f.close()
+	GuitkxWorkspace.rescan()
+	_ok(GuitkxWorkspace.component_tags().has("EvictMe"), "new component enters the index on rescan")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	GuitkxWorkspace.rescan()
+	_ok(not GuitkxWorkspace.component_tags().has("EvictMe"), "deleted component is evicted on rescan")
+
+	# Windows path canonicalization: every index/codegen surface speaks res:// forward slashes.
+	var clean := true
+	for wp in GuitkxWorkspace.all_paths():
+		if not str(wp).begins_with("res://") or str(wp).contains("\\"):
+			clean = false
+	_ok(clean, "workspace paths are canonical res:// (no backslashes)")
+	_ok(RUIGuitkxCodegen.gd_path_for("res://a/b.guitkx") == "res://a/b.gd",
+		"gd_path_for maps beside the source")
+	_ok(RUIGuitkxCodegen.diags_path_for("res://a/b.guitkx") == "res://a/b.guitkx.diags.json",
+		"diags_path_for maps the sidecar name")
