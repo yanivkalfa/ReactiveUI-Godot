@@ -8,9 +8,10 @@ extends RefCounted
 ## failure — so plugin.gd checks HERE first and only then loads the editor scripts (which may use
 ## the RUIGuitkx* classes directly). This file itself must never name them.
 
-## Oldest reactive_ui this editor is tested against (needs compile(text, basename, known, paths)
-## and RUIGuitkxCodegen.project_bindings, both since 0.8.1).
-const MIN_REACTIVE_UI := "0.8.1"
+## Oldest reactive_ui this editor is tested against. 0.5.0 pairs with 0.8.4: the Problems panel's
+## project scope and the sidecar overlay read the sweep's refs/2106/2107 verdicts, and mixed-version
+## reports are not worth debugging — the two assets release together.
+const MIN_REACTIVE_UI := "0.8.4"
 
 const _DEP_DIR := "res://addons/reactive_ui"
 const _DEP_CFG := _DEP_DIR + "/plugin.cfg"

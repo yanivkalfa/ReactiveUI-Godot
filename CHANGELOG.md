@@ -4,6 +4,31 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.4] — 2026-07-05
+
+Compiler/watcher hardening shipped alongside **Reactive UI Editor 0.5.0** (the M2
+"daily-driver parity" milestone of the in-Godot editor — see its own changelog). No
+API changes.
+
+### Changed
+- **Per-call compile refs.** The compiler's component-reference accumulator (the
+  `refs` map persisted into each `.diags.json` sidecar for dangling-reference
+  detection, GUITKX2107) is no longer a static — `compile()` owns a per-call
+  dictionary threaded through the emit context. The old static was safe only under an
+  unstated "compiles never interleave" invariant; per-call makes re-entrancy and
+  future threading structurally a non-issue. Sidecar output is unchanged.
+
+### Fixed
+- **Watcher error lines now carry a clickable path.** `push_error` dock entries
+  navigate to the watcher's own script, not your `.guitkx`; the watcher now also
+  prints a linkified `res://` line next to them (successes always had one). Line-level
+  navigation for the same diagnostics lives in the editor addon's Problems panel,
+  Project scope.
+- **Recreated files report their errors again.** The watcher's per-file
+  "last reported errors" memory is cleared for sources that no longer exist, so a
+  file deleted and later recreated with the same broken content reports its errors
+  instead of being suppressed by the stale entry.
+
 ## [0.8.3] — 2026-07-05
 
 **The addon is now fully self-contained for store installs.** First user feedback on the Asset
