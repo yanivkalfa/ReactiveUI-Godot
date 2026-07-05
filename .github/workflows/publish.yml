@@ -200,6 +200,10 @@ jobs:
   release-editor-addon:
     name: Package editor addon + GitHub release (idempotent)
     runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -295,6 +299,39 @@ jobs:
           name: Reactive UI Editor ${{ steps.ver.outputs.version }}
           body_path: dist/release-body.md
           files: dist/reactive_ui_editor-${{ steps.ver.outputs.version }}.zip
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Classic Asset Library — post a version "edit" for each new EDITOR release.
+  # Same pattern as assetlib-update above, with one difference: the editor listing uses
+  # the "Custom" download provider (a Download Commit cannot ship this addon — export-ignore
+  # strips it from git archives), so the edit carries the release-zip URL in download_commit,
+  # exactly as the AL submit form does. Runs only when release-editor-addon actually tagged
+  # a NEW version this dispatch.
+  # INERT until armed: set repo VARIABLE ASSETLIB_EDITOR_ASSET_ID (the numeric id from the
+  # approved listing's URL). ASSETLIB_USERNAME / ASSETLIB_PASSWORD secrets are shared with
+  # the runtime job. Edits are moderated server-side.
+  # ════════════════════════════════════════════════════════════════════════════
+  assetlib-editor-update:
+    name: Classic Asset Library edit — editor (inert until armed)
+    needs: release-editor-addon
+    if: needs.release-editor-addon.outputs.exists == 'false' && vars.ASSETLIB_EDITOR_ASSET_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize the editor asset template for this release
+        run: |
+          sed -e 's|{{ version }}|${{ needs.release-editor-addon.outputs.version }}|g' \
+              .asset-template-editor.json.hb > .asset-template-editor.resolved.json.hb
+          cat .asset-template-editor.resolved.json.hb
+
+      - name: Post the version edit to the classic Asset Library
+        uses: deep-entertainment/godot-asset-lib-action@v0.6.0
+        with:
+          username: ${{ secrets.ASSETLIB_USERNAME }}
+          password: ${{ secrets.ASSETLIB_PASSWORD }}
+          assetId: ${{ vars.ASSETLIB_EDITOR_ASSET_ID }}
+          assetTemplate: .asset-template-editor.resolved.json.hb
 
   # ════════════════════════════════════════════════════════════════════════════
   # VS Code extension — VS Marketplace + Open VSX, publishes only if version changed
