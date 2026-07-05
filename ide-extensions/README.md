@@ -26,6 +26,14 @@ visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient
   [`@gdscript-analyzer/core`](https://www.npmjs.com/package/@gdscript-analyzer/core) — a headless
   GDScript static analyzer ("Roslyn for Godot") — and maps the result back. **No running Godot editor
   and no TCP connection are required**, so it works fully offline; markup features work regardless.
+- **Plain-`.gd` language service** (`guitkx.enableGdscriptAnalysis`, default on) — the same in-process
+  analyzer serves ordinary GDScript files too: diagnostics, completion, hover, navigation,
+  project-wide rename, formatting, semantic highlighting, inlay hints, code actions, and document
+  symbols. Coexists with godot-tools (disable one side's `.gd` diagnostics to avoid duplicates).
+
+The same language features also exist **natively inside Godot**: the `reactive_ui_editor` addon
+(`addons/reactive_ui_editor`, outside this folder) is a full in-Godot `.guitkx` editor sharing the
+compiler/formatter/diagnostic codes, with the analyzer bundled as a GDExtension since editor 0.6.1.
 
 The language server is **TypeScript** (not C#): the embedded language is GDScript and the analyzer
 ships as an npm package (a napi native addon), so VS Code (the primary Godot audience) gets a
@@ -77,7 +85,7 @@ Azure/MSAL tree) — the scripts invoke them via `npx`, so a contributor's `npm 
 
 **Cross-platform packaging.** The bundled language server is a native napi addon (`@gdscript-analyzer/core`),
 so a `.vsix` is **platform-specific**. The local `bundle-server.js` above bundles only the builder's own
-`.node` (fine for F5/dev). The release CI (`publish-extensions` → `publish-vscode`) instead runs a matrix:
+`.node` (fine for F5/dev). The release CI (`publish.yml` → `publish-vscode`) instead runs a matrix:
 each leg installs the target's `@gdscript-analyzer/core-<triple>` binary, runs
 `node scripts/bundle-server.js --target <vsce-target>` (bundling only that platform's addon), and
 `vsce package --target <vsce-target>` → one platform-specific `.vsix` per platform
@@ -132,6 +140,6 @@ Releases are automated. The changelog source of truth is **`changelog.json`**; p
 | Grammar + schema | Done (valid JSON, adapted from the shipping Unity grammar) |
 | Language server — markup completion/hover, structural diagnostics, dangling-reference detection | Done + tested (`npm test`, `smoke.js`) |
 | Language server — embedded GDScript (completion/hover/goto/diagnostics) | Done — headless, in-process via `@gdscript-analyzer/core` (no Godot editor, no TCP) |
-| VS Code extension | Published; **0.8.6** — grammar, LSP client, format-on-save, sidecar + workspace-index watching |
-| VS2022 extension | Published; **0.5.5** — has not been re-released since; missing every fix/feature shipped in VS Code 0.6.0–0.8.6 (same shared `lsp-server`, just not repackaged yet) |
+| VS Code extension | Published; **0.8.6** — grammar, LSP client, format-on-save, sidecar + workspace-index watching, plain-`.gd` analyzer LSP, gdformat integration |
+| VS2022 extension | Published; **0.5.5** — behind VS Code 0.6.0–0.8.6 (same shared `lsp-server`, not repackaged since). Gap analysis + closure plan: [`plans/VSCODE_VS2022_PARITY_PLAN.md`](../plans/VSCODE_VS2022_PARITY_PLAN.md) |
 | Publishing + changelogs | Automated via `publish.yml`, but **`changelog.json` had drifted behind the hand-edited `vscode/CHANGELOG.md`** (now reconciled) — keep using `scripts/changelog.mjs add` so future releases don't diverge again |
