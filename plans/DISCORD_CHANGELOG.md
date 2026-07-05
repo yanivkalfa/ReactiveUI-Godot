@@ -1,3 +1,35 @@
+## [Discord post] ReactiveUI for Godot — community intro (editor 0.6.1) - 2026-07-05
+
+Building UI in Godot shouldn't mean hand-wiring nodes and signals for every screen. **ReactiveUI for Godot** brings the React component model to Godot 4, in plain GDScript — function components, hooks, a fiber reconciler, and a JSX-like markup language called **GUITKX**. Write your UI in `.guitkx` files, hit save, and your running game updates in place.
+
+**What it does:**
+- Function components with hooks — useState, useEffect, useMemo, useContext, useSignal, useTween, and more
+- `.guitkx` markup compiles to plain `.gd` on save — zero runtime overhead, no custom engine builds
+- Fast Refresh — save while the game runs and the live UI hot-reloads with hook state preserved
+- ~60 host elements mapping to Godot Controls, typed styling, a router, portals, error boundaries
+- Tooling two ways: a **native in-Godot editor** (main-screen tab: highlighting, live diagnostics, completion, go-to-definition, rename, project search, formatting) and a **VS Code extension**
+- **New in editor 0.6.1:** the in-Godot editor now bundles a native GDScript analyzer — the code inside your markup gets type-aware completion, hover, diagnostics, navigation and rename. One download, zero config, no external language server.
+
+**A quick taste:**
+```jsx
+component Counter {
+  var s = useState(0)
+  return (
+    <HBox>
+      <Label text={ "Count: %d" % s[0] } />
+      <Button text="+1" onClick={ func(): s[1].call(s[0] + 1) } />
+    </HBox>
+  )
+}
+```
+
+:package: **Asset Store:** https://store.godotengine.org/asset/yaniv-kalfa/reactive-ui (also on the classic Asset Library, in-editor)
+:book: **Repo, docs & releases:** https://github.com/yanivkalfa/ReactiveUI-Godot
+
+Happy to answer questions about the approach or the architecture — more to come on the road to 1.0!
+
+---
+
 ## Now on the Godot Asset Store roadmap — MIT-licensed, publishing pipeline staged
 
 The repo is now dual-license-ready for distribution: an **MIT `LICENSE`** landed, plus a store icon, and a `.gitattributes` `export-ignore` pass so an AssetLib/Asset Store download or `git archive` contains only the addon + README + LICENSE (a bundled `project.godot` or root `icon.png` would otherwise clobber a user's own project on install — now excluded). A `publish.yml` CI job is staged to auto-update the classic Godot Asset Library listing on every tagged release; the new Godot Asset Store still needs a manual first submission. Not live yet — accounts + first submissions are next.
