@@ -28,3 +28,4 @@ Thumbs.db
 
 # Publishing secrets (extension marketplace tokens) — never commit
 publisher-secrets.json
+addons/reactive_ui_analyzer/

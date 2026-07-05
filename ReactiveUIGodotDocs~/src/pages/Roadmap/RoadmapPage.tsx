@@ -59,6 +59,9 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Native Godot-editor addon (reactive_ui_editor) — a full .guitkx editor inside Godot: highlighting, live diagnostics, completion, hover, signature help, go-to-definition, references, rename, outline, project search, multi-file sessions, formatting</>} />
       </ListItem>
       <ListItem disablePadding>
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Native GDExtension analyzer backend (reactive_ui_analyzer, optional) — type-aware completion, hover, diagnostics, navigation, rename, and signature help for the GDScript inside .guitkx expressions; feature-detected, in-process, zero config</>} />
+      </ListItem>
+      <ListItem disablePadding>
         <ListItemText primary={<><Chip label="In progress" size="small" color="info" sx={{ mr: 1 }} />This documentation site (ported from the Unity docs, rewritten for Godot)</>} />
       </ListItem>
     </List>
@@ -85,9 +88,6 @@ export const RoadmapPage: FC = () => (
       Under consideration
     </Typography>
     <List>
-      <ListItem disablePadding>
-        <ListItemText primary={<><Chip label="Exploring" size="small" color="warning" sx={{ mr: 1 }} />A native GDExtension backend for the editor addon&apos;s deep-intelligence layer (decided with real usage data)</>} />
-      </ListItem>
       <ListItem disablePadding>
         <ListItemText primary={<><Chip label="Exploring" size="small" color="warning" sx={{ mr: 1 }} />Component testing utilities (snapshot-style tree assertions)</>} />
       </ListItem>

@@ -31,6 +31,9 @@ var _line_diags: Dictionary = {}  # line (int) -> Array of diagnostic records (f
 # Signature help (G4): a hand-drawn strip above the caret while it sits inside an event-handler
 # lambda's parameter list. Preload (not the global class name): cold class caches.
 const SignatureScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_signature.gd")
+# M3: the native embedded-GDScript tier. The bridge feature-detects the reactive_ui_analyzer
+# GDExtension; instance() is null when it is absent and every call site degrades to markup-only.
+const BridgeScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd")
 var _sig_panel: PanelContainer
 var _sig_label: RichTextLabel
 
@@ -155,6 +158,25 @@ func _signature_refresh() -> void:
 	var t := get_text()
 	var off := GuitkxContext.offset_of(t, get_caret_line(), get_caret_column())
 	var sig: Dictionary = SignatureScript.signature_at(t, off)
+	if sig.is_empty():
+		# M3: signature help inside embedded GDScript calls, through the analyzer. Adapted to the
+		# same {signal, params, active} shape the markup tier feeds the strip.
+		var bridge = BridgeScript.instance()
+		if bridge != null:
+			var ah: Dictionary = bridge.signature_help(file_path, t, off)
+			var sigs: Array = ah.get("signatures", [])
+			if not sigs.is_empty():
+				var active_sig := clampi(int(ah.get("active_signature", 0)), 0, sigs.size() - 1)
+				var info := sigs[active_sig] as Dictionary
+				var label := str(info.get("label", ""))
+				var params: Array = []
+				for p in info.get("params", []):
+					params.append(str((p as Dictionary).get("label", "")))
+				sig = {
+					"signal": label.get_slice("(", 0),
+					"params": params,
+					"active": int(ah.get("active_parameter", 0)),
+				}
 	if sig.is_empty():
 		_signature_hide()
 		return
@@ -388,11 +410,49 @@ func _request_code_completion(_force: bool) -> void:
 	var text := get_text()
 	var off := GuitkxContext.offset_of(text, get_caret_line(), get_caret_column())
 	var items := GuitkxCompletion.for_caret(text, off)
-	if items.is_empty():
-		return
+	var seen := {}
 	for it in items:
+		seen[str(it["display"])] = true
 		add_code_completion_option(_kind_of(str(it["kind"])), str(it["display"]), str(it["insert"]))
+	# M3: type-aware items from the native analyzer for embedded GDScript ({expr}/setup). The
+	# bridge returns [] when the caret is in markup or the extension is absent, so this merge is
+	# structurally a no-op outside its domain. Analyzer items dedupe against the static tier by
+	# display (the hook stubs exist in both).
+	var bridge = BridgeScript.instance()
+	if bridge != null:
+		for ai in bridge.completions(file_path, text, off):
+			var ad := ai as Dictionary
+			var label := str(ad.get("label", ""))
+			var detail := str(ad.get("detail", ""))
+			var display := label if detail == "" else "%s  %s" % [label, detail]
+			if label == "" or seen.has(label) or seen.has(display):
+				continue
+			seen[label] = true
+			var insert := str(ad.get("insert_text", "")) if str(ad.get("insert_text", "")) != "" else label
+			add_code_completion_option(_analyzer_kind_of(str(ad.get("kind", ""))), display, insert)
+	if seen.is_empty():
+		return
 	update_code_completion_options(true)
+
+# Analyzer CompletionKind (snake_case) -> CodeEdit option kind.
+func _analyzer_kind_of(kind: String) -> int:
+	match kind:
+		"function":
+			return CodeEdit.KIND_FUNCTION
+		"variable":
+			return CodeEdit.KIND_VARIABLE
+		"constant":
+			return CodeEdit.KIND_CONSTANT
+		"class":
+			return CodeEdit.KIND_CLASS
+		"signal":
+			return CodeEdit.KIND_SIGNAL
+		"member", "property":
+			return CodeEdit.KIND_MEMBER
+		"enum":
+			return CodeEdit.KIND_ENUM
+		_:
+			return CodeEdit.KIND_PLAIN_TEXT
 
 func _kind_of(kind: String) -> int:
 	match kind:
@@ -408,9 +468,21 @@ func _kind_of(kind: String) -> int:
 const HOOKS_GD := "res://addons/reactive_ui/core/hooks.gd"
 
 func _on_symbol_validate(symbol: String) -> void:
-	set_symbol_lookup_word_as_valid(GuitkxWorkspace.is_component(symbol) or GuitkxHover.HOOKS.has(symbol))
+	if GuitkxWorkspace.is_component(symbol) or GuitkxHover.HOOKS.has(symbol):
+		set_symbol_lookup_word_as_valid(true)
+		return
+	# M3: an identifier inside a mapped embedded span is navigable through the analyzer. The check
+	# is map-only (hash-cached virtual doc, no analyzer query) so ctrl+hover stays cheap.
+	var bridge = BridgeScript.instance()
+	if bridge != null:
+		var text := get_text()
+		var pos := get_line_column_at_pos(get_local_mouse_pos())
+		var off := GuitkxContext.offset_of(text, pos.y, pos.x)
+		set_symbol_lookup_word_as_valid(bridge.is_embedded_offset(file_path, text, off))
+		return
+	set_symbol_lookup_word_as_valid(false)
 
-func _on_symbol_lookup(symbol: String, _line: int, _column: int) -> void:
+func _on_symbol_lookup(symbol: String, line: int, column: int) -> void:
 	var hit := GuitkxWorkspace.lookup(symbol)
 	if not hit.is_empty():
 		definition_requested.emit(str(hit.get("path", "")), int(hit.get("offset", 0)))
@@ -422,6 +494,17 @@ func _on_symbol_lookup(symbol: String, _line: int, _column: int) -> void:
 		var at := src.find("func %s(" % symbol)
 		if at >= 0:
 			definition_requested.emit(HOOKS_GD, at + 5)
+			return
+	# M3: embedded-GDScript definitions through the analyzer — same-file hits land back in this
+	# buffer (remapped); cross-file hits carry a real res://*.gd path the view routes to Godot's
+	# script editor.
+	var bridge = BridgeScript.instance()
+	if bridge != null:
+		var text := get_text()
+		var hits: Array = bridge.goto_definition(file_path, text, GuitkxContext.offset_of(text, line, column))
+		if not hits.is_empty():
+			var first := hits[0] as Dictionary
+			definition_requested.emit(str(first.get("path", "")), int(first.get("offset", 0)))
 
 ## Diagnostics for the current buffer, keyed by line — folded into the hover card so the message
 ## (and its did-you-mean) is readable without clicking the gutter. [field ask]
@@ -436,7 +519,20 @@ func _on_symbol_hovered(_symbol: String, line: int, column: int) -> void:
 		tooltip_text = ""
 		return
 	var text := get_text()
-	var md := GuitkxHover.for_caret(text, GuitkxContext.offset_of(text, line, column))
+	var off := GuitkxContext.offset_of(text, line, column)
+	var md := GuitkxHover.for_caret(text, off)
+	# M3: type-aware hover for embedded GDScript — the inferred type/signature line leads, engine
+	# docs follow. Markup hover keeps priority (a tag is a tag); the analyzer only fills the gap.
+	if md == "":
+		var bridge = BridgeScript.instance()
+		if bridge != null:
+			var h: Dictionary = bridge.hover(file_path, text, off)
+			var ty := str(h.get("ty_label", ""))
+			if ty != "":
+				md = "**`%s`**" % ty
+				var doc := str(h.get("doc", ""))
+				if doc != "":
+					md += "\n\n" + doc
 	tooltip_text = compose_hover(md, line)
 
 ## Prepend the hovered line's diagnostics (message includes any did-you-mean) to the symbol card.

@@ -95,12 +95,25 @@ Note: `.guitkx` files stay visible in the FileSystem dock even while this addon 
 format's resource loader is a global class the engine registers on its own (that is also what keeps
 it alive across Godot's script-reload cycles).
 
+## Embedded GDScript intelligence (optional native layer)
+
+Install the **reactive_ui_analyzer** addon (prebuilt GDExtension binaries from
+[gdscript-analyzer releases](https://github.com/yanivkalfa/gdscript-analyzer/releases) — unzip
+into `res://addons/`, restart the editor) and the GDScript *inside* your markup gets the full
+type-aware treatment: completion on your typed locals (`b.` on a `Button` offers the real engine
+surface), inferred-type hover, syntax/type diagnostics squiggled at the exact expression (`GD:`
+codes in Problems), go-to-definition (into this buffer or into real `.gd` files via Godot's
+Script editor), find-references, buffer-scoped F2 rename, and signature help inside calls.
+
+This layer is **feature-detected** (`ClassDB.class_exists("GdscriptAnalyzer")`): without it the
+editor is exactly the markup-only experience above — fully supported, nothing nags. Under the
+hood each buffer projects its embedded GDScript into a scope-aware virtual `.gd` with a
+length-preserving source map (the same virtualDoc/sourceMap contract the VS Code server uses),
+and every offset crosses the boundary through a byte-exact LineIndex, so multibyte text can't
+mis-anchor results.
+
 ## Known limits (vs. the VS Code / VS 2022 extensions)
 
-- Deep embedded-GDScript intelligence (type-aware completion/hover/diagnostics *inside*
-  `{expr}`/setup code) isn't analyzed natively — the static tier (builtin constants, hook names,
-  hook signature cards) is; the full analyzer layer is VS Code / VS 2022-only for now, via
-  `ide-extensions/`'s `@gdscript-analyzer/core`. Its native integration is milestone M3 in
-  `plans/NATIVE_EDITOR_PARITY_PLAN.md`.
 - CodeEdit has no snippet tab-stops, so multi-field templates (beyond the caret-in-pair inserts)
   don't exist here.
+- Analyzer-backed inlay hints aren't rendered (CodeEdit has no inline-hint API).

@@ -43,6 +43,14 @@ func _enter_tree() -> void:
 	RUIEditorSettings.register_all()
 	_register_searchable_extension()
 
+	# M3: announce the optional native analyzer once per session — embedded-GDScript intelligence
+	# (type-aware completion/hover/diagnostics inside {expr} and setup code) turns on when the
+	# reactive_ui_analyzer GDExtension is installed. Silent when absent: markup-only is the
+	# fully-supported baseline, not an error state.
+	var bridge_script: GDScript = load("res://addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd")
+	if bridge_script != null and bool(bridge_script.available()):
+		print_rich("[color=green][reactive_ui_editor] native analyzer %s detected — embedded GDScript intelligence ON.[/color]" % str(bridge_script.native_version()))
+
 	_view = load("res://addons/reactive_ui_editor/editor/guitkx_editor_view.gd").new()
 	EditorInterface.get_editor_main_screen().add_child(_view)
 	_make_visible(false)

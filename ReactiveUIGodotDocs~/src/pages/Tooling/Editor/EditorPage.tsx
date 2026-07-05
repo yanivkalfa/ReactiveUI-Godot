@@ -214,9 +214,17 @@ export const EditorPage: FC = () => (
             <TableRow>
               <TableCell>Deep expression intelligence</TableCell>
               <TableCell>
-                Completion inside embedded GDScript is the static tier (builtin constants,
-                hook names). The full type-aware layer is the native analyzer integration on
-                the roadmap.
+                Install the optional <strong>reactive_ui_analyzer</strong> addon (prebuilt
+                GDExtension binaries from the{' '}
+                <a href="https://github.com/yanivkalfa/gdscript-analyzer/releases">
+                  gdscript-analyzer releases
+                </a>
+                , unzip into <code>res://addons/</code>, restart) and embedded GDScript gets
+                the full type-aware treatment: completion on your typed locals, inferred-type
+                hover, <code>GD:</code> diagnostics at the exact expression, go-to-definition
+                (into the buffer or real .gd files), references, buffer-scoped rename, and
+                signature help. Feature-detected — without it, the static tier (builtin
+                constants, hook names) still works.
               </TableCell>
             </TableRow>
           </TableBody>
