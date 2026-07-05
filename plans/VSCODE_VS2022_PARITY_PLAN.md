@@ -28,6 +28,36 @@ Consequently parity splits into four buckets:
 The current shipped VSIX is **0.5.5** and has not been re-released since; `README.md` already
 documents that it is missing "every fix/feature shipped in VS Code 0.6.0–0.8.6". That is bucket B1.
 
+## 0.5 Current state of the code (read before touching anything)
+
+The entire VS2022 extension is these files under `ide-extensions/visual-studio/GuitkxVsix/`:
+
+| File | Role |
+|---|---|
+| `GuitkxContentDefinition.cs` (23 lines) | MEF: `guitkx` content type (base `CodeRemoteContentDefinition` — REQUIRED for `ILanguageClient` attach) + `.guitkx` file-extension mapping. Nothing else. |
+| `GuitkxLanguageClient.cs` (82 lines) | The `ILanguageClient`: `Name`, `ConfigurationSections = {"guitkx"}` (inert — no options UI exists), `InitializationOptions => new { enableEmbeddedAnalysis = true }` (hardcoded), `FilesToWatch => null`, `ShowNotificationOnInitializeFailed = true`. `ActivateAsync` launches `<extensionDir>\server\node.exe "<extensionDir>\server\server.js" --stdio` (PATH-`node` fallback), returns a `Connection` over the process's stdio streams. `OnServerInitializedAsync` is a no-op. |
+| `guitkx.pkgdef` | `[$RootKey$\TextMate\Repositories] "ReactiveUIGuitkx"="$PackageFolder$\Syntaxes"` — TextMate grammar registration. **Audited/load-bearing; do not clobber.** |
+| `Syntaxes/guitkx.tmLanguage.json` | Byte-identical copy of `grammar/guitkx.tmLanguage.json`. |
+| `GuitkxVsix.csproj` | Legacy VSIX project, net472, `GeneratePkgDefFile=false` (static pkgdef ships instead), bundles `server\**\*` into the VSIX. Packages: `Microsoft.VisualStudio.LanguageServer.Client` 17.7.41, `Microsoft.VisualStudio.SDK` 17.7.37357, `VSSDK.BuildTools` 17.7.2189. |
+| `source.extension.vsixmanifest` | Identity `GuitkxVsix.ReactiveUITK` v0.5.5, Publisher `Yaniv Kalfa` (mismatch — see P0), target `Microsoft.VisualStudio.Community [17.0,18.0)` amd64. |
+| `publishManifest.json`, `overview-template.md` → `overview.md`, `CHANGELOG.md` | Marketplace metadata. `overview.md`/`CHANGELOG.md` are **generated** from `ide-extensions/changelog.json` by `ide-extensions/scripts/changelog.mjs` — never hand-edit. |
+| `fetch-node.ps1` | Downloads the pinned Windows x64 Node (20.18.0) → `server\node.exe`. Idempotent. |
+
+**The server's initializationOptions contract** (`lsp-server/src/server.ts:70-84`) — this is everything
+the client can configure at init; anything else requires a server change:
+
+```ts
+let embeddedReflow  = true;   // opts.embeddedReflow  ?? opts.useGdformat        (legacy alias)
+let embeddedEnabled = true;   // opts.enableEmbeddedAnalysis ?? opts.enableGodotProxy (legacy alias)
+canWatchFiles = !!params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration;
+```
+
+There is **no `onDidChangeConfiguration` handler** anywhere in the server — every option change
+requires a server restart to apply, in both editors. The server also reads `project.godot` from the
+workspace root at init (autoload resolution) and scans the workspace for `.guitkx`/`.gd`; when the
+client cannot register file watchers (VS2022 can't), it starts its own recursive `fs.watch` fallback
+— win32/darwin only, which is fine because VS2022 is Windows-only.
+
 ## 1. Parity matrix (source of truth)
 
 Legend: ✅ works today · 🟡 works but degraded/uncontrollable · ❌ absent · `P#` = phase that closes it.
@@ -115,6 +145,28 @@ server is told is user-controlled.
    - `Enable embedded GDScript analysis` (default true) → init option `enableEmbeddedAnalysis`.
    - `Use gdformat for embedded reflow` (default true) → init option `useGdformat`.
    - `Analyze plain .gd files` (default true) → gates Phase 2's document coverage.
+
+   Sketch (the standard VSSDK shape — options persist in the registry automatically):
+   ```csharp
+   public sealed class GuitkxOptionsPage : DialogPage
+   {
+       [Category("Language server"), DisplayName("Embedded GDScript analysis"),
+        Description("Type-aware completion/hover/definition inside {expr} and setup code.")]
+       public bool EnableEmbeddedAnalysis { get; set; } = true;
+
+       [Category("Language server"), DisplayName("Use gdformat for embedded reflow")]
+       public bool UseGdformat { get; set; } = true;
+
+       [Category("Language server"), DisplayName("Analyze plain .gd files")]
+       public bool EnableGdscriptAnalysis { get; set; } = true;
+   }
+   // On GuitkxPackage: [ProvideOptionPage(typeof(GuitkxOptionsPage), "GUITKX", "Language Server", 0, 0, true)]
+   ```
+   Reading options from the MEF client (which is NOT a package): resolve via
+   `AsyncPackage.GetGlobalService`/`ServiceProvider.GlobalProvider` on first use inside
+   `ActivateAsync` (already async, off the UI thread — switch with `JoinableTaskFactory` if VS
+   complains), or cache them into a static the package writes on load. Keep it dumb; the values
+   are read once per server start anyway (see the restart semantics above).
 3. `GuitkxLanguageClient` reads the options at `ActivateAsync` and builds `InitializationOptions`
    dynamically (replacing the hardcoded anonymous object).
 4. **Config-change semantics:** the shared server has **no** `onDidChangeConfiguration` handler
@@ -262,3 +314,71 @@ comment service, smart indent), `.csproj` compile items. No manifest changes.
 
 Each phase is independently releasable (P0 alone justifies a release); tag + changelog per phase
 per §7. Suggested branch naming: `feat/vs2022-parity-p<N>`, PRs into `dev` as usual.
+
+## 10. Dev environment & inner loop (for the implementing dev)
+
+**Prerequisites:** VS2022 (Community is fine) with the **"Visual Studio extension development"**
+workload; Node.js 20.x + npm; a Godot 4.4+ project to test against — the RG repo itself is the
+best workspace (it has `project.godot` + `examples/demos/**.guitkx` + the addon `.gd` libraries the
+server loads for cross-file resolution).
+
+**Build the server + VSIX from scratch** (PowerShell, repo root = `ide-extensions/`):
+```powershell
+cd lsp-server;  npm ci; npm run build            # tsc -> out/
+cd ..\vscode;   npm ci; node scripts\bundle-server.js   # server + THIS machine's analyzer .node -> vscode\server
+Copy-Item -Recurse -Force ..\vscode\server ..\visual-studio\GuitkxVsix\server
+powershell -ExecutionPolicy Bypass -File ..\visual-studio\GuitkxVsix\fetch-node.ps1
+# open GuitkxVsix.csproj in VS2022 and Build, or:
+msbuild ..\visual-studio\GuitkxVsix\GuitkxVsix.csproj -t:Restore,Build,CreateVsixContainer -p:Configuration=Release
+```
+`ide-extensions/scripts/publish-vsix.ps1 -LocalOnly` does all of the above + `overview.md`
+generation in one shot (finds MSBuild via vswhere).
+
+**Debug loop:** F5 on the VSIX project launches the **VS Experimental Instance**
+(`/rootSuffix Exp`); open the RG repo folder/solution there and open a `.guitkx` from
+`examples/demos/`. The LSP client's log appears in the experimental instance under
+**Output → "GUITKX Language Server"**; `[lsp-client]` messages and server stderr land there. To see
+raw LSP traffic, set the VS option *Text Editor → Advanced → LSP trace* (or attach to the
+`node.exe` child with `--inspect` by editing `ActivateAsync` locally — remove before commit).
+Server-side `console.error` writes are visible in that same pane.
+
+**Iterating on the server only:** rebuild `lsp-server` (`npm run build`), re-run
+`bundle-server.js`, re-copy to `GuitkxVsix\server`, restart the experimental instance (or the
+Phase-4 restart command once it exists). The server under `GuitkxVsix\server` is a **copy** — editing
+`lsp-server/src` does nothing until re-bundled; forgetting this is the classic wasted hour.
+
+**Manual test corpus:** `examples/demos/counter/counter.guitkx` (hooks + events),
+`examples/demos/controls/controls.guitkx` (attribute breadth), plus a scratch file for the V2 `.gd`
+checks. A ready-made embedded-intelligence probe:
+```
+component Probe {
+  var b := Button.new()
+  var s = useState(0)
+  return (
+    <VBox>
+      <Label text={ b. } />        // typed completion on `b.` — Button members expected
+      <Button text="x" onClick={ func(): s[1].call(s[0] + 1) } />
+    </VBox>
+  )
+}
+```
+
+## 11. Repo working agreements (non-negotiable)
+
+- **Branch flow:** base on `origin/dev`, PR into `dev` (title becomes the squash title), then dev
+  is fast-forwarded to master by the maintainer (`git push origin origin/dev:master`). Never push
+  master directly; never rebase shared branches.
+- **Never weaken a check to get green** — CI gates (VSIX content verification, tag gating,
+  lsp-server tests `npm test` + `node scripts/smoke.js`) are load-bearing. If one fails, the code
+  is wrong, not the gate.
+- **Releases are the Publish button** (`publish.yml`, `workflow_dispatch`): the `publish-vs2022`
+  job is version-gated on the `vs2022-v<manifest version>` tag — bump the manifest or the job
+  skips. It bundles/builds/verifies/publishes/tags on its own; there is no manual VsixPublisher
+  step in the happy path.
+- **Changelog:** `node ide-extensions/scripts/changelog.mjs add --ide vs2022 -m "..."` — the JSON
+  is the single source; generated `CHANGELOG.md`/`overview.md` must never be edited by hand.
+- **Server changes serve three clients** (VS Code, VS2022, and the in-Godot editor mirrors its
+  contracts): anything touching `lsp-server/src` needs its tests updated
+  (`lsp-server/npm test`) and a sanity pass in VS Code, not just VS.
+- **Git authorship is the maintainer's** — no `Co-Authored-By` trailers; commit/push only what the
+  task requires.
