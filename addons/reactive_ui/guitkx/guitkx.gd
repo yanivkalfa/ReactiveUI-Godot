@@ -39,13 +39,6 @@ const _VOCAB_GEN = preload("res://addons/reactive_ui/guitkx/guitkx_vocabulary.ge
 const _VOCAB_PATH_DEFAULT := "res://addons/reactive_ui/guitkx/vocabulary.json"
 static var _VOCAB_PATH := _VOCAB_PATH_DEFAULT
 
-## Component references collected during ONE compile() pass (tag -> generated .gd path, filled
-## at the tag chokepoint whenever a guitkx-bound component lowers through V.comp). Compiles are
-## editor-main-thread sequential, so a static accumulator is safe; nested markup re-parses
-## within the same compile share it deliberately. Persisted into the sidecar ("refs") so the
-## sweep can flag DANGLING references when a component's file vanishes (GUITKX2107).
-static var _ref_accum := {}
-
 static func vocab() -> Dictionary:
 	if _VOCAB.is_empty():
 		_VOCAB = _load_vocabulary()
@@ -144,7 +137,12 @@ static func compile(source: String, basename: String = "Component", known_compon
 			D.make("GUITKX2507", D.ERROR, "compiler environment not ready: vocabulary.json could not be loaded -- retrying on the next compile", 0, 0),
 		] }
 	var diags: Array = []
-	_ref_accum.clear()   # per-compile component-reference collector (see the tag chokepoint)
+	# Per-CALL component-reference collector (tag -> generated .gd path, filled at the tag
+	# chokepoint whenever a guitkx-bound component lowers through V.comp), threaded through the
+	# emit ctx. Was a static accumulator (D6) — safe only under an unstated "compiles never
+	# interleave" invariant; per-call makes re-entrancy/threading structurally a non-issue.
+	# Persisted into the sidecar ("refs") for dangling-reference detection (GUITKX2107).
+	var refs := {}
 	var known := {}
 	for kc in known_components:
 		known[str(kc)] = true
@@ -222,11 +220,11 @@ static func compile(source: String, basename: String = "Component", known_compon
 		diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` applies to component files -- a %s has no root element to theme" % decl["kind"], uss_at, 4))
 	match decl["kind"]:
 		"component":
-			r = _compile_component(source, decl["at"], class_name_override, basename, diags, known, uss_path)
+			r = _compile_component(source, decl["at"], class_name_override, basename, diags, known, uss_path, refs)
 		"hook":
 			r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
 		"module":
-			r = _compile_module(source, decl["at"], class_name_override, basename, diags, known)
+			r = _compile_module(source, decl["at"], class_name_override, basename, diags, known, refs)
 		_:
 			var near := _nearest_decl_keyword(source, i)
 			if near.has("word"):
@@ -323,7 +321,7 @@ static func _edit_distance(a: String, b: String) -> int:
 		prev = curr.duplicate()
 	return prev[lb]
 
-static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, uss_path: String = "") -> Dictionary:
+static func _compile_component(source: String, ci: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, uss_path: String = "", refs: Dictionary = {}) -> Dictionary:
 	var pc := _parse_component_at(source, ci, diags)
 	if not pc["ok"]:
 		return { "ok": false, "gd": "", "diagnostics": diags }
@@ -344,12 +342,12 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var cls: String = class_name_override if class_name_override != "" else pc["name"]
-	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known, uss_path, { "body": pc.get("body", ""), "parts": pc.get("parts", []), "unit": int(pc.get("unit", 1)), "anchor": int(pc.get("anchor", 0)) })
+	var gd := _emit(cls, pc["name"], pc["params"], pc["setup"], pc["root"], basename, diags, pc["body_at"], known, uss_path, { "body": pc.get("body", ""), "parts": pc.get("parts", []), "unit": int(pc.get("unit", 1)), "anchor": int(pc.get("anchor", 0)) }, refs)
 	# T1.1: errors appended DURING emit (GUITKX0026 undesugarable control-flow, nested-body parse
 	# errors) must fail the compile too -- the pre-emit gate above cannot see them.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	return { "ok": true, "gd": gd, "diagnostics": diags, "refs": _ref_accum.duplicate() }
+	return { "ok": true, "gd": gd, "diagnostics": diags, "refs": refs }
 
 ## Parse ONE component declaration at `ci`. Returns { ok, name, params, setup, root, next }
 ## (next = index just past the closing brace) or { ok:false } with diagnostics appended.
@@ -853,7 +851,8 @@ static func _compile_hook(source: String, hi: int, class_name_override: String, 
 		out += body_block + "\n"
 	if not _has_statement(body_block):
 		out += "\tpass\n"
-	return { "ok": true, "gd": out, "diagnostics": diags, "refs": _ref_accum.duplicate() }
+	# A lone hook declaration never lowers component tags, so its refs are structurally empty.
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": {} }
 
 ## Parse ONE hook declaration at `hi`. Returns { ok, name, params, body, next } or { ok:false }.
 static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
@@ -899,7 +898,7 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 
 ## module Name { component A {…} component B {…} hook use_x {…} } -> one class with one static func
 ## per declaration. Intra-module <A/> resolves to the bare sibling static func (V.fc(A, …)). [§4]
-static func _compile_module(source: String, mi: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}) -> Dictionary:
+static func _compile_module(source: String, mi: int, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, refs: Dictionary = {}) -> Dictionary:
 	var n := source.length()
 	var j := mi + 6   # "module"
 	j = _skip_ws_only(source, j)
@@ -978,7 +977,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	var out := "class_name %s\nextends RefCounted\n## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % [cls, basename]
 	for c in comps:
 		out += "# component %s\n" % c["name"]
-		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"], known, { "body": c.get("body", ""), "parts": c.get("parts", []), "unit": int(c.get("unit", 1)), "anchor": int(c.get("anchor", 0)) })
+		out += _emit_func(c["name"], c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"], known, { "body": c.get("body", ""), "parts": c.get("parts", []), "unit": int(c.get("unit", 1)), "anchor": int(c.get("anchor", 0)) }, refs)
 		out += "\n"
 	for h in hooks:
 		out += "# hook %s\n" % h["name"]
@@ -992,7 +991,7 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	# T1.1: emit-time errors (GUITKX0026, nested-body parse errors) fail the module compile as well.
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
-	return { "ok": true, "gd": out, "diagnostics": diags, "refs": _ref_accum.duplicate() }
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": refs }
 
 # --- body splitter: choose the LAST top-level markup return (T1.4, Unity useLastReturn parity) ---
 # "Top-level" is the GDScript equivalent of Unity's brace-depth-0: the `return` is the FIRST token on
@@ -1466,7 +1465,7 @@ static func unreachable_line_ranges(source: String) -> Array:
 # "lambdas can't hold multi-statement return control-flow" limit AND the helper-method
 # locals-capture problem -- the block is inline in render() and sees all setup locals. The
 # runtime `V._norm` flattens the `@for` arrays and drops the null `@if` misses for free.
-static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}, uss_path: String = "", early: Dictionary = {}) -> String:
+static func _emit(cls: String, comp_name: String, params: String, setup: String, root: Dictionary, basename: String, diags: Array = [], base: int = -1, known: Dictionary = {}, uss_path: String = "", early: Dictionary = {}, refs: Dictionary = {}) -> String:
 	var out := "class_name %s\n" % cls
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
@@ -1481,7 +1480,7 @@ static func _emit(cls: String, comp_name: String, params: String, setup: String,
 	out += "const __RUI_HOOK_SIG := %s\n\n" % _gd_str(_hook_signature(sig_src))
 	if uss_path != "":
 		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)   # T2.3 @uss
-	out += _emit_func("render", params, setup, root, {}, [], diags, base, known, early)
+	out += _emit_func("render", params, setup, root, {}, [], diags, base, known, early, refs)
 	return out
 
 ## Ordered hook-call fingerprint for Fast Refresh (Unity [HookSignature] parity): every builtin
@@ -1528,7 +1527,7 @@ static func _hook_signature(src: String) -> String:
 # `early` (Phase C) = { body, parts, unit, anchor } from _split_return; when `parts` holds `ret`
 # entries, setup is emitted INTERLEAVED (verbatim GDScript segments + early markup returns lowered
 # in place); otherwise the legacy whole-string path runs, byte-identical to pre-Phase-C output.
-static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1, known: Dictionary = {}, early: Dictionary = {}) -> String:
+static func _emit_func(func_name: String, params: String, setup: String, root: Dictionary, module_comps: Dictionary, skip_hooks: Array = [], diags: Array = [], base: int = -1, known: Dictionary = {}, early: Dictionary = {}, refs: Dictionary = {}) -> String:
 	var out := "static func %s(props: Dictionary, children: Array) -> RUIVNode:\n" % func_name
 	for p in _parse_params(params):
 		if p["default"] != "":
@@ -1542,7 +1541,7 @@ static func _emit_func(func_name: String, params: String, setup: String, root: D
 	# (swapped around every nested re-parse via _swap_base, so emit-time diagnostics carry positions).
 	# Created BEFORE setup so Phase C early returns lower through the same context (shared __cfN
 	# counter, diags, base -- no identifier collisions between early and final lowering).
-	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false, "base": base, "known_components": known }
+	var ctx := { "lines": [], "indent": 1, "counter": 0, "module_comps": module_comps, "diags": diags, "expr_mode": false, "base": base, "known_components": known, "refs": refs }
 	var has_ret := false
 	for part in early.get("parts", []):
 		if str(part["t"]) == "ret":
@@ -1809,7 +1808,9 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			var kv = (ctx.get("known_components", {}) as Dictionary).get(tag)
 			if kv is String:
 				fn = "V.comp(%s)" % _gd_str(str(kv))
-				_ref_accum[tag] = str(kv)   # recorded in the sidecar -> vanish detection (2107)
+				# Recorded in the sidecar -> vanish detection (2107). Mutated through the shared
+				# ctx["refs"] reference — the same Dictionary compile() returns (D6: per-call).
+				(ctx.get("refs", {}) as Dictionary)[tag] = str(kv)
 			else:
 				fn = tag + ".render"
 		var args2 := "%s, %s" % [fn, props_dict]

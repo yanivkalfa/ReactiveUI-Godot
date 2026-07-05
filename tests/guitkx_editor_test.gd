@@ -37,6 +37,7 @@ func _initialize() -> void:
 		["project_search", _test_project_search],
 		["problems_project", _test_problems_project],
 		["signature", _test_signature],
+		["wave7_editing", _test_wave7_editing],
 	]:
 		print("[guitkx_editor_test] -- %s" % t[0])
 		(t[1] as Callable).call()
@@ -608,12 +609,15 @@ func _test_wave2_completion() -> void:
 	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
 	_ok(names.has("useState") and names.has("useEffect"), "use… offers the hook names")
 
-	# G28: the native on_<signal> spelling joins the React aliases.
+	# G28: the native on_<signal> spelling joins the React aliases (displays); G20: the inserts
+	# carry `=` + an empty value pair the editor steps the caret into.
 	var s6 := RET + "<Button " + END
 	items = GuitkxCompletion.for_caret(s6, (RET + "<Button ").length())
-	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	names = items.map(func(it): return str((it as Dictionary).get("display", "")))
 	_ok(names.has("onClick") and names.has("on_pressed"), "both event spellings offered")
 	_ok(names.has("on_gui_input"), "verbatim escape hatch covers every signal")
+	var inserts: Array = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(inserts.has("onClick={}") and inserts.has("text=\"\""), "attr inserts are snippet-shaped (G20)")
 
 	# Context: the attr name resolves through braces (style value) and plain quotes.
 	var c1 := GuitkxContext.classify(s3, (RET + "<Label style={ {\"").length())
@@ -972,3 +976,93 @@ func _test_signature() -> void:
 	ce._signature_refresh()
 	_ok(not ce.signature_visible(), "strip hides when the caret leaves the context")
 	ce.free()
+
+# W7 — G11 embedded sub-highlighting, G30 Enter-between-tags, G20 snippet confirm, E14 line
+# verbs + bookmarks, D6 per-call compile refs.
+func _test_wave7_editing() -> void:
+	# G11: inside {expr}, GDScript classifies for real — keyword/number/string — braces are
+	# symbols, and `<` is a comparison operator, never a tag. Outside, markup rules unchanged.
+	var tok := GuitkxTokenizer.new()
+	var line := "<Label text={ 1 if a < 2 else \"hi\" } />"
+	var toks: Array = tok.tokenize_line(line)
+	var kind_at := func(col: int) -> String:
+		for t in toks:
+			if int((t as Dictionary)["start"]) <= col and col < int((t as Dictionary)["end"]):
+				return str((t as Dictionary)["kind"])
+		return ""
+	_ok(kind_at.call(1) == "tag", "host tag still classified")
+	_ok(kind_at.call(line.find("text")) == "attr", "attr before ={ still classified")
+	_ok(kind_at.call(line.find("{")) == "symbol", "expr open brace is a symbol")
+	_ok(kind_at.call(line.find("1")) == "number", "number inside expr classified")
+	_ok(kind_at.call(line.find("if")) == "keyword", "keyword inside expr classified")
+	_ok(kind_at.call(line.find("\"hi\"") + 1) == "string", "string inside expr classified")
+	_ok(kind_at.call(line.find("<", 5)) == "symbol", "`<` inside expr is an operator, not a tag")
+	_ok(kind_at.call(line.find("}")) == "symbol", "expr close brace is a symbol")
+	# gd_mode does NOT paint assignments as attributes.
+	var gtoks: Array = tok.tokenize_line("x = \"s\"", true)
+	var has_attr := false
+	for t in gtoks:
+		if str((t as Dictionary)["kind"]) == "attr":
+			has_attr = true
+	_ok(not has_attr, "gd_mode treats name= as assignment, not attribute")
+
+	# G30: Enter with the caret between >|</ splits the pair around an indented middle line.
+	var ce: CodeEdit = CodeEditScript.new()
+	ce.text = "\t\t<VBox></VBox>"
+	ce.set_caret_line(0)
+	ce.set_caret_column("\t\t<VBox>".length())
+	_ok(ce.handle_enter_between_tags(), "enter-between-tags arms on >|</")
+	_ok(ce.get_line_count() == 3, "pair splits onto three lines")
+	_ok(ce.get_line(1) == "\t\t  ", "middle line indents one level deeper")
+	_ok(ce.get_line(2) == "\t\t</VBox>", "closing tag keeps the base indent")
+	_ok(ce.get_caret_line() == 1 and ce.get_caret_column() == 4, "caret lands on the middle line")
+	ce.undo()
+	_ok(ce.get_line_count() == 1, "the split is one undo step")
+	ce.set_caret_line(0)
+	ce.set_caret_column(2)
+	_ok(not ce.handle_enter_between_tags(), "elsewhere, Enter is left alone")
+	ce.free()
+
+	# G20: confirming a completion steps the caret back inside the trailing empty pair.
+	var ce2: CodeEdit = CodeEditScript.new()
+	ce2.text = "te"
+	ce2.set_caret_line(0)
+	ce2.set_caret_column(2)
+	ce2.add_code_completion_option(CodeEdit.KIND_MEMBER, "text", "text=\"\"")
+	ce2.update_code_completion_options(true)
+	ce2.confirm_with_snippet_caret()
+	_ok(ce2.get_line(0) == "text=\"\"", "confirm inserts the snippet body")
+	_ok(ce2.get_caret_column() == 6, "caret steps back inside the quotes (G20)")
+	ce2.free()
+
+	# E14: line verbs ride the CodeEdit built-ins; bookmarks toggle and cycle.
+	var ce3: CodeEdit = CodeEditScript.new()
+	ce3.text = "aaa\nbbb\nccc"
+	ce3.set_caret_line(2)
+	ce3.set_caret_column(0)
+	ce3.move_lines_up()
+	_ok(ce3.get_line(1) == "ccc" and ce3.get_line(2) == "bbb", "move-line-up swaps with the neighbor")
+	var before_dup := ce3.get_line_count()
+	ce3.duplicate_lines()
+	_ok(ce3.get_line_count() == before_dup + 1, "duplicate adds a copy")
+	ce3.delete_lines()
+	_ok(ce3.get_line_count() == before_dup, "delete removes the line")
+	ce3.set_caret_line(0)
+	ce3.toggle_bookmark()
+	_ok(ce3.is_line_bookmarked(0), "Ctrl+B bookmarks the caret line")
+	ce3.set_caret_line(2)
+	ce3.goto_next_bookmark()
+	_ok(ce3.get_caret_line() == 0, "bookmark cycle wraps to the first mark")
+	ce3.toggle_bookmark()
+	_ok(not ce3.is_line_bookmarked(0), "second toggle clears the bookmark")
+	ce3.free()
+
+	# D6: compile() returns PER-CALL refs — populated when a guitkx-bound component lowers, and
+	# structurally empty on the next call (no static bleed between compiles).
+	var src := "component RA() {\n\treturn (\n\t\t<Dep />\n\t)\n}\n"
+	var r1: Dictionary = RUIGuitkx.compile(src, "ra", ["Dep"], { "Dep": "res://x/dep.gd" })
+	_ok(str((r1.get("refs", {}) as Dictionary).get("Dep", "")) == "res://x/dep.gd",
+		"compile returns the per-call component refs")
+	var r2: Dictionary = RUIGuitkx.compile(
+		"component RB() {\n\treturn (\n\t\t<Label />\n\t)\n}\n", "rb", [], {})
+	_ok((r2.get("refs", {}) as Dictionary).is_empty(), "next compile starts with empty refs (D6)")

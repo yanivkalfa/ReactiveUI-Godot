@@ -57,17 +57,25 @@ static func _tags(prefix: String) -> Array:
 static func _attributes(tag: String) -> Array:
 	var out: Array = []
 	var seen := {}
+	# G20 snippet shape: attributes insert their `=` + an empty value pair — `=""` for string-ish
+	# properties, `={}` for events and expression values. The editor's confirm steps the caret
+	# back INSIDE the pair, and the `"` then arms value completion (enums/bools/style keys).
 	for a in GuitkxSchema.structural_attributes():
-		_push(out, seen, MEMBER, str(a.get("name", "")))
+		var nm := str(a.get("name", ""))
+		_push_snippet(out, seen, MEMBER, nm, nm + ("=\"\"" if str(a.get("type", "")) == "String" else "={}"))
 	var gclass := GuitkxSchema.godot_class_for(tag)
 	for ev in GuitkxSchema.events_for_class(gclass):
-		_push(out, seen, SIGNAL, str(ev.get("name", "")))
+		var en := str(ev.get("name", ""))
+		_push_snippet(out, seen, SIGNAL, en, en + "={}")
 	# The verbatim `on_<signal>` escape hatch (G28): every signal, both spellings offered like the
 	# VS Code extension. React aliases stay first; natives dedupe against them by name.
 	for s in GuitkxSchema.godot_signals(gclass):
-		_push(out, seen, SIGNAL, "on_" + str(s.get("name", "")))
+		var sn := "on_" + str(s.get("name", ""))
+		_push_snippet(out, seen, SIGNAL, sn, sn + "={}")
 	for p in GuitkxSchema.godot_properties(gclass):
-		_push(out, seen, MEMBER, str(p.get("name", "")))
+		var pn := str(p.get("name", ""))
+		_push_snippet(out, seen, MEMBER, pn,
+			pn + ("=\"\"" if str(p.get("type", "")) == "String" else "={}"))
 	return out
 
 ## Value completion inside `attr="|"` or `style={ {"|` (G5/G6): style-dict keys for `style`-family
@@ -128,15 +136,33 @@ static func _directives(at_symbol: bool) -> Array:
 	var out: Array = []
 	for d in GuitkxSchema.control_flow():
 		var nm := str(d.get("directive", ""))
-		out.append(_item(KEYWORD, nm.substr(1) if at_symbol else nm, nm))
+		var base := nm.substr(1) if at_symbol else nm
+		out.append(_item(KEYWORD, base + _directive_tail(str(d.get("form", ""))), nm))
 	if at_symbol:
 		for d in GuitkxSchema.preamble_directives():
 			var nm := str(d.get("name", ""))
-			out.append(_item(KEYWORD, nm.substr(1), nm))
+			out.append(_item(KEYWORD, nm.substr(1) + _directive_tail(str(d.get("form", ""))), nm))
 	return out
+
+# G20: derive the snippet tail from the directive's documented form — parenthesised forms
+# (@if/@for/@match) get " ()", quoted forms (@uss "path") get ' ""', bare forms (@else) nothing.
+# The editor's confirm places the caret inside the pair.
+static func _directive_tail(form: String) -> String:
+	if form.contains("("):
+		return " ()"
+	if form.contains("\""):
+		return " \"\""
+	return ""
 
 static func _push(out: Array, seen: Dictionary, kind: String, name: String) -> void:
 	if name == "" or seen.has(name):
 		return
 	seen[name] = true
 	out.append(_item(kind, name))
+
+# Deduped push with a snippet insert distinct from the displayed name (G20).
+static func _push_snippet(out: Array, seen: Dictionary, kind: String, name: String, insert: String) -> void:
+	if name == "" or seen.has(name):
+		return
+	seen[name] = true
+	out.append(_item(kind, insert, name))

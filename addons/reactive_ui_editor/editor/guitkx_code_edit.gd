@@ -82,6 +82,7 @@ func configure() -> void:
 
 	# Gutters + view comforts, mirroring the built-in script editor's defaults.
 	gutters_draw_line_numbers = true
+	gutters_draw_bookmarks = true   # E14: Ctrl+B toggles, Ctrl+Shift+B cycles
 	line_folding = true
 	gutters_draw_fold_gutter = true
 	highlight_current_line = true
@@ -189,12 +190,24 @@ func _signature_hide() -> void:
 func signature_visible() -> bool:
 	return _sig_panel != null and _sig_panel.visible
 
-## Ctrl+/ comment toggle (E12) + Ctrl+wheel / Ctrl+=/-/0 font zoom (E11).
+## Keyboard verbs: Ctrl+/ comment toggle (E12), Ctrl+wheel / Ctrl+=/-/0 zoom (E11), Alt+Up/Down
+## move lines + Ctrl+Shift+D/K duplicate/delete + Ctrl(+Shift)+B bookmarks (E14), Enter splitting
+## a `>|</` tag pair with an indented middle line (G30), and Enter/Tab confirming a completion
+## with snippet-aware caret placement (G20).
 func _gui_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k != null and k.pressed and not k.echo and k.keycode == KEY_ESCAPE and signature_visible():
 		_signature_hide()
 		accept_event()
+		return
+	if k != null and k.pressed and not k.echo and k.alt_pressed and not k.is_command_or_control_pressed():
+		match k.keycode:
+			KEY_UP:
+				move_lines_up()
+				accept_event()
+			KEY_DOWN:
+				move_lines_down()
+				accept_event()
 		return
 	if k != null and k.pressed and not k.echo and k.is_command_or_control_pressed():
 		match k.keycode:
@@ -210,7 +223,32 @@ func _gui_input(event: InputEvent) -> void:
 			KEY_0, KEY_KP_0:
 				set_zoom(0)
 				accept_event()
+			KEY_D:
+				if k.shift_pressed:
+					duplicate_lines()
+					accept_event()
+			KEY_K:
+				if k.shift_pressed:
+					delete_lines()
+					accept_event()
+			KEY_B:
+				if k.shift_pressed:
+					goto_next_bookmark()
+				else:
+					toggle_bookmark()
+				accept_event()
 		return
+	if k != null and k.pressed and not k.echo \
+			and (k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER or k.keycode == KEY_TAB) \
+			and get_code_completion_selected_index() >= 0:
+		confirm_with_snippet_caret()
+		accept_event()
+		return
+	if k != null and k.pressed and not k.echo and not k.shift_pressed \
+			and (k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER):
+		if handle_enter_between_tags():
+			accept_event()
+			return
 	var mb := event as InputEventMouseButton
 	if mb != null and mb.pressed and mb.ctrl_pressed:
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -219,6 +257,55 @@ func _gui_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			zoom_step(-1)
 			accept_event()
+
+## G20: confirm the selected completion, then step the caret back inside a trailing empty pair —
+## `text=""` and `on_pressed={}` land ready to type the value, `@if ()` ready for the condition.
+func confirm_with_snippet_caret() -> void:
+	var idx := get_code_completion_selected_index()
+	if idx < 0:
+		return
+	var opt: Dictionary = get_code_completion_option(idx)
+	confirm_code_completion()
+	var ins := str(opt.get("insert_text", ""))
+	if ins.ends_with("\"\"") or ins.ends_with("{}") or ins.ends_with("()"):
+		set_caret_column(maxi(0, get_caret_column() - 1))
+
+## G30: Enter with the caret exactly between `>` and `</` splits the pair onto three lines with an
+## indented middle, VS Code style. Returns false (let Enter behave normally) anywhere else.
+func handle_enter_between_tags() -> bool:
+	if has_selection() or get_caret_count() > 1:
+		return false
+	var line := get_caret_line()
+	var col := get_caret_column()
+	var lt := get_line(line)
+	if col == 0 or col > lt.length():
+		return false
+	if lt[col - 1] != ">" or not lt.substr(col).begins_with("</"):
+		return false
+	var base := lt.substr(0, lt.length() - lt.strip_edges(true, false).length())
+	var ind := " ".repeat(indent_size) if indent_use_spaces else "\t"
+	begin_complex_operation()
+	insert_text_at_caret("\n" + base + ind + "\n" + base)
+	end_complex_operation()
+	set_caret_line(line + 1)
+	set_caret_column((base + ind).length())
+	return true
+
+## E14 bookmarks, over CodeEdit's built-in bookmark gutter.
+func toggle_bookmark() -> void:
+	var l := get_caret_line()
+	set_line_as_bookmarked(l, not is_line_bookmarked(l))
+
+func goto_next_bookmark() -> void:
+	var marks: PackedInt32Array = get_bookmarked_lines()
+	if marks.is_empty():
+		return
+	var cur := get_caret_line()
+	for m in marks:
+		if int(m) > cur:
+			set_caret_line(int(m))
+			return
+	set_caret_line(int(marks[0]))  # wrap to the first bookmark
 
 func zoom_step(dir: int) -> void:
 	var base := get_theme_font_size("font_size")
