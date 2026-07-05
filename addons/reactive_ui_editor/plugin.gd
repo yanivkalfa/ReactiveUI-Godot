@@ -21,6 +21,7 @@ var _view: Control
 var _problems: Control
 var _problems_button: Button
 var _references: Control
+var _search: Control
 var _fs_debounce: Timer
 var _deps_ok := false
 
@@ -49,6 +50,7 @@ func _enter_tree() -> void:
 	_problems = load("res://addons/reactive_ui_editor/editor/guitkx_problems_panel.gd").new()
 	_view.set_problems_panel(_problems)
 	_problems.diagnostic_activated.connect(_on_problem_activated)
+	_problems.location_activated.connect(_on_reference_activated)
 	_problems_button = add_control_to_bottom_panel(_problems, "Problems")
 
 	# References results (Shift+F12) get their own bottom panel so the diagnostics refresh can
@@ -57,6 +59,12 @@ func _enter_tree() -> void:
 	_references.location_activated.connect(_on_reference_activated)
 	add_control_to_bottom_panel(_references, "References")
 	_view.references_requested.connect(_on_references_requested)
+
+	# Project-wide .guitkx search (the addon-native replacement promised when E18 stripped our
+	# extension from Godot's Search in Files — see _register_searchable_extension).
+	_search = load("res://addons/reactive_ui_editor/editor/guitkx_search_panel.gd").new()
+	_search.location_activated.connect(_on_reference_activated)
+	add_control_to_bottom_panel(_search, "Search .guitkx")
 
 	# Follow the open file through dock renames/moves/deletes (parity plan L1/L2) — otherwise the
 	# view's path goes stale and Save resurrects the old filename with the user's edits in it.
@@ -104,6 +112,10 @@ func _exit_tree() -> void:
 		remove_control_from_bottom_panel(_references)
 		_references.queue_free()
 		_references = null
+	if _search != null:
+		remove_control_from_bottom_panel(_search)
+		_search.queue_free()
+		_search = null
 	_problems_button = null
 	if _view != null:
 		_view.queue_free()

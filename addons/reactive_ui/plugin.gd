@@ -206,6 +206,11 @@ func _report_error(e: Dictionary) -> void:
 	_last_diags[path] = "E:" + body
 	for ln in lines:
 		push_error("[guitkx] " + ln)
+	# Dock push_error entries navigate to THIS call site, not the .guitkx (parity plan L5), while
+	# plain prints get their res:// paths linkified — so give errors the same clickable route the
+	# "compiled ->" success lines already have. (The editor addon's Problems panel, Project scope,
+	# mirrors these diagnostics with line-level navigation via the sidecar.)
+	print_rich("[color=salmon][guitkx] errors in %s (details above)[/color]" % path)
 
 func _report_warnings(path: String, warnings: Array) -> void:
 	for ln in _diag_lines(path, warnings):

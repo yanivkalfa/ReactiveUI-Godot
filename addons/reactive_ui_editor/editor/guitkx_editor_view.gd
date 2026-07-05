@@ -20,6 +20,7 @@ const FindBarScript := preload("res://addons/reactive_ui_editor/editor/guitkx_fi
 const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
 const ConfigScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_config.gd")
 const RefsScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_refs.gd")
+const OutlineScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_outline.gd")
 
 # Multi-file model (M2/G16): ONE GuitkxCodeEdit per open file, stacked with only the current one
 # visible — undo history, caret, scroll, decorations, and dirty/conflict state all survive file
@@ -30,6 +31,7 @@ var _current: GuitkxCodeEdit
 var _editors: Dictionary = {}   # path ("" = the scratch buffer) -> GuitkxCodeEdit
 var _editor_stack: Control
 var _open_list: ItemList
+var _outline: Tree
 var _wrap_toggle: CheckBox
 
 var _file_label: Label
@@ -91,13 +93,22 @@ func _init() -> void:
 	split.split_offset = 180
 	add_child(split)
 
-	# Left: the open-files list (script-editor style). Click switches; middle-click closes.
+	# Left: the open-files list (script-editor style; click switches, middle-click closes) over
+	# the document outline (G12; activate to jump).
+	var left := VSplitContainer.new()
+	left.custom_minimum_size = Vector2(150, 0)
+	left.split_offset = 220
+	split.add_child(left)
 	_open_list = ItemList.new()
-	_open_list.custom_minimum_size = Vector2(150, 0)
 	_open_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_open_list.item_selected.connect(_on_open_list_selected)
 	_open_list.item_clicked.connect(_on_open_list_clicked)
-	split.add_child(_open_list)
+	left.add_child(_open_list)
+	_outline = Tree.new()
+	_outline.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_outline.hide_root = true
+	_outline.item_activated.connect(_on_outline_activated)
+	left.add_child(_outline)
 
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -231,6 +242,31 @@ func _close_editor(path: String) -> void:
 			_switch_to(_ensure_editor(""))
 		else:
 			_switch_to(_editors[_editors.keys()[_editors.size() - 1]])
+
+## Document outline (G12): declarations of the current buffer; activate to jump.
+func _refresh_outline() -> void:
+	if _outline == null or _current == null:
+		return
+	_outline.clear()
+	var root := _outline.create_item()
+	for entry in OutlineScript.outline_of(_current.text):
+		var e := entry as Dictionary
+		var item := _outline.create_item(root)
+		var glyph := "◆"
+		match str(e.get("kind", "")):
+			"hook":
+				glyph = "ƒ"
+			"module":
+				glyph = "▣"
+			"func":
+				glyph = "·"
+		item.set_text(0, "%s %s" % [glyph, str(e.get("name", ""))])
+		item.set_metadata(0, int(e.get("offset", 0)))
+
+func _on_outline_activated() -> void:
+	var item := _outline.get_selected()
+	if item != null:
+		_goto_offset(int(item.get_metadata(0)))
 
 ## All real (non-scratch) open file paths — the plugin's folder-lifecycle handlers iterate these.
 func open_paths() -> Array:
@@ -544,6 +580,9 @@ func _update_file_label() -> void:
 func _refresh_diagnostics() -> void:
 	if _code_edit == null:
 		return
+	# The outline is pure text (no compile) — refresh it before any of the diagnostic gates below
+	# can return, so it stays live with diagnostics disabled and on oversized files too.
+	_refresh_outline()
 	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_DIAGNOSTICS):
 		GuitkxDiagnosticsRenderer.clear(_code_edit, _code_edit.diag_gutter)
 		_code_edit.set_dim_lines({})

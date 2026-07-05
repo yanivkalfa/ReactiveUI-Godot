@@ -28,6 +28,12 @@ var _highlighter: GuitkxCodeHighlighter
 var _theme_source: Control
 var _line_diags: Dictionary = {}  # line (int) -> Array of diagnostic records (from the view)
 
+# Signature help (G4): a hand-drawn strip above the caret while it sits inside an event-handler
+# lambda's parameter list. Preload (not the global class name): cold class caches.
+const SignatureScript := preload("res://addons/reactive_ui_editor/lsp/guitkx_signature.gd")
+var _sig_panel: PanelContainer
+var _sig_label: RichTextLabel
+
 func _init() -> void:
 	# Pure CodeEdit state — safe in every context (editor, headless tests), so the widget is never
 	# half-configured (a -1 diag_gutter would make the diagnostics renderer index out of bounds).
@@ -120,6 +126,15 @@ func configure() -> void:
 	if not symbol_lookup.is_connected(_on_symbol_lookup):
 		symbol_lookup.connect(_on_symbol_lookup)
 
+	# Signature help (G4): recompute on every edit AND caret move — entering the param list shows
+	# it, leaving it (or Esc) hides it, so no separate dismissal bookkeeping can go stale.
+	if not text_changed.is_connected(_signature_refresh):
+		text_changed.connect(_signature_refresh)
+	if not caret_changed.is_connected(_signature_refresh):
+		caret_changed.connect(_signature_refresh)
+	if not focus_exited.is_connected(_signature_hide):
+		focus_exited.connect(_signature_hide)
+
 func _exit_tree() -> void:
 	if _theme_source != null and _theme_source.theme_changed.is_connected(_on_theme_changed):
 		_theme_source.theme_changed.disconnect(_on_theme_changed)
@@ -129,9 +144,58 @@ func _on_theme_changed() -> void:
 		_highlighter.update_colors()
 		queue_redraw()
 
+## Signature help (G4): pure logic in GuitkxSignature; this is only the strip. Placed ABOVE the
+## caret line so it never covers what the user is typing, and never focusable — keystrokes stay
+## in the editor. Honors the completion toggle (parameter hints are typing intelligence).
+func _signature_refresh() -> void:
+	if not RUIEditorSettings.is_enabled(RUIEditorSettings.KEY_COMPLETION):
+		_signature_hide()
+		return
+	var t := get_text()
+	var off := GuitkxContext.offset_of(t, get_caret_line(), get_caret_column())
+	var sig: Dictionary = SignatureScript.signature_at(t, off)
+	if sig.is_empty():
+		_signature_hide()
+		return
+	if _sig_panel == null:
+		_sig_panel = PanelContainer.new()
+		_sig_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_sig_panel.focus_mode = Control.FOCUS_NONE
+		_sig_label = RichTextLabel.new()
+		_sig_label.bbcode_enabled = true
+		_sig_label.fit_content = true
+		_sig_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		_sig_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_sig_label.focus_mode = Control.FOCUS_NONE
+		_sig_panel.add_child(_sig_label)
+		add_child(_sig_panel)
+	var parts: Array = []
+	var params: Array = sig.get("params", [])
+	for pi in params.size():
+		var p := str(params[pi])
+		parts.append(("[b]%s[/b]" % p) if pi == int(sig.get("active", 0)) else p)
+	_sig_label.text = "[code]%s(%s)[/code]" % [str(sig.get("signal", "")), ", ".join(PackedStringArray(parts))]
+	_sig_panel.visible = true
+	_sig_panel.reset_size()
+	var pos := get_caret_draw_pos()
+	_sig_panel.position = Vector2(
+		clampf(pos.x, 0.0, maxf(0.0, size.x - _sig_panel.size.x)),
+		maxf(0.0, pos.y - get_line_height() - _sig_panel.size.y - 2.0))
+
+func _signature_hide() -> void:
+	if _sig_panel != null:
+		_sig_panel.visible = false
+
+func signature_visible() -> bool:
+	return _sig_panel != null and _sig_panel.visible
+
 ## Ctrl+/ comment toggle (E12) + Ctrl+wheel / Ctrl+=/-/0 font zoom (E11).
 func _gui_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
+	if k != null and k.pressed and not k.echo and k.keycode == KEY_ESCAPE and signature_visible():
+		_signature_hide()
+		accept_event()
+		return
 	if k != null and k.pressed and not k.echo and k.is_command_or_control_pressed():
 		match k.keycode:
 			KEY_SLASH, KEY_KP_DIVIDE:
