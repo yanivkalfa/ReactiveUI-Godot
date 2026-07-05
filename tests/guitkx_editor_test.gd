@@ -38,6 +38,8 @@ func _initialize() -> void:
 		["problems_project", _test_problems_project],
 		["signature", _test_signature],
 		["wave7_editing", _test_wave7_editing],
+		["tokenizer_corpus", _test_tokenizer_corpus],
+		["parity_pins", _test_parity_pins],
 	]:
 		print("[guitkx_editor_test] -- %s" % t[0])
 		(t[1] as Callable).call()
@@ -1066,3 +1068,94 @@ func _test_wave7_editing() -> void:
 	var r2: Dictionary = RUIGuitkx.compile(
 		"component RB() {\n\treturn (\n\t\t<Label />\n\t)\n}\n", "rb", [], {})
 	_ok((r2.get("refs", {}) as Dictionary).is_empty(), "next compile starts with empty refs (D6)")
+
+# F1 — tokenizer case table: the classification promises "headlessly unit-testable" finally pinned.
+# Each case probes the KIND at specific columns (resilient to symbol-run splitting).
+func _test_tokenizer_corpus() -> void:
+	var tok := GuitkxTokenizer.new()
+	# [line, {col: expected_kind}] — "" expects unclassified (default colour).
+	var cases: Array = [
+		["# a comment", { 0: "comment", 10: "comment" }],
+		["\"text run\"", { 0: "string", 9: "string" }],
+		["'sq'", { 0: "string" }],
+		["<Label />", { 0: "symbol", 1: "tag", 5: "tag", 7: "symbol", 8: "symbol" }],
+		["</VBox>", { 0: "symbol", 1: "symbol", 2: "tag", 6: "symbol" }],
+		["< 5", { 0: "symbol", 2: "number" }],
+		["@if cond", { 0: "directive", 2: "directive", 4: "" }],
+		["@ x", { 0: "symbol" }],
+		["123 0xFF 1.5", { 0: "number", 4: "number", 9: "number" }],
+		["component Foo() {", { 0: "keyword", 10: "", 16: "symbol" }],
+		["text=\"v\"", { 0: "attr", 4: "symbol", 5: "string" }],
+		["x = 5", { 0: "", 2: "symbol", 4: "number" }],
+		["on_pressed={ handler }", { 0: "attr", 11: "symbol", 13: "" }],
+		["{ var s = \"x\" }", { 0: "symbol", 2: "keyword", 10: "string", 14: "symbol" }],
+		["{ a < b }", { 4: "symbol" }],
+		["style={ {\"bg_color\": 4} }", { 0: "attr", 8: "symbol", 9: "string", 21: "number" }],
+		["{ unterminated", { 0: "symbol", 2: "" }],
+	]
+	for case in cases:
+		var line := str(case[0])
+		var toks: Array = tok.tokenize_line(line)
+		for col in (case[1] as Dictionary):
+			var want := str((case[1] as Dictionary)[col])
+			var got := ""
+			for t in toks:
+				if int((t as Dictionary)["start"]) <= int(col) and int(col) < int((t as Dictionary)["end"]):
+					got = str((t as Dictionary)["kind"])
+					break
+			_ok(got == want, "tokenize '%s' col %d -> '%s' (got '%s')" % [line, col, want, got])
+	# Spans are ordered and non-overlapping — the highlighter's boundary-map precondition.
+	var ordered := true
+	for line_case in cases:
+		var prev_end := -1
+		for t in tok.tokenize_line(str(line_case[0])):
+			if int((t as Dictionary)["start"]) < prev_end:
+				ordered = false
+			prev_end = int((t as Dictionary)["end"])
+	_ok(ordered, "token spans stay ordered and non-overlapping across the corpus")
+
+# F3 — TS-twin parity pins: behaviors the VS Code server pins that the addon inherited untested.
+func _test_parity_pins() -> void:
+	# onChange polymorphism resolves by candidate ORDER against the live class.
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "OptionButton") == "item_selected",
+		"onChange on OptionButton -> item_selected (order: before toggled)")
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "SpinBox") == "value_changed",
+		"onChange on SpinBox -> value_changed")
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "LineEdit") == "text_changed",
+		"onChange on LineEdit -> text_changed")
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "CheckBox") == "toggled",
+		"onChange on CheckBox -> toggled")
+	var evs: Array = GuitkxSchema.events_for_class("OptionButton")
+	var on_change_sig := ""
+	for e in evs:
+		if str((e as Dictionary).get("name", "")) == "onChange":
+			on_change_sig = str((e as Dictionary).get("signal", ""))
+	_ok(on_change_sig == "item_selected", "events_for_class carries the resolved onChange binding")
+
+	# @class_name override binds the generated class (compile + codegen surface).
+	var src := "@class_name Zed\ncomponent OvR() {\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var r: Dictionary = RUIGuitkx.compile(src, "ovr")
+	_ok(bool(r.get("ok", false)) and str(r.get("gd", "")).contains("class_name Zed"),
+		"@class_name override names the generated class")
+
+	# Index eviction: a deleted file's component leaves the workspace on rescan.
+	var p := "res://tests/__evict_me.guitkx"
+	var f := FileAccess.open(p, FileAccess.WRITE)
+	f.store_string("component EvictMe() {\n\treturn (\n\t\t<Label />\n\t)\n}\n")
+	f.close()
+	GuitkxWorkspace.rescan()
+	_ok(GuitkxWorkspace.component_tags().has("EvictMe"), "new component enters the index on rescan")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	GuitkxWorkspace.rescan()
+	_ok(not GuitkxWorkspace.component_tags().has("EvictMe"), "deleted component is evicted on rescan")
+
+	# Windows path canonicalization: every index/codegen surface speaks res:// forward slashes.
+	var clean := true
+	for wp in GuitkxWorkspace.all_paths():
+		if not str(wp).begins_with("res://") or str(wp).contains("\\"):
+			clean = false
+	_ok(clean, "workspace paths are canonical res:// (no backslashes)")
+	_ok(RUIGuitkxCodegen.gd_path_for("res://a/b.guitkx") == "res://a/b.gd",
+		"gd_path_for maps beside the source")
+	_ok(RUIGuitkxCodegen.diags_path_for("res://a/b.guitkx") == "res://a/b.guitkx.diags.json",
+		"diags_path_for maps the sidecar name")
