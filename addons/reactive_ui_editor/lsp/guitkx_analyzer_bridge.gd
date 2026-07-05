@@ -32,8 +32,10 @@ var _az: Object = null
 var _docs: Dictionary = {}
 
 ## True when the GdscriptAnalyzer GDExtension is loaded (the reactive_ui_analyzer addon).
+## class_exists() gates first: can_instantiate() logs a red engine ERROR for unknown classes,
+## and the degrade path is supported behaviour, not console-noise-worthy.
 static func available() -> bool:
-	return ClassDB.can_instantiate(&"GdscriptAnalyzer")
+	return ClassDB.class_exists(&"GdscriptAnalyzer") and ClassDB.can_instantiate(&"GdscriptAnalyzer")
 
 ## The analyzer library's version string, or "" when unavailable.
 static func native_version() -> String:

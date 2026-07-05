@@ -95,22 +95,31 @@ Note: `.guitkx` files stay visible in the FileSystem dock even while this addon 
 format's resource loader is a global class the engine registers on its own (that is also what keeps
 it alive across Godot's script-reload cycles).
 
-## Embedded GDScript intelligence (optional native layer)
+## Embedded GDScript intelligence (bundled native layer)
 
-Install the **reactive_ui_analyzer** addon (prebuilt GDExtension binaries from
-[gdscript-analyzer releases](https://github.com/yanivkalfa/gdscript-analyzer/releases) — unzip
-into `res://addons/`, restart the editor) and the GDScript *inside* your markup gets the full
-type-aware treatment: completion on your typed locals (`b.` on a `Button` offers the real engine
-surface), inferred-type hover, syntax/type diagnostics squiggled at the exact expression (`GD:`
-codes in Problems), go-to-definition (into this buffer or into real `.gd` files via Godot's
-Script editor), find-references, buffer-scoped F2 rename, and signature help inside calls.
+The editor download **bundles the `reactive_ui_analyzer` GDExtension** (prebuilt binaries for
+Windows x86_64, Linux x86_64/arm64, and macOS universal) in the same zip — it lands at
+`addons/reactive_ui_analyzer/`, loads automatically, and needs no enabling. With it, the
+GDScript *inside* your markup gets the full type-aware treatment: completion on your typed
+locals (`b.` on a `Button` offers the real engine surface), inferred-type hover, syntax/type
+diagnostics squiggled at the exact expression (`GD:` codes in Problems), go-to-definition (into
+this buffer or into real `.gd` files via Godot's Script editor), find-references, buffer-scoped
+F2 rename, and signature help inside calls.
 
-This layer is **feature-detected** (`ClassDB.class_exists("GdscriptAnalyzer")`): without it the
-editor is exactly the markup-only experience above — fully supported, nothing nags. Under the
+The layer is still **feature-detected** (`ClassDB.class_exists("GdscriptAnalyzer")`): delete the
+folder — or run a platform without a prebuilt binary — and the editor is exactly the markup-only
+experience above, fully supported (a yellow Output note says so once per session). Under the
 hood each buffer projects its embedded GDScript into a scope-aware virtual `.gd` with a
 length-preserving source map (the same virtualDoc/sourceMap contract the VS Code server uses),
 and every offset crosses the boundary through a byte-exact LineIndex, so multibyte text can't
 mis-anchor results.
+
+Two operational notes: **exclude `addons/reactive_ui_analyzer/` from game export presets** (it
+is editor-only tooling — keep the native libraries out of shipped builds), and on **macOS** the
+bundled dylib is unsigned — the analyzer folder's README has the one-line de-quarantine command.
+A newer analyzer can be dropped in at any time by unzipping a `reactive-ui-analyzer-*.zip` from
+[gdscript-analyzer releases](https://github.com/yanivkalfa/gdscript-analyzer/releases) over the
+same folder.
 
 ## Known limits (vs. the VS Code / VS 2022 extensions)
 

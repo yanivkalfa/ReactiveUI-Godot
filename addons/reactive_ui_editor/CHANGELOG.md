@@ -4,6 +4,27 @@ All notable changes to the **Reactive UI Editor** Godot addon are documented her
 The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
 of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
 
+## [0.6.1] — 2026-07-05
+
+**The native analyzer is now bundled.** The editor download ships the `reactive_ui_analyzer`
+GDExtension inside the same zip — one download, zero extra steps: unzip into your project,
+enable `reactive_ui_editor`, and embedded-GDScript intelligence is on. (Previously a separate,
+optional download from the analyzer's releases.)
+
+### Changed
+- The release zip now contains **both** `addons/reactive_ui_editor/` and
+  `addons/reactive_ui_analyzer/` (analyzer 0.6.1 — Windows x86_64, Linux x86_64/arm64, macOS
+  universal). The publish pipeline downloads the pinned analyzer release, refuses to package
+  unless the descriptor and every platform binary are present, and runs the editor suites
+  against the bundle before releasing (the analyzer actually loads on the CI runner).
+- The analyzer keeps its own folder and stays **feature-detected**: deleting
+  `addons/reactive_ui_analyzer/` (or running a platform without a prebuilt binary) degrades
+  gracefully to the markup-only experience — now announced by a soft yellow Output note instead
+  of silence, since with bundling absence is unusual rather than the default.
+- Docs: install instructions and store listings describe the bundle; the analyzer folder should
+  be excluded from game export presets (editor-only tooling), and macOS users keep the one-line
+  de-quarantine step from the analyzer README.
+
 ## [0.6.0] — 2026-07-05
 
 **Embedded-GDScript intelligence (plan M3).** The editor's last frontier: the GDScript *inside*

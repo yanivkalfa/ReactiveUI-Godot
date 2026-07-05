@@ -214,17 +214,20 @@ export const EditorPage: FC = () => (
             <TableRow>
               <TableCell>Deep expression intelligence</TableCell>
               <TableCell>
-                Install the optional <strong>reactive_ui_analyzer</strong> addon (prebuilt
-                GDExtension binaries from the{' '}
+                The editor download <strong>bundles the reactive_ui_analyzer GDExtension</strong>{' '}
+                (it lands at <code>addons/reactive_ui_analyzer/</code>, loads automatically —
+                nothing to enable), so embedded GDScript gets the full type-aware treatment out
+                of the box: completion on your typed locals, inferred-type hover,{' '}
+                <code>GD:</code> diagnostics at the exact expression, go-to-definition (into the
+                buffer or real .gd files), references, buffer-scoped rename, and signature help.
+                Still feature-detected — remove the folder (or run a platform without a prebuilt
+                binary) and the static tier (builtin constants, hook names) keeps working. Newer
+                analyzer builds from the{' '}
                 <a href="https://github.com/yanivkalfa/gdscript-analyzer/releases">
                   gdscript-analyzer releases
-                </a>
-                , unzip into <code>res://addons/</code>, restart) and embedded GDScript gets
-                the full type-aware treatment: completion on your typed locals, inferred-type
-                hover, <code>GD:</code> diagnostics at the exact expression, go-to-definition
-                (into the buffer or real .gd files), references, buffer-scoped rename, and
-                signature help. Feature-detected — without it, the static tier (builtin
-                constants, hook names) still works.
+                </a>{' '}
+                can be dropped over the same folder anytime. Exclude the folder from game export
+                presets — it is editor-only tooling.
               </TableCell>
             </TableRow>
           </TableBody>
