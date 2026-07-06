@@ -435,7 +435,7 @@ Reinstall **GUITKX 0.4.0** (VS Code + VS 2022).
 
 ## [IDE 0.3.1] - 2026-07-01
 
-### The .guitkx editor experience, debugged -- hover, completion, rename, and formatting that actually work
+### The .guitkx editor experience, debugged (1/2)
 
 A focused bug-fix pass on the **VS Code / VS 2022 extension** after real hands-on testing. Eight defects, all in the language server -- the runtime library is untouched (still 0.2.2).
 
@@ -444,6 +444,12 @@ A focused bug-fix pass on the **VS Code / VS 2022 extension** after real hands-o
 **Completion fills the blanks.** A blank child slot, or the inside of an `@for` / `@if` body, used to be misread as embedded GDScript -- so no tags were offered. Now those positions complete host elements **and your project's components** as `<Tag>` suggestions.
 
 **Navigation and rename stop missing the target.** Ctrl+click / find-references / rename now work when the cursor lands on a tag's opening `<` (a mouse ctrl+click on a tab-indented `<Component/>` used to do nothing), while a GDScript comparison like `a < Name` is never mistaken for a tag. And renaming a component that declares `@class_name` now rewrites the `@class_name`, the declaration, and every usage **together** -- previously it left `@class_name` stale and the renamed tags lit up with a bogus "unknown element" (GUITKX0105) error.
+
+---
+
+## [IDE 0.3.1] - 2026-07-01 (2/2)
+
+### Embedded GDScript, and an editing nicety
 
 **Embedded GDScript is now a first-class citizen.** The GDScript inside `.guitkx` is now **semantically highlighted** by the analyzer (type-aware, just like a real `.gd`) and **formatted** by the same bundled `gdscript-fmt` that formats plain `.gd` files -- so a snippet looks and formats identically whether it lives in a `.gd` or a `.guitkx`. (The optional external `gdformat` dependency is gone.)
 
@@ -467,11 +473,17 @@ Reinstall **GUITKX 0.3.1** (VS Code + VS 2022) to get all of it.
 
 ## [0.2.1] - 2026-06-22
 
-### The demo gallery, now in .guitkx — and a VS Code extension that actually turns on
+### The demo gallery, now in .guitkx (1/2)
 
 **Every demo is now markup.** The whole `examples/` gallery -- counter, todo, router, the stress tests, all 24 -- is rewritten in `.guitkx` instead of hand-written `V.*` calls, so the demos double as a reference for the markup language. They follow the ReactiveUIToolKit layout: one `component` per file, sub-components as sibling files, and `module` reserved for hook / registry files. The generated `.gd` are git-ignored (the editor regenerates them on save), so the tree shows the source you actually edit.
 
 **The VS Code extension works now.** The published build was shipping without its `vscode-languageclient` dependency (a packaging-flag bug), so it silently failed to start -- no formatting, no completion, no hover. That's fixed, along with the missing "activate on `.guitkx`" trigger and format-on-save defaults. It also now formats `.guitkx` with consistent **tab** indentation (the embedded GDScript requires tabs, so markup + setup no longer mix tabs and spaces) and **flags unknown attributes** on host elements (a typo'd `te`/`xt` on `<Label>` gets a squiggle + did-you-mean). And you can now drop a **`guitkx.config.json`** next to your project (the analogue of `uitkx.config.json`) to tune the formatter -- line width, indent style/size, attribute wrapping. The **VS 2022** extension bundles the very same language server, so the formatter, diagnostics, and `guitkx.config.json` fixes land there as well (the packaging / activation fixes were VS Code-specific).
+
+---
+
+## [0.2.1] - 2026-06-22 (2/2)
+
+### A VS Code extension that actually turns on -- IDE polish and a compiler fix
 
 **IDE polish (0.2.4, both editors).** A follow-up round of editor fixes: the formatter now keeps your blank lines and tidies `if x ==     null` into `== null`; unknown elements/attributes are red errors instead of faint hints; you get autocomplete for `style={ {…} }` keys (`bg_color`, `corner_radius`, …) and `Color.WHITE`-style constants; go-to-definition on a hook/symbol jumps into the library source (with the Godot editor open); and pressing Enter after a `<Tag />` no longer over-indents. Reinstall **GUITKX 0.2.4** to get everything.
 
@@ -483,7 +495,7 @@ Verified on Godot 4.7 -- full suite green: **core 91 / style 25 / router 18+37 /
 
 ## [0.2.0] - 2026-06-22
 
-### A real router, more runtime breadth, and a project-wide bug sweep
+### A real router, more runtime breadth (1/2)
 
 **The router grew up.** ReactiveUI for Godot now ships the full React-Router-style component-tree router -- a faithful port of ReactiveUIToolKit's. Declare routes as markup and the library renders the single best match:
 
@@ -498,9 +510,15 @@ V.routes({}, [
 ])
 ```
 
-Nested / layout routes render through `V.outlet()`, `:params` merge down the chain, and matching is React-Router-correct: a leaf route consumes the whole path (so `/` no longer prefix-matches everything and `*` is actually reachable), while a layout matches a prefix. You also get `basename`, query strings, navigation blockers, `V.navigate` (declarative redirect), and `V.nav_link` with active styling. New hooks: `use_navigate`, `use_location`, `use_query`, `use_params`, `use_matches`, `use_resolved_path`, `use_search_params`, `use_go`, `use_can_go`, `use_blocker`, `use_prompt`. The legacy `V.routes({ "routes": [...] })` table still works, and navigate-only widgets still don't re-render on navigation.
+Nested / layout routes render through `V.outlet()`, `:params` merge down the chain, and matching is React-Router-correct: a leaf route consumes the whole path (so `/` no longer prefix-matches everything and `*` is actually reachable), while a layout matches a prefix. You also get `basename`, query strings, navigation blockers, `V.navigate` (declarative redirect), and `V.nav_link` with active styling. New hooks: `use_navigate`, `use_location`, `use_query`, `use_params`, `use_matches`, `use_resolved_path`, `use_search_params`, `use_go`, `use_can_go`, `use_blocker`, `use_prompt`. The legacy `V.routes({ "routes": [...] })` table still works.
 
 **More of the runtime landed.** `V.suspense` (a signal-await / frame-poll boundary, since GDScript has no throw-to-suspend); a process-wide signal registry (`RUISignals` + `use_signal_key`) for shared app state; `V.memo`; per-state StyleBox slots (`hover`/`pressed`/`focus`/`disabled`/`read_only`); a userland `classes: [...]` styling layer (`RUIStyleSheet`); declarative `items` generalized across `ItemList`/`Tree`/`TabBar`/`OptionButton`/`PopupMenu` (selection preserved by identity); a real `use_deferred_value`; plus `use_animate` (Tween), `use_sfx`, and `V.audio`/`V.video`. Raw String children now auto-wrap to Labels.
+
+---
+
+## [0.2.0] - 2026-06-22 (2/2)
+
+### The compiler gets smarter, a full bug sweep, and an IDE bump
 
 **The compiler got smarter about expressions.** Control-flow inside an embedded `{expression}` or a lambda now lowers inline -- `@if`/`@elif`/`@else` become a ternary and `@for` becomes `.map` -- so conditional rendering inside `items.map(func(it): return <>@if (it.ok) { ... }</>)` finally compiles. (`@while`/`@match` can't be expressions and now report `GUITKX0113` instead of emitting broken code.)
 
