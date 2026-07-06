@@ -258,48 +258,47 @@ bundles in automatically alongside the static `guitkx.pkgdef`, verified.
 **Acceptance:** toggling each option + restart changes observable behavior (embedded completion
 disappears when off; gdformat reflow stops when off).
 
-## 4. Phase 2 — Plain `.gd` language service (bucket B2; biggest single gap)
+## 4. Phase 2 — Plain `.gd` language service (bucket B2; biggest single gap) — **mostly DONE 2026-07-05**
 
 **Outcome:** row 15 (and verify row 16). The server's entire `.gd` surface — diagnostics,
 completion, hover, navigation, project-wide rename, formatting, semantic highlighting, inlay
 hints, code actions, symbols — reaches VS users, as it reached VS Code users in 0.3.0.
 
-1. New content type in `GuitkxContentDefinition.cs`:
-   ```csharp
-   [Export] [Name("gdscript")] [BaseDefinition(CodeRemoteContentDefinition.CodeRemoteContentTypeName)]
-   internal static ContentTypeDefinition GdscriptContentType;
-   [Export] [FileExtension(".gd")] [ContentType("gdscript")]
-   internal static FileExtensionToContentTypeDefinition GdExtension;
-   ```
-2. Attach the SAME `ILanguageClient` to both content types (add a second
-   `[ContentType("gdscript")]` attribute on the existing export) — one server instance serves
-   both, mirroring VS Code's two-entry document selector. Do **not** spawn a second client.
-3. Gate on the Phase 1 option (`Analyze plain .gd files`): when off, skip registering… MEF
-   attributes are static, so instead gate inside `ActivateAsync`/document-open path: simplest
-   correct approach is to always register the content type but have the client send the option to
-   the server and let the server no-op `.gd` documents when disabled (add the tiny server-side
-   check under an init option `enableGdscriptAnalysis`, mirroring what VS Code does client-side
-   with its selector — a small shared-server change, ~10 lines, benefiting both editors).
-4. **Highlighting for `.gd` in VS**: LSP semantic tokens provide type-aware colour, but the
-   TextMate baseline for plain GDScript is NOT shipped (the guitkx grammar only colours embedded
-   blocks). Decide: (a) ship a minimal `gdscript.tmLanguage.json` next to the guitkx grammar in
-   the pkgdef repository (the grammar dir is already the repo root — one more file), or (b) rely
-   on semantic tokens only. Recommend (a) for offline/cold-start parity with VS Code (where the
-   user typically has godot-tools' grammar installed).
-5. **Coexistence note** (docs + options tooltip): if another VS extension claims `.gd`, the
-   content-type/file-extension mapping may conflict; document the toggle as the escape hatch —
-   same policy as the VS Code README's godot-tools paragraph.
-6. **Verification checklist V2:**
+1. **DONE, builds clean.** New content type in `GuitkxContentDefinition.cs` — `gdscript` /
+   `.gd`, exactly as sketched.
+2. **DONE, builds clean.** The same `[Export(typeof(ILanguageClient))] GuitkxLanguageClient` now
+   carries both `[ContentType("guitkx")]` and `[ContentType("gdscript")]` — one client, one server
+   process, no second connection spawned.
+3. **NOT done — deliberately deferred, unlike the sketch above.** The gate is **not wired up**:
+   `.gd` analysis is unconditional today regardless of the "Analyze plain .gd files" setting. The
+   server-side `enableGdscriptAnalysis` init-option check this needs touches
+   `lsp-server/src/server.ts`, which VS Code's client also depends on — out of scope for this
+   campaign per the same reasoning as the Phase 1 G-12 deferral (this campaign leaves VS Code's
+   behavior untouched, even for additive/backward-compatible changes). The option is persisted
+   (`GuitkxOptionsPage`/`GuitkxSettings` already carry it, ready for Phase 2's real gate) but its
+   description now says plainly that it isn't enforced yet, and the "coexistence escape hatch"
+   framing from item 5 below doesn't apply until it is.
+4. **Decided: (b), semantic tokens only** — no `gdscript.tmLanguage.json` was added in this
+   campaign (kept scope to the content-type/client wiring the "biggest single gap" line item is
+   actually about); plain `.gd` colouring relies on the analyzer's semantic tokens until someone
+   picks up (a) separately.
+5. **Docs note only, not a real gate today** (see item 3): the options page's tooltip states that
+   turning "Analyze plain .gd files" off does not currently disable anything, so it is NOT yet a
+   working coexistence escape hatch — correcting what the original sketch implied.
+6. **Verification checklist V2 — outstanding, needs a real VS2022 instance:**
    - [ ] `.gd` file: diagnostics, completion, hover, goto, rename across files, format document.
    - [ ] Absence-based `UNDEFINED_*` diagnostics arm after startup (server `fs.watch` fallback is
          win32 — VS is win32-only, so this should work; verify `setWorkspaceComplete` fires by
          typo-ing a function name and seeing the diagnostic).
    - [ ] guitkx ↔ gd cross-file: renaming a component updates `.guitkx` usages AND generated
          sibling awareness still holds.
+   - [ ] Confirm `.gd` files opened in the same session as `.guitkx` files really do share one
+         server process (no duplicate Node child spawned) — the design intent of item 2, unverified
+         interactively.
 
-**Files:** `GuitkxContentDefinition.cs`, `GuitkxLanguageClient.cs`, optionally
-`Syntaxes/gdscript.tmLanguage.json` + `guitkx.pkgdef` (already points at the folder), ~10 lines in
-`lsp-server/src/server.ts` (init-option gate), `.csproj` (include new grammar file in VSIX).
+**Files:** `GuitkxContentDefinition.cs`, `GuitkxLanguageClient.cs`. Not touched (deliberately):
+`Syntaxes/gdscript.tmLanguage.json` (decided against for this campaign), `lsp-server/src/server.ts`
+(the `enableGdscriptAnalysis` gate — deferred, same reasoning as G-12).
 
 ## 5. Phase 3 — Editor ergonomics (bucket B3)
 
