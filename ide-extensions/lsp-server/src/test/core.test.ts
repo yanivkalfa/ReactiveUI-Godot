@@ -137,6 +137,11 @@ test("gdformat reflow safety net: token-equivalence ignores whitespace/quote, re
   assert.ok(tokenEquivalent("x = 'hi'", 'x = "hi"')); // quote style -> equivalent
   assert.ok(!tokenEquivalent("[a, b]", "[a, b,]")); // trailing comma -> rejected (conservative)
   assert.ok(!tokenEquivalent("a + b", "a - b")); // operator change -> rejected
+  // G-17: a comment is part of the token stream now -- trailing whitespace inside it still doesn't
+  // count, but its CONTENT does, so a formatter bug that deletes/mangles a comment is rejected.
+  assert.ok(tokenEquivalent("var a = 1 # note", "var a = 1 # note   "), "trailing ws inside a comment is insignificant");
+  assert.ok(!tokenEquivalent("var a = 1 # note", "var a = 1"), "a DROPPED comment must be rejected, not silently equivalent");
+  assert.ok(!tokenEquivalent("var a = 1 # note", "var a = 1 # different"), "a MANGLED comment must be rejected");
 });
 
 test("reflowEmbedded reflows embedded GDScript via the analyzer formatter, token-equivalently (BUG-1)", () => {
@@ -148,6 +153,11 @@ test("reflowEmbedded reflows embedded GDScript via the analyzer formatter, token
   assert.ok(tokenEquivalent(formatted, out), "reflow only changes whitespace/quote style, never tokens");
   // a no-op formatter leaves the document untouched (the safety/identity path)
   assert.equal(reflowEmbedded(formatted, () => null), formatted, "a formatter that declines leaves the region as-is");
+  // G-17: a formatter that drops a comment (simulating a gdscript-fmt bug) must be rejected --
+  // the region stays exactly as authored, comment included.
+  const withComment = "component Y {\n\tvar a = 1 # keep me\n\treturn (\n\t\t<Label />\n\t)\n}\n";
+  const dropCommentFmt = (gd: string) => gd.replace(/ # keep me/, "");
+  assert.equal(reflowEmbedded(withComment, dropCommentFmt), withComment, "a comment-dropping reflow must be rejected, region left untouched");
 });
 
 test("classdb dump base-flattens Button props (text + inherited disabled) and signals", () => {
