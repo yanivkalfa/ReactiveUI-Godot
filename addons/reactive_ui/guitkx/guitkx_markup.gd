@@ -164,7 +164,11 @@ func _parse_element(open_i: int, end: int) -> Dictionary:
 		return { "node": null, "next": end }
 	var children: Array = cr["nodes"]
 	var j: int = cr["next"]
-	if j >= end or _src[j] != "<" or (j + 1 < end and _src[j + 1] != "/"):
+	# G-04: `j + 1 >= end` must fail on its own -- the old `(j + 1 < end and _src[j + 1] != "/")`
+	# short-circuited to false when `<` was the very last character before `end` (no room for a
+	# slash), so a truncated `<Box><` at EOF fell through as if `j` pointed at a real "</" and the
+	# unbounded `_src.find(">", j)` below could match a `>` from past `end` entirely.
+	if j >= end or _src[j] != "<" or j + 1 >= end or _src[j + 1] != "/":
 		_fail("GUITKX0301", "unclosed tag <%s>" % tag, open_i)
 		return { "node": null, "next": end }
 	# j points at "</": read the close name to ">" (a close tag holds no {expr}/strings, so find is safe)

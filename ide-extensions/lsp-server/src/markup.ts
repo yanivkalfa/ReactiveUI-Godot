@@ -189,7 +189,8 @@ class MarkupParser {
     if (this.err !== "") return { node: null, next: end };
     const children = cr.nodes;
     const j = cr.next;
-    if (j >= end || this.src[j] !== "<" || (j + 1 < end && this.src[j + 1] !== "/")) {
+    // G-04: `j + 1 >= end` must fail on its own -- see guitkx_markup.gd's comment.
+    if (j >= end || this.src[j] !== "<" || j + 1 >= end || this.src[j + 1] !== "/") {
       this.fail("GUITKX0301", `unclosed tag <${tag}>`, openI);
       return { node: null, next: end };
     }
