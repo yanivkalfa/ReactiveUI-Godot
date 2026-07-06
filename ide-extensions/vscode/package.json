@@ -85,7 +85,7 @@
         "guitkx.enableGdscriptAnalysis": {
           "type": "boolean",
           "default": true,
-          "description": "Analyze plain .gd files with gdscript-analyzer — diagnostics, completion, hover, navigation, project-wide rename, formatting, semantic highlighting, inlay hints, code actions, and document symbols, all headless (no running Godot editor). On by default. Runs ALONGSIDE the godot-tools extension; to avoid duplicate diagnostics, disable godot-tools' language server — or turn this off to keep godot-tools as your .gd LSP."
+          "description": "Analyze plain .gd files with gdscript-analyzer — diagnostics, completion, hover, navigation, project-wide rename, formatting, semantic highlighting, inlay hints, code actions, and document symbols, all headless (no running Godot editor). On by default. Runs ALONGSIDE the godot-tools extension; to avoid duplicate diagnostics, disable godot-tools' language server — or turn this off to keep godot-tools as your .gd LSP. Toggling this restarts the GUITKX language server automatically (briefly interrupting completion/hover) — no window reload needed."
         }
       }
     }
