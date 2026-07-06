@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "date": "2026-07-06",
+      "versions": {
+        "vs2022": "0.8.6"
+      },
+      "shared": [
+        "Repackaged onto the shared language server, jumping straight from 0.5.5 to 0.8.6 -- inheriting every VS Code release in between in one shot: camelCase hooks tooling (completion/hover/go-to-def all speak useState/useEffect/... now, 23 hooks), diagnostic codes renumbered onto the Unity-shared table, gdscript-analyzer 0.6.0 (Godot's own verbatim error messages, wrong-arity call errors, unreachable-code dimming), early/conditional markup returns with full live intelligence, the directive-bodies-are-code-blocks grammar (prep GDScript + `return ( <markup> )`, GUITKX2103/2104), format-on-save enabled by default at the spaces-2 canonical style, the compiler-sidecar watch (post-save compiler-only errors now reach the editor), and live dangling-reference/duplicate-class detection (GUITKX2106/2107) including folder-delete handling. See ide-extensions/vscode/CHANGELOG.md for the full per-release detail this jump absorbs."
+      ]
+    },
+    {
       "date": "2026-07-04",
       "versions": {
         "vscode": "0.8.6"

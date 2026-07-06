@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.8.6] - 2026-07-06
+- Repackaged onto the shared language server, jumping straight from 0.5.5 to 0.8.6 -- inheriting every VS Code release in between in one shot: camelCase hooks tooling (completion/hover/go-to-def all speak useState/useEffect/... now, 23 hooks), diagnostic codes renumbered onto the Unity-shared table, gdscript-analyzer 0.6.0 (Godot's own verbatim error messages, wrong-arity call errors, unreachable-code dimming), early/conditional markup returns with full live intelligence, the directive-bodies-are-code-blocks grammar (prep GDScript + `return ( <markup> )`, GUITKX2103/2104), format-on-save enabled by default at the spaces-2 canonical style, the compiler-sidecar watch (post-save compiler-only errors now reach the editor), and live dangling-reference/duplicate-class detection (GUITKX2106/2107) including folder-delete handling. See ide-extensions/vscode/CHANGELOG.md for the full per-release detail this jump absorbs.
+
 ## [0.5.5] - 2026-07-02
 - Bundles gdscript-analyzer 0.5.4: a typo'd method on a built-in value — `sliced[1].casll(1)` on a `useState` pair, `s.upper()` on a `String` (a Godot-3 rename), `v.zzz` on a `Vector2` — is now an error with a precise squiggle, exactly where Godot itself errors. Works through plain untyped `var s = useState(0)` locals (the analyzer narrows single-assignment locals to their initializer's type), and Dictionary `d.key` sugar now types as the value and can never false-flag.
 

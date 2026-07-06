@@ -1,0 +1,76 @@
+using System.ComponentModel;
+using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
+
+namespace GuitkxVsix
+{
+    // Tools > Options > GUITKX > Language Server. Mirrors the VS Code extension's three
+    // guitkx.* settings. Persistence is overridden to route through GuitkxSettings' settings-store
+    // collection instead of DialogPage's default reflection-derived registry path -- see
+    // GuitkxSettings' doc comment for why that matters.
+    public sealed class GuitkxOptionsPage : DialogPage
+    {
+        [Category("Language server")]
+        [DisplayName("Enable embedded GDScript analysis")]
+        [Description("Type-aware completion/hover/go-to-definition inside {expr} and setup code, via the bundled gdscript-analyzer. Takes effect on the next language server restart.")]
+        public bool EnableEmbeddedAnalysis { get; set; } = GuitkxSettings.Defaults.EnableEmbeddedAnalysis;
+
+        [Category("Language server")]
+        [DisplayName("Use gdformat for embedded reflow")]
+        [Description("When gdformat (gdscript-toolkit) is installed, also reflow embedded GDScript on format. Takes effect on the next language server restart.")]
+        public bool UseGdformat { get; set; } = GuitkxSettings.Defaults.UseGdformat;
+
+        [Category("Language server")]
+        [DisplayName("Analyze plain .gd files (not yet enforced)")]
+        [Description("Persisted for parity with the VS Code extension's equivalent setting, but VS2022 does not yet gate .gd analysis on it -- plain .gd files are always analyzed today regardless of this value (tracked separately; VS's MEF content-type registration is static, unlike VS Code's per-activation document selector). If another installed extension also claims .gd, this setting is not currently a way to resolve that conflict.")]
+        public bool EnableGdscriptAnalysis { get; set; } = GuitkxSettings.Defaults.EnableGdscriptAnalysis;
+
+        [Category("Editor")]
+        [DisplayName("Format .guitkx on save")]
+        [Description("Send textDocument/formatting to the language server and apply the result before each save. Takes effect immediately (checked live by GuitkxFormatOnSave, not sent to the server) -- no restart needed for this one.")]
+        public bool FormatOnSave { get; set; } = GuitkxSettings.Defaults.FormatOnSave;
+
+        public override void LoadSettingsFromStorage()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var options = GuitkxSettings.Read(ServiceProvider.GlobalProvider);
+            EnableEmbeddedAnalysis = options.EnableEmbeddedAnalysis;
+            UseGdformat = options.UseGdformat;
+            EnableGdscriptAnalysis = options.EnableGdscriptAnalysis;
+            FormatOnSave = options.FormatOnSave;
+        }
+
+        public override void SaveSettingsToStorage()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            GuitkxSettings.Write(ServiceProvider.GlobalProvider, new GuitkxSettings.Options
+            {
+                EnableEmbeddedAnalysis = EnableEmbeddedAnalysis,
+                UseGdformat = UseGdformat,
+                EnableGdscriptAnalysis = EnableGdscriptAnalysis,
+                FormatOnSave = FormatOnSave,
+            });
+        }
+
+        // The shared server has no onDidChangeConfiguration handler (neither editor gets live
+        // config sync -- see the parity plan's Phase 1 notes), so an option change needs a language
+        // server restart to take effect. There is no restart command yet (planned separately);
+        // reloading the solution/restarting VS is the interim workaround, same as instructed for
+        // VS Code before its restart command existed.
+        protected override void OnApply(PageApplyEventArgs e)
+        {
+            base.OnApply(e);
+            if (e.ApplyBehavior != ApplyKind.Apply)
+                return;
+
+            VsShellUtilities.ShowMessageBox(
+                Site,
+                "Reload the solution (or restart Visual Studio) for this change to take effect. " +
+                "A \"GUITKX: Restart Language Server\" command is planned to avoid the full reload.",
+                "GUITKX",
+                OLEMSGICON.OLEMSGICON_INFO,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+        }
+    }
+}

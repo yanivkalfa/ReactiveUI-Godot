@@ -1,7 +1,42 @@
 # VS Code → VS2022 Extension Parity Plan
 
 > **Goal:** every user-visible capability of the guitkx VS Code extension (0.8.6) exists in the
-> VS2022 extension. **Status: PLANNED** — inventories complete (2026-07-05), no work started.
+> VS2022 extension. **Status: all 5 phases implemented and building clean on `feat/vs2022-parity`
+> (2026-07-06) — zero interactive verification done yet.** Every phase compiles, and every VSIX
+> artifact (both pkgdefs, the grammar, the language-configuration file, the command resource) has
+> been confirmed present and correct by inspecting the built `.vsix` directly. Nothing has been
+> driven through a real VS2022 UI — see each phase's verification checklist for what to test first
+> (Phase 3's format-on-save is the single riskiest item; start there).
+>
+> **2026-07-06 — pre-existing bug found and fixed, independent of this campaign's own scope:**
+> `guitkx.pkgdef` (the file that registers the TextMate grammar — i.e. **all `.guitkx` syntax
+> highlighting**) has apparently **never actually been bundled into the built VSIX, at any point in
+> this project's history.** Root cause: it was declared as a `<None Include>` item; VSSDK's
+> `GetVsixSourceItems` target only honors `IncludeInVSIX` metadata on `<Content>` items — a `<None>`
+> item's `IncludeInVSIX="true"` is silently ignored. Verified via a `git worktree` checkout of the
+> pre-Phase-1 commit (`aedef25`) built and inspected with `unzip -l`: `guitkx.pkgdef` was absent from
+> that VSIX too, so this predates everything in this plan and is unrelated to the Phase 1
+> `GeneratePkgDefFile` change (tested both `true` and `false` — neither affected it). Fixed by
+> changing the item type to `<Content>` (matching `Syntaxes/guitkx.tmLanguage.json`, which already
+> worked); verified with a from-scratch rebuild that the static `guitkx.pkgdef` and the
+> auto-generated `GuitkxVsix.pkgdef` now both land in the VSIX correctly. **Practical implication:**
+> the currently-published 0.5.5 VSIX likely has this exact bug too — real VS2022 users installing it
+> from the Marketplace may never have had working `.guitkx` syntax highlighting. Worth a dedicated,
+> urgent-priority release once this branch merges, independent of the rest of the parity work.
+>
+> **2026-07-05 review pass** (web-verified, not just re-read): fixed a real build bug found while
+> verifying this plan — `GuitkxVsix.csproj` pinned `Microsoft.VisualStudio.LanguageServer.Client
+> 17.7.41` / `Microsoft.VSSDK.BuildTools 17.7.2189`, neither of which exists on NuGet, so restore was
+> silently floating to `17.8.36` with NU1603/NU1605 warnings (including a detected
+> `Microsoft.VisualStudio.Telemetry` downgrade) instead of failing loudly — repinned to the real,
+> exact 17.7 GA versions (`17.7.20` / `17.7.2196`), verified with a clean `dotnet restore` and a full
+> `msbuild ... CreateVsixContainer` (real VS2022 install on this machine). Also corrected: Phase 3's
+> `ICommentSelectionService` (not a public API — see §5), Phase 1's options cold-start race (see
+> §3), Phase 4's restart claim (no documented restart API exists — see §6), a broken
+> `changelog.mjs` invocation in two places (§2, §11), and `publish-vsix.ps1 -LocalOnly` never
+> calling `fetch-node.ps1` (fixed in the script itself). A `changelog-sync` CI job
+> (`ide-extensions.yml`) now guards `changelog.json` against the exact drift that let it fall 14
+> versions behind (0.6.0→0.8.4) undetected.
 >
 > Companion docs: `ide-extensions/README.md` (architecture), `ide-extensions/VERSIONING.md`
 > (release process), `ide-extensions/visual-studio/README.md` (build/publish pointers).
@@ -38,7 +73,7 @@ The entire VS2022 extension is these files under `ide-extensions/visual-studio/G
 | `GuitkxLanguageClient.cs` (82 lines) | The `ILanguageClient`: `Name`, `ConfigurationSections = {"guitkx"}` (inert — no options UI exists), `InitializationOptions => new { enableEmbeddedAnalysis = true }` (hardcoded), `FilesToWatch => null`, `ShowNotificationOnInitializeFailed = true`. `ActivateAsync` launches `<extensionDir>\server\node.exe "<extensionDir>\server\server.js" --stdio` (PATH-`node` fallback), returns a `Connection` over the process's stdio streams. `OnServerInitializedAsync` is a no-op. |
 | `guitkx.pkgdef` | `[$RootKey$\TextMate\Repositories] "ReactiveUIGuitkx"="$PackageFolder$\Syntaxes"` — TextMate grammar registration. **Audited/load-bearing; do not clobber.** |
 | `Syntaxes/guitkx.tmLanguage.json` | Byte-identical copy of `grammar/guitkx.tmLanguage.json`. |
-| `GuitkxVsix.csproj` | Legacy VSIX project, net472, `GeneratePkgDefFile=false` (static pkgdef ships instead), bundles `server\**\*` into the VSIX. Packages: `Microsoft.VisualStudio.LanguageServer.Client` 17.7.41, `Microsoft.VisualStudio.SDK` 17.7.37357, `VSSDK.BuildTools` 17.7.2189. |
+| `GuitkxVsix.csproj` | Legacy VSIX project, net472, `GeneratePkgDefFile=false` (static pkgdef ships instead), bundles `server\**\*` into the VSIX. Packages (fixed 2026-07-05 — see note below): `Microsoft.VisualStudio.LanguageServer.Client` 17.7.20, `Microsoft.VisualStudio.SDK` 17.7.37357, `Microsoft.VSSDK.BuildTools` 17.7.2196. |
 | `source.extension.vsixmanifest` | Identity `GuitkxVsix.ReactiveUITK` v0.5.5, Publisher `Yaniv Kalfa` (mismatch — see P0), target `Microsoft.VisualStudio.Community [17.0,18.0)` amd64. |
 | `publishManifest.json`, `overview-template.md` → `overview.md`, `CHANGELOG.md` | Marketplace metadata. `overview.md`/`CHANGELOG.md` are **generated** from `ide-extensions/changelog.json` by `ide-extensions/scripts/changelog.mjs` — never hand-edit. |
 | `fetch-node.ps1` | Downloads the pinned Windows x64 Node (20.18.0) → `server\node.exe`. Idempotent. |
@@ -105,8 +140,16 @@ diagnostics, completion-resolve.
 
 1. Bump `source.extension.vsixmanifest` `Identity/@Version` — see §7 for the number (recommend
    jumping to **0.8.6** to version-lock with the bundled server).
-2. `scripts/changelog.mjs add --ide vs2022 …` entries summarizing the inherited 0.6.0–0.8.6 server
-   features (the changelog is the single source of truth; `overview.md`/`CHANGELOG.md` regenerate).
+2. Add changelog entries for the inherited 0.6.0–0.8.6 server features with:
+   `node ide-extensions/scripts/changelog.mjs add --scope shared --message "..." --vs2022 X.Y.Z`
+   (repeat per version, or fold into one entry — see the tool's own `--help` output; the previous
+   revision of this plan had the command's flags wrong: it is `--scope`/`--message`, not `--ide`/`-m`).
+   The changelog is the single source of truth; `overview.md`/`CHANGELOG.md` regenerate via `extract`.
+   CI (`changelog-sync` in `ide-extensions.yml`, added 2026-07-05) now fails the build if a committed
+   `CHANGELOG.md` drifts from `changelog.json` — this is the guard that would have caught
+   `changelog.json` silently falling 14 versions behind a hand-edited `vscode/CHANGELOG.md`
+   (0.6.0→0.8.4), which is what actually happened; run `node ide-extensions/scripts/changelog.mjs
+   verify` locally before pushing.
 3. Fix the **publisher mismatch**: manifest `Publisher="Yaniv Kalfa"` vs `publishManifest.json`
    `"publisher": "ReactiveUITK"`. The manifest Publisher is a display string; align it to the
    marketplace publisher (`ReactiveUITK`) so the listing and the installed-extension dialog agree.
@@ -115,12 +158,18 @@ diagnostics, completion-resolve.
    `vs2022-v<version>`).
 5. **Verification checklist V1** (manual, in a VS2022 instance with a Godot project open):
    - [ ] All of rows 1–8, 12 behave identically to VS Code on the same files.
-   - [ ] **Semantic tokens**: confirm VS's LSP client (`Microsoft.VisualStudio.LanguageServer.Client`
-         17.7) renders `textDocument/semanticTokens/full`. If it does not, log it in §8 Risks —
-         TextMate colouring remains the baseline; do NOT hand-roll a classifier in this phase.
-   - [ ] **Inlay hints**: supported by VS LSP clients from ~17.6; verify hints appear inside
-         `{expr}`. If not rendered, record and move on (cosmetic).
-   - [ ] **Code actions**: verify the lightbulb surfaces analyzer quick-fixes.
+   - [ ] **Code actions**: verify the lightbulb surfaces analyzer quick-fixes — this one has solid,
+         long-standing support (LSP code actions have been wired into the VS lightbulb since 15.8,
+         2018), so treat a failure here as a real bug, not an environment gap.
+   - [ ] **Semantic tokens / inlay hints — budget these as a stretch, not a core P0 deliverable.**
+         Web research (2026-07-05) found no Microsoft documentation confirming the third-party
+         `ILanguageClient` MEF extensibility surface renders `textDocument/semanticTokens/full` or
+         `textDocument/inlayHint` at all — the official LSP feature-support table
+         (learn.microsoft.com/.../adding-an-lsp-extension) doesn't list either as a row, supported or
+         not, and the only concrete inlay-hint milestone found (VS 17.12, first-party languages only)
+         postdates this project's pinned client by five feature releases. If neither renders after
+         verifying, that's the expected outcome given the evidence, not a bug to chase — log it in §8
+         Risks and fall back to TextMate-only colouring; do NOT hand-roll a classifier in this phase.
    - [ ] Diagnostics dimming (`DiagnosticTag.Unnecessary`) renders (unreachable-after-return).
 6. Also close the **VS Code-side packaging question** found during inventory: the npm `package`
    script runs `vsce package` *without* `--no-dependencies`, while `publish-extension.ps1` uses
@@ -131,17 +180,31 @@ diagnostics, completion-resolve.
 **Files touched:** `source.extension.vsixmanifest`, `changelog.json` (via script), possibly
 `vscode/package.json`/`publish-extension.ps1` (item 6). No C#.
 
-## 3. Phase 1 — Options page + initialization options (bucket B2/B3)
+## 3. Phase 1 — Options page + initialization options (bucket B2/B3) — **DONE 2026-07-05**
 
 **Outcome:** rows 13, 14, 23. The three VS Code settings get a real VS surface, and what the
-server is told is user-controlled.
+server is told is user-controlled. All four items below are implemented and build clean
+(`msbuild ... CreateVsixContainer`, VSIX contents inspected); manual V-checklist verification in a
+real VS2022 Experimental Instance (options page renders/persists, server actually receives the
+options) is still outstanding — nothing here has been driven interactively yet.
 
-1. Introduce an `AsyncPackage` (`GuitkxPackage.cs`) — required host for options/commands. Keep
-   `GeneratePkgDefFile` semantics intact: the package now generates its pkgdef; **merge, don't
-   clobber**, the static TextMate `guitkx.pkgdef` registration (either keep the static file as a
-   second VsPackage asset — as today — or fold the TextMate key into the generated pkgdef; keep
-   the static file, it is load-bearing and audited).
-2. `DialogPage`-based options: **Tools → Options → GUITKX**:
+1. **DONE (2026-07-05), empirically verified.** Introduced an `AsyncPackage` (`GuitkxPackage.cs`)
+   with `[PackageRegistration]`/`[ProvideOptionPage]`/`[ProvideAutoLoad]` (both `NoSolution` and
+   `SolutionExists` UI contexts, background load). Flipped `GeneratePkgDefFile` from `false` to
+   `true` — the `false` setting (with its load-bearing-sounding comment) predates any real package
+   existing; with a real `[PackageRegistration]` type now in the project, `false` silently produced
+   **no pkgdef at all** for it (compiled, never registered — confirmed by inspecting the built VSIX
+   before flipping the flag). After flipping it: `CreateVsixContainer` auto-generates
+   `GuitkxVsix.pkgdef` (verified content: correct `Packages`/`AutoLoadPackages` ×2/`ToolsOptionsPages`
+   registry keys, deterministic GUID for the options page) and bundles it into the VSIX
+   **automatically, alongside the static `guitkx.pkgdef`, with no `source.extension.vsixmanifest`
+   edit needed** — the anticipated "merge, don't clobber" manifest surgery wasn't necessary in
+   practice; both pkgdefs coexist (disjoint registry paths). Verified via `unzip -l`/`unzip -p` on
+   the built `.vsix`, not just a successful build. (Build/restore gotcha hit along the way: run
+   `msbuild -t:Restore` as its own invocation before `-t:Build` on a clean `obj/` — combining
+   `-t:Restore,Build,CreateVsixContainer` in one call evaluates the project before restore produces
+   the NuGet-imported targets that define `CreateVsixContainer`, failing with MSB4057.)
+2. **DONE (2026-07-05), builds clean.** `DialogPage`-based options: **Tools → Options → GUITKX**:
    - `Enable embedded GDScript analysis` (default true) → init option `enableEmbeddedAnalysis`.
    - `Use gdformat for embedded reflow` (default true) → init option `useGdformat`.
    - `Analyze plain .gd files` (default true) → gates Phase 2's document coverage.
@@ -162,121 +225,219 @@ server is told is user-controlled.
    }
    // On GuitkxPackage: [ProvideOptionPage(typeof(GuitkxOptionsPage), "GUITKX", "Language Server", 0, 0, true)]
    ```
-   Reading options from the MEF client (which is NOT a package): resolve via
-   `AsyncPackage.GetGlobalService`/`ServiceProvider.GlobalProvider` on first use inside
-   `ActivateAsync` (already async, off the UI thread — switch with `JoinableTaskFactory` if VS
-   complains), or cache them into a static the package writes on load. Keep it dumb; the values
-   are read once per server start anyway (see the restart semantics above).
-3. `GuitkxLanguageClient` reads the options at `ActivateAsync` and builds `InitializationOptions`
-   dynamically (replacing the hardcoded anonymous object).
-4. **Config-change semantics:** the shared server has **no** `onDidChangeConfiguration` handler
-   (VS Code has the same restart requirement). So: on option change, show an info bar/dialog
-   "Restart the GUITKX language server to apply" — wired to the Phase 4 restart command once it
-   exists; until then, instruct to reload VS. Do NOT pretend live sync works; remove or implement
-   `ConfigurationSections` accordingly (currently inert).
+   **Reading options from the MEF client is a real cold-start race, not a detail to hand-wave.**
+   `ILanguageClient.ActivateAsync` can fire before `GuitkxPackage` is sited — packages load lazily
+   and are not coordinated with MEF content-type activation at all (confirmed: Microsoft Q&A states
+   there is no documented/supported way to force package-before-client ordering). Reading options via
+   `AsyncPackage.GetGlobalService`/`ServiceProvider.GlobalProvider` therefore silently falls back to
+   hardcoded defaults on a fresh VS start whenever a `.guitkx`-associated file is among the first
+   things opened — the exact failure mode a user would never be able to explain.
 
-**Files:** new `GuitkxPackage.cs`, new `GuitkxOptionsPage.cs`, edit `GuitkxLanguageClient.cs`,
-`.csproj` (VSSDK package generation), `source.extension.vsixmanifest` (VsPackage asset if the
-generated pkgdef is added).
+   **DONE (2026-07-05), builds clean — implemented as `GuitkxSettings.cs`.** Don't route the read
+   through the package instance at all. `SVsSettingsManager`
+   (`Microsoft.VisualStudio.Settings.WritableSettingsStore`) is a core shell service Visual Studio
+   itself proffers — in practice, reached via `new ShellSettingsManager(serviceProvider)
+   .GetWritableSettingsStore(SettingsScope.UserSettings)` (both `GuitkxOptionsPage` and
+   `GuitkxLanguageClient` pass `ServiceProvider.GlobalProvider`), regardless of whether `GuitkxPackage`
+   has loaded. `GuitkxOptionsPage`'s persistence is overridden to
+   write through a `WritableSettingsStore` under an explicit named collection (e.g. `"GUITKX\Options"`)
+   instead of relying on `DialogPage`'s reflection-derived default registry path, and have
+   `ActivateAsync` read that *same* collection directly — this decouples the read path from package
+   sitedness by construction, not by luck. (The "read via automation" alternative,
+   `dte.get_Properties(category, page)`, is a red herring: Microsoft's own docs say automation
+   property access forces the owning package to load to resolve the value, reintroducing the exact
+   synchronous load this is meant to avoid.) `ActivateAsync`'s thread affinity is undocumented either
+   way (Microsoft's own sample opens it with `await Task.Yield();` as a defensive idiom, not proof of
+   a guaranteed background thread) — settings-store reads are free-threaded and safe without
+   switching, but never assume the UI thread is or isn't already current for anything else in there.
+3. **DONE (2026-07-05), builds clean.** `GuitkxLanguageClient.InitializationOptions` now builds
+   `{ enableEmbeddedAnalysis, useGdformat }` dynamically from `GuitkxSettings.Read(...)`, replacing
+   the hardcoded anonymous object. (`EnableGdscriptAnalysis` is persisted but not yet sent as an init
+   option — VS Code doesn't send it either; it's a client-side document-selector gate, wired up in
+   Phase 2 once the `.gd` content type exists to gate.)
+4. **DONE (2026-07-05), builds clean.** **Config-change semantics:** the shared server has **no**
+   `onDidChangeConfiguration` handler (VS Code has the same restart requirement). `ConfigurationSections`
+   is now `null` (was the inert `new[] { "guitkx" }` — advertising a section VS would dutifully notify
+   on, into a handler that doesn't exist, is worse than admitting there's no live sync). On option
+   change, `GuitkxOptionsPage.OnApply` shows a modal message box: "Reload the solution (or restart
+   Visual Studio)... A restart command is planned" — to be replaced by a lighter `IVsInfoBar` +
+   real restart once Phase 4 lands.
+   - `plans/FINAL_AUDIT_GODOT.md` G-12 independently found the same gap and proposes the real fix —
+     implement `workspace/didChangeConfiguration` in `lsp-server/src/server.ts` — which would give
+     BOTH editors live config reload. **Deliberately not done here**: it changes shared `server.ts`
+     runtime behavior that VS Code depends on today, and this campaign is scoped to leave the VS
+     Code extension's behavior untouched. Track G-12 as a separate follow-up campaign, not folded
+     into this one.
+
+**Files:** new `GuitkxPackage.cs`, new `GuitkxOptionsPage.cs`, new `GuitkxSettings.cs`, edit
+`GuitkxLanguageClient.cs`, `.csproj` (`GeneratePkgDefFile` flipped to `true` + 3 new `<Compile>`
+items). `source.extension.vsixmanifest` needed **no** change — the generated `GuitkxVsix.pkgdef`
+bundles in automatically alongside the static `guitkx.pkgdef`, verified.
 
 **Acceptance:** toggling each option + restart changes observable behavior (embedded completion
 disappears when off; gdformat reflow stops when off).
 
-## 4. Phase 2 — Plain `.gd` language service (bucket B2; biggest single gap)
+## 4. Phase 2 — Plain `.gd` language service (bucket B2; biggest single gap) — **mostly DONE 2026-07-05**
 
 **Outcome:** row 15 (and verify row 16). The server's entire `.gd` surface — diagnostics,
 completion, hover, navigation, project-wide rename, formatting, semantic highlighting, inlay
 hints, code actions, symbols — reaches VS users, as it reached VS Code users in 0.3.0.
 
-1. New content type in `GuitkxContentDefinition.cs`:
-   ```csharp
-   [Export] [Name("gdscript")] [BaseDefinition(CodeRemoteContentDefinition.CodeRemoteContentTypeName)]
-   internal static ContentTypeDefinition GdscriptContentType;
-   [Export] [FileExtension(".gd")] [ContentType("gdscript")]
-   internal static FileExtensionToContentTypeDefinition GdExtension;
-   ```
-2. Attach the SAME `ILanguageClient` to both content types (add a second
-   `[ContentType("gdscript")]` attribute on the existing export) — one server instance serves
-   both, mirroring VS Code's two-entry document selector. Do **not** spawn a second client.
-3. Gate on the Phase 1 option (`Analyze plain .gd files`): when off, skip registering… MEF
-   attributes are static, so instead gate inside `ActivateAsync`/document-open path: simplest
-   correct approach is to always register the content type but have the client send the option to
-   the server and let the server no-op `.gd` documents when disabled (add the tiny server-side
-   check under an init option `enableGdscriptAnalysis`, mirroring what VS Code does client-side
-   with its selector — a small shared-server change, ~10 lines, benefiting both editors).
-4. **Highlighting for `.gd` in VS**: LSP semantic tokens provide type-aware colour, but the
-   TextMate baseline for plain GDScript is NOT shipped (the guitkx grammar only colours embedded
-   blocks). Decide: (a) ship a minimal `gdscript.tmLanguage.json` next to the guitkx grammar in
-   the pkgdef repository (the grammar dir is already the repo root — one more file), or (b) rely
-   on semantic tokens only. Recommend (a) for offline/cold-start parity with VS Code (where the
-   user typically has godot-tools' grammar installed).
-5. **Coexistence note** (docs + options tooltip): if another VS extension claims `.gd`, the
-   content-type/file-extension mapping may conflict; document the toggle as the escape hatch —
-   same policy as the VS Code README's godot-tools paragraph.
-6. **Verification checklist V2:**
+1. **DONE, builds clean.** New content type in `GuitkxContentDefinition.cs` — `gdscript` /
+   `.gd`, exactly as sketched.
+2. **DONE, builds clean.** The same `[Export(typeof(ILanguageClient))] GuitkxLanguageClient` now
+   carries both `[ContentType("guitkx")]` and `[ContentType("gdscript")]` — one client, one server
+   process, no second connection spawned.
+3. **NOT done — deliberately deferred, unlike the sketch above.** The gate is **not wired up**:
+   `.gd` analysis is unconditional today regardless of the "Analyze plain .gd files" setting. The
+   server-side `enableGdscriptAnalysis` init-option check this needs touches
+   `lsp-server/src/server.ts`, which VS Code's client also depends on — out of scope for this
+   campaign per the same reasoning as the Phase 1 G-12 deferral (this campaign leaves VS Code's
+   behavior untouched, even for additive/backward-compatible changes). The option is persisted
+   (`GuitkxOptionsPage`/`GuitkxSettings` already carry it, ready for Phase 2's real gate) but its
+   description now says plainly that it isn't enforced yet, and the "coexistence escape hatch"
+   framing from item 5 below doesn't apply until it is.
+4. **Decided: (b), semantic tokens only** — no `gdscript.tmLanguage.json` was added in this
+   campaign (kept scope to the content-type/client wiring the "biggest single gap" line item is
+   actually about); plain `.gd` colouring relies on the analyzer's semantic tokens until someone
+   picks up (a) separately.
+5. **Docs note only, not a real gate today** (see item 3): the options page's tooltip states that
+   turning "Analyze plain .gd files" off does not currently disable anything, so it is NOT yet a
+   working coexistence escape hatch — correcting what the original sketch implied.
+6. **Verification checklist V2 — outstanding, needs a real VS2022 instance:**
    - [ ] `.gd` file: diagnostics, completion, hover, goto, rename across files, format document.
    - [ ] Absence-based `UNDEFINED_*` diagnostics arm after startup (server `fs.watch` fallback is
          win32 — VS is win32-only, so this should work; verify `setWorkspaceComplete` fires by
          typo-ing a function name and seeing the diagnostic).
    - [ ] guitkx ↔ gd cross-file: renaming a component updates `.guitkx` usages AND generated
          sibling awareness still holds.
+   - [ ] Confirm `.gd` files opened in the same session as `.guitkx` files really do share one
+         server process (no duplicate Node child spawned) — the design intent of item 2, unverified
+         interactively.
 
-**Files:** `GuitkxContentDefinition.cs`, `GuitkxLanguageClient.cs`, optionally
-`Syntaxes/gdscript.tmLanguage.json` + `guitkx.pkgdef` (already points at the folder), ~10 lines in
-`lsp-server/src/server.ts` (init-option gate), `.csproj` (include new grammar file in VSIX).
+**Files:** `GuitkxContentDefinition.cs`, `GuitkxLanguageClient.cs`. Not touched (deliberately):
+`Syntaxes/gdscript.tmLanguage.json` (decided against for this campaign), `lsp-server/src/server.ts`
+(the `enableGdscriptAnalysis` gate — deferred, same reasoning as G-12).
 
-## 5. Phase 3 — Editor ergonomics (bucket B3)
+## 5. Phase 3 — Editor ergonomics (bucket B3) — **DONE 2026-07-06**
 
 **Outcome:** rows 17–21. This is where VS Code's `language-configuration.json` +
 `configurationDefaults` get VS-native equivalents. All are per-content-type MEF exports — no
-global behavior changes.
+global behavior changes. All five items build clean; see the top-of-file note for the one
+pre-existing bug this phase surfaced (`guitkx.pkgdef` never actually shipping in the VSIX).
 
-1. **Editor defaults (row 18)** — `IWpfTextViewCreationListener` for `ContentType("guitkx")`:
-   set `ConvertTabsToSpaces=false`, `TabSize=4`, `IndentSize=4` on the view's `IEditorOptions`.
-   (VS has no `detectIndentation`; nothing to disable.)
-2. **Format-on-save (row 17)** — `IVsRunningDocTableEvents3.OnBeforeSave` (advise via the RDT in
-   the package) for guitkx documents: send `textDocument/formatting` through the LSP client and
-   apply the `TextEdit[]` before the save proceeds. Add an options-page toggle (default ON to
-   match VS Code's `configurationDefaults`). Guard re-entrancy (applying edits must not re-trigger
-   OnBeforeSave) and no-op when the server is down.
-   - Implementation note: the cleanest LSP-request path from the client side is
-     `ILanguageClientBroker`/`RequestAsync` on the JSON-RPC connection; we own `ActivateAsync`'s
-     `Connection`, so keep a reference to the `JsonRpc` wrapper if the broker route is awkward.
-3. **Brace completion (row 19)** — `IBraceCompletionDefaultProvider` export with
-   `[BracePair('{','}')] [BracePair('(',')')] [BracePair('[',']')] [BracePair('<','>')]
-   [BracePair('"','"')] [BracePair('\'','\'')]` for `ContentType("guitkx")`.
-4. **Comment toggle (row 20)** — export `ICommentSelectionService` (`#` line comment, no block
-   comment) for the content type; VS's Ctrl+K,C / Ctrl+K,U then work natively.
-5. **Smart indent (row 21)** — `ISmartIndentProvider` for guitkx: minimal port of the two
-   `language-configuration.json` rules — indent after a line ending in `>` of an opening tag or
-   `{`/`(`; keep child indent between `<Tag>` and `</Tag>`. The "Enter between `></`" splits into
-   an indented middle line" nicety from the in-Godot editor/VS Code onEnterRules can be a
-   command-filter (`IOleCommandTarget` on RETURN) — mark OPTIONAL; ship the basic smart indent
-   first.
-6. **Verification checklist V3:** each of the five behaviors demonstrated in a `.guitkx` buffer;
-   format-on-save round-trips a dirty misformatted file byte-identically to VS Code's output.
+1. **DONE, builds clean.** **Editor defaults (row 18)** —
+   `GuitkxEditorDefaults : IWpfTextViewCreationListener` for `ContentType("guitkx")`: sets
+   `ConvertTabsToSpaces=false`, `TabSize=4`, `IndentSize=4` via `DefaultOptions.*OptionId` on
+   `IWpfTextView.Options`. (VS has no `detectIndentation`; nothing to disable.)
+2. **DONE, builds clean — the riskiest, least-verified item in this whole campaign.**
+   **Format-on-save (row 17)** — a new `FormatOnSave` option (`GuitkxSettings`/`GuitkxOptionsPage`,
+   default on, matching VS Code's `configurationDefaults`), a new
+   `GuitkxFormatOnSave : IVsRunningDocTableEvents3` advised from `GuitkxPackage.InitializeAsync`.
+   `OnBeforeSave` checks the file is `.guitkx` and the option is on, sends `textDocument/formatting`,
+   and applies the resulting edits to the `ITextBuffer` (via `IVsEditorAdaptersFactoryService`)
+   before the save proceeds. Re-entrancy guarded with a `HashSet<uint>` of in-flight `docCookie`s;
+   no-ops (never blocks the save) if the server hasn't attached yet or the request throws.
+   - **Correction to the sketch's implementation note**: `ILanguageClientBroker` has no
+     `RequestAsync` (confirmed earlier in this plan — its only public member is `LoadAsync`). The
+     real mechanism is `ILanguageClientCustomMessage2` (confirmed to exist by inspecting
+     `Microsoft.VisualStudio.LanguageServer.Client.dll`'s exported types directly): `GuitkxLanguageClient`
+     now also implements it, and VS calls `AttachForCustomMessageAsync(JsonRpc rpc)` once the
+     connection's RPC channel is live, handing over the exact `JsonRpc` instance to invoke requests
+     on (`Rpc.InvokeWithParameterObjectAsync<JToken>("textDocument/formatting", ...)`).
+   - **Deliberately used `Newtonsoft.Json.Linq.JToken` instead of typed LSP protocol POCOs**: the
+     natural `Microsoft.VisualStudio.LanguageServer.Protocol` package tops out at **17.2.8** on
+     NuGet — there is no 17.7.x release to match this project's other pins, and mixing in an older
+     generation for one feature seemed like a worse bet than reusing `Newtonsoft.Json` (already
+     bundled, already flowing through this exact JSON-RPC channel) with manual `JToken` field access.
+   - **Why this is the riskiest item**: unlike the other four, this cannot be validated by a clean
+     compile alone — it depends on `AttachForCustomMessageAsync` actually being invoked by VS's LSP
+     client host (type existence confirmed; the callback firing is not), and on
+     `ThreadHelper.JoinableTaskFactory.Run` correctly bridging the synchronous
+     `IVsRunningDocTableEvents3.OnBeforeSave` COM callback to the async `JsonRpc` call under real
+     save timing. **Test this first** when interactive verification starts.
+3. **DONE (2026-07-06), builds clean.** **Brace completion (row 19)** —
+   `GuitkxBraceCompletion : IBraceCompletionDefaultProvider` (a marker-only implementation is
+   sufficient — no members to fill in) with the six sketched `[BracePair]` attributes, for
+   `ContentType("guitkx")`. One correction: the type lives in `Microsoft.VisualStudio.Text.BraceCompletion`
+   (assembly `Microsoft.VisualStudio.Text.UI.dll`), not `Microsoft.VisualStudio.Language.Intellisense`
+   as might be guessed — confirmed by inspecting the resolved package DLLs directly, not just
+   documentation.
+4. **DONE (2026-07-06), builds clean — took option (a).** **Comment toggle (row 20)** —
+   `ICommentSelectionService` **is not a real option**: it's a Roslyn `EditorFeatures`-internal
+   language-service abstraction, not a public VS SDK extensibility contract a MEF content type
+   outside Roslyn can implement. Implemented as a declarative **Language Configuration** file
+   (`language-configuration.json`, comments-only — deliberately omits brackets/autoClosingPairs,
+   already covered by item 3's native provider, to avoid two mechanisms both auto-closing the same
+   pairs), registered via `guitkx.pkgdef`. **Correction to the registry key from the original
+   sketch** (verified against the actual Microsoft sample, `microsoft/VSExtensibility`'s "Language
+   Configuration Setup Example", fetched and read directly — not guessed): the section is
+   `[$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]`, and it's keyed by the grammar's
+   **TextMate scope name** (`source.guitkx`, from `Syntaxes\guitkx.tmLanguage.json`'s `"scopeName"`
+   field) — **not** the `ContentTypeMapping` key or the `"guitkx"` MEF content-type name the sketch
+   guessed at.
+   - **This surfaced a real, pre-existing, unrelated bug** (see the top-of-file 2026-07-06 note):
+     `guitkx.pkgdef` was declared as a `<None>` MSBuild item, whose `IncludeInVSIX` metadata VSSDK
+     silently ignores (only `<Content>` items are honored) — so the file, and therefore **all
+     `.guitkx` syntax highlighting**, has apparently never actually shipped in a built VSIX at any
+     point in this project's history. Fixed alongside this item since editing `guitkx.pkgdef` for
+     the language-configuration mapping is what prompted verifying it actually landed in the zip.
+5. **DONE, builds clean.** **Smart indent (row 21)** — `GuitkxSmartIndentProvider`/`GuitkxSmartIndent`
+   (`ISmartIndentProvider`/`ISmartIndent`) port the two `language-configuration.json` regexes
+   (`increaseIndentPattern`/`decreaseIndentPattern`) byte-for-byte from
+   `ide-extensions/vscode/language-configuration.json`, walking up to the nearest non-blank previous
+   line so an Enter on a blank line doesn't reset indentation to zero. The "Enter between `></`
+   splits into an indented middle line" `onEnterRule` nicety is **not** ported (the sketch already
+   marked it optional; it needs a command-filter on RETURN, a different mechanism entirely — shipped
+   the basic indent only, as instructed).
+6. **Verification checklist V3 — outstanding, needs a real VS2022 instance:** each of the five
+   behaviors demonstrated in a `.guitkx` buffer; format-on-save round-trips a dirty misformatted
+   file byte-identically to VS Code's output. **Start with format-on-save (item 2)** — it's the one
+   genuinely unverified piece; the other four are lower-risk MEF exports whose correctness is mostly
+   visible from the code itself.
 
-**Files:** new `Editor/` C# files (view-creation listener, RDT save listener, brace provider,
-comment service, smart indent), `.csproj` compile items. No manifest changes.
+**Files:** new `GuitkxEditorDefaults.cs`, `GuitkxBraceCompletion.cs`, `GuitkxSmartIndent.cs`,
+`GuitkxFormatOnSave.cs`, `language-configuration.json`; edited `GuitkxLanguageClient.cs`
+(`ILanguageClientCustomMessage2`), `GuitkxSettings.cs`/`GuitkxOptionsPage.cs` (`FormatOnSave`),
+`GuitkxPackage.cs` (RDT advise/unadvise), `guitkx.pkgdef` (language-configuration mapping + the
+`<None>`→`<Content>` bug fix), `.csproj` (5 new `<Compile>` items + 1 new `<Content>` item).
 
-## 6. Phase 4 — Commands (bucket B3)
+
+## 6. Phase 4 — Commands (bucket B3) — **DONE 2026-07-06**
 
 **Outcome:** row 22 (+ the Phase 1 restart hook).
 
-1. `.vsct` with one command: **GUITKX: Restart Language Server** (Tools menu + context menu of
-   guitkx editors). Wire through the `AsyncPackage` from Phase 1.
-2. Restart mechanics — investigate in order:
-   a. `Microsoft.VisualStudio.LanguageServer.Client` 17.7's supported reload path (RPC to
-      `ILanguageClientBroker` to re-`LoadAsync` the client) — the documented pattern;
-   b. else: own-the-connection restart — keep the `Connection`/process handle from
-      `ActivateAsync`, dispose + signal `StopAsync`/re-activate;
-   c. worst case: kill the `node.exe` child and rely on VS's automatic single-restart of crashed
-      servers, with the command as UX sugar.
-   Record which path shipped in the code comment — this is the piece with real API risk.
-3. Also from Phase 1: option changes surface an info bar with a "Restart now" action bound here.
+1. **DONE, builds clean.** `GuitkxCommands.vsct` defines one command, **GUITKX: Restart Language
+   Server**, under its own group on the **Tools** menu (a new group parented to
+   `guidSHLMainMenu:IDM_VS_MENU_TOOLS`, rather than guessing an existing group's symbol name to
+   inject into — simpler and more robust). Not added to the guitkx editor's context menu (the
+   sketch's other suggested location) — out of scope for this pass, Tools menu is sufficient for a
+   rarely-used diagnostic command. Wired through `GuitkxPackage` via `[ProvideMenuResource]` +
+   `OleMenuCommandService.AddCommand` in `InitializeAsync`.
+2. **Restart mechanics — took option (c), not (a).** Confirmed (2026-07-05) there is no
+   Microsoft-documented, supported restart API for a legacy MEF `ILanguageClient`
+   (`ILanguageClientBroker`'s entire public surface is `LoadAsync` — no `Stop`/`Restart`/`Reload`).
+   Rather than the fragile `LoadAsync`-again workaround (option a — reported to work only once per
+   client instance, with a documented Roslyn shutdown race on repeat attempts), implemented option
+   (c): `GuitkxLanguageClient` now tracks its own child `Process`; the command kills it
+   (`GuitkxLanguageClient.RequestRestart()`) and leans on VS's own documented behavior of
+   auto-restarting a crashed `ILanguageClient` once. This is **more** under our control than (a),
+   not less — we own the process handle outright, so "kill it" can't hit the same instance-reuse
+   race a manual `LoadAsync` retry can. Shows a message box either way (nothing running to restart,
+   vs. restart requested) rather than silently no-op'ing.
+3. From Phase 1: `GuitkxOptionsPage.OnApply` already shows the "reload the solution" message;
+   updating it to reference this command by name (rather than "reload the solution") is a natural
+   follow-up but not done in this pass — the message is still accurate (reload also works), just not
+   maximally convenient.
 
-**Verification V4:** command visible in Command Window/Tools menu; after restart, edits in
-`guitkx.config.json` (formatter width) take effect without reloading VS.
+**Verification V4 — outstanding, needs a real VS2022 instance:** command visible in the Tools menu;
+after invoking it, confirm the server process actually exits and VS reconnects a new one (watch
+Task Manager for the `node.exe` child, and the Output pane for re-initialization); confirm the
+message box wording matches what actually happened.
+
+**Files:** new `GuitkxCommands.vsct`; edited `GuitkxLanguageClient.cs` (`RequestRestart`/process
+tracking), `GuitkxPackage.cs` (`ProvideMenuResource`, command registration), `.csproj`
+(`VSCTCompile` item, `System.Design` reference for `MenuCommandService`'s base assembly).
 
 ## 7. Versioning & release policy for parity
 
@@ -294,8 +455,8 @@ comment service, smart indent), `.csproj` compile items. No manifest changes.
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R1 | VS LSP client may not render semantic tokens / inlay hints at the pinned client-lib 17.7 | Phase 0 verification; if unsupported, bump `Microsoft.VisualStudio.LanguageServer.Client` / VS floor, or accept TextMate-only colouring (document in README) — do NOT hand-roll classifiers |
-| R2 | No public restart API for `ILanguageClient` | Phase 4 options a→c; worst case the command degrades to guidance + auto-restart |
+| R1 | VS LSP client likely does NOT render semantic tokens / inlay hints via the third-party `ILanguageClient` surface at all (2026-07-05 research found no Microsoft documentation confirming either, at any client version) | Phase 0 verification, budgeted as a likely-fails stretch, not a blocker; accept TextMate-only colouring (document in README) — do NOT hand-roll classifiers. `codeAction` (the lightbulb) is solid since VS 15.8 and should NOT be lumped in with this risk. |
+| R2 | **Confirmed, not just suspected:** there is no public/documented restart API for a legacy MEF `ILanguageClient` (`ILanguageClientBroker`'s only member is `LoadAsync`) | Phase 4 options a→c, with (a) treated as a fragile workaround (works once; needs dispose+retry; a Roslyn issue documents a shutdown race) rather than a guaranteed contract; worst case the command degrades to guidance + auto-restart |
 | R3 | `.gd` content-type conflicts with other installed Godot extensions | Option toggle (Phase 1) + docs; content type only claims `.gd` when no other definition wins MEF ordering — test alongside the popular godot VS extensions |
 | R4 | Format-on-save via RDT re-entrancy / async deadlocks (JTF) | Follow VSSDK JoinableTaskFactory rules; format with a timeout; never block the UI thread on the LSP call |
 | R5 | Server-side `enableGdscriptAnalysis` init-option change regresses VS Code | The VS Code client keeps its selector gating; the server option defaults ON, so absent = current behavior; add an lsp-server test |
@@ -332,7 +493,10 @@ powershell -ExecutionPolicy Bypass -File ..\visual-studio\GuitkxVsix\fetch-node.
 msbuild ..\visual-studio\GuitkxVsix\GuitkxVsix.csproj -t:Restore,Build,CreateVsixContainer -p:Configuration=Release
 ```
 `ide-extensions/scripts/publish-vsix.ps1 -LocalOnly` does all of the above + `overview.md`
-generation in one shot (finds MSBuild via vswhere).
+generation in one shot (finds MSBuild via vswhere) — **fixed 2026-07-05**: the script previously
+never called `fetch-node.ps1`, so a local-only build silently produced a VSIX missing the bundled
+`server/node.exe` (unlike the CI `publish-vs2022` job, which does call it and explicitly verifies
+the bundled `node.exe` is present). It now calls `fetch-node.ps1` in the same place CI does.
 
 **Debug loop:** F5 on the VSIX project launches the **VS Experimental Instance**
 (`/rootSuffix Exp`); open the RG repo folder/solution there and open a `.guitkx` from
@@ -375,8 +539,10 @@ component Probe {
   job is version-gated on the `vs2022-v<manifest version>` tag — bump the manifest or the job
   skips. It bundles/builds/verifies/publishes/tags on its own; there is no manual VsixPublisher
   step in the happy path.
-- **Changelog:** `node ide-extensions/scripts/changelog.mjs add --ide vs2022 -m "..."` — the JSON
-  is the single source; generated `CHANGELOG.md`/`overview.md` must never be edited by hand.
+- **Changelog:** `node ide-extensions/scripts/changelog.mjs add --scope shared --message "..."
+  --vs2022 X.Y.Z` — the JSON is the single source; generated `CHANGELOG.md`/`overview.md` must never
+  be edited by hand. Run `node ide-extensions/scripts/changelog.mjs verify` before pushing — CI
+  (`changelog-sync`) runs it too and fails the build on drift.
 - **Server changes serve three clients** (VS Code, VS2022, and the in-Godot editor mirrors its
   contracts): anything touching `lsp-server/src` needs its tests updated
   (`lsp-server/npm test`) and a sanity pass in VS Code, not just VS.

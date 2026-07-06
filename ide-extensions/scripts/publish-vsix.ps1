@@ -54,6 +54,12 @@ if (-not $SkipServerBuild) {
     if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
     Copy-Item -Recurse -Force (Join-Path $extensionDir 'server') $dest
     Write-Host '  Server bundled into GuitkxVsix/server.' -ForegroundColor Green
+
+    # Bundle a Node runtime so the VSIX is self-contained (no Node on the end user's PATH) --
+    # mirrors publish.yml's publish-vs2022 job exactly. Without this, -LocalOnly (and -SkipServerBuild
+    # skips it too, by design) silently produces a VSIX missing server/node.exe.
+    Write-Step 'Bundling a Node runtime (fetch-node.ps1)'
+    & (Join-Path $vsixDir 'fetch-node.ps1')
 }
 
 # ── 2. overview.md ────────────────────────────────────────────────────────────
