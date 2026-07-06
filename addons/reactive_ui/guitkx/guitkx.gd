@@ -196,7 +196,11 @@ static func compile(source: String, basename: String = "Component", known_compon
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			uss_path = val.substr(1, val.length() - 2)
 			uss_at = i
-			if not FileAccess.file_exists(uss_path):
+			# G-07: FileAccess.file_exists doesn't understand `uid://` (Godot 4.4+ uid-based resource
+			# references) -- it always returns false for one, false-flagging a valid uid-referenced
+			# Theme as "asset not found". Skip straight to ResourceLoader.exists, which resolves both
+			# uid:// and res:// paths correctly.
+			if not uss_path.begins_with("uid://") and not FileAccess.file_exists(uss_path):
 				diags.append(D.make("GUITKX0120", D.ERROR, "asset not found: %s" % uss_path, i, le2 - i))
 			elif not ResourceLoader.exists(uss_path, "Theme"):
 				diags.append(D.make("GUITKX0121", D.ERROR, "asset is not a Theme: %s" % uss_path, i, le2 - i))

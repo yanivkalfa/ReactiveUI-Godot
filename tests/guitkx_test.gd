@@ -461,6 +461,14 @@ func _test_t23_uss() -> void:
 	var rd := RUIGuitkx.compile("@uss \"res://tests/assets/test_theme.tres\"\n@uss \"res://tests/assets/test_theme.tres\"\ncomponent T6() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T6")
 	_check_true(not rd["ok"] and _has_code(rd, "GUITKX2210"), "T2.3: second @uss errors (got %s)" % str(rd["diagnostics"]))
 
+	# G-07: FileAccess.file_exists doesn't understand `uid://` -- it must never produce the (wrong)
+	# "asset not found" 0120 for one. A garbage/unregistered uid:// correctly falls through to
+	# ResourceLoader.exists and reports 0121 instead (proving the uid:// path is no longer
+	# short-circuited into the file_exists branch at all).
+	var ru := RUIGuitkx.compile("@uss \"uid://cnonexistentgarbage\"\ncomponent T7() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T7")
+	_check_true(not _has_code(ru, "GUITKX0120"), "G-07: uid:// path must never report 0120 (got %s)" % str(ru["diagnostics"]))
+	_check_true(not ru["ok"] and _has_code(ru, "GUITKX0121"), "G-07: garbage uid:// falls through to 0121 (got %s)" % str(ru["diagnostics"]))
+
 func _test_t26_naming() -> void:
 	# T2.6 (Unity 2100): component names are PascalCase -- they become the generated class_name.
 	var src := "component my_widget() {\n\treturn ( <label text=\"x\" /> )\n}\n"
