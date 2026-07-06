@@ -316,24 +316,43 @@ hints, code actions, symbols — reaches VS users, as it reached VS Code users i
 `Syntaxes/gdscript.tmLanguage.json` (decided against for this campaign), `lsp-server/src/server.ts`
 (the `enableGdscriptAnalysis` gate — deferred, same reasoning as G-12).
 
-## 5. Phase 3 — Editor ergonomics (bucket B3)
+## 5. Phase 3 — Editor ergonomics (bucket B3) — **DONE 2026-07-06**
 
 **Outcome:** rows 17–21. This is where VS Code's `language-configuration.json` +
 `configurationDefaults` get VS-native equivalents. All are per-content-type MEF exports — no
-global behavior changes.
+global behavior changes. All five items build clean; see the top-of-file note for the one
+pre-existing bug this phase surfaced (`guitkx.pkgdef` never actually shipping in the VSIX).
 
-1. **DONE (2026-07-06), builds clean.** **Editor defaults (row 18)** —
+1. **DONE, builds clean.** **Editor defaults (row 18)** —
    `GuitkxEditorDefaults : IWpfTextViewCreationListener` for `ContentType("guitkx")`: sets
    `ConvertTabsToSpaces=false`, `TabSize=4`, `IndentSize=4` via `DefaultOptions.*OptionId` on
    `IWpfTextView.Options`. (VS has no `detectIndentation`; nothing to disable.)
-2. **NOT done yet** — **Format-on-save (row 17)** — `IVsRunningDocTableEvents3.OnBeforeSave` (advise via the RDT in
-   the package) for guitkx documents: send `textDocument/formatting` through the LSP client and
-   apply the `TextEdit[]` before the save proceeds. Add an options-page toggle (default ON to
-   match VS Code's `configurationDefaults`). Guard re-entrancy (applying edits must not re-trigger
-   OnBeforeSave) and no-op when the server is down.
-   - Implementation note: the cleanest LSP-request path from the client side is
-     `ILanguageClientBroker`/`RequestAsync` on the JSON-RPC connection; we own `ActivateAsync`'s
-     `Connection`, so keep a reference to the `JsonRpc` wrapper if the broker route is awkward.
+2. **DONE, builds clean — the riskiest, least-verified item in this whole campaign.**
+   **Format-on-save (row 17)** — a new `FormatOnSave` option (`GuitkxSettings`/`GuitkxOptionsPage`,
+   default on, matching VS Code's `configurationDefaults`), a new
+   `GuitkxFormatOnSave : IVsRunningDocTableEvents3` advised from `GuitkxPackage.InitializeAsync`.
+   `OnBeforeSave` checks the file is `.guitkx` and the option is on, sends `textDocument/formatting`,
+   and applies the resulting edits to the `ITextBuffer` (via `IVsEditorAdaptersFactoryService`)
+   before the save proceeds. Re-entrancy guarded with a `HashSet<uint>` of in-flight `docCookie`s;
+   no-ops (never blocks the save) if the server hasn't attached yet or the request throws.
+   - **Correction to the sketch's implementation note**: `ILanguageClientBroker` has no
+     `RequestAsync` (confirmed earlier in this plan — its only public member is `LoadAsync`). The
+     real mechanism is `ILanguageClientCustomMessage2` (confirmed to exist by inspecting
+     `Microsoft.VisualStudio.LanguageServer.Client.dll`'s exported types directly): `GuitkxLanguageClient`
+     now also implements it, and VS calls `AttachForCustomMessageAsync(JsonRpc rpc)` once the
+     connection's RPC channel is live, handing over the exact `JsonRpc` instance to invoke requests
+     on (`Rpc.InvokeWithParameterObjectAsync<JToken>("textDocument/formatting", ...)`).
+   - **Deliberately used `Newtonsoft.Json.Linq.JToken` instead of typed LSP protocol POCOs**: the
+     natural `Microsoft.VisualStudio.LanguageServer.Protocol` package tops out at **17.2.8** on
+     NuGet — there is no 17.7.x release to match this project's other pins, and mixing in an older
+     generation for one feature seemed like a worse bet than reusing `Newtonsoft.Json` (already
+     bundled, already flowing through this exact JSON-RPC channel) with manual `JToken` field access.
+   - **Why this is the riskiest item**: unlike the other four, this cannot be validated by a clean
+     compile alone — it depends on `AttachForCustomMessageAsync` actually being invoked by VS's LSP
+     client host (type existence confirmed; the callback firing is not), and on
+     `ThreadHelper.JoinableTaskFactory.Run` correctly bridging the synchronous
+     `IVsRunningDocTableEvents3.OnBeforeSave` COM callback to the async `JsonRpc` call under real
+     save timing. **Test this first** when interactive verification starts.
 3. **DONE (2026-07-06), builds clean.** **Brace completion (row 19)** —
    `GuitkxBraceCompletion : IBraceCompletionDefaultProvider` (a marker-only implementation is
    sufficient — no members to fill in) with the six sketched `[BracePair]` attributes, for
@@ -360,17 +379,26 @@ global behavior changes.
      `.guitkx` syntax highlighting**, has apparently never actually shipped in a built VSIX at any
      point in this project's history. Fixed alongside this item since editing `guitkx.pkgdef` for
      the language-configuration mapping is what prompted verifying it actually landed in the zip.
-5. **Smart indent (row 21)** — `ISmartIndentProvider` for guitkx: minimal port of the two
-   `language-configuration.json` rules — indent after a line ending in `>` of an opening tag or
-   `{`/`(`; keep child indent between `<Tag>` and `</Tag>`. The "Enter between `></`" splits into
-   an indented middle line" nicety from the in-Godot editor/VS Code onEnterRules can be a
-   command-filter (`IOleCommandTarget` on RETURN) — mark OPTIONAL; ship the basic smart indent
-   first.
-6. **Verification checklist V3:** each of the five behaviors demonstrated in a `.guitkx` buffer;
-   format-on-save round-trips a dirty misformatted file byte-identically to VS Code's output.
+5. **DONE, builds clean.** **Smart indent (row 21)** — `GuitkxSmartIndentProvider`/`GuitkxSmartIndent`
+   (`ISmartIndentProvider`/`ISmartIndent`) port the two `language-configuration.json` regexes
+   (`increaseIndentPattern`/`decreaseIndentPattern`) byte-for-byte from
+   `ide-extensions/vscode/language-configuration.json`, walking up to the nearest non-blank previous
+   line so an Enter on a blank line doesn't reset indentation to zero. The "Enter between `></`
+   splits into an indented middle line" `onEnterRule` nicety is **not** ported (the sketch already
+   marked it optional; it needs a command-filter on RETURN, a different mechanism entirely — shipped
+   the basic indent only, as instructed).
+6. **Verification checklist V3 — outstanding, needs a real VS2022 instance:** each of the five
+   behaviors demonstrated in a `.guitkx` buffer; format-on-save round-trips a dirty misformatted
+   file byte-identically to VS Code's output. **Start with format-on-save (item 2)** — it's the one
+   genuinely unverified piece; the other four are lower-risk MEF exports whose correctness is mostly
+   visible from the code itself.
 
-**Files:** new `Editor/` C# files (view-creation listener, RDT save listener, brace provider,
-comment service, smart indent), `.csproj` compile items. No manifest changes.
+**Files:** new `GuitkxEditorDefaults.cs`, `GuitkxBraceCompletion.cs`, `GuitkxSmartIndent.cs`,
+`GuitkxFormatOnSave.cs`, `language-configuration.json`; edited `GuitkxLanguageClient.cs`
+(`ILanguageClientCustomMessage2`), `GuitkxSettings.cs`/`GuitkxOptionsPage.cs` (`FormatOnSave`),
+`GuitkxPackage.cs` (RDT advise/unadvise), `guitkx.pkgdef` (language-configuration mapping + the
+`<None>`→`<Content>` bug fix), `.csproj` (5 new `<Compile>` items + 1 new `<Content>` item).
+
 
 ## 6. Phase 4 — Commands (bucket B3)
 
