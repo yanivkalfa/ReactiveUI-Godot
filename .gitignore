@@ -22,6 +22,10 @@ ide-extensions/vscode/classdb/
 /build/
 *.tmp
 
+# Test scratch directories (tests/*_test.gd create + clean these up on success; an interrupted or
+# crashed run can leave them behind untracked -- never commit the debris).
+tests/__*_tmp/
+
 # OS noise
 .DS_Store
 Thumbs.db
