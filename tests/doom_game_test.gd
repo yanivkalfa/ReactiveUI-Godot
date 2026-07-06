@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_maps()
 	_test_raycast()
 	_test_game_logic()
+	_test_screen_logic()
 	print("\n[doom_game_test] %d passed, %d failed" % [_passes, _fails])
 	quit(1 if _fails > 0 else 0)
 
@@ -202,3 +203,63 @@ func _test_raycast() -> void:
 
 	var res := Raycast.dist_point_to_segment_sq(Vector2(0, 5), Vector2(-1, 0), Vector2(1, 0))
 	_ok(absf(res["dist_sq"] - 25.0) < 0.001, "dist_point_to_segment_sq: point directly above segment midpoint")
+
+func _test_screen_logic() -> void:
+	# Level 1 has 25 mobjs spawned right at new_game, all alive/idle -- the
+	# sprite list should contain some of them (those in front of the player
+	# and not occlusion-culled).
+	var st := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var sprites := DoomGameScreenLogic.build_sprite_list(st)
+	_ok(sprites is Array, "build_sprite_list returns an Array")
+	# Sorted far-to-near (descending distance) -- the merge/paint-order invariant.
+	var sorted_ok := true
+	for i in range(1, sprites.size()):
+		if sprites[i - 1].distance < sprites[i].distance:
+			sorted_ok = false
+	_ok(sorted_ok, "build_sprite_list is sorted far-to-near (descending distance)")
+
+	var extra_segs := DoomGameScreenLogic.build_extra_seg_list(st)
+	_ok(extra_segs is Array, "build_extra_seg_list returns an Array")
+
+	var floor_bands := DoomGameScreenLogic.build_floor_band_list(st)
+	_ok(floor_bands.size() > 0, "build_floor_band_list finds bands (level 1 has floor bands every column)")
+
+	var merged_floor := DoomGameScreenLogic.build_merged_floor_bands(st)
+	_ok(merged_floor.size() == floor_bands.size(), "build_merged_floor_bands has one entry per raw band (no actual horizontal merge in this port)")
+
+	var merged_ceil := DoomGameScreenLogic.build_merged_ceiling_bands(st)
+	_ok(merged_ceil is Array, "build_merged_ceiling_bands returns an Array")
+
+	# Tracers: none fired yet, so the list should be empty, but shouldn't crash.
+	var tracers := DoomGameScreenLogic.build_tracer_list(st)
+	_ok(tracers.size() == 0, "build_tracer_list is empty with no tracers fired")
+
+	# Manually fire a tracer straight ahead, mirroring the real muzzle offset
+	# game_logic.gd's (future Phase 3) SpawnTracer will use: forward + below
+	# eye, so the projected segment has real on-screen extent (a tracer
+	# exactly AT the camera origin with matching height, like a naive
+	# "player position to player position+forward" test case, degenerately
+	# projects to a single point -- zero length -- and gets filtered, same
+	# as it would in the original).
+	var view_z: float = st.player.z + st.player.view_height
+	var fwd_x := cos(st.player.angle)
+	var fwd_y := sin(st.player.angle)
+	var t := DoomTypes.Tracer.new()
+	t.ax = st.player.x + fwd_x * DoomTypes.C.MUZZLE_FORWARD
+	t.ay = st.player.y + fwd_y * DoomTypes.C.MUZZLE_FORWARD
+	t.az = view_z - DoomTypes.C.MUZZLE_BELOW_EYE
+	t.bx = st.player.x + fwd_x * 5.0
+	t.by = st.player.y + fwd_y * 5.0
+	t.bz = view_z
+	t.age_ms = 0.0
+	t.color_idx = 0
+	st.tracers[0] = t
+	var tracers2 := DoomGameScreenLogic.build_tracer_list(st)
+	_ok(tracers2.size() == 1, "a fresh, in-view tracer projects to exactly one entry")
+	if tracers2.size() == 1:
+		_ok(tracers2[0].length > 0.0, "projected tracer has a positive screen length")
+		_ok(tracers2[0].alpha > 0.99, "a fresh tracer (age=0) is fully opaque")
+
+	# sprite_scale / sprite_vertical_anchor sanity.
+	_ok(DoomGameScreenLogic.sprite_scale(DoomTypes.MobjKind.BARON) == 1.6, "sprite_scale(BARON)")
+	_ok(DoomGameScreenLogic.sprite_vertical_anchor(DoomTypes.MobjKind.CACODEMON) == 0.0, "sprite_vertical_anchor(CACODEMON)")
