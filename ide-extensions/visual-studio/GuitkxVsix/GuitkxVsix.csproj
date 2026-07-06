@@ -49,6 +49,11 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <!-- MenuCommandService (base of OleMenuCommandService, used by the restart command) lives in
+         the classic .NET Framework GAC assembly System.Design, not a NuGet package. -->
+    <Reference Include="System.Design" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="GuitkxContentDefinition.cs" />
     <Compile Include="GuitkxLanguageClient.cs" />
     <Compile Include="GuitkxPackage.cs" />
@@ -58,6 +63,12 @@
     <Compile Include="GuitkxBraceCompletion.cs" />
     <Compile Include="GuitkxSmartIndent.cs" />
     <Compile Include="GuitkxFormatOnSave.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Compiles to Menus.ctmenu, matching GuitkxPackage's [ProvideMenuResource("Menus.ctmenu", 1)]. -->
+    <VSCTCompile Include="GuitkxCommands.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="source.extension.vsixmanifest">

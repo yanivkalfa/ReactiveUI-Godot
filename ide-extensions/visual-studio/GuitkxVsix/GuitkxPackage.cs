@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.Design;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.VisualStudio;
@@ -9,19 +10,23 @@ using Task = System.Threading.Tasks.Task;
 
 namespace GuitkxVsix
 {
-    // Hosts the GUITKX options page (Tools > Options > GUITKX) and the format-on-save RDT listener.
-    // Background-autoloads on both the no-solution and solution-open UI contexts so it's sited as
-    // early as VS allows -- this narrows (it cannot close; see GuitkxSettings) the race against
-    // GuitkxLanguageClient.ActivateAsync, which is why option persistence goes through a settings
-    // store instead of depending on this package being loaded.
+    // Hosts the GUITKX options page (Tools > Options > GUITKX), the format-on-save RDT listener,
+    // and the "Restart Language Server" command. Background-autoloads on both the no-solution and
+    // solution-open UI contexts so it's sited as early as VS allows -- this narrows (it cannot
+    // close; see GuitkxSettings) the race against GuitkxLanguageClient.ActivateAsync, which is why
+    // option persistence goes through a settings store instead of depending on this package being
+    // loaded.
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [Guid(PackageGuidString)]
+    [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideOptionPage(typeof(GuitkxOptionsPage), "GUITKX", "Language Server", 0, 0, true)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string, PackageAutoLoadFlags.BackgroundLoad)]
     public sealed class GuitkxPackage : AsyncPackage
     {
         public const string PackageGuidString = "cb2d3574-abe7-4f6a-862b-0b7eeca7d2ac";
+        private const string CommandSetGuidString = "c085f8f3-5fb3-472f-af5b-745b81a840ff";
+        private const int RestartLanguageServerCommandId = 0x0100;
 
         private IVsRunningDocumentTable _rdt;
         private uint _formatOnSaveCookie;
@@ -34,6 +39,30 @@ namespace GuitkxVsix
             var componentModel = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
             if (_rdt != null && componentModel != null)
                 _formatOnSaveCookie = GuitkxFormatOnSave.Advise(_rdt, componentModel);
+
+            if (await GetServiceAsync(typeof(IMenuCommandService)) is OleMenuCommandService commandService)
+            {
+                var commandId = new CommandID(new Guid(CommandSetGuidString), RestartLanguageServerCommandId);
+                commandService.AddCommand(new MenuCommand(OnRestartLanguageServer, commandId));
+            }
+        }
+
+        private void OnRestartLanguageServer(object sender, EventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var restarted = GuitkxLanguageClient.RequestRestart();
+            VsShellUtilities.ShowMessageBox(
+                this,
+                restarted
+                    ? "The GUITKX language server process was stopped and should restart automatically " +
+                      "(Visual Studio restarts a crashed LSP server once). If it doesn't come back within " +
+                      "a few seconds, reload the solution or restart Visual Studio."
+                    : "No running GUITKX language server was found to restart (it may not have started " +
+                      "yet, or a .guitkx/.gd file hasn't been opened this session).",
+                "GUITKX",
+                OLEMSGICON.OLEMSGICON_INFO,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
 
         protected override void Dispose(bool disposing)

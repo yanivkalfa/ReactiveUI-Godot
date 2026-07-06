@@ -79,6 +79,39 @@ namespace GuitkxVsix
         public event AsyncEventHandler<EventArgs> StartAsync;
         public event AsyncEventHandler<EventArgs> StopAsync;
 
+        // Tracked for the "Restart Language Server" command (GuitkxRestartCommand.cs). There is no
+        // documented/supported manual reload API for a legacy MEF ILanguageClient (confirmed:
+        // ILanguageClientBroker's only public member is LoadAsync -- no Stop/Restart/Reload; a
+        // Microsoft Q&A-documented LoadAsync-again workaround is reported to work only once per
+        // client instance, with a related Roslyn issue showing a shutdown race on repeat attempts).
+        // Killing our own child process and leaning on VS's documented automatic single-restart of a
+        // crashed language server is the more reliable of the unreliable options -- it's a real,
+        // observed VS behavior, not an undocumented manual-reload call.
+        private static Process _currentProcess;
+
+        /// <summary>
+        /// Kills the running server process, if any, so VS's own crash-recovery restarts it.
+        /// Returns false if there was nothing running to kill.
+        /// </summary>
+        public static bool RequestRestart()
+        {
+            var process = _currentProcess;
+            if (process == null)
+                return false;
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill();
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                // Already exited between the HasExited check and Kill() -- treat as "nothing to do",
+                // not a failure the user needs to see.
+                return false;
+            }
+        }
+
         public async Task<Connection> ActivateAsync(CancellationToken token)
         {
             await Task.Yield();
@@ -105,7 +138,10 @@ namespace GuitkxVsix
 
             var process = new Process { StartInfo = info };
             if (process.Start())
+            {
+                _currentProcess = process;
                 return new Connection(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
+            }
             return null;
         }
 
