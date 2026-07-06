@@ -1,4 +1,6 @@
-# ReactiveUI-Godot — Final Audit: FINDINGS & BUGS (v4 split, + VS2022 extension audit)
+# ReactiveUI-Godot — Final Audit: FINDINGS & BUGS (v5, + VS2022 extension audit)
+
+**VERIFICATION PASS (v5, 2026-07-06):** the node probe suite re-ran against the current compiled TS formatter — **all confirmed findings still reproduce**: G-02 (triple-quoted interior re-indented AND interior double-space collapsed), G-03 (blank line in body segment deleted), and the G-01 failure modes G3/G4 (both parse-fail into verbatim fallback). The trivia guards still pass (G2 leading comment, G5 `{expr}` child preserved). Additionally verified clean in the v5 sweep (do not re-audit): `liveMarkup.ts` (mirrors `_validate_node`/`_validate_body` faithfully; its `findHookCall` has the correct token-boundary + noncode-skipping semantics), `sourceMap.ts` (length-preserving span model, correct bidirectional lookup), `server.ts` `onDidClose` (re-indexes from disk — one LOW gap added to §4 smalls), the diagnostics sidecar staleness gate (`srcHash` FNV-1a pinned to `RUIGuitkxCodegen.src_hash`). The v5 sweep found no new substantive issues in this repo.
 
 **Date:** 2026-07-06 (v4 = v3 split into two documents; this file = correctness findings/bugs with fix recipes. Performance items live in `FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` — IDs G-08, G-10, G-11, G-15 moved there unchanged.)
 **Trees audited:** compiler/formatter/editor/LSP/runtime at `dev @ 3d0ac6e`; **VS2022 extension at `dev @ 68f44c6`** (the parity campaign PR #65 — Phases 0–4 — landed between audit passes and touched ONLY `ide-extensions/visual-studio/**` + scripts/CI/plans, so all other findings remain valid against current dev).
@@ -96,6 +98,9 @@ Leading comments preserved (G2); `{expr}` children + markup comments preserved (
 
 ### G-13 — `enableGdscriptAnalysis` toggle needs a window reload in VS Code (client-side selector)
 - `extension.ts:40-42` builds the selector once. RECIPE: `workspace.onDidChangeConfiguration` listener that offers `client.restart()` on change; mention in the setting description.
+
+### LSP smalls (v5)
+- `server.ts` `onDidClose` (l.896-904) re-indexes from disk (correct) but never publishes empty diagnostics for the closed URI — closed-file squiggles linger in the Problems panel until reopen. RECIPE: `connection.sendDiagnostics({ uri: e.document.uri, diagnostics: [] })` in the handler. (Mirror of the Unity LSP's same small.)
 
 ### G-14 — ~~parity-plan §P1 staleness correction~~ **OBSOLETE**
 - The VS2022 parity campaign executed in full (PR #65, Phases 0–4, merged to dev @ 68f44c6). No action. (Historical note: §P1's "client hardcodes options" description had already been fixed in the VS Code client before the campaign ran.)
