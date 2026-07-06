@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.LanguageServer.Client;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using Microsoft.VisualStudio.Utilities;
 using StreamJsonRpc;
@@ -100,12 +101,22 @@ namespace GuitkxVsix
         // observed VS behavior, not an undocumented manual-reload call.
         private static Process _currentProcess;
 
+        // G-22: VS's documented crash recovery restarts a language server ONCE per client instance.
+        // The FIRST RequestRestart() spends that one auto-restart; a SECOND kill in the same session
+        // has no budget left and VS will not bring the process back on its own. Tracked so the
+        // command's message can tell the user the difference instead of promising a restart that
+        // will not happen.
+        private static int _restartCount;
+
         /// <summary>
         /// Kills the running server process, if any, so VS's own crash-recovery restarts it.
-        /// Returns false if there was nothing running to kill.
+        /// Returns false if there was nothing running to kill. <paramref name="budgetExhausted"/> is
+        /// true when this is the second-or-later restart THIS session -- VS's one-time auto-restart
+        /// was already spent by an earlier call, so this kill will NOT come back on its own.
         /// </summary>
-        public static bool RequestRestart()
+        public static bool RequestRestart(out bool budgetExhausted)
         {
+            budgetExhausted = _restartCount >= 1;
             var process = _currentProcess;
             if (process == null)
                 return false;
@@ -113,6 +124,7 @@ namespace GuitkxVsix
             {
                 if (!process.HasExited)
                     process.Kill();
+                _restartCount++;
                 return true;
             }
             catch (InvalidOperationException)
@@ -121,6 +133,35 @@ namespace GuitkxVsix
                 // not a failure the user needs to see.
                 return false;
             }
+        }
+
+        // G-22: the child's stderr was never captured, so a server-side crash or a slow/misbehaving
+        // process (the exact conditions RequestRestart/format-on-save's G-18 timeout exist for) left
+        // no trace anywhere in VS -- only a silent hang or a mysteriously-dead language server. Piped
+        // to a dedicated Output-window pane instead.
+        private static readonly Guid OutputPaneGuid = new Guid("2f6a1d3c-8b7e-4b1a-9c3d-6e2f4a8b5c7d");
+        private static IVsOutputWindowPane _outputPane;
+
+        private static IVsOutputWindowPane GetOrCreateOutputPane()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (_outputPane != null)
+                return _outputPane;
+            if (!(ServiceProvider.GlobalProvider.GetService(typeof(SVsOutputWindow)) is IVsOutputWindow outputWindow))
+                return null;
+            var paneGuid = OutputPaneGuid;
+            outputWindow.CreatePane(ref paneGuid, "GUITKX Language Server", 1, 1);
+            outputWindow.GetPane(ref paneGuid, out _outputPane);
+            return _outputPane;
+        }
+
+        private static void LogServerStderr(string line)
+        {
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                GetOrCreateOutputPane()?.OutputStringThreadSafe(line + Environment.NewLine);
+            }).FileAndForget("guitkx/serverStderr");
         }
 
         public async Task<Connection> ActivateAsync(CancellationToken token)
@@ -142,15 +183,29 @@ namespace GuitkxVsix
                 Arguments = $"\"{serverPath}\" --stdio",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WorkingDirectory = dir,
             };
 
             var process = new Process { StartInfo = info };
+            // VSTHRD010 wants a main-thread switch before calling LogServerStderr, but
+            // ErrorDataReceived's delegate is SYNCHRONOUS (fires on Process's own background I/O
+            // thread) -- there is no `await` to be had here. LogServerStderr's own body already
+            // does the switch correctly via JoinableTaskFactory.RunAsync + FileAndForget; asserting
+            // main-thread AT this call site is not possible, not just inconvenient.
+#pragma warning disable VSTHRD010
+            process.ErrorDataReceived += (sender, args) =>
+            {
+                if (!string.IsNullOrEmpty(args.Data))
+                    LogServerStderr(args.Data);
+            };
+#pragma warning restore VSTHRD010
             if (process.Start())
             {
                 _currentProcess = process;
+                process.BeginErrorReadLine();
                 return new Connection(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
             }
             return null;
