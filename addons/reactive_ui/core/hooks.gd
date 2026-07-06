@@ -562,6 +562,16 @@ static func useSfx(bus := "Master") -> Callable:
 # --------------------------------------------------------------------------
 
 ## Shallow dependency comparison. null on either side => "changed" (always run).
+## [G-09, design decision] `_equal` uses GDScript `==`, which DEEP-compares Array/Dictionary --
+## unlike React's `Object.is`-per-dependency-item semantics (see `_ref_equal` below, used for
+## state/signal change-detection instead). Concretely: `useEffect(fn, [some_array])` where a caller
+## passes a FRESH-but-structurally-equal array every render will NOT re-run the effect here, where
+## React (identity-based) WOULD. This is intentional -- see below -- but has a real perf cost: a
+## large Array/Dictionary in a deps list is deep-compared on every render, not just pointer-checked.
+## If that ever shows up in a profile, the fix is a `same_ref` opt-in (pass `_ref_equal` instead of
+## `_equal` for a specific hook's deps check) -- not changing this default, since flipping it
+## silently would make a currently-stable effect (relying on value-equality to SKIP redundant runs
+## on equal-but-recreated deps) start re-running every render instead.
 static func _deps_changed(prev, next) -> bool:
 	if prev == null or next == null:
 		return true

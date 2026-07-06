@@ -387,6 +387,12 @@ raw `V.*`/`Hooks.*` calls is not the intended day-to-day workflow — see
 - Event handler lambdas are re-created each render (events re-wire on change — fine functionally;
   use `useCallback` to stabilize). Custom `draw_fn` uses the register-once trampoline so it does
   **not** re-subscribe.
+- **Dependency arrays compare by VALUE, not identity** — `useEffect`/`useMemo`/`useCallback` deps use
+  GDScript `==`, which deep-compares `Array`/`Dictionary`, unlike React's per-item `Object.is`. A
+  freshly-built but structurally-equal deps array will **not** re-run the effect (a stable behavior
+  this library relies on elsewhere), but a large `Array`/`Dictionary` in a deps list is deep-compared
+  every render — keep deps small/primitive where you can. (State/signal change-detection is
+  identity-based already, matching React; only the deps-array comparison differs.)
 - **The VS 2022 extension lags VS Code**: both ship from the same `lsp-server`, but VS 2022 hasn't
   been re-published since 0.5.5 while VS Code/the language server are at 0.8.6 — VS 2022 users are
   missing several releases' worth of fixes (dangling-reference detection, sidecar watching, folder
