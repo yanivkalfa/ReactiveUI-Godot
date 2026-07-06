@@ -150,8 +150,15 @@ static func _inject_unregistered_bindings(src: String, bindings: Dictionary) -> 
 static func _hook_sig(scr: GDScript) -> String:
 	return str(scr.get_script_constant_map().get("__RUI_HOOK_SIG", ""))
 
-## A generated COMPONENT carries `static func render(`; a generated hooks/module file does not.
-## Source-text check on purpose: bulletproof for our own generated output, no reflection edge
-## cases with static methods.
+## [G-16 fix] A generated COMPONENT carries `const __RUI_KIND := "component"` (compiler since the
+## G-16 fix) -- an unambiguous script-constant marker, read via get_script_constant_map() like
+## __RUI_HOOK_SIG. Falls back to the OLD source-text heuristic (`contains("static func render(")`)
+## only when the marker itself is absent (a hooks/module file, which doesn't emit it, or a
+## component compiled before this fix) -- the fallback could misclassify a module whose OWN
+## setup/comment text happens to contain that literal substring, but a freshly-compiled component
+## can no longer be mistaken for a module (or vice versa) at all.
 static func _is_module(scr: GDScript) -> bool:
+	var kind := str((scr as GDScript).get_script_constant_map().get("__RUI_KIND", ""))
+	if kind != "":
+		return kind != "component"
 	return not (scr as GDScript).source_code.contains("static func render(")

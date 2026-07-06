@@ -1490,6 +1490,12 @@ static func _emit(cls: String, comp_name: String, params: String, setup: String,
 			sig_src = str(early.get("body", ""))   # Phase C interleaved path: setup lives in body
 			break
 	out += "const __RUI_HOOK_SIG := %s\n\n" % _gd_str(_hook_signature(sig_src))
+	# G-16: a script-constant marker for RUIHmr._is_module, read via get_script_constant_map() like
+	# __RUI_HOOK_SIG -- bulletproof against a component whose setup happens to contain the literal
+	# text "static func render(" in a string/comment, which used to make the old source-text
+	# heuristic misclassify it as a module and skip the global HMR re-render every OTHER component
+	# needs when a module/hook changes.
+	out += "const __RUI_KIND := \"component\"\n\n"
 	if uss_path != "":
 		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)   # T2.3 @uss
 	out += _emit_func("render", params, setup, root, {}, [], diags, base, known, early, refs)
