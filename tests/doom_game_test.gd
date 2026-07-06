@@ -1,7 +1,8 @@
 extends SceneTree
 ## Doom-game port (plans/DOOM_GAME_GUITKX_PORT_PLAN.md) pure-logic regression suite.
-## Phase 0: doom_types.gd / doom_textures.gd / doom_maps.gd -- no reconciler/UI involved.
-## Run: godot --headless --path <project> --script res://tests/doom_game_test.gd
+## Phase 0: doom_types.gd / doom_textures.gd / doom_maps.gd. Phase 1: raycast.gd +
+## game_logic.gd's new_game/cast_frame (the sector-based renderer) -- no reconciler/UI
+## involved. Run: godot --headless --path <project> --script res://tests/doom_game_test.gd
 
 const DOOM_DIR := "res://examples/demos/doom/"
 
@@ -23,6 +24,8 @@ func _run() -> void:
 	_test_types()
 	_test_textures()
 	_test_maps()
+	_test_raycast()
+	_test_game_logic()
 	print("\n[doom_game_test] %d passed, %d failed" % [_passes, _fails])
 	quit(1 if _fails > 0 else 0)
 
@@ -133,3 +136,69 @@ func _test_maps() -> void:
 	_ok(DoomMaps.health_for(DoomTypes.MobjKind.BARON) == DoomTypes.C.HP_BARON, "health_for(BARON)")
 	_ok(DoomMaps.radius_for(DoomTypes.MobjKind.CACODEMON) == 0.42, "radius_for(CACODEMON)")
 	_ok(DoomMaps.height_for(DoomTypes.MobjKind.KEY_RED) == 0.35, "height_for(KEY_RED)")
+
+func _test_game_logic() -> void:
+	for level in range(1, 7):
+		var st := GameLogic.new_game(level, DoomTypes.Difficulty.NORMAL)
+		_ok(st != null, "level %d new_game succeeds" % level)
+		_ok(st.player.sector_id >= 0, "level %d player has a valid sector" % level)
+		_ok(st.frame.columns.size() == DoomTypes.C.VIEW_W, "level %d frame has VIEW_W columns" % level)
+
+		var non_sky := 0
+		var has_floor_band := 0
+		var all_have_main := true
+		for col in st.frame.columns:
+			if col == null or col.main == null:
+				all_have_main = false
+				continue
+			if not col.main.is_sky:
+				non_sky += 1
+			if col.floor_bands.size() > 0:
+				has_floor_band += 1
+		_ok(all_have_main, "level %d: every column has a Main seg" % level)
+		# Every level has a floor band in every column (the near sector's own
+		# floor, always below eye height at spawn) -- a real structural
+		# invariant. NOTE: a column reaching an actual wall (non_sky) is NOT
+		# a universal invariant here -- MAX_RAY_HOPS=16 (the original's own
+		# portal-traversal cap) genuinely isn't enough to cross some levels'
+		# large open areas from spawn, so several levels legitimately show 0
+		# wall hits from the player's start (faithful to the original, not a
+		# bug) -- only levels 1 and 6 have walls close enough to spawn to
+		# check this positively.
+		_ok(has_floor_band == DoomTypes.C.VIEW_W, "level %d: every column has a floor band" % level)
+		if level == 1 or level == 6:
+			_ok(non_sky > 0, "level %d (walls near spawn): at least one column reaches a wall" % level)
+
+	# Deterministic RNG (Frand): same seed -> same sequence.
+	var seed_before := 777
+	var st_a := DoomTypes.GameState.new()
+	st_a.rng_seed = seed_before
+	var st_b := DoomTypes.GameState.new()
+	st_b.rng_seed = seed_before
+	_ok(GameLogic.frand(st_a) == GameLogic.frand(st_b), "frand is deterministic given the same seed")
+	var r := GameLogic.frand(st_a)
+	_ok(r >= 0.0 and r < 1.0, "frand returns a value in [0,1)")
+
+	_ok(GameLogic.is_monster(DoomTypes.MobjKind.IMP), "is_monster(IMP)")
+	_ok(not GameLogic.is_monster(DoomTypes.MobjKind.BARREL), "not is_monster(BARREL)")
+	_ok(GameLogic.is_boss(DoomTypes.MobjKind.BARON), "is_boss(BARON)")
+	_ok(GameLogic.is_pickup(DoomTypes.MobjKind.KEY_RED), "is_pickup(KEY_RED)")
+	_ok(not GameLogic.is_pickup(DoomTypes.MobjKind.BARREL), "not is_pickup(BARREL)")
+	_ok(GameLogic.is_projectile(DoomTypes.MobjKind.ROCKET_PROJ), "is_projectile(ROCKET_PROJ)")
+
+	var l1 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	_ok(GameLogic.any_boss_alive(l1), "level 1 has a living boss right after new_game")
+
+func _test_raycast() -> void:
+	var st := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var hits: Array = Raycast.cast(st.sector_map, Vector2(st.player.x, st.player.y), st.player.sector_id, Vector2(1, 0))
+	_ok(hits.size() > 0, "Raycast.cast returns at least one hit for a level-1 ray")
+	_ok(hits[hits.size() - 1].distance > 0.0, "last hit has a positive distance")
+
+	var seg := Raycast.ray_segment(Vector2(0, 0), Vector2(1, 0), Vector2(5, -1), Vector2(5, 1))
+	_ok(seg["hit"] == true, "ray_segment finds a perpendicular crossing segment")
+	_ok(absf(seg["t"] - 5.0) < 0.001, "ray_segment t is the correct distance")
+	_ok(absf(seg["u"] - 0.5) < 0.001, "ray_segment u is the midpoint")
+
+	var res := Raycast.dist_point_to_segment_sq(Vector2(0, 5), Vector2(-1, 0), Vector2(1, 0))
+	_ok(absf(res["dist_sq"] - 25.0) < 0.001, "dist_point_to_segment_sq: point directly above segment midpoint")

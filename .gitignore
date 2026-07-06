@@ -12,6 +12,8 @@ examples/**/*.gd
 !examples/demos/doom/doom_types.gd
 !examples/demos/doom/doom_textures.gd
 !examples/demos/doom/doom_maps.gd
+!examples/demos/doom/raycast.gd
+!examples/demos/doom/game_logic.gd
 # …and their transient companions: Godot per-script .uid + the compiler's diagnostics sidecars.
 examples/**/*.gd.uid
 *.guitkx.diags.json
