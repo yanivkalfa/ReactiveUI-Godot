@@ -1,9 +1,25 @@
 # VS Code → VS2022 Extension Parity Plan
 
 > **Goal:** every user-visible capability of the guitkx VS Code extension (0.8.6) exists in the
-> VS2022 extension. **Status: hardened, execution starting** — inventories complete (2026-07-05),
-> reviewed + web-verified against Microsoft docs the same day (see below), execution beginning on
+> VS2022 extension. **Status: Phases 0-2 done, Phase 3 in progress** — inventories complete
+> (2026-07-05), reviewed + web-verified against Microsoft docs the same day, execution ongoing on
 > `feat/vs2022-parity`.
+>
+> **2026-07-06 — pre-existing bug found and fixed, independent of this campaign's own scope:**
+> `guitkx.pkgdef` (the file that registers the TextMate grammar — i.e. **all `.guitkx` syntax
+> highlighting**) has apparently **never actually been bundled into the built VSIX, at any point in
+> this project's history.** Root cause: it was declared as a `<None Include>` item; VSSDK's
+> `GetVsixSourceItems` target only honors `IncludeInVSIX` metadata on `<Content>` items — a `<None>`
+> item's `IncludeInVSIX="true"` is silently ignored. Verified via a `git worktree` checkout of the
+> pre-Phase-1 commit (`aedef25`) built and inspected with `unzip -l`: `guitkx.pkgdef` was absent from
+> that VSIX too, so this predates everything in this plan and is unrelated to the Phase 1
+> `GeneratePkgDefFile` change (tested both `true` and `false` — neither affected it). Fixed by
+> changing the item type to `<Content>` (matching `Syntaxes/guitkx.tmLanguage.json`, which already
+> worked); verified with a from-scratch rebuild that the static `guitkx.pkgdef` and the
+> auto-generated `GuitkxVsix.pkgdef` now both land in the VSIX correctly. **Practical implication:**
+> the currently-published 0.5.5 VSIX likely has this exact bug too — real VS2022 users installing it
+> from the Marketplace may never have had working `.guitkx` syntax highlighting. Worth a dedicated,
+> urgent-priority release once this branch merges, independent of the rest of the parity work.
 >
 > **2026-07-05 review pass** (web-verified, not just re-read): fixed a real build bug found while
 > verifying this plan — `GuitkxVsix.csproj` pinned `Microsoft.VisualStudio.LanguageServer.Client
@@ -306,10 +322,11 @@ hints, code actions, symbols — reaches VS users, as it reached VS Code users i
 `configurationDefaults` get VS-native equivalents. All are per-content-type MEF exports — no
 global behavior changes.
 
-1. **Editor defaults (row 18)** — `IWpfTextViewCreationListener` for `ContentType("guitkx")`:
-   set `ConvertTabsToSpaces=false`, `TabSize=4`, `IndentSize=4` on the view's `IEditorOptions`.
-   (VS has no `detectIndentation`; nothing to disable.)
-2. **Format-on-save (row 17)** — `IVsRunningDocTableEvents3.OnBeforeSave` (advise via the RDT in
+1. **DONE (2026-07-06), builds clean.** **Editor defaults (row 18)** —
+   `GuitkxEditorDefaults : IWpfTextViewCreationListener` for `ContentType("guitkx")`: sets
+   `ConvertTabsToSpaces=false`, `TabSize=4`, `IndentSize=4` via `DefaultOptions.*OptionId` on
+   `IWpfTextView.Options`. (VS has no `detectIndentation`; nothing to disable.)
+2. **NOT done yet** — **Format-on-save (row 17)** — `IVsRunningDocTableEvents3.OnBeforeSave` (advise via the RDT in
    the package) for guitkx documents: send `textDocument/formatting` through the LSP client and
    apply the `TextEdit[]` before the save proceeds. Add an options-page toggle (default ON to
    match VS Code's `configurationDefaults`). Guard re-entrancy (applying edits must not re-trigger
@@ -317,25 +334,32 @@ global behavior changes.
    - Implementation note: the cleanest LSP-request path from the client side is
      `ILanguageClientBroker`/`RequestAsync` on the JSON-RPC connection; we own `ActivateAsync`'s
      `Connection`, so keep a reference to the `JsonRpc` wrapper if the broker route is awkward.
-3. **Brace completion (row 19)** — `IBraceCompletionDefaultProvider` export with
-   `[BracePair('{','}')] [BracePair('(',')')] [BracePair('[',']')] [BracePair('<','>')]
-   [BracePair('"','"')] [BracePair('\'','\'')]` for `ContentType("guitkx")`.
-4. **Comment toggle (row 20)** — `ICommentSelectionService` **is not a real option**: it's a
-   Roslyn `EditorFeatures`-internal language-service abstraction (consumed by Roslyn's own
-   comment/uncomment command handler for languages plugged into Roslyn's workspace model), not a
-   public VS SDK extensibility contract a MEF content type outside Roslyn can implement. Two real
-   options, either is fine here since this language is `#`-line-comment-only:
-   - **(a, likely lower effort)** A declarative **Language Configuration** file
-     (`learn.microsoft.com/.../language-configuration`, VS2022-current — the VS Code-compatible
-     `*language-configuration.json`), registered against the `guitkx` content type via
-     `guitkx.pkgdef`'s `TextMate\LanguageConfiguration\ContentTypeMapping`: `{ "comments": {
-     "lineComment": "#" } }` and Ctrl+K,Ctrl+C / uncomment/toggle work with zero handler code.
-     Working sample: `github.com/microsoft/VSExtensibility` → "Language Configuration Setup Example".
-   - **(b)** Export `ICommandHandler<ToggleLineCommentCommandArgs>` (or
-     `CommentSelectionCommandArgs`/`UncommentSelectionCommandArgs`) from
-     `Microsoft.VisualStudio.Text.Editor.Commanding.Commands`, `[ContentType("guitkx")]` — the
-     documented MEF pattern from "Walkthrough: Using a shortcut key with an editor extension". Gives
-     more control (e.g. custom logic around mixed indentation) if (a) turns out insufficient.
+3. **DONE (2026-07-06), builds clean.** **Brace completion (row 19)** —
+   `GuitkxBraceCompletion : IBraceCompletionDefaultProvider` (a marker-only implementation is
+   sufficient — no members to fill in) with the six sketched `[BracePair]` attributes, for
+   `ContentType("guitkx")`. One correction: the type lives in `Microsoft.VisualStudio.Text.BraceCompletion`
+   (assembly `Microsoft.VisualStudio.Text.UI.dll`), not `Microsoft.VisualStudio.Language.Intellisense`
+   as might be guessed — confirmed by inspecting the resolved package DLLs directly, not just
+   documentation.
+4. **DONE (2026-07-06), builds clean — took option (a).** **Comment toggle (row 20)** —
+   `ICommentSelectionService` **is not a real option**: it's a Roslyn `EditorFeatures`-internal
+   language-service abstraction, not a public VS SDK extensibility contract a MEF content type
+   outside Roslyn can implement. Implemented as a declarative **Language Configuration** file
+   (`language-configuration.json`, comments-only — deliberately omits brackets/autoClosingPairs,
+   already covered by item 3's native provider, to avoid two mechanisms both auto-closing the same
+   pairs), registered via `guitkx.pkgdef`. **Correction to the registry key from the original
+   sketch** (verified against the actual Microsoft sample, `microsoft/VSExtensibility`'s "Language
+   Configuration Setup Example", fetched and read directly — not guessed): the section is
+   `[$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]`, and it's keyed by the grammar's
+   **TextMate scope name** (`source.guitkx`, from `Syntaxes\guitkx.tmLanguage.json`'s `"scopeName"`
+   field) — **not** the `ContentTypeMapping` key or the `"guitkx"` MEF content-type name the sketch
+   guessed at.
+   - **This surfaced a real, pre-existing, unrelated bug** (see the top-of-file 2026-07-06 note):
+     `guitkx.pkgdef` was declared as a `<None>` MSBuild item, whose `IncludeInVSIX` metadata VSSDK
+     silently ignores (only `<Content>` items are honored) — so the file, and therefore **all
+     `.guitkx` syntax highlighting**, has apparently never actually shipped in a built VSIX at any
+     point in this project's history. Fixed alongside this item since editing `guitkx.pkgdef` for
+     the language-configuration mapping is what prompted verifying it actually landed in the zip.
 5. **Smart indent (row 21)** — `ISmartIndentProvider` for guitkx: minimal port of the two
    `language-configuration.json` rules — indent after a line ending in `>` of an opening tag or
    `{`/`(`; keep child indent between `<Tag>` and `</Tag>`. The "Enter between `></`" splits into
