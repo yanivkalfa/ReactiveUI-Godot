@@ -1,0 +1,14 @@
+component MarkupCommentBrace {
+	return (
+		<vbox>
+			// TODO: revisit }
+			<label text="a" />
+			<!-- a comment with a stray } inside -->
+			<label text="b" />
+			@if (true) {
+				/* a block comment with a } inside */
+				<label text="c" />
+			}
+		</vbox>
+	)
+}

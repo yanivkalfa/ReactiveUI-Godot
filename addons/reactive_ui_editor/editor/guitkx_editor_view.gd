@@ -82,6 +82,11 @@ var _bindings_valid := false
 var _pending_jump_offset := -1  # goto-def target applied once the destination file finishes loading
 var _last_compile_ms := 0.0     # drives the adaptive debounce (P1)
 
+# G-06: paths already warned this session that format-on-save/Format fell back to verbatim (a
+# syntax error) -- keyed so the modal alert fires once per file, not on every save of the same
+# still-broken file.
+var _format_fallback_warned: Dictionary = {}
+
 static var _decl_probe: RegEx = null
 
 func _init() -> void:
@@ -893,8 +898,15 @@ func _on_gutter_diagnostic_clicked(line: int, record: Variant) -> void:
 func _formatted(text: String) -> String:
 	return _format_text(text, _current_path)
 
+## [G-06 fix] `fell_back` (r["fell_back"]) tells apart "already canonical" from "couldn't even try
+## (syntax error)" -- both look identical from just `text == source`. Warns the user once per path
+## per session instead of staying silent (format-on-save used to look like a no-op) or nagging on
+## every save of the same still-broken file.
 func _format_text(text: String, path: String) -> String:
 	var r: Dictionary = RUIGuitkxFormatter.format(text, ConfigScript.formatter_opts_for(path))
+	if bool(r.get("fell_back", false)) and not _format_fallback_warned.has(path):
+		_format_fallback_warned[path] = true
+		_alert("%s has syntax errors -- format skipped." % path.get_file())
 	if r.get("ok", false):
 		return r.get("text", text)
 	return text

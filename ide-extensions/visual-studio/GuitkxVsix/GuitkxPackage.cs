@@ -50,15 +50,33 @@ namespace GuitkxVsix
         private void OnRestartLanguageServer(object sender, EventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            var restarted = GuitkxLanguageClient.RequestRestart();
+            var restarted = GuitkxLanguageClient.RequestRestart(out var budgetExhausted);
+            // G-22: VS auto-restarts a crashed language server ONCE per session -- a second manual
+            // kill has no budget left, so telling the user to just wait would be a false promise.
+            string message;
+            if (!restarted)
+            {
+                message = "No running GUITKX language server was found to restart (it may not have started " +
+                           "yet, or a .guitkx/.gd file hasn't been opened this session).";
+            }
+            else if (budgetExhausted)
+            {
+                message = "The GUITKX language server process was stopped, but its automatic restart budget " +
+                           "for this session is used up (Visual Studio only auto-restarts a crashed language " +
+                           "server once) -- it will NOT come back on its own this time. Reload the solution or " +
+                           "restart Visual Studio. See the \"GUITKX Language Server\" Output pane for the " +
+                           "server's own log.";
+            }
+            else
+            {
+                message = "The GUITKX language server process was stopped and should restart automatically " +
+                           "(Visual Studio restarts a crashed LSP server once). If it doesn't come back within " +
+                           "a few seconds, check the \"GUITKX Language Server\" Output pane, then reload the " +
+                           "solution or restart Visual Studio.";
+            }
             VsShellUtilities.ShowMessageBox(
                 this,
-                restarted
-                    ? "The GUITKX language server process was stopped and should restart automatically " +
-                      "(Visual Studio restarts a crashed LSP server once). If it doesn't come back within " +
-                      "a few seconds, reload the solution or restart Visual Studio."
-                    : "No running GUITKX language server was found to restart (it may not have started " +
-                      "yet, or a .guitkx/.gd file hasn't been opened this session).",
+                message,
                 "GUITKX",
                 OLEMSGICON.OLEMSGICON_INFO,
                 OLEMSGBUTTON.OLEMSGBUTTON_OK,

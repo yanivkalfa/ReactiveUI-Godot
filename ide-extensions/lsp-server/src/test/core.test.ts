@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findMatching, skipNoncode, keywordAt } from "../scanner";
+import { findMatching, findMatchingMarkup, skipNoncode, skipNoncodeMarkup, keywordAt } from "../scanner";
 import { SourceMap, offsetToPosition, positionToOffset } from "../sourceMap";
 import { buildVirtualDoc } from "../virtualDoc";
 import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt, guitkxVirtualLibText } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows, missingReturnComponents, unreachableRegions, setupSpans } from "../formatGuitkx";
+import { formatGuitkx, fmtAttr, FmtOptions, markupWindows, missingReturnComponents, unreachableRegions, setupSpans } from "../formatGuitkx";
 import { windowStructureDiags, hookContextDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
@@ -82,6 +82,30 @@ test("formatGuitkx is byte-identical to the GDScript formatter over the shared g
   }
 });
 
+test("G-05: fmtAttr flags o._unsafeStrAttr for a str value with an embedded quote (parser can't produce this today; safety-net test)", () => {
+  const o = { printWidth: 100, indentStyle: "space", indentSize: 2, singleAttributePerLine: false, insertSpaceBeforeSelfClose: true } as FmtOptions;
+  fmtAttr({ name: "text", kind: "str", value: "safe", at: 0, vat: 0, end: 0 }, o);
+  assert.equal(o._unsafeStrAttr, undefined, "a normal str attr must not flag unsafe");
+  fmtAttr({ name: "text", kind: "str", value: 'has " inside', at: 0, vat: 0, end: 0 }, o);
+  assert.equal(o._unsafeStrAttr, true, "an embedded quote must flag unsafe");
+});
+
+test("G-06: formatGuitkx.fellBack distinguishes a parse-error fallback from an already-canonical file", () => {
+  const broken = 'component Broken {\n  return (\n    <Label text="x"\n  )\n}\n'; // unclosed tag
+  const r1 = formatGuitkx(broken);
+  assert.equal(r1.text, broken, "verbatim on parse error");
+  assert.equal(r1.fellBack, true, "parse error must report fellBack");
+
+  const empty = "";
+  const r2 = formatGuitkx(empty);
+  assert.equal(r2.fellBack, false, "nothing-to-format is not a syntax-error fallback");
+
+  const canonical = 'component Ok {\n  return (\n    <Label text="x" />\n  )\n}\n';
+  const r3 = formatGuitkx(canonical);
+  assert.equal(r3.changed, false);
+  assert.equal(r3.fellBack, false, "an already-canonical file must not report fellBack");
+});
+
 test("scanTagRefs: jsx-as-value ref after a value keyword counts; a comparison does not", () => {
   assert.equal(scanTagRefs("x = cond if c else <Card />", "Card").length, 1); // else <Card/> is a ref
   assert.equal(scanTagRefs("if a < Card: pass", "Card").length, 0); // `a < Card` is a comparison
@@ -113,6 +137,11 @@ test("gdformat reflow safety net: token-equivalence ignores whitespace/quote, re
   assert.ok(tokenEquivalent("x = 'hi'", 'x = "hi"')); // quote style -> equivalent
   assert.ok(!tokenEquivalent("[a, b]", "[a, b,]")); // trailing comma -> rejected (conservative)
   assert.ok(!tokenEquivalent("a + b", "a - b")); // operator change -> rejected
+  // G-17: a comment is part of the token stream now -- trailing whitespace inside it still doesn't
+  // count, but its CONTENT does, so a formatter bug that deletes/mangles a comment is rejected.
+  assert.ok(tokenEquivalent("var a = 1 # note", "var a = 1 # note   "), "trailing ws inside a comment is insignificant");
+  assert.ok(!tokenEquivalent("var a = 1 # note", "var a = 1"), "a DROPPED comment must be rejected, not silently equivalent");
+  assert.ok(!tokenEquivalent("var a = 1 # note", "var a = 1 # different"), "a MANGLED comment must be rejected");
 });
 
 test("reflowEmbedded reflows embedded GDScript via the analyzer formatter, token-equivalently (BUG-1)", () => {
@@ -124,6 +153,11 @@ test("reflowEmbedded reflows embedded GDScript via the analyzer formatter, token
   assert.ok(tokenEquivalent(formatted, out), "reflow only changes whitespace/quote style, never tokens");
   // a no-op formatter leaves the document untouched (the safety/identity path)
   assert.equal(reflowEmbedded(formatted, () => null), formatted, "a formatter that declines leaves the region as-is");
+  // G-17: a formatter that drops a comment (simulating a gdscript-fmt bug) must be rejected --
+  // the region stays exactly as authored, comment included.
+  const withComment = "component Y {\n\tvar a = 1 # keep me\n\treturn (\n\t\t<Label />\n\t)\n}\n";
+  const dropCommentFmt = (gd: string) => gd.replace(/ # keep me/, "");
+  assert.equal(reflowEmbedded(withComment, dropCommentFmt), withComment, "a comment-dropping reflow must be rejected, region left untouched");
 });
 
 test("classdb dump base-flattens Button props (text + inherited disabled) and signals", () => {
@@ -158,6 +192,14 @@ test("scanner stays byte-identical with the GDScript lexer (shared fixture)", ()
     assert.equal(skipNoncode(c.input, c.at), c.expect, `skipNoncode(${JSON.stringify(c.input)}, ${c.at})`);
   for (const c of fx.findMatching)
     assert.equal(findMatching(c.input, c.at), c.expect, `findMatching(${JSON.stringify(c.input)}, ${c.at})`);
+});
+
+test("G-01: skipNoncodeMarkup/findMatchingMarkup stay byte-identical with the GDScript lexer (shared fixture)", () => {
+  const fx = JSON.parse(readFileSync(join(__dirname, "..", "..", "test-fixtures", "scanner-cases.json"), "utf8"));
+  for (const c of fx.skipNoncodeMarkup)
+    assert.equal(skipNoncodeMarkup(c.input, c.at), c.expect, `skipNoncodeMarkup(${JSON.stringify(c.input)}, ${c.at})`);
+  for (const c of fx.findMatchingMarkup)
+    assert.equal(findMatchingMarkup(c.input, c.at), c.expect, `findMatchingMarkup(${JSON.stringify(c.input)}, ${c.at})`);
 });
 
 test("keywordAt respects identifier boundaries", () => {

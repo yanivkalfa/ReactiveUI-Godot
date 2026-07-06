@@ -22,7 +22,7 @@
 //   { t:"while", at, header, body_markup, body_at }
 //   { t:"match", at, subject, cases:[{value, body_markup, body_at}], default_body, default_body_at }
 
-import { skipString, findMatching, keywordAt } from "./scanner";
+import { skipString, findMatching, findMatchingMarkup, keywordAt } from "./scanner";
 
 export interface Attr {
   name: string;
@@ -189,7 +189,8 @@ class MarkupParser {
     if (this.err !== "") return { node: null, next: end };
     const children = cr.nodes;
     const j = cr.next;
-    if (j >= end || this.src[j] !== "<" || (j + 1 < end && this.src[j + 1] !== "/")) {
+    // G-04: `j + 1 >= end` must fail on its own -- see guitkx_markup.gd's comment.
+    if (j >= end || this.src[j] !== "<" || j + 1 >= end || this.src[j + 1] !== "/") {
       this.fail("GUITKX0301", `unclosed tag <${tag}>`, openI);
       return { node: null, next: end };
     }
@@ -337,7 +338,9 @@ class MarkupParser {
       this.fail("GUITKX0303", "directive expects `{ ... }` body", i);
       return { text: "", next: end, at: -1 };
     }
-    const close = findMatching(this.src, i);
+    // G-01: a directive BODY is markup, not GDScript -- findMatchingMarkup keeps `#` literal and
+    // `//`/`/* */`/`<!-- -->` as comments (see scanner.ts's docstring).
+    const close = findMatchingMarkup(this.src, i);
     if (close === -1 || close >= end) {
       this.fail("GUITKX0304", "unclosed `{` directive body", i);
       return { text: "", next: end, at: -1 };
@@ -397,7 +400,8 @@ class MarkupParser {
       this.fail("GUITKX0303", "@match expects `{ ... }` with @case/@default arms", bi);
       return { node: null, next: end };
     }
-    const bclose = findMatching(this.src, bi);
+    // G-01: @case/@default arm bodies are markup -- see findMatchingMarkup's docstring.
+    const bclose = findMatchingMarkup(this.src, bi);
     if (bclose === -1 || bclose >= end) {
       this.fail("GUITKX0304", "unclosed @match body", bi);
       return { node: null, next: end };

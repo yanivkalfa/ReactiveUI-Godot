@@ -105,7 +105,7 @@ func _collect_windows(src: String, from: int, to: int, out: Array) -> void:
 			break
 		var at := int(d["at"])
 		if d["kind"] == "component":
-			var b := _decl_body(src, at)
+			var b := _decl_body(src, at, true)
 			if b.is_empty():
 				i = at + 1
 				continue
@@ -134,7 +134,11 @@ func _collect_windows(src: String, from: int, to: int, out: Array) -> void:
 
 ## The `{`…matching-`}` body span of a decl at `at` (keyword-token-agnostic, params-aware) —
 ## mirrors formatGuitkx.ts declBody so both walks locate the same body.
-func _decl_body(src: String, at: int) -> Dictionary:
+## `markup_body`: true for "component" (its body mixes GDScript setup with a markup return -- G-01,
+## see guitkx_lexer.gd find_matching_markup). false for "module" (its top-level content is a MIX of
+## hook -- GDScript -- and component -- markup -- declarations, so it stays GDScript-lexis, same as
+## guitkx.gd _compile_module).
+func _decl_body(src: String, at: int, markup_body: bool = false) -> Dictionary:
 	var n := src.length()
 	var i := at
 	while i < n and L._is_ident(src[i]):
@@ -150,7 +154,7 @@ func _decl_body(src: String, at: int) -> Dictionary:
 		i = _skip_ws(src, pc + 1)
 	if i >= n or src[i] != "{":
 		return {}
-	var close := L.find_matching(src, i)
+	var close := L.find_matching_markup(src, i) if markup_body else L.find_matching(src, i)
 	if close == -1:
 		return {}
 	return { "start": i + 1, "close": close }

@@ -34,9 +34,10 @@ if (vsceTarget && !VSCE_TO_NAPI[vsceTarget]) {
   process.exit(1);
 }
 
-function copyDir(from, to) {
+function copyDir(from, to, exclude) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    if (exclude && exclude.has(entry.name)) continue;
     const s = path.join(from, entry.name);
     const d = path.join(to, entry.name);
     if (entry.isDirectory()) copyDir(s, d);
@@ -51,7 +52,9 @@ if (!fs.existsSync(path.join(serverSrc, "out", "server.js"))) {
 
 fs.rmSync(dest, { recursive: true, force: true });
 // flatten out/*.js to ./server/*.js so extension.ts can require ./server/server.js
-copyDir(path.join(serverSrc, "out"), dest);
+// (repo hygiene: out/test/** is compiled test code, never needed at runtime -- excluded so it
+// doesn't bloat the shipped .vsix)
+copyDir(path.join(serverSrc, "out"), dest, new Set(["test"]));
 // A7: the vocabulary must ride along — schema.js require()s it at runtime, so a bundle without it
 // is a server that dies on MODULE_NOT_FOUND at startup (a 0.5.x-era layout shipped exactly that).
 if (!fs.existsSync(path.join(dest, "vocabulary.json"))) {

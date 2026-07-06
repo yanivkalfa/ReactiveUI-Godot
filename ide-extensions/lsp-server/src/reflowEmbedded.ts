@@ -116,7 +116,14 @@ export function normalizeGd(s: string): string {
       continue;
     }
     if (c === "#") {
+      // [G-17 fix] emit the comment's content (order-preserving, trailing-whitespace-trimmed only)
+      // instead of dropping it -- a gdscript-fmt bug that deleted or mangled a comment used to
+      // normalize to the SAME string as the original (both "nothing"), so tokenEquivalent would
+      // wrongly call it safe and let the reflow silently delete the user's comment. Trailing
+      // whitespace still doesn't count (gdscript-fmt trimming it is genuinely insignificant).
+      const start = i;
       while (i < n && s[i] !== "\n") i++;
+      out += s.slice(start, i).replace(/[ \t]+$/, "");
       continue;
     }
     if (c === '"' || c === "'") {

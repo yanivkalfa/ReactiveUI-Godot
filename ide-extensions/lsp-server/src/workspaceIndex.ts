@@ -5,7 +5,7 @@
 // bind by their member name (intra-module). Multi-valued byName + byUri eviction (Unity's model) so a
 // copy+rename never deletes a live declarant.
 
-import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { skipNoncode, findMatching, findMatchingMarkup, keywordAt, isIdent } from "./scanner";
 import { isTagBoundary } from "./refs";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
@@ -72,7 +72,7 @@ function scanRange(src: string, start: number, end: number, override: ClassNameR
       const useOverride = isComp && !mod && firstComponent && override != null;
       const binding = useOverride ? override!.text : nm.text;
       if (isComp) firstComponent = false;
-      const body = readBody(src, nm.end);
+      const body = readBody(src, nm.end, isComp);
       const declEnd = body ? body.end + 1 : nm.end;
       out.push({
         kind, kw: kw as DeclInfo["kw"], name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
@@ -113,7 +113,10 @@ function readClassName(src: string): ClassNameRef | null {
   return null;
 }
 
-function readBody(src: string, from: number): { start: number; end: number } | null {
+// `markupBody`: true for a "component" declaration (its body mixes GDScript setup with a markup
+// return -- G-01, see scanner.ts findMatchingMarkup). false for "hook"/"module" (pure/mixed
+// GDScript -- see virtualDoc.ts readDeclBody's docstring for why module stays GDScript-lexis too).
+function readBody(src: string, from: number, markupBody = false): { start: number; end: number } | null {
   const n = src.length;
   let j = from;
   while (j < n && src[j] !== "{") {
@@ -131,7 +134,7 @@ function readBody(src: string, from: number): { start: number; end: number } | n
     j++;
   }
   if (j >= n || src[j] !== "{") return null;
-  const close = findMatching(src, j);
+  const close = markupBody ? findMatchingMarkup(src, j) : findMatching(src, j);
   if (close === -1) return null;
   return { start: j + 1, end: close };
 }

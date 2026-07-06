@@ -22,5 +22,24 @@
     { "input": "{ \"a\": [1, 2] }", "at": 0, "expect": 14 },
     { "input": "( \"}\" )", "at": 0, "expect": 6 },
     { "input": "{ a # ) \n }", "at": 0, "expect": 10 }
+  ],
+  "skipNoncodeMarkup": [
+    { "input": "# not a comment", "at": 0, "expect": 0 },
+    { "input": "// comment\nx", "at": 0, "expect": 10 },
+    { "input": "/* block */x", "at": 0, "expect": 11 },
+    { "input": "<!-- hi -->x", "at": 0, "expect": 11 },
+    { "input": "\"abc\"x", "at": 0, "expect": 5 },
+    { "input": "r\"raw\"", "at": 0, "expect": 0 }
+  ],
+  "findMatchingMarkup": [
+    { "input": "{ <Label text=\"x\"/> # }", "at": 0, "expect": 22 },
+    { "input": "{\n\t<Label text=\"y\"/>\n\t// TODO: revisit }\n\t<Label text=\"z\"/>\n}", "at": 0, "expect": 60 },
+    { "input": "{ @if (a) { <A/> } @else { <B/> } }", "at": 0, "expect": 34 },
+    { "input": "{ @case (1) { <A/> } @default { <B/> } }", "at": 0, "expect": 39 },
+    { "input": "{ <!-- } --> <A/> }", "at": 0, "expect": 18 },
+    { "input": "{ <A prop=\"#FF0000\"/> }", "at": 0, "expect": 22 },
+    { "input": "{ /* ( */ <A/> }", "at": 0, "expect": 15 },
+    { "input": "{ @if (x) { return ( <label>Score #3</label> ) } }", "at": 0, "expect": 49 },
+    { "input": "{ @if (x) { return <label>Score #3</label> } }", "at": 0, "expect": 45 }
   ]
 }

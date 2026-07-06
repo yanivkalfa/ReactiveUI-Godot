@@ -36,6 +36,38 @@ The repo is now dual-license-ready for distribution: an **MIT `LICENSE`** landed
 
 ---
 
+## [IDE 0.8.7] - 2026-07-06
+
+**Picks up the same compiler/formatter correctness fixes as Reactive UI 0.8.5** (see below) — the language server's markup/formatting logic is kept byte-for-byte in sync with the Godot addon, so VS Code and VS 2022 users get the identical fix, not a lagging port.
+
+Also: `guitkx.*` settings now apply live — the server re-reads them on a config-change notification instead of only at startup, so toggling `enableGdscriptAnalysis` etc. no longer needs a restart (VS Code rebuilds its client automatically; VS 2022's Tools > Options now pushes changes immediately too). `enableGdscriptAnalysis` is now actually enforced server-side across every request handler (previously persisted but silently unenforced on VS 2022). A closed file's diagnostics no longer linger in the Problems panel until it's reopened. `.guitkx` typing defaults on both editors now match the formatter's canonical spaces-at-2 style (previously tabs/4, so every hand-typed line got rewritten by the next format-on-save). The shipped VS Code package no longer bundles the language server's compiled test code.
+
+VS 2022 only: format-on-save now times out after 2s instead of risking an indefinite UI-thread hang; "Restart Language Server" now warns when Visual Studio's one-time-per-session auto-restart budget is already spent instead of promising a restart that won't happen; the server's stderr is now captured in a new "GUITKX Language Server" Output pane so a hang or crash is diagnosable without attaching a debugger.
+
+Reinstall **GUITKX 0.8.7** (VS Code + VS 2022).
+
+---
+
+## [Editor 0.6.2] - 2026-07-06
+
+**Format-on-save now tells you when it skipped formatting.** If a `.guitkx` file has a syntax error the formatter can't safely reflow around, `format()` used to fall back to leaving the buffer untouched — and report success identically to "already canonical," so a stale, unformatted file looked the same as a freshly-formatted one. The in-Godot editor now shows a one-time-per-file alert ("*\<file\> has syntax errors -- format skipped.*") instead of silently no-op'ing.
+
+Update to **Reactive UI Editor 0.6.2** (copy `addons/reactive_ui_editor/` into your project; needs `reactive_ui` 0.8.5+).
+
+---
+
+## [0.8.5] - 2026-07-06
+
+**A correctness sweep across the `.guitkx` compiler, formatter, and Fast Refresh — no API changes.** A full audit turned up (and this release fixes) 7 confirmed bugs. The big one: every scan that locates a component/directive body, a `@match` body, or a `return ( ... )` window used to treat markup content as plain GDScript — so a literal `#` in element text (`Score #3`), a hex color, or a markup comment (`//`, `/* */`, `<!-- -->`) containing `}`/`)` could miscount the delimiters being balanced and silently shift where a body was believed to end (a miscompile, not just a parse error). These scans now understand markup lexis by default, switching to GDScript lexis only inside `{expr}` islands and directive headers.
+
+Also fixed: the formatter no longer corrupts the interior of a triple-quoted string or drops blank lines inside a directive body's prep code; a truncated closing tag at the very end of a window now fails cleanly instead of scanning past it; an attribute value with an embedded `"` now falls back to verbatim instead of risking a corrupting re-emit; `@uss`/`@theme` no longer false-flags a `uid://` resource path as missing; and Fast Refresh's component-vs-module classification is no longer a fragile source-text guess (a comment containing `static func render(` could fool it) — generated components now carry an unambiguous marker read via reflection.
+
+Also documented (not changed): hook dependency-array comparison is value-based (deep `==`), not identity-based like React's `Object.is` — intentional, now called out in the README.
+
+Update to **Reactive UI 0.8.5** (copy `addons/reactive_ui/` into your project).
+
+---
+
 ## [IDE 0.8.6] - 2026-07-04
 
 **Deleting a component's whole folder now actually gets caught — on both the fast path and the slow one.** Two holes, closed together: the extension's folder-delete handling (shipped in 0.8.5) turned out to be correct but *unreachable* — VS Code only delivers folder-delete events to a watcher whose glob matches the folder path itself, and the registration listed per-extension file globs. It's a single `**` watcher now. Separately, the Godot addon's watch poll only went hot on stale mtimes — but a deleted folder takes its outputs down with it, so nothing looked stale and `GUITKX2107` waited for an unrelated save or editor focus-in. The poll now re-reads each tracked file's sidecar references every tick and goes hot on any state mismatch (flagged-but-restored, or missing-but-unflagged), settling once everything matches again.
@@ -435,7 +467,7 @@ Reinstall **GUITKX 0.4.0** (VS Code + VS 2022).
 
 ## [IDE 0.3.1] - 2026-07-01
 
-### The .guitkx editor experience, debugged -- hover, completion, rename, and formatting that actually work
+### The .guitkx editor experience, debugged (1/2)
 
 A focused bug-fix pass on the **VS Code / VS 2022 extension** after real hands-on testing. Eight defects, all in the language server -- the runtime library is untouched (still 0.2.2).
 
@@ -444,6 +476,12 @@ A focused bug-fix pass on the **VS Code / VS 2022 extension** after real hands-o
 **Completion fills the blanks.** A blank child slot, or the inside of an `@for` / `@if` body, used to be misread as embedded GDScript -- so no tags were offered. Now those positions complete host elements **and your project's components** as `<Tag>` suggestions.
 
 **Navigation and rename stop missing the target.** Ctrl+click / find-references / rename now work when the cursor lands on a tag's opening `<` (a mouse ctrl+click on a tab-indented `<Component/>` used to do nothing), while a GDScript comparison like `a < Name` is never mistaken for a tag. And renaming a component that declares `@class_name` now rewrites the `@class_name`, the declaration, and every usage **together** -- previously it left `@class_name` stale and the renamed tags lit up with a bogus "unknown element" (GUITKX0105) error.
+
+---
+
+## [IDE 0.3.1] - 2026-07-01 (2/2)
+
+### Embedded GDScript, and an editing nicety
 
 **Embedded GDScript is now a first-class citizen.** The GDScript inside `.guitkx` is now **semantically highlighted** by the analyzer (type-aware, just like a real `.gd`) and **formatted** by the same bundled `gdscript-fmt` that formats plain `.gd` files -- so a snippet looks and formats identically whether it lives in a `.gd` or a `.guitkx`. (The optional external `gdformat` dependency is gone.)
 
@@ -467,11 +505,17 @@ Reinstall **GUITKX 0.3.1** (VS Code + VS 2022) to get all of it.
 
 ## [0.2.1] - 2026-06-22
 
-### The demo gallery, now in .guitkx — and a VS Code extension that actually turns on
+### The demo gallery, now in .guitkx (1/2)
 
 **Every demo is now markup.** The whole `examples/` gallery -- counter, todo, router, the stress tests, all 24 -- is rewritten in `.guitkx` instead of hand-written `V.*` calls, so the demos double as a reference for the markup language. They follow the ReactiveUIToolKit layout: one `component` per file, sub-components as sibling files, and `module` reserved for hook / registry files. The generated `.gd` are git-ignored (the editor regenerates them on save), so the tree shows the source you actually edit.
 
 **The VS Code extension works now.** The published build was shipping without its `vscode-languageclient` dependency (a packaging-flag bug), so it silently failed to start -- no formatting, no completion, no hover. That's fixed, along with the missing "activate on `.guitkx`" trigger and format-on-save defaults. It also now formats `.guitkx` with consistent **tab** indentation (the embedded GDScript requires tabs, so markup + setup no longer mix tabs and spaces) and **flags unknown attributes** on host elements (a typo'd `te`/`xt` on `<Label>` gets a squiggle + did-you-mean). And you can now drop a **`guitkx.config.json`** next to your project (the analogue of `uitkx.config.json`) to tune the formatter -- line width, indent style/size, attribute wrapping. The **VS 2022** extension bundles the very same language server, so the formatter, diagnostics, and `guitkx.config.json` fixes land there as well (the packaging / activation fixes were VS Code-specific).
+
+---
+
+## [0.2.1] - 2026-06-22 (2/2)
+
+### A VS Code extension that actually turns on -- IDE polish and a compiler fix
 
 **IDE polish (0.2.4, both editors).** A follow-up round of editor fixes: the formatter now keeps your blank lines and tidies `if x ==     null` into `== null`; unknown elements/attributes are red errors instead of faint hints; you get autocomplete for `style={ {…} }` keys (`bg_color`, `corner_radius`, …) and `Color.WHITE`-style constants; go-to-definition on a hook/symbol jumps into the library source (with the Godot editor open); and pressing Enter after a `<Tag />` no longer over-indents. Reinstall **GUITKX 0.2.4** to get everything.
 
@@ -483,7 +527,7 @@ Verified on Godot 4.7 -- full suite green: **core 91 / style 25 / router 18+37 /
 
 ## [0.2.0] - 2026-06-22
 
-### A real router, more runtime breadth, and a project-wide bug sweep
+### A real router, more runtime breadth (1/2)
 
 **The router grew up.** ReactiveUI for Godot now ships the full React-Router-style component-tree router -- a faithful port of ReactiveUIToolKit's. Declare routes as markup and the library renders the single best match:
 
@@ -498,9 +542,15 @@ V.routes({}, [
 ])
 ```
 
-Nested / layout routes render through `V.outlet()`, `:params` merge down the chain, and matching is React-Router-correct: a leaf route consumes the whole path (so `/` no longer prefix-matches everything and `*` is actually reachable), while a layout matches a prefix. You also get `basename`, query strings, navigation blockers, `V.navigate` (declarative redirect), and `V.nav_link` with active styling. New hooks: `use_navigate`, `use_location`, `use_query`, `use_params`, `use_matches`, `use_resolved_path`, `use_search_params`, `use_go`, `use_can_go`, `use_blocker`, `use_prompt`. The legacy `V.routes({ "routes": [...] })` table still works, and navigate-only widgets still don't re-render on navigation.
+Nested / layout routes render through `V.outlet()`, `:params` merge down the chain, and matching is React-Router-correct: a leaf route consumes the whole path (so `/` no longer prefix-matches everything and `*` is actually reachable), while a layout matches a prefix. You also get `basename`, query strings, navigation blockers, `V.navigate` (declarative redirect), and `V.nav_link` with active styling. New hooks: `use_navigate`, `use_location`, `use_query`, `use_params`, `use_matches`, `use_resolved_path`, `use_search_params`, `use_go`, `use_can_go`, `use_blocker`, `use_prompt`. The legacy `V.routes({ "routes": [...] })` table still works.
 
 **More of the runtime landed.** `V.suspense` (a signal-await / frame-poll boundary, since GDScript has no throw-to-suspend); a process-wide signal registry (`RUISignals` + `use_signal_key`) for shared app state; `V.memo`; per-state StyleBox slots (`hover`/`pressed`/`focus`/`disabled`/`read_only`); a userland `classes: [...]` styling layer (`RUIStyleSheet`); declarative `items` generalized across `ItemList`/`Tree`/`TabBar`/`OptionButton`/`PopupMenu` (selection preserved by identity); a real `use_deferred_value`; plus `use_animate` (Tween), `use_sfx`, and `V.audio`/`V.video`. Raw String children now auto-wrap to Labels.
+
+---
+
+## [0.2.0] - 2026-06-22 (2/2)
+
+### The compiler gets smarter, a full bug sweep, and an IDE bump
 
 **The compiler got smarter about expressions.** Control-flow inside an embedded `{expression}` or a lambda now lowers inline -- `@if`/`@elif`/`@else` become a ternary and `@for` becomes `.map` -- so conditional rendering inside `items.map(func(it): return <>@if (it.ok) { ... }</>)` finally compiles. (`@while`/`@match` can't be expressions and now report `GUITKX0113` instead of emitting broken code.)
 

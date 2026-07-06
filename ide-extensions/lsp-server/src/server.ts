@@ -33,7 +33,7 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { classifyContext, CursorContext } from "./context";
 import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
-import { skipString, findMatching, isIdent } from "./scanner";
+import { skipString, skipNoncodeMarkup, findMatching, findMatchingMarkup, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
@@ -69,11 +69,15 @@ const analyzer = new AnalyzerAdapter();
 let projectPath = "";
 let embeddedReflow = true;
 let embeddedEnabled = true;
+let gdscriptAnalysisEnabled = true;
 let canWatchFiles = false;
 
-connection.onInitialize((params: InitializeParams) => {
-  canWatchFiles = !!params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration;
-  const opts = (params.initializationOptions as any) || {};
+// G-12: the single place that resolves `guitkx.*` settings (+ legacy aliases) into the server's
+// module-level toggles -- shared by onInitialize (first read) and onDidChangeConfiguration (live
+// updates), so a setting toggled without a restart takes effect exactly the same way it did at
+// startup. `opts` is either InitializeParams.initializationOptions or the `guitkx` section of a
+// workspace/didChangeConfiguration notification -- both are a flat bag of the same option names.
+function applyGuitkxOptions(opts: any): void {
   // `embeddedReflow` runs embedded GDScript through the analyzer's formatter (so it matches a real .gd
   // file); `useGdformat` is the legacy name for the same toggle.
   if (typeof opts.embeddedReflow === "boolean") embeddedReflow = opts.embeddedReflow;
@@ -82,6 +86,16 @@ connection.onInitialize((params: InitializeParams) => {
   // inside {expr}/setup). `enableGodotProxy` is the legacy name, still honored.
   if (typeof opts.enableEmbeddedAnalysis === "boolean") embeddedEnabled = opts.enableEmbeddedAnalysis;
   else if (typeof opts.enableGodotProxy === "boolean") embeddedEnabled = opts.enableGodotProxy;
+  // G-20: `enableGdscriptAnalysis` gates plain-`.gd` analysis SERVER-SIDE too (VS Code already
+  // gates client-side by not registering the `.gd` selector; VS2022 has no such mechanism, so this
+  // is the only gate it gets -- see isGdAnalysisEnabled below).
+  if (typeof opts.enableGdscriptAnalysis === "boolean") gdscriptAnalysisEnabled = opts.enableGdscriptAnalysis;
+}
+
+connection.onInitialize((params: InitializeParams) => {
+  canWatchFiles = !!params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration;
+  const opts = (params.initializationOptions as any) || {};
+  applyGuitkxOptions(opts);
   const rootUri = params.rootUri || (params.workspaceFolders?.[0]?.uri ?? "");
   projectPath = uriToProjectPath(rootUri);
   // Feed project.godot to the analyzer (enables [autoload] singleton resolution). Best-effort.
@@ -147,6 +161,16 @@ connection.onInitialized(() => {
     })
     .then(() => armWorkspaceComplete())
     .catch(() => startNativeWatcher()); // client refused — try the in-process fallback
+});
+
+// G-12: re-read `guitkx.*` on a live settings change (no restart needed). The VS Code client
+// synchronizes the `guitkx` section (see extension.ts's `synchronize.configurationSection`), so
+// `change.settings.guitkx` is the same flat option bag onInitialize saw. Toggling e.g.
+// enableEmbeddedAnalysis flips embedded hover/completion on the next request; VS2022 pushes the
+// same shape whenever GuitkxSettings changes (see GuitkxLanguageClient.CustomMessageTarget).
+connection.onDidChangeConfiguration((change) => {
+  const settings = (change.settings as any)?.guitkx;
+  if (settings) applyGuitkxOptions(settings);
 });
 
 function armWorkspaceComplete(): void {
@@ -419,10 +443,13 @@ function resPathFor(fsPath: string): string | null {
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
 
 function formatOptsFor(uri: string): Partial<FmtOptions> {
-  // Phase D: Unity-exact default — SPACES at width 2 (the [guitkx] configurationDefaults mirror
-  // [uitkx]'s). Embedded-GDScript reflow converts gdscript-fmt's tab depth to the same unit, so
-  // the old mixed-indent hazard is handled at the splice. A project guitkx.config.json (walk-up,
-  // like Prettier / uitkx.config.json) overrides printWidth / indentStyle / indentSize / wrapping.
+  // Phase D: Unity-exact default — SPACES at width 2. G-19: this is the canon BOTH editors' typing
+  // defaults must match too (VS Code's `[guitkx]` configurationDefaults in package.json, VS2022's
+  // GuitkxEditorDefaults) — keep all three in lockstep, or every format-on-save churns the whole
+  // file's indentation against what the user just typed. Embedded-GDScript reflow converts
+  // gdscript-fmt's tab depth to the same unit, so the old mixed-indent hazard is handled at the
+  // splice. A project guitkx.config.json (walk-up, like Prettier / uitkx.config.json) overrides
+  // printWidth / indentStyle / indentSize / wrapping.
   let dir = "";
   try {
     dir = dirname(uriToProjectPath(uri));
@@ -434,11 +461,23 @@ function formatOptsFor(uri: string): Partial<FmtOptions> {
 
 // In-process markup format (formatGuitkx) + embedded-GDScript reflow through the analyzer's formatter —
 // the SAME gdscript-fmt that drives plain .gd files — so embedded code formats identically (BUG-1).
-function formatFull(src: string, opts: Partial<FmtOptions>): { text: string; changed: boolean } {
-  const base = formatGuitkx(src, opts).text;
+function formatFull(src: string, opts: Partial<FmtOptions>): { text: string; changed: boolean; fellBack: boolean } {
+  const fg = formatGuitkx(src, opts);
   const unit = opts.indentStyle === "tab" ? "\t" : " ".repeat(opts.indentSize ?? 2);
-  const text = embeddedReflow ? reflowEmbedded(base, (gd) => analyzer.formatGd(gd), unit) : base;
-  return { text, changed: text !== src };
+  const text = embeddedReflow ? reflowEmbedded(fg.text, (gd) => analyzer.formatGd(gd), unit) : fg.text;
+  return { text, changed: text !== src, fellBack: fg.fellBack };
+}
+
+// G-06: a format request that fell back to verbatim (a syntax error, not an already-canonical
+// file) used to look exactly like "nothing to do" -- the user never learned formatting was
+// silently skipped. Warned once per URI per session (not on every keystroke-triggered format of
+// the same still-broken file) via the standard LSP window/showMessage, so both VS Code and VS2022
+// surface it without editor-specific plumbing.
+const formatFallbackWarned = new Set<string>();
+function warnFormatFallbackOnce(uri: string): void {
+  if (formatFallbackWarned.has(uri)) return;
+  formatFallbackWarned.add(uri);
+  connection.window.showWarningMessage(`GUITKX: ${uri.split("/").pop()} has syntax errors -- format skipped.`);
 }
 
 connection.onDocumentFormatting((params) => {
@@ -446,6 +485,7 @@ connection.onDocumentFormatting((params) => {
   if (!doc) return [];
   const src = doc.getText();
   if (isGd(params.textDocument.uri)) {
+    if (!isGdAnalysisEnabled()) return [];
     analyzer.sync(params.textDocument.uri, src);
     const formatted = analyzer.formatAt(params.textDocument.uri);
     return formatted === null || formatted === src
@@ -453,6 +493,7 @@ connection.onDocumentFormatting((params) => {
       : [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: formatted }];
   }
   const r = formatFull(src, formatOptsFor(params.textDocument.uri));
+  if (r.fellBack) warnFormatFallbackOnce(params.textDocument.uri);
   if (!r.changed) return [];
   return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: r.text }];
 });
@@ -462,11 +503,13 @@ connection.onDocumentRangeFormatting((params) => {
   if (!doc) return [];
   const src = doc.getText();
   if (isGd(params.textDocument.uri)) {
+    if (!isGdAnalysisEnabled()) return [];
     analyzer.sync(params.textDocument.uri, src);
     const e = analyzer.formatRangeAt(params.textDocument.uri, src, doc.offsetAt(params.range.start), doc.offsetAt(params.range.end));
     return e ? [{ range: { start: doc.positionAt(e.start), end: doc.positionAt(e.end) }, newText: e.newText }] : [];
   }
   const r = formatFull(src, formatOptsFor(params.textDocument.uri));
+  if (r.fellBack) warnFormatFallbackOnce(params.textDocument.uri);
   if (!r.changed) return [];
   // Whole-doc format, then return the single minimal line-hunk (common prefix/suffix diff). The whole
   // minimal hunk is emitted when it intersects the requested range (it may extend slightly past the
@@ -496,6 +539,7 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
   if (isGd(params.textDocument.uri)) {
+    if (!isGdAnalysisEnabled()) return [];
     analyzer.sync(params.textDocument.uri, src);
     return analyzer.completionsAt(params.textDocument.uri, src, offset);
   }
@@ -682,6 +726,7 @@ connection.onHover(async (params): Promise<Hover | null> => {
     const src = doc.getText();
     const offset = doc.offsetAt(params.position);
     if (isGd(params.textDocument.uri)) {
+      if (!isGdAnalysisEnabled()) return null;
       analyzer.sync(params.textDocument.uri, src);
       const c = analyzer.hoverAt(params.textDocument.uri, src, offset);
       return c ? { contents: c } : null;
@@ -756,7 +801,8 @@ documents.onDidChangeContent((change) => publishDiagnosticsFor(change.document))
 
 function publishDiagnosticsFor(doc: TextDocument): void {
   if (isGd(doc.uri)) {
-    connection.sendDiagnostics({ uri: doc.uri, diagnostics: gdDiagnostics(doc.uri, doc.getText()) });
+    // G-20: empty (not skipped) -- clears any diagnostics from before the setting was turned off.
+    connection.sendDiagnostics({ uri: doc.uri, diagnostics: isGdAnalysisEnabled() ? gdDiagnostics(doc.uri, doc.getText()) : [] });
     return;
   }
   index.reindex(doc.uri, doc.getText());
@@ -901,6 +947,10 @@ documents.onDidClose((e) => {
   } catch {
     index.evict(e.document.uri);
   }
+  // The closed buffer's squiggles are stale the instant it closes (based on its last-edited
+  // content, not necessarily what's on disk) -- clear them from the Problems panel instead of
+  // leaving them to linger until the file is reopened and re-analyzed.
+  connection.sendDiagnostics({ uri: e.document.uri, diagnostics: [] });
 });
 
 // --- go-to-definition: <Foo/> -> the component/module-member declaration ---
@@ -910,7 +960,7 @@ connection.onDefinition(async (params) => {
   if (!doc) return null;
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
-  if (isGd(params.textDocument.uri)) return gdDefinition(params.textDocument.uri, src, offset);
+  if (isGd(params.textDocument.uri)) return isGdAnalysisEnabled() ? gdDefinition(params.textDocument.uri, src, offset) : null;
   // A <Component/> tag, the `component`/member decl name, or its `@class_name` token -> the declaration,
   // from the workspace index. Using bindingUnderCursor (not just componentTagAt) means F12 / ctrl+click
   // works from a usage AND from the declaration itself / the @class_name directive, instead of falling
@@ -1089,6 +1139,16 @@ function isRenameable(name: string): boolean {
 
 function isGd(uri: string): boolean {
   return uri.endsWith(".gd");
+}
+
+// G-20: server-side gate for plain-.gd analysis. VS Code already gates client-side by not
+// registering the `.gd` selector when `guitkx.enableGdscriptAnalysis` is off (extension.ts); VS2022
+// has no equivalent per-content-type client gating (its MEF ContentType exports are static), so
+// this is the only enforcement it gets. Every `isGd(uri)` branch below checks this FIRST and
+// returns empty rather than falling through to the markup-handling path (which assumes `.guitkx`
+// syntax and would misbehave on a real `.gd` file).
+function isGdAnalysisEnabled(): boolean {
+  return gdscriptAnalysisEnabled;
 }
 
 // A CHAR offset -> Position in `uri`'s text (the analyzer's loaded copy if present, else disk/open).
@@ -1279,7 +1339,7 @@ connection.onReferences((params): Location[] => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
-  if (isGd(params.textDocument.uri)) return gdReferences(params.textDocument.uri, src, doc.offsetAt(params.position));
+  if (isGd(params.textDocument.uri)) return isGdAnalysisEnabled() ? gdReferences(params.textDocument.uri, src, doc.offsetAt(params.position)) : [];
   const name = bindingUnderCursor(params.textDocument.uri, src, doc.offsetAt(params.position));
   // Not a component tag -> try an embedded-GDScript symbol (analyzer-backed, source-mapped).
   if (!name) return embeddedReferences(params.textDocument.uri, src, doc.offsetAt(params.position));
@@ -1314,6 +1374,7 @@ connection.onPrepareRename((params) => {
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
   if (isGd(params.textDocument.uri)) {
+    if (!isGdAnalysisEnabled()) return null;
     const gw = wordRangeAt(src, offset);
     return gw.start === gw.end ? null : { range: { start: doc.positionAt(gw.start), end: doc.positionAt(gw.end) }, placeholder: src.slice(gw.start, gw.end) };
   }
@@ -1333,7 +1394,7 @@ connection.onRenameRequest((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return null;
   const src = doc.getText();
-  if (isGd(params.textDocument.uri)) return gdRename(params.textDocument.uri, src, doc.offsetAt(params.position), params.newName);
+  if (isGd(params.textDocument.uri)) return isGdAnalysisEnabled() ? gdRename(params.textDocument.uri, src, doc.offsetAt(params.position), params.newName) : null;
   const name = bindingUnderCursor(params.textDocument.uri, src, doc.offsetAt(params.position));
   // Not a component tag -> rename an embedded-GDScript symbol (correct-or-refuse, file-local only).
   if (!name) return embeddedRename(params.textDocument.uri, src, doc.offsetAt(params.position), params.newName);
@@ -1373,7 +1434,7 @@ connection.onDocumentSymbol((params): DocumentSymbol[] => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
-  if (isGd(params.textDocument.uri)) return gdDocumentSymbols(params.textDocument.uri, src);
+  if (isGd(params.textDocument.uri)) return isGdAnalysisEnabled() ? gdDocumentSymbols(params.textDocument.uri, src) : [];
   const top: DocumentSymbol[] = [];
   const modules = new Map<string, DocumentSymbol>();
   for (const d of scanDeclarations(src)) {
@@ -1414,6 +1475,7 @@ connection.languages.semanticTokens.on((params) => {
   if (!doc) return { data: [] };
   // .gd: analyzer-backed semantic tokens (guitkxSemanticTokens handles .guitkx).
   if (isGd(params.textDocument.uri)) {
+    if (!isGdAnalysisEnabled()) return { data: [] };
     analyzer.sync(params.textDocument.uri, doc.getText());
     return { data: analyzer.semanticTokensAt(params.textDocument.uri, doc.getText()) };
   }
@@ -1465,6 +1527,7 @@ connection.onSignatureHelp((params) => {
   const src = doc.getText();
   const offset = doc.offsetAt(params.position);
   if (isGd(params.textDocument.uri)) {
+    if (!isGdAnalysisEnabled()) return null;
     analyzer.sync(params.textDocument.uri, src);
     return analyzer.signatureHelpAt(params.textDocument.uri, src, offset);
   }
@@ -1479,7 +1542,7 @@ connection.languages.inlayHint.on((params) => {
   if (!doc) return [];
   const src = doc.getText();
   if (isGd(params.textDocument.uri))
-    return gdInlayHints(params.textDocument.uri, src, { start: doc.offsetAt(params.range.start), end: doc.offsetAt(params.range.end) });
+    return isGdAnalysisEnabled() ? gdInlayHints(params.textDocument.uri, src, { start: doc.offsetAt(params.range.start), end: doc.offsetAt(params.range.end) }) : [];
   if (!embeddedEnabled) return [];
   const { text, map } = buildVirtualDoc(src);
   const vUri = params.textDocument.uri.replace(/\.guitkx$/, ".__guitkx_virtual.gd");
@@ -1501,7 +1564,7 @@ connection.onCodeAction((params): CodeAction[] => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
   const src = doc.getText();
-  if (isGd(params.textDocument.uri)) return gdCodeActions(params.textDocument.uri, src, doc.offsetAt(params.range.start));
+  if (isGd(params.textDocument.uri)) return isGdAnalysisEnabled() ? gdCodeActions(params.textDocument.uri, src, doc.offsetAt(params.range.start)) : [];
   if (!embeddedEnabled) return [];
   const { text, map } = buildVirtualDoc(src);
   const genOffset = map.toGenerated(doc.offsetAt(params.range.start));
@@ -1719,15 +1782,15 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
   const scopes: Array<Set<string>> = [new Set()];
   let i = start;
   while (i < end) {
+    // G-01: this window is markup -- `#` in text (e.g. "Score #3") is literal, not a comment; the
+    // real comment forms here are `//`/`/* */`/`<!-- -->` (previously unrecognized here, so a tag
+    // reference inside one of those could false-flag GUITKX0104/0105/0109).
+    const sk = skipNoncodeMarkup(src, i);
+    if (sk !== i) {
+      i = Math.min(sk, end);
+      continue;
+    }
     const c = src[i];
-    if (c === '"' || c === "'") {
-      i = skipString(src, i);
-      continue;
-    }
-    if (c === "#") {
-      while (i < end && src[i] !== "\n") i++;
-      continue;
-    }
     if (c === "@") {
       // Phase D: a directive body is CODE (prep statements + directive-level returns), not markup.
       // Scan ONLY each return's markup span -- splitBody is the same body model the compiler, the
@@ -1749,7 +1812,8 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
             i = p + 1; // container of @case/@default arms -- step inside
             continue;
           }
-          const close = findMatching(src, p);
+          // G-01: the directive/@case/@default BODY is markup -- see findMatchingMarkup's docstring.
+          const close = findMatchingMarkup(src, p);
           const bodyEnd = close === -1 || close >= end ? end : close;
           for (const part of splitBody(src.slice(p + 1, bodyEnd)).parts) {
             if (part.t === "ret" && part.markup && part.m_end > part.m_start) {

@@ -1,0 +1,25 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX0103",
+			"len": 10,
+			"off": 10,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":35,\"attrs\":[],\"children\":[{\"at\":45,\"attrs\":[{\"at\":52,\"end\":66,\"kind\":\"str\",\"name\":\"text\",\"value\":\"#FF0000\",\"vat\":58}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"label\"},{\"at\":73,\"attrs\":[],\"children\":[{\"at\":80,\"t\":\"text\",\"value\":\"Score #3\"}],\"line\":5,\"t\":\"el\",\"tag\":\"label\"},{\"at\":100,\"branches\":[{\"body_at\":112,\"body_markup\":\"\\n\\t\\t\\t\\treturn ( <label text=\\\"x\\\" /> ) # trailing hash, not a comment\\n\\t\\t\\t\",\"cond\":\"true\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 194,
+			"start": 32
+		}
+	]
+}

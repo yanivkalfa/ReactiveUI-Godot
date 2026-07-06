@@ -5,7 +5,7 @@
 // over markup.ts; returns the source VERBATIM on any parse error (never corrupts); idempotent.
 
 import { parseMarkup, MarkupNode, Attr } from "./markup";
-import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { skipNoncode, findMatching, findMatchingMarkup, keywordAt, isIdent } from "./scanner";
 import { findDecl } from "./declScan";
 import { findElementEnd, markupAt } from "./jsxScan";
 import { existsSync, readFileSync } from "fs";
@@ -17,6 +17,11 @@ export interface FmtOptions {
   indentSize: number;
   singleAttributePerLine: boolean;
   insertSpaceBeforeSelfClose: boolean;
+  // G-05: internal, mutated during re-emit -- NOT a user-facing formatting option. `o` is a shared,
+  // by-reference object threaded through the whole re-emit call tree (component/hook/module -> node
+  // -> element -> attr), so setting this in fmtAttr is visible back in formatOrVerbatim once the
+  // tree walk returns, with no need to thread a return value through every intermediate fmt* call.
+  _unsafeStrAttr?: boolean;
 }
 // Phase D: Unity-exact defaults — spaces at width 2 ([uitkx]'s configurationDefaults), user-set
 // "tab is 2 spaces". Keep guitkx_formatter.gd's OPTIONS in lockstep (parity corpus pins both).
@@ -28,13 +33,17 @@ const DEFAULTS: FmtOptions = {
   insertSpaceBeforeSelfClose: true,
 };
 
-export function formatGuitkx(source: string, opts?: Partial<FmtOptions>): { text: string; changed: boolean } {
+// [G-06 fix] `fellBack` distinguishes "formatted" from "parse error, source returned byte-
+// identical" -- both used to look the same (`text === source` either way for an already-canonical
+// file), so a caller had no way to tell "nothing changed" from "couldn't even try" and warn the
+// user their file has a syntax error. Mirrors guitkx_formatter.gd's `fell_back`.
+export function formatGuitkx(source: string, opts?: Partial<FmtOptions>): { text: string; changed: boolean; fellBack: boolean } {
   const o: FmtOptions = { ...DEFAULTS, ...(opts || {}) };
-  const text = formatOrVerbatim(source, o);
-  return { text, changed: text !== source };
+  const r = formatOrVerbatim(source, o);
+  return { text: r.text, changed: r.text !== source, fellBack: r.fellBack };
 }
 
-function formatOrVerbatim(source: string, o: FmtOptions): string {
+function formatOrVerbatim(source: string, o: FmtOptions): { text: string; fellBack: boolean } {
   const n = source.length;
   let i = 0;
   let classNameLine = "";
@@ -51,7 +60,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     break;
   }
   const decl = findDecl(source, i);
-  if (decl.kind === "") return source;
+  if (decl.kind === "") return { text: source, fellBack: false }; // nothing to format -- not a syntax error
   // T1.3: the preamble (everything before the declaration keyword) is canonicalized ONLY when it is
   // nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
   // byte-for-byte -- Format Document must never delete user content (it used to eat file-header
@@ -65,28 +74,31 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
   switch (decl.kind) {
     case "component": {
       const pc = parseComponentAt(source, decl.at);
-      if (!pc.ok) return source;
+      if (!pc.ok) return { text: source, fellBack: true };
       out += fmtComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
       declEnd = pc.next;
       break;
     }
     case "hook": {
       const ph = parseHookAt(source, decl.at);
-      if (!ph.ok) return source;
+      if (!ph.ok) return { text: source, fellBack: true };
       out += fmtHook(ph.name, ph.params, ph.body, o, ph.ret);
       declEnd = ph.next;
       break;
     }
     case "module": {
       const m = fmtModule(source, decl.at, o);
-      if (m === null) return source;
+      if (m === null) return { text: source, fellBack: true };
       out += m.text;
       declEnd = m.next;
       break;
     }
     default:
-      return source;
+      return { text: source, fellBack: false }; // nothing to format -- not a syntax error
   }
+  // G-05: fmtAttr flagged a `str` attribute value it cannot safely re-escape -- fall back to
+  // verbatim rather than risk emitting a corrupted `name="value"`.
+  if (o._unsafeStrAttr) return { text: source, fellBack: true };
   // T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
   // error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
   // canonical blank line (idempotent).
@@ -94,7 +106,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     const trailing = source.slice(declEnd);
     if (trailing.trim() !== "") out = out.replace(/[ \t\n]+$/, "") + "\n\n" + trailing.replace(/^[ \t\n]+/, "");
   }
-  return out.replace(/[ \t\n]+$/, "") + "\n";
+  return { text: out.replace(/[ \t\n]+$/, "") + "\n", fellBack: false };
 }
 
 // --- declarations ---
@@ -212,7 +224,7 @@ function fmtNode(nd: MarkupNode, indent: number, o: FmtOptions): string {
       // T2.2: the named <Fragment> alias keeps the author's spelling + attrs (key/comments).
       if (nd.named) {
         let head = `<${nd.named}`;
-        for (const a of nd.attrs ?? []) head += " " + fmtAttr(a);
+        for (const a of nd.attrs ?? []) head += " " + fmtAttr(a, o);
         return `${pad(indent, o)}${head}>\n${inner}${pad(indent, o)}</${nd.named}>\n`;
       }
       return `${pad(indent, o)}<>\n${inner}${pad(indent, o)}</>\n`;
@@ -240,7 +252,7 @@ function fmtNode(nd: MarkupNode, indent: number, o: FmtOptions): string {
 function fmtElement(nd: Extract<MarkupNode, { t: "el" }>, indent: number, o: FmtOptions): string {
   const p = pad(indent, o);
   const tag = nd.tag;
-  const attrStrs = nd.attrs.map(fmtAttr);
+  const attrStrs = nd.attrs.map((a) => fmtAttr(a, o));
   const children = nd.children.filter((x) => x != null);
   const selfClose = children.length === 0;
   const attrInline = attrStrs.join(" ");
@@ -279,9 +291,18 @@ function fmtChildren(children: MarkupNode[], indent: number, o: FmtOptions): str
   return out;
 }
 
-function fmtAttr(a: Attr): string {
+// [G-05 fix] the parser can't produce a `str`-kind attribute value containing an embedded `"`
+// today (its string extraction stops at the first unescaped quote), so re-emitting `name="value"`
+// unescaped is currently always safe -- but a future compiler change adding escape support without
+// teaching this function to re-escape would silently corrupt the value on the next format. Setting
+// `o._unsafeStrAttr` (checked in formatOrVerbatim) falls back to verbatim instead, like a real
+// parse error.
+// exported for the G-05 unit test (the parser can't produce its trigger input, so the test
+// constructs the Attr directly, same as guitkx_formatter.gd's test calling _fmt_attr directly).
+export function fmtAttr(a: Attr, o: FmtOptions): string {
   switch (a.kind) {
     case "str":
+      if (a.value.includes('"')) o._unsafeStrAttr = true;
       return `${a.name}="${a.value}"`;
     case "expr":
       return `${a.name}={ ${a.value.trim()} }`;
@@ -446,7 +467,8 @@ export function splitBody(body: string): BodySplit {
     if (pt !== "" && pt.endsWith(":")) depth += 1;
     if (inLambda) {
       if (p < n && body[p] === "(") {
-        const lc = findMatching(body, p);
+        // G-01: markup lexis, not GDScript -- see scanner.ts findMatchingMarkup's docstring.
+        const lc = findMatchingMarkup(body, p);
         if (lc === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed `(` after return", at: p } };
         if (parenHoldsMarkup(body, p + 1, lc)) pushRet({ t: "ret", at: i, end: lc + 1, m_start: p + 1, m_end: lc, shape: "paren", depth, markup: true, rewrite: false });
         i = lc + 1;
@@ -469,7 +491,8 @@ export function splitBody(body: string): BodySplit {
       continue;
     }
     if (body[p] === "(") {
-      const pc = findMatching(body, p);
+      // G-01: markup lexis, not GDScript -- see scanner.ts findMatchingMarkup's docstring.
+      const pc = findMatchingMarkup(body, p);
       if (pc === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed `(` after return", at: p } };
       pushRet({ t: "ret", at: i, end: pc + 1, m_start: p + 1, m_end: pc, shape: "paren", depth, markup: parenHoldsMarkup(body, p + 1, pc), rewrite: true });
       i = pc + 1;
@@ -569,11 +592,57 @@ function fmtBody(bodySrc: string, indent: number, o: FmtOptions): string {
   return out;
 }
 
-// Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line).
+// [G-02/G-03 fix] Returns a boolean array (one per line of `code.split("\n")`) marking lines whose
+// FIRST character sits inside an already-open multi-line string (`"""`/`'''`, optionally
+// r/&/^/$/%-prefixed) that began on an EARLIER line -- re-indenting/collapsing such a line would
+// corrupt the string's runtime VALUE. The line that OPENS the string (e.g. `var msg := """`) is NOT
+// masked -- only its interior/closing lines are; `#` line comments never span a `\n` so they never
+// mask anything. Must stay byte-identical with guitkx_formatter.gd's _string_line_mask.
+function stringLineMask(code: string): boolean[] {
+  const n = code.length;
+  const lineStarts = [0];
+  for (let ci = 0; ci < n; ci++) if (code[ci] === "\n") lineStarts.push(ci + 1);
+  const mask = new Array(lineStarts.length).fill(false);
+  let lineIdx = 0;
+  let i = 0;
+  while (i < n) {
+    while (lineIdx + 1 < lineStarts.length && lineStarts[lineIdx + 1] <= i) lineIdx++;
+    const j = skipNoncode(code, i);
+    if (j !== i) {
+      let endLine = lineIdx;
+      while (endLine + 1 < lineStarts.length && lineStarts[endLine + 1] <= j) endLine++;
+      for (let m = lineIdx + 1; m <= endLine; m++) mask[m] = true;
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  return mask;
+}
+
+// Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line). Leading and
+// trailing blank LINES are structural artifacts of how the caller sliced this segment (e.g. the
+// line right after a directive's own `{`) and are trimmed, exactly like reanchor; an INTERIOR blank
+// line is real formatting and is preserved (G-03) -- the two must not disagree on this.
 function reanchorRel(code: string, indent: number, unit: number, anchor: number, o: FmtOptions): string {
+  const lines = code.split("\n");
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length === 0) return "";
+  const mask = stringLineMask(lines.join("\n"));
   let out = "";
-  for (const l of code.split("\n")) {
-    if (l.trim() === "") continue;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (mask[i]) {
+      // G-02: byte-verbatim -- this line sits inside an open multi-line string.
+      out += l + "\n";
+      continue;
+    }
+    if (l.trim() === "") {
+      // G-03: an interior blank line is real formatting, not nothing.
+      out += "\n";
+      continue;
+    }
     const level = indent + Math.max(0, indentDepth(l, unit) - anchor);
     out += pad(level, o) + collapseSpaces(stripLeadingWs(l)) + "\n";
   }
@@ -604,11 +673,20 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
   if (lines.length === 0) return "";
-  const unit = indentUnit(lines);
+  // G-02: mask lines that sit inside an open multi-line string -- excluded from both the
+  // unit/anchor inference below and the collapse/re-indent at emit time.
+  const mask = stringLineMask(lines.join("\n"));
+  const unitLines = lines.filter((_, idx) => !mask[idx]);
+  const unit = indentUnit(unitLines);
   let anchor = -1;
   let anchorAny = -1;
   const depths: number[] = [];
-  for (const l of lines) {
+  for (let idx = 0; idx < lines.length; idx++) {
+    if (mask[idx]) {
+      depths.push(-1);
+      continue;
+    }
+    const l = lines[idx];
     const t = l.trim();
     if (t === "") {
       depths.push(-1);
@@ -622,12 +700,14 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   if (anchor === -1) anchor = anchorAny; // comment-only block
   let out = "";
   for (let i = 0; i < lines.length; i++) {
-    if (depths[i] === -1) {
+    if (mask[i]) {
+      out += lines[i] + "\n";
+    } else if (depths[i] === -1) {
       out += "\n";
-      continue;
+    } else {
+      const level = indent + Math.max(0, depths[i] - anchor);
+      out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
     }
-    const level = indent + Math.max(0, depths[i] - anchor);
-    out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
   }
   return out;
 }
@@ -735,7 +815,9 @@ function parseComponentAt(src: string, at: number): CompParse {
   }
   i = skipWsOnly(src, i);
   if (src[i] !== "{") return fail;
-  const bclose = findMatching(src, i);
+  // G-01: a component's body mixes GDScript setup with a markup return -- see scanner.ts
+  // findMatchingMarkup's docstring (mirrors guitkx.gd _parse_component_at).
+  const bclose = findMatchingMarkup(src, i);
   if (bclose === -1) return fail;
   const bodyStart = i + 1;
   const split = splitReturn(src, bodyStart, bclose);
@@ -995,7 +1077,9 @@ function declBody(src: string, at: number): { start: number; close: number } | n
     i = skipWsOnly(src, pc + 1);
   }
   if (src[i] !== "{") return null;
-  const close = findMatching(src, i);
+  // G-01: declBody is only ever called for "component" declarations (never "hook") -- its body
+  // mixes GDScript setup with a markup return, so it needs markup lexis (see findMatchingMarkup).
+  const close = findMatchingMarkup(src, i);
   if (close === -1) return null;
   return { start: i + 1, close };
 }
@@ -1125,7 +1209,8 @@ function splitReturnEx(src: string, start: number, end: number): { split: Return
       const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
       const eol = eolAt(i);
       if (src[p] === "(") {
-        const close = findMatching(src, p);
+        // G-01: the `return ( ... )` window is markup, not GDScript -- see findMatchingMarkup.
+        const close = findMatchingMarkup(src, p);
         // close >= end: the `)` lives beyond the body -- inside the sliced body the compiler sees
         // no close at all, so mirror its GUITKX0304 verdict.
         if (close === -1 || close >= end) return { split: "unclosed", early: [] };

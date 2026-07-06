@@ -196,7 +196,11 @@ static func compile(source: String, basename: String = "Component", known_compon
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			uss_path = val.substr(1, val.length() - 2)
 			uss_at = i
-			if not FileAccess.file_exists(uss_path):
+			# G-07: FileAccess.file_exists doesn't understand `uid://` (Godot 4.4+ uid-based resource
+			# references) -- it always returns false for one, false-flagging a valid uid-referenced
+			# Theme as "asset not found". Skip straight to ResourceLoader.exists, which resolves both
+			# uid:// and res:// paths correctly.
+			if not uss_path.begins_with("uid://") and not FileAccess.file_exists(uss_path):
 				diags.append(D.make("GUITKX0120", D.ERROR, "asset not found: %s" % uss_path, i, le2 - i))
 			elif not ResourceLoader.exists(uss_path, "Theme"):
 				diags.append(D.make("GUITKX0121", D.ERROR, "asset is not a Theme: %s" % uss_path, i, le2 - i))
@@ -381,7 +385,10 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if j >= n or source[j] != "{":
 		diags.append(D.make("GUITKX0303", D.ERROR, "component body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false }
-	var bclose := L.find_matching(source, j)
+	# G-01: a component's body mixes GDScript setup with a markup return -- find_matching_markup
+	# keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments inside that return's markup (a plain
+	# GDScript scan here misreads `<Label>Score #3</Label>` and closes the component's `{}` early).
+	var bclose := L.find_matching_markup(source, j)
 	if bclose == -1:
 		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed component body", j, 1))
 		return { "ok": false }
@@ -1051,7 +1058,9 @@ static func _split_return(body: String) -> Dictionary:
 			if eol == -1:
 				eol = n
 			if p < n and body[p] == "(":
-				var close := L.find_matching(body, p)
+				# G-01: the `return ( ... )` window is markup, not GDScript -- find_matching_markup
+				# keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments (see its docstring).
+				var close := L.find_matching_markup(body, p)
 				if close == -1:
 					# an unclosed `(` swallows the rest of the body -- nothing after it can be scanned
 					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
@@ -1226,7 +1235,8 @@ static func _split_body(body: String) -> Dictionary:
 		if in_lambda:
 			# lambda-owned return: only markup payloads need parts (lower in place, keep `return`)
 			if p < n and body[p] == "(":
-				var lc := L.find_matching(body, p)
+				# G-01: markup lexis, not GDScript -- see find_matching_markup's docstring.
+				var lc := L.find_matching_markup(body, p)
 				if lc == -1:
 					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
 				if _paren_holds_markup(body, p + 1, lc):
@@ -1252,7 +1262,8 @@ static func _split_body(body: String) -> Dictionary:
 			i = p
 			continue
 		if body[p] == "(":
-			var pc := L.find_matching(body, p)
+			# G-01: markup lexis, not GDScript -- see find_matching_markup's docstring.
+			var pc := L.find_matching_markup(body, p)
 			if pc == -1:
 				return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
 			_push_body_ret(parts, cursor, { "at": i, "end": pc + 1, "m_start": p + 1, "m_end": pc, "shape": "paren", "depth": depth, "markup": _paren_holds_markup(body, p + 1, pc), "rewrite": true })
@@ -1444,7 +1455,8 @@ static func unreachable_line_ranges(source: String) -> Array:
 			if j >= n or source[j] != "{":
 				i += 9
 				continue
-			var bclose := L.find_matching(source, j)
+			# G-01: same component-body scan as _parse_component_at -- needs markup lexis.
+			var bclose := L.find_matching_markup(source, j)
 			if bclose == -1:
 				break
 			var body := source.substr(j + 1, bclose - j - 1)
@@ -1478,6 +1490,12 @@ static func _emit(cls: String, comp_name: String, params: String, setup: String,
 			sig_src = str(early.get("body", ""))   # Phase C interleaved path: setup lives in body
 			break
 	out += "const __RUI_HOOK_SIG := %s\n\n" % _gd_str(_hook_signature(sig_src))
+	# G-16: a script-constant marker for RUIHmr._is_module, read via get_script_constant_map() like
+	# __RUI_HOOK_SIG -- bulletproof against a component whose setup happens to contain the literal
+	# text "static func render(" in a string/comment, which used to make the old source-text
+	# heuristic misclassify it as a module and skip the global HMR re-render every OTHER component
+	# needs when a module/hook changes.
+	out += "const __RUI_KIND := \"component\"\n\n"
 	if uss_path != "":
 		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)   # T2.3 @uss
 	out += _emit_func("render", params, setup, root, {}, [], diags, base, known, early, refs)

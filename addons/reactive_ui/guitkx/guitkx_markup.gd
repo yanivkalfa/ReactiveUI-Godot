@@ -164,7 +164,11 @@ func _parse_element(open_i: int, end: int) -> Dictionary:
 		return { "node": null, "next": end }
 	var children: Array = cr["nodes"]
 	var j: int = cr["next"]
-	if j >= end or _src[j] != "<" or (j + 1 < end and _src[j + 1] != "/"):
+	# G-04: `j + 1 >= end` must fail on its own -- the old `(j + 1 < end and _src[j + 1] != "/")`
+	# short-circuited to false when `<` was the very last character before `end` (no room for a
+	# slash), so a truncated `<Box><` at EOF fell through as if `j` pointed at a real "</" and the
+	# unbounded `_src.find(">", j)` below could match a `>` from past `end` entirely.
+	if j >= end or _src[j] != "<" or j + 1 >= end or _src[j + 1] != "/":
 		_fail("GUITKX0301", "unclosed tag <%s>" % tag, open_i)
 		return { "node": null, "next": end }
 	# j points at "</": read the close name to ">" (a close tag holds no {expr}/strings, so find is safe)
@@ -296,7 +300,9 @@ func _read_brace_body(i: int, end: int) -> Dictionary:
 	if i >= end or _src[i] != "{":
 		_fail("GUITKX0303", "directive expects `{ ... }` body", i)
 		return { "text": "", "next": end, "at": -1 }
-	var close := L.find_matching(_src, i)
+	# G-01: a directive BODY is markup (child elements/text/nested directives), not a GDScript
+	# statement -- find_matching_markup keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments.
+	var close := L.find_matching_markup(_src, i)
 	if close == -1 or close >= end:
 		_fail("GUITKX0304", "unclosed `{` directive body", i)
 		return { "text": "", "next": end, "at": -1 }
@@ -351,7 +357,9 @@ func _parse_match(at: int, end: int) -> Dictionary:
 	if bi >= end or _src[bi] != "{":
 		_fail("GUITKX0303", "@match expects `{ ... }` with @case/@default arms", bi)
 		return { "node": null, "next": end }
-	var bclose := L.find_matching(_src, bi)
+	# G-01: the @match body holds @case/@default arms whose OWN bodies are markup -- see
+	# find_matching_markup's docstring for why this needs markup, not GDScript, lexis.
+	var bclose := L.find_matching_markup(_src, bi)
 	if bclose == -1 or bclose >= end:
 		_fail("GUITKX0304", "unclosed @match body", bi)
 		return { "node": null, "next": end }

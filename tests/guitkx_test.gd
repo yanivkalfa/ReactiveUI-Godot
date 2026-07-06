@@ -47,6 +47,8 @@ func _run() -> void:
 	_test_vocabulary()
 	_test_formatter()
 	_test_formatter_corpus()
+	_test_format_unsafe_str_attr()
+	_test_format_fell_back()
 	_test_formatter_options()
 	_test_codegen()
 	_test_cold_open_recovery()
@@ -459,6 +461,14 @@ func _test_t23_uss() -> void:
 	var rd := RUIGuitkx.compile("@uss \"res://tests/assets/test_theme.tres\"\n@uss \"res://tests/assets/test_theme.tres\"\ncomponent T6() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T6")
 	_check_true(not rd["ok"] and _has_code(rd, "GUITKX2210"), "T2.3: second @uss errors (got %s)" % str(rd["diagnostics"]))
 
+	# G-07: FileAccess.file_exists doesn't understand `uid://` -- it must never produce the (wrong)
+	# "asset not found" 0120 for one. A garbage/unregistered uid:// correctly falls through to
+	# ResourceLoader.exists and reports 0121 instead (proving the uid:// path is no longer
+	# short-circuited into the file_exists branch at all).
+	var ru := RUIGuitkx.compile("@uss \"uid://cnonexistentgarbage\"\ncomponent T7() {\n\treturn ( <label text=\"x\" /> )\n}\n", "T7")
+	_check_true(not _has_code(ru, "GUITKX0120"), "G-07: uid:// path must never report 0120 (got %s)" % str(ru["diagnostics"]))
+	_check_true(not ru["ok"] and _has_code(ru, "GUITKX0121"), "G-07: garbage uid:// falls through to 0121 (got %s)" % str(ru["diagnostics"]))
+
 func _test_t26_naming() -> void:
 	# T2.6 (Unity 2100): component names are PascalCase -- they become the generated class_name.
 	var src := "component my_widget() {\n\treturn ( <label text=\"x\" /> )\n}\n"
@@ -764,6 +774,32 @@ func _test_formatter_corpus() -> void:
 		var f1: String = Fmt.format(src)["text"]
 		_check_true(Fmt.format(f1)["text"] == f1, "sample format idempotent: %s" % path)
 
+func _test_format_unsafe_str_attr() -> void:
+	# G-05: the parser can't produce a `str` attr value with an embedded `"` today, so this
+	# constructs the AST node directly to prove the safety net itself works if that ever changes.
+	const Fmt = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var o := { "_unsafe_str_attr": false }
+	Fmt._fmt_attr({ "kind": "str", "name": "text", "value": "safe" }, o)
+	_check_true(bool(o["_unsafe_str_attr"]) == false, "a normal str attr must not flag unsafe")
+	Fmt._fmt_attr({ "kind": "str", "name": "text", "value": "has \" inside" }, o)
+	_check_true(bool(o["_unsafe_str_attr"]) == true, "an embedded quote must flag unsafe")
+
+func _test_format_fell_back() -> void:
+	# G-06: fell_back distinguishes a parse-error fallback from an already-canonical file.
+	const Fmt = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var broken := "component Broken {\n  return (\n    <Label text=\"x\"\n  )\n}\n"   # unclosed tag
+	var r1: Dictionary = Fmt.format(broken)
+	_check_true(r1["text"] == broken, "verbatim on parse error")
+	_check_true(bool(r1["fell_back"]) == true, "parse error must report fell_back")
+
+	var r2: Dictionary = Fmt.format("")
+	_check_true(bool(r2["fell_back"]) == false, "nothing-to-format is not a syntax-error fallback")
+
+	var canonical := "component Ok {\n  return (\n    <Label text=\"x\" />\n  )\n}\n"
+	var r3: Dictionary = Fmt.format(canonical)
+	_check_true(bool(r3["changed"]) == false, "already canonical")
+	_check_true(bool(r3["fell_back"]) == false, "an already-canonical file must not report fell_back")
+
 func _test_scanner_fixtures() -> void:
 	# byte-identity cross-test: the SAME corpus the TS scanner.ts asserts on (prevents lexer drift)
 	const L = preload("res://addons/reactive_ui/guitkx/guitkx_lexer.gd")
@@ -778,6 +814,14 @@ func _test_scanner_fixtures() -> void:
 	for c in fx["findMatching"]:
 		var got2: int = L.find_matching(c["input"], int(c["at"]))
 		_check_true(got2 == int(c["expect"]), "find_matching(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got2, int(c["expect"])])
+	# G-01: the markup-lexis mode-aware counterparts (find_matching_markup skips `#` as literal and
+	# `//`/`/* */`/`<!-- -->` as comments -- see guitkx_lexer.gd's docstring).
+	for c in fx["skipNoncodeMarkup"]:
+		var got3: int = L.skip_noncode_markup(c["input"], int(c["at"]))
+		_check_true(got3 == int(c["expect"]), "skip_noncode_markup(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got3, int(c["expect"])])
+	for c in fx["findMatchingMarkup"]:
+		var got4: int = L.find_matching_markup(c["input"], int(c["at"]))
+		_check_true(got4 == int(c["expect"]), "find_matching_markup(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got4, int(c["expect"])])
 
 func _test_deep_flatten() -> void:
 	# V._norm must deep-flatten nested arrays (Phase 4 §5: .map().map() children) + drop nulls at depth
