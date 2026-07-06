@@ -9,6 +9,9 @@ examples/**/*.gd
 !examples/demos/signals/signals_store.gd
 !examples/demos/styling/styling.style.gd
 !examples/demos/context_handle/accent_context.gd
+!examples/demos/doom/doom_types.gd
+!examples/demos/doom/doom_textures.gd
+!examples/demos/doom/doom_maps.gd
 # …and their transient companions: Godot per-script .uid + the compiler's diagnostics sidecars.
 examples/**/*.gd.uid
 *.guitkx.diags.json
