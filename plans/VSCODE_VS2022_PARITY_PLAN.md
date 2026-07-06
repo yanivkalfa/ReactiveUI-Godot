@@ -161,17 +161,31 @@ diagnostics, completion-resolve.
 **Files touched:** `source.extension.vsixmanifest`, `changelog.json` (via script), possibly
 `vscode/package.json`/`publish-extension.ps1` (item 6). No C#.
 
-## 3. Phase 1 — Options page + initialization options (bucket B2/B3)
+## 3. Phase 1 — Options page + initialization options (bucket B2/B3) — **DONE 2026-07-05**
 
 **Outcome:** rows 13, 14, 23. The three VS Code settings get a real VS surface, and what the
-server is told is user-controlled.
+server is told is user-controlled. All four items below are implemented and build clean
+(`msbuild ... CreateVsixContainer`, VSIX contents inspected); manual V-checklist verification in a
+real VS2022 Experimental Instance (options page renders/persists, server actually receives the
+options) is still outstanding — nothing here has been driven interactively yet.
 
-1. Introduce an `AsyncPackage` (`GuitkxPackage.cs`) — required host for options/commands. Keep
-   `GeneratePkgDefFile` semantics intact: the package now generates its pkgdef; **merge, don't
-   clobber**, the static TextMate `guitkx.pkgdef` registration (either keep the static file as a
-   second VsPackage asset — as today — or fold the TextMate key into the generated pkgdef; keep
-   the static file, it is load-bearing and audited).
-2. `DialogPage`-based options: **Tools → Options → GUITKX**:
+1. **DONE (2026-07-05), empirically verified.** Introduced an `AsyncPackage` (`GuitkxPackage.cs`)
+   with `[PackageRegistration]`/`[ProvideOptionPage]`/`[ProvideAutoLoad]` (both `NoSolution` and
+   `SolutionExists` UI contexts, background load). Flipped `GeneratePkgDefFile` from `false` to
+   `true` — the `false` setting (with its load-bearing-sounding comment) predates any real package
+   existing; with a real `[PackageRegistration]` type now in the project, `false` silently produced
+   **no pkgdef at all** for it (compiled, never registered — confirmed by inspecting the built VSIX
+   before flipping the flag). After flipping it: `CreateVsixContainer` auto-generates
+   `GuitkxVsix.pkgdef` (verified content: correct `Packages`/`AutoLoadPackages` ×2/`ToolsOptionsPages`
+   registry keys, deterministic GUID for the options page) and bundles it into the VSIX
+   **automatically, alongside the static `guitkx.pkgdef`, with no `source.extension.vsixmanifest`
+   edit needed** — the anticipated "merge, don't clobber" manifest surgery wasn't necessary in
+   practice; both pkgdefs coexist (disjoint registry paths). Verified via `unzip -l`/`unzip -p` on
+   the built `.vsix`, not just a successful build. (Build/restore gotcha hit along the way: run
+   `msbuild -t:Restore` as its own invocation before `-t:Build` on a clean `obj/` — combining
+   `-t:Restore,Build,CreateVsixContainer` in one call evaluates the project before restore produces
+   the NuGet-imported targets that define `CreateVsixContainer`, failing with MSB4057.)
+2. **DONE (2026-07-05), builds clean.** `DialogPage`-based options: **Tools → Options → GUITKX**:
    - `Enable embedded GDScript analysis` (default true) → init option `enableEmbeddedAnalysis`.
    - `Use gdformat for embedded reflow` (default true) → init option `useGdformat`.
    - `Analyze plain .gd files` (default true) → gates Phase 2's document coverage.
@@ -200,10 +214,13 @@ server is told is user-controlled.
    hardcoded defaults on a fresh VS start whenever a `.guitkx`-associated file is among the first
    things opened — the exact failure mode a user would never be able to explain.
 
-   **Fix: don't route the read through the package instance at all.** `SVsSettingsManager`
+   **DONE (2026-07-05), builds clean — implemented as `GuitkxSettings.cs`.** Don't route the read
+   through the package instance at all. `SVsSettingsManager`
    (`Microsoft.VisualStudio.Settings.WritableSettingsStore`) is a core shell service Visual Studio
-   itself proffers — obtainable via `ServiceProvider.GlobalProvider.GetService(typeof(SVsSettingsManager))`
-   regardless of whether `GuitkxPackage` has loaded. Override `GuitkxOptionsPage`'s persistence to
+   itself proffers — in practice, reached via `new ShellSettingsManager(serviceProvider)
+   .GetWritableSettingsStore(SettingsScope.UserSettings)` (both `GuitkxOptionsPage` and
+   `GuitkxLanguageClient` pass `ServiceProvider.GlobalProvider`), regardless of whether `GuitkxPackage`
+   has loaded. `GuitkxOptionsPage`'s persistence is overridden to
    write through a `WritableSettingsStore` under an explicit named collection (e.g. `"GUITKX\Options"`)
    instead of relying on `DialogPage`'s reflection-derived default registry path, and have
    `ActivateAsync` read that *same* collection directly — this decouples the read path from package
@@ -214,13 +231,18 @@ server is told is user-controlled.
    way (Microsoft's own sample opens it with `await Task.Yield();` as a defensive idiom, not proof of
    a guaranteed background thread) — settings-store reads are free-threaded and safe without
    switching, but never assume the UI thread is or isn't already current for anything else in there.
-3. `GuitkxLanguageClient` reads the options at `ActivateAsync` and builds `InitializationOptions`
-   dynamically (replacing the hardcoded anonymous object).
-4. **Config-change semantics:** the shared server has **no** `onDidChangeConfiguration` handler
-   (VS Code has the same restart requirement). So: on option change, show an info bar/dialog
-   "Restart the GUITKX language server to apply" — wired to the Phase 4 restart command once it
-   exists; until then, instruct to reload VS. Do NOT pretend live sync works; remove or implement
-   `ConfigurationSections` accordingly (currently inert).
+3. **DONE (2026-07-05), builds clean.** `GuitkxLanguageClient.InitializationOptions` now builds
+   `{ enableEmbeddedAnalysis, useGdformat }` dynamically from `GuitkxSettings.Read(...)`, replacing
+   the hardcoded anonymous object. (`EnableGdscriptAnalysis` is persisted but not yet sent as an init
+   option — VS Code doesn't send it either; it's a client-side document-selector gate, wired up in
+   Phase 2 once the `.gd` content type exists to gate.)
+4. **DONE (2026-07-05), builds clean.** **Config-change semantics:** the shared server has **no**
+   `onDidChangeConfiguration` handler (VS Code has the same restart requirement). `ConfigurationSections`
+   is now `null` (was the inert `new[] { "guitkx" }` — advertising a section VS would dutifully notify
+   on, into a handler that doesn't exist, is worse than admitting there's no live sync). On option
+   change, `GuitkxOptionsPage.OnApply` shows a modal message box: "Reload the solution (or restart
+   Visual Studio)... A restart command is planned" — to be replaced by a lighter `IVsInfoBar` +
+   real restart once Phase 4 lands.
    - `plans/FINAL_AUDIT_GODOT.md` G-12 independently found the same gap and proposes the real fix —
      implement `workspace/didChangeConfiguration` in `lsp-server/src/server.ts` — which would give
      BOTH editors live config reload. **Deliberately not done here**: it changes shared `server.ts`
@@ -228,9 +250,10 @@ server is told is user-controlled.
      Code extension's behavior untouched. Track G-12 as a separate follow-up campaign, not folded
      into this one.
 
-**Files:** new `GuitkxPackage.cs`, new `GuitkxOptionsPage.cs`, edit `GuitkxLanguageClient.cs`,
-`.csproj` (VSSDK package generation), `source.extension.vsixmanifest` (VsPackage asset if the
-generated pkgdef is added).
+**Files:** new `GuitkxPackage.cs`, new `GuitkxOptionsPage.cs`, new `GuitkxSettings.cs`, edit
+`GuitkxLanguageClient.cs`, `.csproj` (`GeneratePkgDefFile` flipped to `true` + 3 new `<Compile>`
+items). `source.extension.vsixmanifest` needed **no** change — the generated `GuitkxVsix.pkgdef`
+bundles in automatically alongside the static `guitkx.pkgdef`, verified.
 
 **Acceptance:** toggling each option + restart changes observable behavior (embedded completion
 disappears when off; gdformat reflow stops when off).
