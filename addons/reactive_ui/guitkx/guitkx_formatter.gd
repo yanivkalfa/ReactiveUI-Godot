@@ -95,6 +95,10 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> Dictionary:
 			decl_end = int((m as Dictionary)["next"])
 		_:
 			return { "text": source, "fell_back": false }   # nothing to format -- not a syntax error
+	# G-05: `_fmt_attr` flagged a `str` attribute value it cannot safely re-escape -- fall back to
+	# verbatim rather than risk emitting a corrupted `name="value"`.
+	if bool(o.get("_unsafe_str_attr", false)):
+		return { "text": source, "fell_back": true }
 	# T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
 	# error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
 	# canonical blank line (idempotent). Mirrors formatGuitkx.ts.
@@ -214,7 +218,7 @@ static func _fmt_node(nd: Dictionary, indent: int, o: Dictionary) -> String:
 			if nd.has("named"):
 				var head := "<%s" % nd["named"]
 				for a in nd.get("attrs", []):
-					head += " " + _fmt_attr(a)
+					head += " " + _fmt_attr(a, o)
 				return "%s%s>\n%s%s</%s>\n" % [_pad(indent, o), head, inner, _pad(indent, o), nd["named"]]
 			return "%s<>\n%s%s</>\n" % [_pad(indent, o), inner, _pad(indent, o)]
 		"comment":
@@ -241,7 +245,7 @@ static func _fmt_element(nd: Dictionary, indent: int, o: Dictionary) -> String:
 	var tag: String = nd["tag"]
 	var attr_strs: Array = []
 	for a in nd["attrs"]:
-		attr_strs.append(_fmt_attr(a))
+		attr_strs.append(_fmt_attr(a, o))
 	var children: Array = (nd["children"] as Array).filter(func(x): return x != null)
 	var self_close := children.is_empty()
 	var attr_inline := " ".join(attr_strs)
@@ -285,9 +289,21 @@ static func _fmt_children(children: Array, indent: int, o: Dictionary) -> String
 		out += _fmt_node(c, indent, o)
 	return out
 
-static func _fmt_attr(a: Dictionary) -> String:
+## [G-05 fix] `o` is a shared, by-reference Dictionary threaded through the whole re-emit call tree
+## (component/hook/module -> node -> element -> attr) -- setting a key on it here is visible back
+## in _format_or_verbatim once the tree walk returns, with no need to thread a return value through
+## every intermediate _fmt_* signature. Used ONLY for this one escape hatch: the parser can't
+## produce a `str`-kind attribute value containing an embedded `"` today (its string extraction
+## stops at the first unescaped quote), so re-emitting `name="value"` unescaped is currently always
+## safe -- but a future compiler change adding escape support without teaching this function to
+## re-escape would silently corrupt the attribute's value on the next format. Catching it here (and
+## falling back to verbatim, like a real parse error) is cheap insurance against that regressing
+## silently instead of loudly.
+static func _fmt_attr(a: Dictionary, o: Dictionary) -> String:
 	match a["kind"]:
 		"str":
+			if (a["value"] as String).contains("\""):
+				o["_unsafe_str_attr"] = true
 			return "%s=\"%s\"" % [a["name"], a["value"]]
 		"expr":
 			return "%s={ %s }" % [a["name"], (a["value"] as String).strip_edges()]

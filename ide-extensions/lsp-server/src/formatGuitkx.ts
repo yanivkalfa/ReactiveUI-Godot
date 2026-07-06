@@ -17,6 +17,11 @@ export interface FmtOptions {
   indentSize: number;
   singleAttributePerLine: boolean;
   insertSpaceBeforeSelfClose: boolean;
+  // G-05: internal, mutated during re-emit -- NOT a user-facing formatting option. `o` is a shared,
+  // by-reference object threaded through the whole re-emit call tree (component/hook/module -> node
+  // -> element -> attr), so setting this in fmtAttr is visible back in formatOrVerbatim once the
+  // tree walk returns, with no need to thread a return value through every intermediate fmt* call.
+  _unsafeStrAttr?: boolean;
 }
 // Phase D: Unity-exact defaults — spaces at width 2 ([uitkx]'s configurationDefaults), user-set
 // "tab is 2 spaces". Keep guitkx_formatter.gd's OPTIONS in lockstep (parity corpus pins both).
@@ -91,6 +96,9 @@ function formatOrVerbatim(source: string, o: FmtOptions): { text: string; fellBa
     default:
       return { text: source, fellBack: false }; // nothing to format -- not a syntax error
   }
+  // G-05: fmtAttr flagged a `str` attribute value it cannot safely re-escape -- fall back to
+  // verbatim rather than risk emitting a corrupted `name="value"`.
+  if (o._unsafeStrAttr) return { text: source, fellBack: true };
   // T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
   // error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
   // canonical blank line (idempotent).
@@ -216,7 +224,7 @@ function fmtNode(nd: MarkupNode, indent: number, o: FmtOptions): string {
       // T2.2: the named <Fragment> alias keeps the author's spelling + attrs (key/comments).
       if (nd.named) {
         let head = `<${nd.named}`;
-        for (const a of nd.attrs ?? []) head += " " + fmtAttr(a);
+        for (const a of nd.attrs ?? []) head += " " + fmtAttr(a, o);
         return `${pad(indent, o)}${head}>\n${inner}${pad(indent, o)}</${nd.named}>\n`;
       }
       return `${pad(indent, o)}<>\n${inner}${pad(indent, o)}</>\n`;
@@ -244,7 +252,7 @@ function fmtNode(nd: MarkupNode, indent: number, o: FmtOptions): string {
 function fmtElement(nd: Extract<MarkupNode, { t: "el" }>, indent: number, o: FmtOptions): string {
   const p = pad(indent, o);
   const tag = nd.tag;
-  const attrStrs = nd.attrs.map(fmtAttr);
+  const attrStrs = nd.attrs.map((a) => fmtAttr(a, o));
   const children = nd.children.filter((x) => x != null);
   const selfClose = children.length === 0;
   const attrInline = attrStrs.join(" ");
@@ -283,9 +291,18 @@ function fmtChildren(children: MarkupNode[], indent: number, o: FmtOptions): str
   return out;
 }
 
-function fmtAttr(a: Attr): string {
+// [G-05 fix] the parser can't produce a `str`-kind attribute value containing an embedded `"`
+// today (its string extraction stops at the first unescaped quote), so re-emitting `name="value"`
+// unescaped is currently always safe -- but a future compiler change adding escape support without
+// teaching this function to re-escape would silently corrupt the value on the next format. Setting
+// `o._unsafeStrAttr` (checked in formatOrVerbatim) falls back to verbatim instead, like a real
+// parse error.
+// exported for the G-05 unit test (the parser can't produce its trigger input, so the test
+// constructs the Attr directly, same as guitkx_formatter.gd's test calling _fmt_attr directly).
+export function fmtAttr(a: Attr, o: FmtOptions): string {
   switch (a.kind) {
     case "str":
+      if (a.value.includes('"')) o._unsafeStrAttr = true;
       return `${a.name}="${a.value}"`;
     case "expr":
       return `${a.name}={ ${a.value.trim()} }`;

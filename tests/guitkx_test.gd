@@ -47,6 +47,7 @@ func _run() -> void:
 	_test_vocabulary()
 	_test_formatter()
 	_test_formatter_corpus()
+	_test_format_unsafe_str_attr()
 	_test_format_fell_back()
 	_test_formatter_options()
 	_test_codegen()
@@ -764,6 +765,16 @@ func _test_formatter_corpus() -> void:
 		var src := FileAccess.get_file_as_string(path)
 		var f1: String = Fmt.format(src)["text"]
 		_check_true(Fmt.format(f1)["text"] == f1, "sample format idempotent: %s" % path)
+
+func _test_format_unsafe_str_attr() -> void:
+	# G-05: the parser can't produce a `str` attr value with an embedded `"` today, so this
+	# constructs the AST node directly to prove the safety net itself works if that ever changes.
+	const Fmt = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var o := { "_unsafe_str_attr": false }
+	Fmt._fmt_attr({ "kind": "str", "name": "text", "value": "safe" }, o)
+	_check_true(bool(o["_unsafe_str_attr"]) == false, "a normal str attr must not flag unsafe")
+	Fmt._fmt_attr({ "kind": "str", "name": "text", "value": "has \" inside" }, o)
+	_check_true(bool(o["_unsafe_str_attr"]) == true, "an embedded quote must flag unsafe")
 
 func _test_format_fell_back() -> void:
 	# G-06: fell_back distinguishes a parse-error fallback from an already-canonical file.

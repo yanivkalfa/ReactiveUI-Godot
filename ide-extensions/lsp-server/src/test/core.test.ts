@@ -9,7 +9,7 @@ import { declarationDiags } from "../declarations";
 import { scanDeclarations, WorkspaceIndex, componentTagAt, guitkxVirtualLibText } from "../workspaceIndex";
 import { classProperties, classSignals } from "../classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "../events";
-import { formatGuitkx, markupWindows, missingReturnComponents, unreachableRegions, setupSpans } from "../formatGuitkx";
+import { formatGuitkx, fmtAttr, FmtOptions, markupWindows, missingReturnComponents, unreachableRegions, setupSpans } from "../formatGuitkx";
 import { windowStructureDiags, hookContextDiags } from "../liveMarkup";
 import { findDecl } from "../declScan";
 import { tokenEquivalent, reflowEmbedded } from "../reflowEmbedded";
@@ -80,6 +80,14 @@ test("formatGuitkx is byte-identical to the GDScript formatter over the shared g
     assert.equal(formatGuitkx(c.input).text, c.expected, `formatter case '${c.name}' must match GDScript output`);
     assert.equal(formatGuitkx(c.expected).text, c.expected, `formatter case '${c.name}' must be idempotent`);
   }
+});
+
+test("G-05: fmtAttr flags o._unsafeStrAttr for a str value with an embedded quote (parser can't produce this today; safety-net test)", () => {
+  const o = { printWidth: 100, indentStyle: "space", indentSize: 2, singleAttributePerLine: false, insertSpaceBeforeSelfClose: true } as FmtOptions;
+  fmtAttr({ name: "text", kind: "str", value: "safe", at: 0, vat: 0, end: 0 }, o);
+  assert.equal(o._unsafeStrAttr, undefined, "a normal str attr must not flag unsafe");
+  fmtAttr({ name: "text", kind: "str", value: 'has " inside', at: 0, vat: 0, end: 0 }, o);
+  assert.equal(o._unsafeStrAttr, true, "an embedded quote must flag unsafe");
 });
 
 test("G-06: formatGuitkx.fellBack distinguishes a parse-error fallback from an already-canonical file", () => {
