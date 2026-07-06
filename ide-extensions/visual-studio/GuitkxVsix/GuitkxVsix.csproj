@@ -77,9 +77,16 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.VisualStudio.LanguageServer.Client" Version="17.7.41" />
+    <!-- Pinned to the real, exact versions published for the VS 2022 17.7 GA family (2023-08-10).
+         The previous pins (LanguageServer.Client 17.7.41, VSSDK.BuildTools 17.7.2189) do not exist on
+         NuGet. MSBuild's PackageReference floats a bare version number to the nearest available
+         version at or above the requested one, so restore silently resolved LanguageServer.Client to
+         17.8.36 (a different minor line than SDK/BuildTools) with NU1603/NU1605 warnings, including a
+         detected Microsoft.VisualStudio.Telemetry downgrade, instead of failing loudly. Verified via
+         `dotnet restore` plus the NuGet v3 flat-container API before pinning these. -->
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServer.Client" Version="17.7.20" />
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.7.37357" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.7.2189" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.7.2196" PrivateAssets="all" />
   </ItemGroup>
   <!-- REQUIRED: Microsoft.CSharp.targets pulls in Microsoft.Common.targets (which defines the `Build`
        target) AND imports obj\*.nuget.g.targets (which loads the Microsoft.VSSDK.BuildTools package
