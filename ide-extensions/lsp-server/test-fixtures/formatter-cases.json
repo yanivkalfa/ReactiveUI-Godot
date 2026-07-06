@@ -78,5 +78,20 @@
     "expected": "component Cmt {\n    # over-indented note\n  var a = useState(0)\n  if a[0]:\n    a[1].call(1)\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
     "input": "component Cmt() {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
     "name": "setup_comment_anchor"
+  },
+  {
+    "expected": "component X {\n  var msg := \"\"\"\nline1\n  keep  two  spaces\n\t\ttabbed line\n\"\"\"\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
+    "input": "component X {\n\tvar msg := \"\"\"\nline1\n  keep  two  spaces\n\t\ttabbed line\n\"\"\"\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "name": "triple_quoted_string_interior_preserved"
+  },
+  {
+    "expected": "component Y {\n  @if (true) {\n    var a := 1\n\n    var b := 2\n    return ( <Label text=\"y\" /> )\n  }\n  return (\n    <Label text=\"z\" />\n  )\n}\n",
+    "input": "component Y {\n\t@if (true) {\n\t\tvar a := 1\n\n\t\tvar b := 2\n\t\treturn ( <Label text=\"y\" /> )\n\t}\n\treturn ( <Label text=\"z\" /> )\n}\n",
+    "name": "interior_blank_line_in_directive_body_preserved"
+  },
+  {
+    "expected": "component Z {\n  var msg := '''\nfirst\n  two  spaces  here\n'''\n  return (\n    <Label text=\"z\" />\n  )\n}\n",
+    "input": "component Z {\n\tvar msg := '''\nfirst\n  two  spaces  here\n'''\n\treturn (\n\t\t<Label text=\"z\" />\n\t)\n}\n",
+    "name": "triple_single_quoted_string_interior_preserved"
   }
 ]

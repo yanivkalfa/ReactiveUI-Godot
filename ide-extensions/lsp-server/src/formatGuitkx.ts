@@ -571,11 +571,57 @@ function fmtBody(bodySrc: string, indent: number, o: FmtOptions): string {
   return out;
 }
 
-// Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line).
+// [G-02/G-03 fix] Returns a boolean array (one per line of `code.split("\n")`) marking lines whose
+// FIRST character sits inside an already-open multi-line string (`"""`/`'''`, optionally
+// r/&/^/$/%-prefixed) that began on an EARLIER line -- re-indenting/collapsing such a line would
+// corrupt the string's runtime VALUE. The line that OPENS the string (e.g. `var msg := """`) is NOT
+// masked -- only its interior/closing lines are; `#` line comments never span a `\n` so they never
+// mask anything. Must stay byte-identical with guitkx_formatter.gd's _string_line_mask.
+function stringLineMask(code: string): boolean[] {
+  const n = code.length;
+  const lineStarts = [0];
+  for (let ci = 0; ci < n; ci++) if (code[ci] === "\n") lineStarts.push(ci + 1);
+  const mask = new Array(lineStarts.length).fill(false);
+  let lineIdx = 0;
+  let i = 0;
+  while (i < n) {
+    while (lineIdx + 1 < lineStarts.length && lineStarts[lineIdx + 1] <= i) lineIdx++;
+    const j = skipNoncode(code, i);
+    if (j !== i) {
+      let endLine = lineIdx;
+      while (endLine + 1 < lineStarts.length && lineStarts[endLine + 1] <= j) endLine++;
+      for (let m = lineIdx + 1; m <= endLine; m++) mask[m] = true;
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  return mask;
+}
+
+// Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line). Leading and
+// trailing blank LINES are structural artifacts of how the caller sliced this segment (e.g. the
+// line right after a directive's own `{`) and are trimmed, exactly like reanchor; an INTERIOR blank
+// line is real formatting and is preserved (G-03) -- the two must not disagree on this.
 function reanchorRel(code: string, indent: number, unit: number, anchor: number, o: FmtOptions): string {
+  const lines = code.split("\n");
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length === 0) return "";
+  const mask = stringLineMask(lines.join("\n"));
   let out = "";
-  for (const l of code.split("\n")) {
-    if (l.trim() === "") continue;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (mask[i]) {
+      // G-02: byte-verbatim -- this line sits inside an open multi-line string.
+      out += l + "\n";
+      continue;
+    }
+    if (l.trim() === "") {
+      // G-03: an interior blank line is real formatting, not nothing.
+      out += "\n";
+      continue;
+    }
     const level = indent + Math.max(0, indentDepth(l, unit) - anchor);
     out += pad(level, o) + collapseSpaces(stripLeadingWs(l)) + "\n";
   }
@@ -606,11 +652,20 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
   if (lines.length === 0) return "";
-  const unit = indentUnit(lines);
+  // G-02: mask lines that sit inside an open multi-line string -- excluded from both the
+  // unit/anchor inference below and the collapse/re-indent at emit time.
+  const mask = stringLineMask(lines.join("\n"));
+  const unitLines = lines.filter((_, idx) => !mask[idx]);
+  const unit = indentUnit(unitLines);
   let anchor = -1;
   let anchorAny = -1;
   const depths: number[] = [];
-  for (const l of lines) {
+  for (let idx = 0; idx < lines.length; idx++) {
+    if (mask[idx]) {
+      depths.push(-1);
+      continue;
+    }
+    const l = lines[idx];
     const t = l.trim();
     if (t === "") {
       depths.push(-1);
@@ -624,12 +679,14 @@ function reanchor(code: string, indent: number, o: FmtOptions): string {
   if (anchor === -1) anchor = anchorAny; // comment-only block
   let out = "";
   for (let i = 0; i < lines.length; i++) {
-    if (depths[i] === -1) {
+    if (mask[i]) {
+      out += lines[i] + "\n";
+    } else if (depths[i] === -1) {
       out += "\n";
-      continue;
+    } else {
+      const level = indent + Math.max(0, depths[i] - anchor);
+      out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
     }
-    const level = indent + Math.max(0, depths[i] - anchor);
-    out += pad(level, o) + collapseSpaces(stripLeadingWs(lines[i])) + "\n";
   }
   return out;
 }

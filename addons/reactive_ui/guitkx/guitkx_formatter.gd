@@ -382,15 +382,66 @@ static func _fmt_body(body_src: String, indent: int, o: Dictionary) -> String:
 		out += pad + ")\n"
 	return out
 
-## Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line).
-static func _reanchor_rel(code: String, indent: int, unit: int, anchor: int, o: Dictionary) -> String:
-	var out := ""
-	for l in code.split("\n"):
-		var t := (l as String).strip_edges()
-		if t == "":
+## [G-02/G-03 fix] Returns a boolean array (one per line of `code.split("\n")`) marking lines whose
+## FIRST character sits inside an already-open multi-line string (`"""`/`'''`, optionally
+## r/&/^/$/%-prefixed) that began on an EARLIER line -- re-indenting/collapsing such a line would
+## corrupt the string's runtime VALUE. The line that OPENS the string (e.g. `var msg := """`) is NOT
+## masked -- only its interior/closing lines are; `#` line comments never span a `\n` so they never
+## mask anything. Must stay byte-identical with formatGuitkx.ts's stringLineMask.
+static func _string_line_mask(code: String) -> Array:
+	var n := code.length()
+	var line_starts: Array = [0]
+	for ci in n:
+		if code[ci] == "\n":
+			line_starts.append(ci + 1)
+	var mask: Array = []
+	mask.resize(line_starts.size())
+	for k in mask.size():
+		mask[k] = false
+	var line_idx := 0
+	var i := 0
+	while i < n:
+		while line_idx + 1 < line_starts.size() and int(line_starts[line_idx + 1]) <= i:
+			line_idx += 1
+		var j := L.skip_noncode(code, i)
+		if j != i:
+			var end_line := line_idx
+			while end_line + 1 < line_starts.size() and int(line_starts[end_line + 1]) <= j:
+				end_line += 1
+			for m in range(line_idx + 1, end_line + 1):
+				mask[m] = true
+			i = j
 			continue
-		var level: int = indent + maxi(0, Compiler._indent_depth(l as String, unit) - anchor)
-		out += _pad(level, o) + _collapse_spaces(Compiler._strip_leading_ws(l as String)) + "\n"
+		i += 1
+	return mask
+
+## Re-anchor a body SEGMENT using the whole body's unit/anchor (not its own first line). Leading and
+## trailing blank LINES are structural artifacts of how the caller sliced this segment (e.g. the
+## line right after a directive's own `{`) and are trimmed, exactly like _reanchor; an INTERIOR
+## blank line is real formatting and is preserved (G-03) -- the two must not disagree on this.
+static func _reanchor_rel(code: String, indent: int, unit: int, anchor: int, o: Dictionary) -> String:
+	var lines: Array = Array(code.split("\n"))
+	while not lines.is_empty() and (lines[0] as String).strip_edges() == "":
+		lines.pop_front()
+	while not lines.is_empty() and (lines[-1] as String).strip_edges() == "":
+		lines.pop_back()
+	if lines.is_empty():
+		return ""
+	var mask := _string_line_mask("\n".join(PackedStringArray(lines)))
+	var out := ""
+	for i in lines.size():
+		var l := lines[i] as String
+		if bool(mask[i]):
+			# G-02: byte-verbatim -- this line sits inside an open multi-line string.
+			out += l + "\n"
+			continue
+		var t := l.strip_edges()
+		if t == "":
+			# G-03: an interior blank line is real formatting, not nothing.
+			out += "\n"
+			continue
+		var level: int = indent + maxi(0, Compiler._indent_depth(l, unit) - anchor)
+		out += _pad(level, o) + _collapse_spaces(Compiler._strip_leading_ws(l)) + "\n"
 	return out
 
 # --- embedded GDScript (setup) — structure-preserving base-indent normalization only ---
@@ -415,16 +466,27 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 		lines.pop_back()
 	if lines.is_empty():
 		return ""
-	var unit := Compiler._indent_unit(lines)
+	# G-02: mask lines that sit inside an open multi-line string -- excluded from both the
+	# unit/anchor inference below and the collapse/re-indent at emit time.
+	var mask := _string_line_mask("\n".join(PackedStringArray(lines)))
+	var unit_lines: Array = []
+	for idx in lines.size():
+		if not bool(mask[idx]):
+			unit_lines.append(lines[idx])
+	var unit := Compiler._indent_unit(unit_lines)
 	var anchor := -1
 	var anchor_any := -1
 	var depths: Array = []
-	for l in lines:
-		var t := (l as String).strip_edges()
+	for idx in lines.size():
+		if bool(mask[idx]):
+			depths.append(-1)
+			continue
+		var l := lines[idx] as String
+		var t := l.strip_edges()
 		if t == "":
 			depths.append(-1)
 			continue
-		var d := Compiler._indent_depth(l as String, unit)
+		var d := Compiler._indent_depth(l, unit)
 		depths.append(d)
 		if anchor_any == -1:
 			anchor_any = d
@@ -434,7 +496,9 @@ static func _reanchor(code: String, indent: int, o: Dictionary) -> String:
 		anchor = anchor_any  # comment-only block
 	var out := ""
 	for i in lines.size():
-		if int(depths[i]) == -1:
+		if bool(mask[i]):
+			out += (lines[i] as String) + "\n"
+		elif int(depths[i]) == -1:
 			out += "\n"
 		else:
 			var level: int = indent + maxi(0, int(depths[i]) - anchor)
