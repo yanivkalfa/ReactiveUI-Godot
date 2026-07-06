@@ -47,11 +47,15 @@ namespace GuitkxVsix
             return Task.CompletedTask;
         }
 
-        // The shared server has no onDidChangeConfiguration handler, so advertising a configuration
-        // section here would be pure decoration -- VS would send workspace/didChangeConfiguration
-        // notifications that update nothing, implying live config sync that does not exist. null
-        // (like FilesToWatch below) is the honest answer until the server gains that handler.
-        public IEnumerable<string> ConfigurationSections => null;
+        // G-12: the shared server now has an onDidChangeConfiguration handler (server.ts
+        // applyGuitkxOptions), so advertising this section is no longer decoration. We don't rely on
+        // it alone, though -- it isn't documented whether/when VS's LSP client host sends
+        // workspace/didChangeConfiguration off it for a client whose settings live in a custom
+        // WritableSettingsStore rather than VS's own settings change events. GuitkxOptionsPage.OnApply
+        // sends the same notification explicitly and unconditionally, so the update is delivered
+        // regardless of whether this also fires (the server re-applying the same values twice is
+        // harmless).
+        public IEnumerable<string> ConfigurationSections => new[] { "guitkx" };
 
         public object InitializationOptions
         {
@@ -65,13 +69,20 @@ namespace GuitkxVsix
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     return GuitkxSettings.Read(ServiceProvider.GlobalProvider);
                 });
-                return new
-                {
-                    enableEmbeddedAnalysis = options.EnableEmbeddedAnalysis,
-                    useGdformat = options.UseGdformat,
-                };
+                return BuildOptions(options);
             }
         }
+
+        // G-20: also send enableGdscriptAnalysis -- the server-side gate for plain-.gd analysis
+        // (VS2022 has no client-side selector-gating mechanism the way VS Code does, so this is the
+        // only enforcement it gets). Shared with the explicit didChangeConfiguration notify below so
+        // the initial and live-updated option bags can never drift apart.
+        internal static object BuildOptions(GuitkxSettings.Options options) => new
+        {
+            enableEmbeddedAnalysis = options.EnableEmbeddedAnalysis,
+            useGdformat = options.UseGdformat,
+            enableGdscriptAnalysis = options.EnableGdscriptAnalysis,
+        };
 
         public IEnumerable<string> FilesToWatch => null;
         public bool ShowNotificationOnInitializeFailed => true;
