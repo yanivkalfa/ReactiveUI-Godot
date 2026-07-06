@@ -19,7 +19,12 @@ namespace GuitkxVsix
     // content items), and a Windows Node runtime is bundled alongside it as .\server\node.exe so the
     // extension is self-contained -- no Node on the user's PATH required. We prefer that bundled
     // runtime and only fall back to a PATH `node` if it is somehow absent.
+    // One client instance serves both content types -- mirroring VS Code's two-entry document
+    // selector (guitkx always, gdscript when its setting is on) -- rather than spawning a second
+    // server process. See GuitkxContentDefinition's doc comment for why the "Analyze plain .gd
+    // files" option can't gate the gdscript attachment itself (MEF ContentType exports are static).
     [ContentType("guitkx")]
+    [ContentType("gdscript")]
     [Export(typeof(ILanguageClient))]
     public sealed class GuitkxLanguageClient : ILanguageClient
     {

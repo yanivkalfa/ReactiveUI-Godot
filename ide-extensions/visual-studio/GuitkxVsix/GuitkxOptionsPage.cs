@@ -21,8 +21,8 @@ namespace GuitkxVsix
         public bool UseGdformat { get; set; } = GuitkxSettings.Defaults.UseGdformat;
 
         [Category("Language server")]
-        [DisplayName("Analyze plain .gd files")]
-        [Description("Drive plain .gd files through gdscript-analyzer too (diagnostics, completion, hover, navigation, rename, formatting). Takes effect on the next language server restart.")]
+        [DisplayName("Analyze plain .gd files (not yet enforced)")]
+        [Description("Persisted for parity with the VS Code extension's equivalent setting, but VS2022 does not yet gate .gd analysis on it -- plain .gd files are always analyzed today regardless of this value (tracked separately; VS's MEF content-type registration is static, unlike VS Code's per-activation document selector). If another installed extension also claims .gd, this setting is not currently a way to resolve that conflict.")]
         public bool EnableGdscriptAnalysis { get; set; } = GuitkxSettings.Defaults.EnableGdscriptAnalysis;
 
         public override void LoadSettingsFromStorage()
