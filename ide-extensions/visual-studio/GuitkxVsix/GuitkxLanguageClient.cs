@@ -9,6 +9,7 @@ using Microsoft.VisualStudio.LanguageServer.Client;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 using Microsoft.VisualStudio.Utilities;
+using StreamJsonRpc;
 using Task = System.Threading.Tasks.Task;
 
 namespace GuitkxVsix
@@ -26,9 +27,25 @@ namespace GuitkxVsix
     [ContentType("guitkx")]
     [ContentType("gdscript")]
     [Export(typeof(ILanguageClient))]
-    public sealed class GuitkxLanguageClient : ILanguageClient
+    public sealed class GuitkxLanguageClient : ILanguageClient, ILanguageClientCustomMessage2
     {
         public string Name => "GUITKX Language Server";
+
+        // ILanguageClientCustomMessage2: VS calls AttachForCustomMessageAsync once the connection's
+        // JSON-RPC channel is up, handing us the exact JsonRpc instance the LSP client itself uses.
+        // Format-on-save (GuitkxFormatOnSave.cs) needs this to send a raw textDocument/formatting
+        // request -- there is no other supported way to reach the live RPC channel from outside the
+        // LSP client's own request/response plumbing (ILanguageClientBroker's public surface is just
+        // LoadAsync; it has no generic "send a request" method).
+        public static JsonRpc Rpc { get; private set; }
+        public object MiddleLayer => null;
+        public object CustomMessageTarget => null;
+
+        public Task AttachForCustomMessageAsync(JsonRpc rpc)
+        {
+            Rpc = rpc;
+            return Task.CompletedTask;
+        }
 
         // The shared server has no onDidChangeConfiguration handler, so advertising a configuration
         // section here would be pure decoration -- VS would send workspace/didChangeConfiguration
@@ -40,7 +57,14 @@ namespace GuitkxVsix
         {
             get
             {
-                var options = GuitkxSettings.Read(ServiceProvider.GlobalProvider);
+                // Unlike the DialogPage/RDT call sites (definitely UI thread), it isn't documented
+                // which thread VS's LSP client host reads this property on -- switch explicitly
+                // rather than asserting, so a background-thread read doesn't crash server startup.
+                var options = ThreadHelper.JoinableTaskFactory.Run(async () =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    return GuitkxSettings.Read(ServiceProvider.GlobalProvider);
+                });
                 return new
                 {
                     enableEmbeddedAnalysis = options.EnableEmbeddedAnalysis,

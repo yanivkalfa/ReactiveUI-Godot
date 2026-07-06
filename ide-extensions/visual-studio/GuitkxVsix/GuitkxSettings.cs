@@ -24,12 +24,14 @@ namespace GuitkxVsix
         private const string KeyEnableEmbeddedAnalysis = "EnableEmbeddedAnalysis";
         private const string KeyUseGdformat = "UseGdformat";
         private const string KeyEnableGdscriptAnalysis = "EnableGdscriptAnalysis";
+        private const string KeyFormatOnSave = "FormatOnSave";
 
         public struct Options
         {
             public bool EnableEmbeddedAnalysis;
             public bool UseGdformat;
             public bool EnableGdscriptAnalysis;
+            public bool FormatOnSave;
         }
 
         public static readonly Options Defaults = new Options
@@ -37,6 +39,8 @@ namespace GuitkxVsix
             EnableEmbeddedAnalysis = true,
             UseGdformat = true,
             EnableGdscriptAnalysis = true,
+            // Matches VS Code's configurationDefaults (editor.formatOnSave: true for [guitkx]).
+            FormatOnSave = true,
         };
 
         private static WritableSettingsStore GetStore(IServiceProvider serviceProvider)
@@ -56,6 +60,7 @@ namespace GuitkxVsix
                 EnableEmbeddedAnalysis = store.GetBoolean(CollectionPath, KeyEnableEmbeddedAnalysis, Defaults.EnableEmbeddedAnalysis),
                 UseGdformat = store.GetBoolean(CollectionPath, KeyUseGdformat, Defaults.UseGdformat),
                 EnableGdscriptAnalysis = store.GetBoolean(CollectionPath, KeyEnableGdscriptAnalysis, Defaults.EnableGdscriptAnalysis),
+                FormatOnSave = store.GetBoolean(CollectionPath, KeyFormatOnSave, Defaults.FormatOnSave),
             };
         }
 
@@ -68,6 +73,7 @@ namespace GuitkxVsix
             store.SetBoolean(CollectionPath, KeyEnableEmbeddedAnalysis, options.EnableEmbeddedAnalysis);
             store.SetBoolean(CollectionPath, KeyUseGdformat, options.UseGdformat);
             store.SetBoolean(CollectionPath, KeyEnableGdscriptAnalysis, options.EnableGdscriptAnalysis);
+            store.SetBoolean(CollectionPath, KeyFormatOnSave, options.FormatOnSave);
         }
     }
 }

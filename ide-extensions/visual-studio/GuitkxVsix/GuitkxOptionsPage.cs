@@ -25,21 +25,30 @@ namespace GuitkxVsix
         [Description("Persisted for parity with the VS Code extension's equivalent setting, but VS2022 does not yet gate .gd analysis on it -- plain .gd files are always analyzed today regardless of this value (tracked separately; VS's MEF content-type registration is static, unlike VS Code's per-activation document selector). If another installed extension also claims .gd, this setting is not currently a way to resolve that conflict.")]
         public bool EnableGdscriptAnalysis { get; set; } = GuitkxSettings.Defaults.EnableGdscriptAnalysis;
 
+        [Category("Editor")]
+        [DisplayName("Format .guitkx on save")]
+        [Description("Send textDocument/formatting to the language server and apply the result before each save. Takes effect immediately (checked live by GuitkxFormatOnSave, not sent to the server) -- no restart needed for this one.")]
+        public bool FormatOnSave { get; set; } = GuitkxSettings.Defaults.FormatOnSave;
+
         public override void LoadSettingsFromStorage()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             var options = GuitkxSettings.Read(ServiceProvider.GlobalProvider);
             EnableEmbeddedAnalysis = options.EnableEmbeddedAnalysis;
             UseGdformat = options.UseGdformat;
             EnableGdscriptAnalysis = options.EnableGdscriptAnalysis;
+            FormatOnSave = options.FormatOnSave;
         }
 
         public override void SaveSettingsToStorage()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             GuitkxSettings.Write(ServiceProvider.GlobalProvider, new GuitkxSettings.Options
             {
                 EnableEmbeddedAnalysis = EnableEmbeddedAnalysis,
                 UseGdformat = UseGdformat,
                 EnableGdscriptAnalysis = EnableGdscriptAnalysis,
+                FormatOnSave = FormatOnSave,
             });
         }
 

@@ -56,6 +56,8 @@
     <Compile Include="GuitkxSettings.cs" />
     <Compile Include="GuitkxEditorDefaults.cs" />
     <Compile Include="GuitkxBraceCompletion.cs" />
+    <Compile Include="GuitkxSmartIndent.cs" />
+    <Compile Include="GuitkxFormatOnSave.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source.extension.vsixmanifest">
