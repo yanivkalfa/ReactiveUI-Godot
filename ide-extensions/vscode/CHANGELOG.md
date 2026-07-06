@@ -1,128 +1,52 @@
 # Changelog
 
 ## [0.8.6] - 2026-07-04
-- **Folder deletions now reach both diagnostic tiers.** Deleting a component's folder removes its
-  compiled outputs along with it, so nothing looked stale and the dangling-reference check
-  (`GUITKX2107`) waited for an unrelated save or editor focus-in — the addon's watch poll (0.8.2)
-  now goes hot on a sidecar-state mismatch instead of only on stale mtimes. Separately, the
-  extension's folder-delete handling shipped in 0.8.5 was correct but **unreachable**: the dynamic
-  watcher registered per-extension file globs, and VS Code only delivers folder-delete events to a
-  pattern that matches the folder path itself. Watcher registration is now a single `**` glob.
+- Folder deletions now reach both diagnostic tiers. Deleting a component's folder removes its compiled outputs along with it, so nothing looked stale and the dangling-reference check (GUITKX2107) waited for an unrelated save or editor focus-in -- the addon's watch poll (0.8.2) now goes hot on a sidecar-state mismatch instead of only on stale mtimes. Separately, the extension's folder-delete handling shipped in 0.8.5 was correct but unreachable: the dynamic watcher registered per-extension file globs, and VS Code only delivers folder-delete events to a pattern that matches the folder path itself. Watcher registration is now a single `**` glob.
 
 ## [0.8.5] - 2026-07-04
-- **Deleting a component's whole folder now evicts everything under it.** VS Code coalesces a bulk
-  delete into one folder-level event, which previously only closed each file's analyzer library —
-  the `.guitkx` index entries and their harvested generated classes survived, so the component never
-  left the project universe and no squiggle ever appeared. The folder-deleted path now evicts every
-  indexed `.guitkx` under it, un-harvests every generated class under it (path keys normalized, since
-  the harvest source and the delete event spell paths differently), and re-validates open documents
-  — including the reverse case, a moved-in folder clearing stale squiggles.
-- Single-file deletions un-harvest the generated sibling's class immediately instead of waiting
-  ~2 seconds for the Godot addon's own orphan sweep to delete the `.gd` and produce a second event —
-  the squiggle now lands on the watcher tick, not on the compiler's schedule.
+- Deleting a component's whole folder now evicts everything under it. VS Code coalesces a bulk delete into one folder-level event, which previously only closed each file's analyzer library -- the .guitkx index entries and their harvested generated classes survived, so the component never left the project universe and no squiggle ever appeared. The folder-deleted path now evicts every indexed .guitkx under it, un-harvests every generated class under it (path keys normalized, since the harvest source and the delete event spell paths differently), and re-validates open documents -- including the reverse case, a moved-in folder clearing stale squiggles.
+- Single-file deletions un-harvest the generated sibling's class immediately instead of waiting ~2 seconds for the Godot addon's own orphan sweep to delete the .gd and produce a second event -- the squiggle now lands on the watcher tick, not on the compiler's schedule.
 
 ## [0.8.4] - 2026-07-04
-- **Deleting a component whose tab is open now squiggles its consumers immediately.** The index
-  refused to touch files with open buffers — right for edits (the buffer is the source of
-  truth), wrong for deletions: VS Code keeps a deleted file's tab alive, so the component
-  never left the index and dangling references stayed clean until some unrelated save.
-  Deletions now evict regardless; re-saving the open buffer recreates the file and re-indexes
-  it right back.
+- Deleting a component whose tab is open now squiggles its consumers immediately. The index refused to touch files with open buffers -- right for edits (the buffer is the source of truth), wrong for deletions: VS Code keeps a deleted file's tab alive, so the component never left the index and dangling references stayed clean until some unrelated save. Deletions now evict regardless; re-saving the open buffer recreates the file and re-indexes it right back.
 
 ## [0.8.3] - 2026-07-04
-- **Deleting/renaming a component now squiggles its dangling references — live.** Two fixes:
-  the server re-validates every open document when the component universe changes (previously
-  only the edited file itself recomputed diagnostics, so a deletion elsewhere never updated
-  your open tabs), and generated `.gd` classes are **un-harvested** when their file vanishes
-  (the class-name set was grow-only, which permanently suppressed the unknown-component check
-  for anything that had ever existed). Pairs with the addon's `GUITKX2107` compile-tier error.
-  (Server 0.8.3.)
+- Deleting/renaming a component now squiggles its dangling references live. Two fixes: the server re-validates every open document when the component universe changes (previously only the edited file itself recomputed diagnostics, so a deletion elsewhere never updated your open tabs), and generated .gd classes are un-harvested when their file vanishes (the class-name set was grow-only, which permanently suppressed the unknown-component check for anything that had ever existed). Pairs with the addon's GUITKX2107 compile-tier error. (Server 0.8.3.)
 
 ## [0.8.2] - 2026-07-04
-- **Compiler errors now reach VS Code after the save.** The Godot addon's watch poll compiles a
-  saved `.guitkx` ~2 seconds AFTER the save and writes its verdict into the `.diags.json`
-  sidecar — but the server never watched sidecars, so a compiler-only error (e.g.
-  `GUITKX0105: unknown element` in setup-value markup, which the live tier doesn't scan yet)
-  could **never** become a squiggle: the save-time validation read the previous sidecar, and the
-  next keystroke hash-diverges the buffer, which suppresses compiler entries by design. The
-  server now watches `**/*.guitkx.diags.json` and re-validates the matching open document the
-  moment Godot writes or clears a verdict. Smoke-pinned. (Server 0.8.2.)
+- Compiler errors now reach VS Code after the save. The Godot addon's watch poll compiles a saved .guitkx ~2 seconds after the save and writes its verdict into the .diags.json sidecar -- but the server never watched sidecars, so a compiler-only error (e.g. GUITKX0105: unknown element in setup-value markup, which the live tier doesn't scan yet) could never become a squiggle: the save-time validation read the previous sidecar, and the next keystroke hash-diverges the buffer, which suppresses compiler entries by design. The server now watches **/*.guitkx.diags.json and re-validates the matching open document the moment Godot writes or clears a verdict. Smoke-pinned. (Server 0.8.2.)
 
 ## [0.8.1] - 2026-07-04
-- **Fixed bogus `GUITKX0108 … (got 3)` on correct directive bodies.** A pre-0.8 live scanner
-  pass still parsed directive bodies as bare markup, counting the `return (` / `)` lines as
-  extra roots — every correctly-migrated body squiggled as a multi-root error. The scanner now
-  walks only each return's markup span (the same body model the compiler and formatter use),
-  which also stops body prep code (`if a < b:` …) from ever false-flagging `GUITKX0300` or
-  polluting duplicate-key scopes. Correct bodies are now diagnostic-free; the smoke suite pins
-  it. (Server 0.8.1; pairs with addon 0.7.1's watcher liveness rework.)
+- Fixed bogus GUITKX0108 ... (got 3) on correct directive bodies. A pre-0.8 live scanner pass still parsed directive bodies as bare markup, counting the `return (` / `)` lines as extra roots -- every correctly-migrated body squiggled as a multi-root error. The scanner now walks only each return's markup span (the same body model the compiler and formatter use), which also stops body prep code (`if a < b:` ...) from ever false-flagging GUITKX0300 or polluting duplicate-key scopes. Correct bodies are now diagnostic-free; the smoke suite pins it. (Server 0.8.1; pairs with addon 0.7.1's watcher liveness rework.)
 
 ## [0.8.0] - 2026-07-04
-- **Directive bodies are code blocks (pairs with addon 0.7.0, BREAKING):** prep GDScript +
-  `return ( <markup> )` in every `@if/@for/@while/@case` body, recursively — full Unity-parity.
-  The old bare-markup body flags **GUITKX2103** live with the migration message; a hook call
-  inside a body flags **GUITKX2104**. Markup in prep values (`var badge = ( <HBox/> )`) gets
-  full intelligence.
-- **Format-on-save ships enabled** for `.guitkx` (defaultFormatter bound, tab size 2, spaces) —
-  the formatter emits the Unity-exact spaces-2 canonical style, embedded GDScript reflowed to
-  the same unit.
-- Fixed a reformat corruption: nested code at spaces-2 could lose a level (a `return` dedented
-  out of its `if`) because the indent unit was inferred from the base offset; all three
-  reindenters now infer from the step between indent widths.
+- Directive bodies are code blocks (pairs with addon 0.7.0, BREAKING): prep GDScript + `return ( <markup> )` in every @if/@for/@while/@case body, recursively -- full Unity-parity. The old bare-markup body flags GUITKX2103 live with the migration message; a hook call inside a body flags GUITKX2104. Markup in prep values (`var badge = ( <HBox/> )`) gets full intelligence.
+- Format-on-save ships enabled for .guitkx (defaultFormatter bound, tab size 2, spaces) -- the formatter emits the Unity-exact spaces-2 canonical style, embedded GDScript reflowed to the same unit.
+- Fixed a reformat corruption: nested code at spaces-2 could lose a level (a `return` dedented out of its `if`) because the indent unit was inferred from the base offset; all three reindenters now infer from the step between indent widths.
 
 ## [0.7.1] - 2026-07-03
-- **Enter after a closing tag no longer over-indents.** The increase-indent rule matched any
-  line ending in `>` — `</VBox>` included — so a new line after a closing tag gained an extra
-  level; it now aligns with the tag itself. Opening tags, multi-line opening tags, and `/>`
-  self-closers indent exactly as before.
-- Pairs with addon **0.6.1** (root CHANGELOG): the compiler vocabulary is embedded in the addon
-  and held compiles auto-retry, so the `GUITKX2507` cold-open wall — and the stale
-  "unknown element" sidecar squiggles it pinned in VS Code — can no longer occur.
+- Enter after a closing tag no longer over-indents. The increase-indent rule matched any line ending in `>` -- `</VBox>` included -- so a new line after a closing tag gained an extra level; it now aligns with the tag itself. Opening tags, multi-line opening tags, and `/>` self-closers indent exactly as before.
+- Pairs with addon 0.6.1 (root CHANGELOG): the compiler vocabulary is embedded in the addon and held compiles auto-retry, so the GUITKX2507 cold-open wall -- and the stale "unknown element" sidecar squiggles it pinned in VS Code -- can no longer occur.
 
 ## [0.7.0] - 2026-07-03
-- **Early markup returns** (pairs with addon 0.6.0): `if not ready: return ( <Label /> )` is
-  legal guitkx now, React-style — and the guard's markup gets FULL live intelligence: parse
-  errors, unknown-tag did-you-means, key checks, highlighting, everything the final return has.
-- An unconditional early markup return dims the dead code after it (including the unreachable
-  final return), exactly like the Unity toolchain.
-- The "a component's setup cannot `return` before the final markup return" error is gone;
-  `GUITKX2102` now only means "the final return isn't markup".
-- Diagnostics docs page gains the `GUITKX2102` and `GUITKX2508` reference rows.
+- Early markup returns (pairs with addon 0.6.0): `if not ready: return ( <Label /> )` is legal guitkx now, React-style -- and the guard's markup gets full live intelligence: parse errors, unknown-tag did-you-means, key checks, highlighting, everything the final return has.
+- An unconditional early markup return dims the dead code after it (including the unreachable final return), exactly like the Unity toolchain.
+- The "a component's setup cannot return before the final markup return" error is gone; GUITKX2102 now only means "the final return isn't markup".
+- Diagnostics docs page gains the GUITKX2102 and GUITKX2508 reference rows.
 
 ## [0.6.1] - 2026-07-03
-- **Fixed the host-tag storm:** `<HBox>`, `<Button>`, `<Label>` and every vocabulary alias no
-  longer squiggle as "unknown component" once the workspace scan completes; a typo'd host tag now
-  gets a did-you-mean for the host tag itself.
-- An early markup return (`return <s></a>` before the final return) no longer sprays four bogus
-  embedded-GDScript errors over the line. It shows the real thing instead — a live `GUITKX2102`
-  with honest wording (only returning **markup** early is banned; `return null` guards are fine)
-  that appears and clears as you type, Godot editor open or not.
-- Garbage directive headers (`@for (i in 2: int5)`) flag live as `GUITKX2508` (new, mirrored in
-  the compiler) instead of passing silently into an invalid generated `.gd`.
-- Stale compiler-sidecar diagnostics collapse into one file-level note while you edit — they used
-  to pile up at drifted offsets and never clear without the Godot editor recompiling.
-- Packaging: prepublish now verifies the bundled server is complete and current; a publish
-  without a fresh bundle could previously ship a server that died on startup.
-- Pairs with addon **0.5.1** (root CHANGELOG): the ~250-line red wall on a cold Godot editor open
-  is two warning lines now, with generated outputs preserved and quiet self-healing.
+- Fixed the host-tag storm: <HBox>, <Button>, <Label> and every vocabulary alias no longer squiggle as "unknown component" once the workspace scan completes; a typo'd host tag now gets a did-you-mean for the host tag itself.
+- An early markup return (`return <s></a>` before the final return) no longer sprays four bogus embedded-GDScript errors over the line. It shows the real thing instead -- a live GUITKX2102 with honest wording (only returning markup early is banned; `return null` guards are fine) that appears and clears as you type, Godot editor open or not.
+- Garbage directive headers (`@for (i in 2: int5)`) flag live as GUITKX2508 (new, mirrored in the compiler) instead of passing silently into an invalid generated .gd.
+- Stale compiler-sidecar diagnostics collapse into one file-level note while you edit -- they used to pile up at drifted offsets and never clear without the Godot editor recompiling.
+- Packaging: prepublish now verifies the bundled server is complete and current; a publish without a fresh bundle could previously ship a server that died on startup.
+- Pairs with addon 0.5.1 (root CHANGELOG): the ~250-line red wall on a cold Godot editor open is two warning lines now, with generated outputs preserved and quiet self-healing.
 
 ## [0.6.0] - 2026-07-03
-- **Diagnostic codes renumbered onto the Unity-shared table** (addon 0.5.0): most visibly,
-  unreachable-after-return dimming is now `GUITKX0107` (was 0114), missing-declaration is
-  `GUITKX2101` (was 0102), and duplicate keys (`GUITKX0026`, was 0113) are errors. If you match
-  on code strings anywhere, see the addon CHANGELOG's concordance table.
-- Bundles gdscript-analyzer **0.6.0**: embedded-GDScript diagnostics now use **Godot's own
-  verbatim message texts** (probed against the real 4.7 binary), calls with the wrong number of
-  arguments or a definitely-wrong argument type are errors (`Too many arguments for "one()"
-  call. Expected at most 1 but received 2.`), unused/unreachable code **dims** in the editor,
-  every analyzer diagnostic carries a real code with a link to its reference page, and the
-  warning profile matches the engine's defaults — the editor never warns where Godot wouldn't.
-- Names declared in sibling `.guitkx` files feed the analyzer as virtual libraries: cross-file
-  references resolve on a fresh clone, a typo'd `usse_state` is an error again (the old
-  suppression could hide it), and a broken lambda initializer (`var toggle = fsunc():`) now
-  shows its syntax error instead of a false `UNDEFINED_IDENTIFIER` on later uses.
-- Unknown PascalCase component tags squiggle live with a did-you-mean, checked against the full
-  project (`.guitkx` bindings + `class_name` scripts) once the workspace scan completes.
+- Diagnostic codes renumbered onto the Unity-shared table (addon 0.5.0): most visibly, unreachable-after-return dimming is now GUITKX0107 (was 0114), missing-declaration is GUITKX2101 (was 0102), and duplicate keys (GUITKX0026, was 0113) are errors.
+- Bundles gdscript-analyzer 0.6.0: embedded-GDScript diagnostics now use Godot's own verbatim message texts (probed against the real 4.7 binary), calls with the wrong number of arguments or a definitely-wrong argument type are errors, unused/unreachable code dims in the editor, every analyzer diagnostic carries a real code with a link to its reference page, and the warning profile matches the engine's defaults.
+- Names declared in sibling .guitkx files feed the analyzer as virtual libraries: cross-file references resolve on a fresh clone, a typo'd `usse_state` is an error again, and a broken lambda initializer shows its syntax error instead of a false UNDEFINED_IDENTIFIER on later uses.
+- Unknown PascalCase component tags squiggle live with a did-you-mean, checked against the full project (.guitkx bindings + class_name scripts) once the workspace scan completes.
 
 ## [0.5.5] - 2026-07-02
 - Bundles gdscript-analyzer 0.5.4: a typo'd method on a built-in value — `sliced[1].casll(1)` on a `useState` pair, `s.upper()` on a `String` (a Godot-3 rename), `v.zzz` on a `Vector2` — is now an error with a precise squiggle, exactly where Godot itself errors. Works through plain untyped `var s = useState(0)` locals (the analyzer narrows single-assignment locals to their initializer's type), and Dictionary `d.key` sugar now types as the value and can never false-flag.

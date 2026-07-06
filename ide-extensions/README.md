@@ -116,6 +116,14 @@ Releases are automated. The changelog source of truth is **`changelog.json`**; p
 `CHANGELOG.md` + the VS2022 `overview.md` are generated from it by `scripts/changelog.mjs`. See
 [VERSIONING.md](VERSIONING.md) for the release process and [PUBLISHING.md](PUBLISHING.md) for manual steps.
 
+**Never hand-edit a generated `CHANGELOG.md`.** Add entries with
+`node scripts/changelog.mjs add --scope <shared|vscode|vs2022> --message "..." --vscode X.Y.Z [--vs2022 X.Y.Z]`,
+then regenerate with `extract` (see below) and commit the result. CI (`changelog-sync` in
+`ide-extensions.yml`) runs `node scripts/changelog.mjs verify` on every push/PR and fails if a
+committed `CHANGELOG.md` doesn't match what `changelog.json` would generate — this is exactly the
+check that would have caught `changelog.json` silently falling 14 releases behind a hand-edited
+`vscode/CHANGELOG.md` (0.6.0→0.8.4), which is what actually happened.
+
 - **CI:** `.github/workflows/publish.yml` (`workflow_dispatch`, shared with the runtime addon's own
   release + the docs-site deploy) — its `publish-vscode` / `publish-vs2022` jobs are version-gated per
   extension (skip if the `vscode-v*` / `vs2022-v*` tag exists), publish the VS Code extension to the
