@@ -47,6 +47,7 @@ func _run() -> void:
 	_test_vocabulary()
 	_test_formatter()
 	_test_formatter_corpus()
+	_test_format_fell_back()
 	_test_formatter_options()
 	_test_codegen()
 	_test_cold_open_recovery()
@@ -763,6 +764,22 @@ func _test_formatter_corpus() -> void:
 		var src := FileAccess.get_file_as_string(path)
 		var f1: String = Fmt.format(src)["text"]
 		_check_true(Fmt.format(f1)["text"] == f1, "sample format idempotent: %s" % path)
+
+func _test_format_fell_back() -> void:
+	# G-06: fell_back distinguishes a parse-error fallback from an already-canonical file.
+	const Fmt = preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var broken := "component Broken {\n  return (\n    <Label text=\"x\"\n  )\n}\n"   # unclosed tag
+	var r1: Dictionary = Fmt.format(broken)
+	_check_true(r1["text"] == broken, "verbatim on parse error")
+	_check_true(bool(r1["fell_back"]) == true, "parse error must report fell_back")
+
+	var r2: Dictionary = Fmt.format("")
+	_check_true(bool(r2["fell_back"]) == false, "nothing-to-format is not a syntax-error fallback")
+
+	var canonical := "component Ok {\n  return (\n    <Label text=\"x\" />\n  )\n}\n"
+	var r3: Dictionary = Fmt.format(canonical)
+	_check_true(bool(r3["changed"]) == false, "already canonical")
+	_check_true(bool(r3["fell_back"]) == false, "an already-canonical file must not report fell_back")
 
 func _test_scanner_fixtures() -> void:
 	# byte-identity cross-test: the SAME corpus the TS scanner.ts asserts on (prevents lexer drift)

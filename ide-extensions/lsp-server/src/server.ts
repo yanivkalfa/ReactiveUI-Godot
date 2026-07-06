@@ -461,11 +461,23 @@ function formatOptsFor(uri: string): Partial<FmtOptions> {
 
 // In-process markup format (formatGuitkx) + embedded-GDScript reflow through the analyzer's formatter —
 // the SAME gdscript-fmt that drives plain .gd files — so embedded code formats identically (BUG-1).
-function formatFull(src: string, opts: Partial<FmtOptions>): { text: string; changed: boolean } {
-  const base = formatGuitkx(src, opts).text;
+function formatFull(src: string, opts: Partial<FmtOptions>): { text: string; changed: boolean; fellBack: boolean } {
+  const fg = formatGuitkx(src, opts);
   const unit = opts.indentStyle === "tab" ? "\t" : " ".repeat(opts.indentSize ?? 2);
-  const text = embeddedReflow ? reflowEmbedded(base, (gd) => analyzer.formatGd(gd), unit) : base;
-  return { text, changed: text !== src };
+  const text = embeddedReflow ? reflowEmbedded(fg.text, (gd) => analyzer.formatGd(gd), unit) : fg.text;
+  return { text, changed: text !== src, fellBack: fg.fellBack };
+}
+
+// G-06: a format request that fell back to verbatim (a syntax error, not an already-canonical
+// file) used to look exactly like "nothing to do" -- the user never learned formatting was
+// silently skipped. Warned once per URI per session (not on every keystroke-triggered format of
+// the same still-broken file) via the standard LSP window/showMessage, so both VS Code and VS2022
+// surface it without editor-specific plumbing.
+const formatFallbackWarned = new Set<string>();
+function warnFormatFallbackOnce(uri: string): void {
+  if (formatFallbackWarned.has(uri)) return;
+  formatFallbackWarned.add(uri);
+  connection.window.showWarningMessage(`GUITKX: ${uri.split("/").pop()} has syntax errors -- format skipped.`);
 }
 
 connection.onDocumentFormatting((params) => {
@@ -481,6 +493,7 @@ connection.onDocumentFormatting((params) => {
       : [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: formatted }];
   }
   const r = formatFull(src, formatOptsFor(params.textDocument.uri));
+  if (r.fellBack) warnFormatFallbackOnce(params.textDocument.uri);
   if (!r.changed) return [];
   return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(src.length) }, newText: r.text }];
 });
@@ -496,6 +509,7 @@ connection.onDocumentRangeFormatting((params) => {
     return e ? [{ range: { start: doc.positionAt(e.start), end: doc.positionAt(e.end) }, newText: e.newText }] : [];
   }
   const r = formatFull(src, formatOptsFor(params.textDocument.uri));
+  if (r.fellBack) warnFormatFallbackOnce(params.textDocument.uri);
   if (!r.changed) return [];
   // Whole-doc format, then return the single minimal line-hunk (common prefix/suffix diff). The whole
   // minimal hunk is emitted when it intersects the requested range (it may extend slightly past the

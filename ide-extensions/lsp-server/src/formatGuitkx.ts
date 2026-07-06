@@ -28,13 +28,17 @@ const DEFAULTS: FmtOptions = {
   insertSpaceBeforeSelfClose: true,
 };
 
-export function formatGuitkx(source: string, opts?: Partial<FmtOptions>): { text: string; changed: boolean } {
+// [G-06 fix] `fellBack` distinguishes "formatted" from "parse error, source returned byte-
+// identical" -- both used to look the same (`text === source` either way for an already-canonical
+// file), so a caller had no way to tell "nothing changed" from "couldn't even try" and warn the
+// user their file has a syntax error. Mirrors guitkx_formatter.gd's `fell_back`.
+export function formatGuitkx(source: string, opts?: Partial<FmtOptions>): { text: string; changed: boolean; fellBack: boolean } {
   const o: FmtOptions = { ...DEFAULTS, ...(opts || {}) };
-  const text = formatOrVerbatim(source, o);
-  return { text, changed: text !== source };
+  const r = formatOrVerbatim(source, o);
+  return { text: r.text, changed: r.text !== source, fellBack: r.fellBack };
 }
 
-function formatOrVerbatim(source: string, o: FmtOptions): string {
+function formatOrVerbatim(source: string, o: FmtOptions): { text: string; fellBack: boolean } {
   const n = source.length;
   let i = 0;
   let classNameLine = "";
@@ -51,7 +55,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     break;
   }
   const decl = findDecl(source, i);
-  if (decl.kind === "") return source;
+  if (decl.kind === "") return { text: source, fellBack: false }; // nothing to format -- not a syntax error
   // T1.3: the preamble (everything before the declaration keyword) is canonicalized ONLY when it is
   // nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
   // byte-for-byte -- Format Document must never delete user content (it used to eat file-header
@@ -65,27 +69,27 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
   switch (decl.kind) {
     case "component": {
       const pc = parseComponentAt(source, decl.at);
-      if (!pc.ok) return source;
+      if (!pc.ok) return { text: source, fellBack: true };
       out += fmtComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
       declEnd = pc.next;
       break;
     }
     case "hook": {
       const ph = parseHookAt(source, decl.at);
-      if (!ph.ok) return source;
+      if (!ph.ok) return { text: source, fellBack: true };
       out += fmtHook(ph.name, ph.params, ph.body, o, ph.ret);
       declEnd = ph.next;
       break;
     }
     case "module": {
       const m = fmtModule(source, decl.at, o);
-      if (m === null) return source;
+      if (m === null) return { text: source, fellBack: true };
       out += m.text;
       declEnd = m.next;
       break;
     }
     default:
-      return source;
+      return { text: source, fellBack: false }; // nothing to format -- not a syntax error
   }
   // T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
   // error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
@@ -94,7 +98,7 @@ function formatOrVerbatim(source: string, o: FmtOptions): string {
     const trailing = source.slice(declEnd);
     if (trailing.trim() !== "") out = out.replace(/[ \t\n]+$/, "") + "\n\n" + trailing.replace(/^[ \t\n]+/, "");
   }
-  return out.replace(/[ \t\n]+$/, "") + "\n";
+  return { text: out.replace(/[ \t\n]+$/, "") + "\n", fellBack: false };
 }
 
 // --- declarations ---

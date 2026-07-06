@@ -7,7 +7,9 @@ extends RefCounted
 ## byte-identical except base-indent normalization of setup — a from-scratch GDScript re-indenter is
 ## unsound (no closing token), so we only re-anchor the outer indent and preserve internal structure.
 ##
-## API:  RUIGuitkxFormatter.format(source: String, opts := {}) -> { ok, text, changed }
+## API:  RUIGuitkxFormatter.format(source: String, opts := {}) -> { ok, text, changed, fell_back }
+## `fell_back` (G-06): true when `text == source` because of a parse error, not because the file
+## was already canonical -- the two used to be indistinguishable to callers.
 
 const L = preload("res://addons/reactive_ui/guitkx/guitkx_lexer.gd")
 const Markup = preload("res://addons/reactive_ui/guitkx/guitkx_markup.gd")
@@ -21,14 +23,19 @@ const DEFAULTS := {
 	"insertSpaceBeforeSelfClose": true,
 }
 
+## [G-06 fix] `fell_back` distinguishes "formatted" from "parse error, source returned byte-
+## identical" -- both used to look the same (`ok:true`, `text == source` happens either way for an
+## already-canonical file), so a caller had no way to tell "nothing changed" from "couldn't even
+## try" and warn the user their file has a syntax error. Mirrors formatGuitkx.ts's `fellBack`.
 static func format(source: String, opts := {}) -> Dictionary:
 	var o := DEFAULTS.duplicate()
 	for k in opts:
 		o[k] = opts[k]
-	var text := _format_or_verbatim(source, o)
-	return { "ok": true, "text": text, "changed": text != source }
+	var r := _format_or_verbatim(source, o)
+	var text: String = r["text"]
+	return { "ok": true, "text": text, "changed": text != source, "fell_back": bool(r["fell_back"]) }
 
-static func _format_or_verbatim(source: String, o: Dictionary) -> String:
+static func _format_or_verbatim(source: String, o: Dictionary) -> Dictionary:
 	# 1. preamble: an optional `@class_name X` line (the only Godot preamble directive)
 	var n := source.length()
 	var i := 0
@@ -46,7 +53,7 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 	# 2. declaration
 	var decl: Dictionary = Compiler._find_decl(source, i)
 	if decl["kind"] == "":
-		return source   # nothing to format
+		return { "text": source, "fell_back": false }   # nothing to format -- not a syntax error
 	var diags: Array = []
 	# T1.3: the preamble (everything before the declaration keyword) is canonicalized ONLY when it is
 	# nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
@@ -71,23 +78,23 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 		"component":
 			var pc: Dictionary = Compiler._parse_component_at(source, decl["at"], diags)
 			if not pc["ok"]:
-				return source
+				return { "text": source, "fell_back": true }
 			out += _fmt_component(pc["name"], pc["params"], pc["setup"], pc["window_nodes"], o)
 			decl_end = int(pc["next"])
 		"hook":
 			var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
 			if not ph["ok"]:
-				return source
+				return { "text": source, "fell_back": true }
 			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o, str(ph.get("ret", "")))
 			decl_end = int(ph["next"])
 		"module":
 			var m: Variant = _fmt_module(source, decl["at"], o, diags)
 			if m == null:
-				return source
+				return { "text": source, "fell_back": true }
 			out += (m as Dictionary)["text"]
 			decl_end = int((m as Dictionary)["next"])
 		_:
-			return source   # nothing to format
+			return { "text": source, "fell_back": false }   # nothing to format -- not a syntax error
 	# T1.3: content after the declaration (a second component, stray text) is a GUITKX2105 compile
 	# error, but it must round-trip the formatter untouched -- emitted verbatim after exactly one
 	# canonical blank line (idempotent). Mirrors formatGuitkx.ts.
@@ -97,7 +104,7 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> String:
 			out = out.rstrip(" \t\n") + "\n\n" + trailing.lstrip(" \t\n")
 	# normalize trailing whitespace -> exactly one newline
 	out = out.rstrip(" \t\n") + "\n"
-	return out
+	return { "text": out, "fell_back": false }
 
 # --- declarations ---
 

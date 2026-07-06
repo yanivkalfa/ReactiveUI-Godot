@@ -82,6 +82,22 @@ test("formatGuitkx is byte-identical to the GDScript formatter over the shared g
   }
 });
 
+test("G-06: formatGuitkx.fellBack distinguishes a parse-error fallback from an already-canonical file", () => {
+  const broken = 'component Broken {\n  return (\n    <Label text="x"\n  )\n}\n'; // unclosed tag
+  const r1 = formatGuitkx(broken);
+  assert.equal(r1.text, broken, "verbatim on parse error");
+  assert.equal(r1.fellBack, true, "parse error must report fellBack");
+
+  const empty = "";
+  const r2 = formatGuitkx(empty);
+  assert.equal(r2.fellBack, false, "nothing-to-format is not a syntax-error fallback");
+
+  const canonical = 'component Ok {\n  return (\n    <Label text="x" />\n  )\n}\n';
+  const r3 = formatGuitkx(canonical);
+  assert.equal(r3.changed, false);
+  assert.equal(r3.fellBack, false, "an already-canonical file must not report fellBack");
+});
+
 test("scanTagRefs: jsx-as-value ref after a value keyword counts; a comparison does not", () => {
   assert.equal(scanTagRefs("x = cond if c else <Card />", "Card").length, 1); // else <Card/> is a ref
   assert.equal(scanTagRefs("if a < Card: pass", "Card").length, 0); // `a < Card` is a comparison
