@@ -933,6 +933,10 @@ documents.onDidClose((e) => {
   } catch {
     index.evict(e.document.uri);
   }
+  // The closed buffer's squiggles are stale the instant it closes (based on its last-edited
+  // content, not necessarily what's on disk) -- clear them from the Problems panel instead of
+  // leaving them to linger until the file is reopened and re-analyzed.
+  connection.sendDiagnostics({ uri: e.document.uri, diagnostics: [] });
 });
 
 // --- go-to-definition: <Foo/> -> the component/module-member declaration ---
