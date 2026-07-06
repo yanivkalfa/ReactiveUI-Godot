@@ -4,6 +4,63 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.5] — 2026-07-06
+
+A correctness-focused pass from a full compiler/formatter/HMR audit. No API changes.
+
+### Fixed
+- **Markup-lexis brace/paren matching.** Every scan that locates a directive body, a
+  component body, a `@match` body, or the `return ( ... )` window used plain
+  GDScript lexis (`#` = comment) even though that content is markup — a literal `#`
+  in element text (`<Label>Score #3</Label>`, a hex color, …) or a markup comment
+  (`//`/`/* */`/`<!-- -->`) containing `}`/`)` could miscount the delimiters the scan
+  was balancing, silently shifting where a body was believed to end (a miscompile,
+  not just a parse error). These scans now use markup lexis by default, switching to
+  GDScript lexis inside `{expr}` islands and directive/`@case` headers, and back to
+  markup for a `return ( ... )` nested inside a directive/`@case` body.
+- **Formatter no longer corrupts triple-quoted strings.** Re-anchoring an embedded
+  GDScript block re-indented and collapsed double-spaces on every line, including
+  lines inside an open `"""`/`'''` string — silently changing the string's runtime
+  value. Lines inside an open multi-line string are now detected and emitted
+  byte-verbatim.
+- **Formatter no longer drops blank lines inside a directive body's prep code.** A
+  segment splitter dropped every blank line outright while its sibling preserved
+  interior ones as a bare newline; the two now agree (leading/trailing structural
+  blanks are still trimmed, interior ones are kept).
+- **A truncated closing tag at the very end of a markup window** (`<Box><` with
+  nothing after it) used to pass a bounds guard that then scanned past the window
+  looking for `>`, producing a confusing error instead of a clean "unclosed tag" one.
+- **`format()` can now tell "formatted" from "fell back to verbatim".** Both used to
+  return `ok:true` with the source unchanged, so a syntax error that skipped
+  formatting looked identical to an already-canonical file. A new `fell_back` field
+  distinguishes them; the in-editor formatter now warns once per file when it fires.
+- **An attribute value containing an embedded `"` falls back to verbatim** instead of
+  re-emitting an unescaped (and therefore corrupting) `name="value"`. Not reachable
+  through the parser today (it can't produce such a value), but a defensive guard
+  against a future escape-syntax change that forgets to teach the formatter to
+  re-escape.
+- **`@uss`/`@theme` no longer false-flags a `uid://` resource path as missing.**
+  `FileAccess.file_exists` doesn't understand Godot 4.4+ uid-based resource
+  references; the asset-existence check now defers straight to
+  `ResourceLoader.exists`, which resolves both `uid://` and `res://` correctly.
+- **Fast Refresh's module-vs-component classification is no longer a source-text
+  guess.** `RUIHmr` used to decide "component vs. module/hook" by checking whether a
+  reloaded script's source contained the literal text `static func render(` — a
+  module whose own comment or string text happened to contain that substring could
+  be misclassified, silently skipping the global re-render every other component
+  needs when a shared module/hook changes. Generated components now carry an
+  unambiguous `const __RUI_KIND := "component"` marker (read via
+  `get_script_constant_map()`, like the existing `__RUI_HOOK_SIG`); the old
+  source-text check remains only as a fallback for scripts that predate this fix.
+
+### Documented
+- **Hook dependency-array comparison is value-based, not identity-based, by design.**
+  `useEffect`/`useMemo`/`useCallback` deps use GDScript `==` (deep-compares
+  `Array`/`Dictionary`), diverging from React's per-item `Object.is` — documented at
+  the source and in the README's Notes & limitations, including the perf tradeoff
+  (a large deps array is deep-compared every render) and the escape hatch shape if
+  it's ever needed.
+
 ## [0.8.4] — 2026-07-05
 
 Compiler/watcher hardening shipped alongside **Reactive UI Editor 0.5.0** (the M2
