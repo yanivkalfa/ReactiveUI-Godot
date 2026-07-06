@@ -6,6 +6,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.LanguageServer.Client;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 using Microsoft.VisualStudio.Utilities;
 using Task = System.Threading.Tasks.Task;
@@ -23,8 +24,26 @@ namespace GuitkxVsix
     public sealed class GuitkxLanguageClient : ILanguageClient
     {
         public string Name => "GUITKX Language Server";
-        public IEnumerable<string> ConfigurationSections => new[] { "guitkx" };
-        public object InitializationOptions => new { enableEmbeddedAnalysis = true };
+
+        // The shared server has no onDidChangeConfiguration handler, so advertising a configuration
+        // section here would be pure decoration -- VS would send workspace/didChangeConfiguration
+        // notifications that update nothing, implying live config sync that does not exist. null
+        // (like FilesToWatch below) is the honest answer until the server gains that handler.
+        public IEnumerable<string> ConfigurationSections => null;
+
+        public object InitializationOptions
+        {
+            get
+            {
+                var options = GuitkxSettings.Read(ServiceProvider.GlobalProvider);
+                return new
+                {
+                    enableEmbeddedAnalysis = options.EnableEmbeddedAnalysis,
+                    useGdformat = options.UseGdformat,
+                };
+            }
+        }
+
         public IEnumerable<string> FilesToWatch => null;
         public bool ShowNotificationOnInitializeFailed => true;
 
