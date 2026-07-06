@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Editor;
@@ -81,12 +82,19 @@ namespace GuitkxVsix
                 JToken result;
                 try
                 {
-                    result = ThreadHelper.JoinableTaskFactory.Run(() =>
-                        GuitkxLanguageClient.Rpc.InvokeWithParameterObjectAsync<JToken>("textDocument/formatting", requestParams));
+                    // G-18: a server that is merely SLOW (e.g. mid workspace-scan) never throws on its
+                    // own -- without a deadline this JoinableTaskFactory.Run blocks the UI thread
+                    // indefinitely, freezing every open VS window until the server responds. 2s is
+                    // generous for a real format response; past that, skip formatting rather than hang.
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                    {
+                        result = ThreadHelper.JoinableTaskFactory.Run(() =>
+                            GuitkxLanguageClient.Rpc.InvokeWithParameterObjectAsync<JToken>("textDocument/formatting", requestParams, cts.Token));
+                    }
                 }
                 catch (Exception)
                 {
-                    // Never block a save on a formatting failure (server down, request error, etc.).
+                    // Never block a save on a formatting failure (server down, request error, timeout, etc.).
                     return VSConstants.S_OK;
                 }
 
