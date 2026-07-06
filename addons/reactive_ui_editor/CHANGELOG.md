@@ -4,6 +4,14 @@ All notable changes to the **Reactive UI Editor** Godot addon are documented her
 The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
 of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
 
+## [0.6.2] — 2026-07-06
+
+### Fixed
+- When a format-on-save falls back to leaving the buffer untouched because the file has a syntax
+  error the formatter can't safely reflow around, the editor now tells you: a one-time-per-path
+  modal ("*&lt;file&gt; has syntax errors -- format skipped.*") instead of silently no-op'ing, so a
+  stale, unformatted file doesn't read as "already formatted."
+
 ## [0.6.1] — 2026-07-05
 
 **The native analyzer is now bundled.** The editor download ships the `reactive_ui_analyzer`
