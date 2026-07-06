@@ -18,8 +18,9 @@
          need CreatePkgDef to reflect them into a generated GuitkxVsix.pkgdef, flipped from false.
          (Verified: with it false, the package/options-page attributes silently produced no pkgdef at
          all, i.e. compiled but never registered with VS.) The static guitkx.pkgdef (TextMate grammar
-         registration) stays a SEPARATE VsPackage asset in source.extension.vsixmanifest, untouched,
-         still load-bearing for colorization. -->
+         registration) stays separate; see the guitkx.pkgdef Content item below for the real
+         pre-existing bug this uncovered (it was never actually bundled at all, regardless of this
+         flag). -->
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
@@ -53,19 +54,34 @@
     <Compile Include="GuitkxPackage.cs" />
     <Compile Include="GuitkxOptionsPage.cs" />
     <Compile Include="GuitkxSettings.cs" />
+    <Compile Include="GuitkxEditorDefaults.cs" />
+    <Compile Include="GuitkxBraceCompletion.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
-    <None Include="guitkx.pkgdef">
+    <!-- MUST be a Content item, not None: VsSDK.targets' GetVsixSourceItems target only honors
+         IncludeInVSIX on @(Content) (Microsoft.VsSDK.targets ~l.612-621); a None item's
+         IncludeInVSIX metadata is silently ignored. Confirmed by building this file's pre-Phase-1
+         state (git worktree at commit aedef25) and inspecting the produced .vsix with `unzip -l`:
+         guitkx.pkgdef was NEVER actually bundled, at any point in this project's history, meaning
+         the TextMate grammar registration this file exists for has likely never reached a real
+         installed VS2022 instance (no .guitkx syntax highlighting). This was a real, pre-existing,
+         silent bug, not something introduced by the Phase 1 GeneratePkgDefFile change (confirmed
+         unrelated by testing both true and false). -->
+    <Content Include="guitkx.pkgdef">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
-    </None>
+    </Content>
     <Content Include="Syntaxes\guitkx.tmLanguage.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
       <VSIXSubPath>Syntaxes</VSIXSubPath>
+    </Content>
+    <Content Include="language-configuration.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <!-- Extension icon (manifest <Icon>, ~90px) + marketplace preview (manifest <PreviewImage>). -->
     <Content Include="icon.png">
