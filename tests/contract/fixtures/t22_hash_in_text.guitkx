@@ -1,0 +1,11 @@
+component HashInText {
+	return (
+		<vbox>
+			<label text="#FF0000" />
+			<label>Score #3</label>
+			@if (true) {
+				return ( <label text="x" /> ) # trailing hash, not a comment
+			}
+		</vbox>
+	)
+}

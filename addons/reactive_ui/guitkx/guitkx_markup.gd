@@ -296,7 +296,9 @@ func _read_brace_body(i: int, end: int) -> Dictionary:
 	if i >= end or _src[i] != "{":
 		_fail("GUITKX0303", "directive expects `{ ... }` body", i)
 		return { "text": "", "next": end, "at": -1 }
-	var close := L.find_matching(_src, i)
+	# G-01: a directive BODY is markup (child elements/text/nested directives), not a GDScript
+	# statement -- find_matching_markup keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments.
+	var close := L.find_matching_markup(_src, i)
 	if close == -1 or close >= end:
 		_fail("GUITKX0304", "unclosed `{` directive body", i)
 		return { "text": "", "next": end, "at": -1 }
@@ -351,7 +353,9 @@ func _parse_match(at: int, end: int) -> Dictionary:
 	if bi >= end or _src[bi] != "{":
 		_fail("GUITKX0303", "@match expects `{ ... }` with @case/@default arms", bi)
 		return { "node": null, "next": end }
-	var bclose := L.find_matching(_src, bi)
+	# G-01: the @match body holds @case/@default arms whose OWN bodies are markup -- see
+	# find_matching_markup's docstring for why this needs markup, not GDScript, lexis.
+	var bclose := L.find_matching_markup(_src, bi)
 	if bclose == -1 or bclose >= end:
 		_fail("GUITKX0304", "unclosed @match body", bi)
 		return { "node": null, "next": end }

@@ -5,7 +5,7 @@
 // over markup.ts; returns the source VERBATIM on any parse error (never corrupts); idempotent.
 
 import { parseMarkup, MarkupNode, Attr } from "./markup";
-import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { skipNoncode, findMatching, findMatchingMarkup, keywordAt, isIdent } from "./scanner";
 import { findDecl } from "./declScan";
 import { findElementEnd, markupAt } from "./jsxScan";
 import { existsSync, readFileSync } from "fs";
@@ -446,7 +446,8 @@ export function splitBody(body: string): BodySplit {
     if (pt !== "" && pt.endsWith(":")) depth += 1;
     if (inLambda) {
       if (p < n && body[p] === "(") {
-        const lc = findMatching(body, p);
+        // G-01: markup lexis, not GDScript -- see scanner.ts findMatchingMarkup's docstring.
+        const lc = findMatchingMarkup(body, p);
         if (lc === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed `(` after return", at: p } };
         if (parenHoldsMarkup(body, p + 1, lc)) pushRet({ t: "ret", at: i, end: lc + 1, m_start: p + 1, m_end: lc, shape: "paren", depth, markup: true, rewrite: false });
         i = lc + 1;
@@ -469,7 +470,8 @@ export function splitBody(body: string): BodySplit {
       continue;
     }
     if (body[p] === "(") {
-      const pc = findMatching(body, p);
+      // G-01: markup lexis, not GDScript -- see scanner.ts findMatchingMarkup's docstring.
+      const pc = findMatchingMarkup(body, p);
       if (pc === -1) return { parts, rets, legacy_at: legacyAt, unit, anchor, error: { code: "GUITKX0304", message: "unclosed `(` after return", at: p } };
       pushRet({ t: "ret", at: i, end: pc + 1, m_start: p + 1, m_end: pc, shape: "paren", depth, markup: parenHoldsMarkup(body, p + 1, pc), rewrite: true });
       i = pc + 1;
@@ -735,7 +737,9 @@ function parseComponentAt(src: string, at: number): CompParse {
   }
   i = skipWsOnly(src, i);
   if (src[i] !== "{") return fail;
-  const bclose = findMatching(src, i);
+  // G-01: a component's body mixes GDScript setup with a markup return -- see scanner.ts
+  // findMatchingMarkup's docstring (mirrors guitkx.gd _parse_component_at).
+  const bclose = findMatchingMarkup(src, i);
   if (bclose === -1) return fail;
   const bodyStart = i + 1;
   const split = splitReturn(src, bodyStart, bclose);
@@ -995,7 +999,9 @@ function declBody(src: string, at: number): { start: number; close: number } | n
     i = skipWsOnly(src, pc + 1);
   }
   if (src[i] !== "{") return null;
-  const close = findMatching(src, i);
+  // G-01: declBody is only ever called for "component" declarations (never "hook") -- its body
+  // mixes GDScript setup with a markup return, so it needs markup lexis (see findMatchingMarkup).
+  const close = findMatchingMarkup(src, i);
   if (close === -1) return null;
   return { start: i + 1, close };
 }
@@ -1125,7 +1131,8 @@ function splitReturnEx(src: string, start: number, end: number): { split: Return
       const topLevel = lead.trim() === "" && indentDepth(lead, unit) <= anchor;
       const eol = eolAt(i);
       if (src[p] === "(") {
-        const close = findMatching(src, p);
+        // G-01: the `return ( ... )` window is markup, not GDScript -- see findMatchingMarkup.
+        const close = findMatchingMarkup(src, p);
         // close >= end: the `)` lives beyond the body -- inside the sliced body the compiler sees
         // no close at all, so mirror its GUITKX0304 verdict.
         if (close === -1 || close >= end) return { split: "unclosed", early: [] };

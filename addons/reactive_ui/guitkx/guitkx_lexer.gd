@@ -95,6 +95,147 @@ static func find_matching(src: String, open_i: int) -> int:
 		i += 1
 	return -1
 
+## [G-01 fix] Markup-lexis noncode skip: comments are `//` (to EOL), `/* ... */`, and
+## `<!-- ... -->`; `#` is NOT a comment (it is a literal character in markup text, e.g. a color
+## literal or a stray "Score #3"). Strings are still "..."/'...' (incl. triple-quoted, escapes) via
+## _skip_string -- no r""/&""/^""/$""/%"" prefix detection, since that is a GDScript-code
+## convention, not a markup one. Used by find_matching_markup for spans whose content is primarily
+## MARKUP (component/directive bodies, the `return ( ... )` window) rather than a GDScript
+## statement. Must stay byte-identical with scanner.ts skipNoncodeMarkup.
+static func skip_noncode_markup(src: String, i: int) -> int:
+	var n := src.length()
+	if i >= n:
+		return i
+	var c := src[i]
+	if c == "/" and i + 1 < n and src[i + 1] == "/":
+		var j := i + 2
+		while j < n and src[j] != "\n":
+			j += 1
+		return j
+	if c == "/" and i + 1 < n and src[i + 1] == "*":
+		var close := src.find("*/", i + 2)
+		return (close + 2) if close != -1 else n
+	if c == "<" and i + 3 < n and src[i + 1] == "!" and src[i + 2] == "-" and src[i + 3] == "-":
+		var close := src.find("-->", i + 4)
+		return (close + 3) if close != -1 else n
+	if c == "\"" or c == "'":
+		return _skip_string(src, i)
+	return i
+
+## [G-01 fix] Mode-aware counterpart to find_matching for spans whose content is primarily MARKUP
+## with embedded GDScript islands ({expr} attribute/child holes, directive/@case headers, a bare
+## `return (...)` window) -- e.g. a directive body, a component body, or the `return ( ... )` window
+## itself. The naive GDScript-lexis find_matching treats a literal `#` in markup text (or a markup
+## `//`/`/* */`/`<!-- -->` comment) as GDScript lexis, silently miscounting the delimiters it is
+## meant to balance (G-01).
+##
+## Mode starts MARKUP (skip_noncode_markup: `#` literal, `//`/`/* */`/`<!--` comments; `open_i`
+## itself is the outer delimiter). A `{` seen in markup mode opens an `{expr}` island (CODE mode)
+## UNLESS it immediately follows a just-closed directive/@case header `(...)` or a bare
+## `@else`/`@default` keyword, in which case it opens a nested DIRECTIVE BODY whose content is more
+## markup, so mode stays markup. Symmetrically, a `(` seen in markup mode opens CODE mode (a
+## directive/@case header) UNLESS it immediately follows a bare `return` keyword, in which case it
+## opens a nested `return ( ... )` window whose content is MORE markup (a `return` inside a
+## directive/@case body, e.g. `@if (x) { return ( <Label>Score #3</Label> ) }`), so mode stays
+## markup there too -- otherwise the SAME bug reappears one level deeper. (A bare `(` in literal
+## markup text, matching neither keyword, is a pre-existing, out-of-scope edge case unrelated to
+## this fix -- it defaults to a header, the more common construct.) A header/case-value close
+## re-arms "the next `{` is a body"; once inside CODE mode, everything nested (further ()/{}/[],
+## GDScript `#` comments, string prefixes) uses ordinary GDScript lexis via skip_noncode -- real
+## GDScript has no markup/code ambiguity internally.
+## Must stay byte-identical with scanner.ts findMatchingMarkup.
+static func find_matching_markup(src: String, open_i: int) -> int:
+	var n := src.length()
+	var delims: Array = [src[open_i]]
+	var code_depth := 0
+	var expect_body := false
+	var expect_markup_paren := false
+	var i := open_i + 1
+	while i < n:
+		var in_code := code_depth > 0
+		var j: int = skip_noncode(src, i) if in_code else skip_noncode_markup(src, i)
+		if j != i:
+			i = j
+			continue
+		var c := src[i]
+		if c == " " or c == "\t" or c == "\n" or c == "\r":
+			i += 1
+			continue
+		if not in_code:
+			if c == "@" and keyword_at(src, i + 1, "else"):
+				expect_body = true
+				expect_markup_paren = false
+				i += 5   # "@else"
+				continue
+			if c == "@" and keyword_at(src, i + 1, "default"):
+				expect_body = true
+				expect_markup_paren = false
+				i += 8   # "@default"
+				continue
+			if c == "r" and keyword_at(src, i, "return"):
+				expect_markup_paren = true
+				expect_body = false
+				i += 6   # "return"
+				continue
+			if c == "(":
+				delims.append(c)
+				if not expect_markup_paren:
+					code_depth += 1
+				expect_body = false
+				expect_markup_paren = false
+				i += 1
+				continue
+			if c == "{":
+				delims.append(c)
+				if not expect_body:
+					code_depth += 1
+				expect_body = false
+				expect_markup_paren = false
+				i += 1
+				continue
+			if c == "[":
+				delims.append(c)
+				expect_body = false
+				expect_markup_paren = false
+				i += 1
+				continue
+			if c == ")" or c == "}" or c == "]":
+				if delims.is_empty():
+					return -1
+				var top: String = delims.pop_back()
+				if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
+					return -1
+				if delims.is_empty():
+					return i
+				i += 1
+				continue
+			expect_body = false
+			expect_markup_paren = false
+			i += 1
+			continue
+		else:
+			if c == "(" or c == "{" or c == "[":
+				delims.append(c)
+				code_depth += 1
+				i += 1
+				continue
+			if c == ")" or c == "}" or c == "]":
+				if delims.is_empty():
+					return -1
+				var top: String = delims.pop_back()
+				if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
+					return -1
+				code_depth -= 1
+				if delims.is_empty():
+					return i
+				if code_depth == 0:
+					expect_body = (top == "(")
+				i += 1
+				continue
+			i += 1
+			continue
+	return -1
+
 ## True if `src.substr(i)` begins with `word` AND `word` is bounded by non-identifier chars on
 ## both sides (a real keyword, not a substring of a longer identifier). [port of TryReadKeywordAt]
 static func keyword_at(src: String, i: int, word: String) -> bool:

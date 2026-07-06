@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findMatching, skipNoncode, keywordAt } from "../scanner";
+import { findMatching, findMatchingMarkup, skipNoncode, skipNoncodeMarkup, keywordAt } from "../scanner";
 import { SourceMap, offsetToPosition, positionToOffset } from "../sourceMap";
 import { buildVirtualDoc } from "../virtualDoc";
 import { declarationDiags } from "../declarations";
@@ -158,6 +158,14 @@ test("scanner stays byte-identical with the GDScript lexer (shared fixture)", ()
     assert.equal(skipNoncode(c.input, c.at), c.expect, `skipNoncode(${JSON.stringify(c.input)}, ${c.at})`);
   for (const c of fx.findMatching)
     assert.equal(findMatching(c.input, c.at), c.expect, `findMatching(${JSON.stringify(c.input)}, ${c.at})`);
+});
+
+test("G-01: skipNoncodeMarkup/findMatchingMarkup stay byte-identical with the GDScript lexer (shared fixture)", () => {
+  const fx = JSON.parse(readFileSync(join(__dirname, "..", "..", "test-fixtures", "scanner-cases.json"), "utf8"));
+  for (const c of fx.skipNoncodeMarkup)
+    assert.equal(skipNoncodeMarkup(c.input, c.at), c.expect, `skipNoncodeMarkup(${JSON.stringify(c.input)}, ${c.at})`);
+  for (const c of fx.findMatchingMarkup)
+    assert.equal(findMatchingMarkup(c.input, c.at), c.expect, `findMatchingMarkup(${JSON.stringify(c.input)}, ${c.at})`);
 });
 
 test("keywordAt respects identifier boundaries", () => {

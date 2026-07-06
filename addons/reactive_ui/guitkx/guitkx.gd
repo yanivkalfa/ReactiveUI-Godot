@@ -381,7 +381,10 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	if j >= n or source[j] != "{":
 		diags.append(D.make("GUITKX0303", D.ERROR, "component body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false }
-	var bclose := L.find_matching(source, j)
+	# G-01: a component's body mixes GDScript setup with a markup return -- find_matching_markup
+	# keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments inside that return's markup (a plain
+	# GDScript scan here misreads `<Label>Score #3</Label>` and closes the component's `{}` early).
+	var bclose := L.find_matching_markup(source, j)
 	if bclose == -1:
 		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed component body", j, 1))
 		return { "ok": false }
@@ -1051,7 +1054,9 @@ static func _split_return(body: String) -> Dictionary:
 			if eol == -1:
 				eol = n
 			if p < n and body[p] == "(":
-				var close := L.find_matching(body, p)
+				# G-01: the `return ( ... )` window is markup, not GDScript -- find_matching_markup
+				# keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments (see its docstring).
+				var close := L.find_matching_markup(body, p)
 				if close == -1:
 					# an unclosed `(` swallows the rest of the body -- nothing after it can be scanned
 					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
@@ -1226,7 +1231,8 @@ static func _split_body(body: String) -> Dictionary:
 		if in_lambda:
 			# lambda-owned return: only markup payloads need parts (lower in place, keep `return`)
 			if p < n and body[p] == "(":
-				var lc := L.find_matching(body, p)
+				# G-01: markup lexis, not GDScript -- see find_matching_markup's docstring.
+				var lc := L.find_matching_markup(body, p)
 				if lc == -1:
 					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
 				if _paren_holds_markup(body, p + 1, lc):
@@ -1252,7 +1258,8 @@ static func _split_body(body: String) -> Dictionary:
 			i = p
 			continue
 		if body[p] == "(":
-			var pc := L.find_matching(body, p)
+			# G-01: markup lexis, not GDScript -- see find_matching_markup's docstring.
+			var pc := L.find_matching_markup(body, p)
 			if pc == -1:
 				return { "error": D.make("GUITKX0304", D.ERROR, "unclosed `(` after return", p, 1) }
 			_push_body_ret(parts, cursor, { "at": i, "end": pc + 1, "m_start": p + 1, "m_end": pc, "shape": "paren", "depth": depth, "markup": _paren_holds_markup(body, p + 1, pc), "rewrite": true })
@@ -1444,7 +1451,8 @@ static func unreachable_line_ranges(source: String) -> Array:
 			if j >= n or source[j] != "{":
 				i += 9
 				continue
-			var bclose := L.find_matching(source, j)
+			# G-01: same component-body scan as _parse_component_at -- needs markup lexis.
+			var bclose := L.find_matching_markup(source, j)
 			if bclose == -1:
 				break
 			var body := source.substr(j + 1, bclose - j - 1)

@@ -33,7 +33,7 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { classifyContext, CursorContext } from "./context";
 import { buildVirtualDoc } from "./virtualDoc";
 import { offsetToPosition } from "./sourceMap";
-import { skipString, findMatching, isIdent } from "./scanner";
+import { skipString, skipNoncodeMarkup, findMatching, findMatchingMarkup, isIdent } from "./scanner";
 import { declarationDiags } from "./declarations";
 import { windowStructureDiags, hookContextDiags } from "./liveMarkup";
 import { uriToProjectPath } from "./guitkxFormat";
@@ -1719,15 +1719,15 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
   const scopes: Array<Set<string>> = [new Set()];
   let i = start;
   while (i < end) {
+    // G-01: this window is markup -- `#` in text (e.g. "Score #3") is literal, not a comment; the
+    // real comment forms here are `//`/`/* */`/`<!-- -->` (previously unrecognized here, so a tag
+    // reference inside one of those could false-flag GUITKX0104/0105/0109).
+    const sk = skipNoncodeMarkup(src, i);
+    if (sk !== i) {
+      i = Math.min(sk, end);
+      continue;
+    }
     const c = src[i];
-    if (c === '"' || c === "'") {
-      i = skipString(src, i);
-      continue;
-    }
-    if (c === "#") {
-      while (i < end && src[i] !== "\n") i++;
-      continue;
-    }
     if (c === "@") {
       // Phase D: a directive body is CODE (prep statements + directive-level returns), not markup.
       // Scan ONLY each return's markup span -- splitBody is the same body model the compiler, the
@@ -1749,7 +1749,8 @@ function scanWindowDiagnostics(src: string, doc: TextDocument, start: number, en
             i = p + 1; // container of @case/@default arms -- step inside
             continue;
           }
-          const close = findMatching(src, p);
+          // G-01: the directive/@case/@default BODY is markup -- see findMatchingMarkup's docstring.
+          const close = findMatchingMarkup(src, p);
           const bodyEnd = close === -1 || close >= end ? end : close;
           for (const part of splitBody(src.slice(p + 1, bodyEnd)).parts) {
             if (part.t === "ret" && part.markup && part.m_end > part.m_start) {

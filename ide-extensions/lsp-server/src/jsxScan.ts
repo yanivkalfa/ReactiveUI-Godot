@@ -8,7 +8,7 @@
 // (whitespace-skipped) a boundary token that can only be followed by an expression, AND the char
 // after `<` is a tag-name start (letter/`_`) or `>` (fragment).
 
-import { skipNoncode, findMatching, keywordAt, isIdent } from "./scanner";
+import { skipNoncode, skipNoncodeMarkup, findMatching, keywordAt, isIdent } from "./scanner";
 
 export interface MarkupRange {
   start: number;
@@ -122,7 +122,9 @@ export function findElementEnd(src: string, open: number, end: number): number {
   let depth = 0;
   let i = open;
   while (i < end) {
-    const j = skipNoncode(src, i);
+    // G-01: walks tag names/text/attributes -- markup lexis, so `#` in child text stays literal
+    // and `//`/`/* */`/`<!-- -->` are comments. `{…}` holes still route through findMatching below.
+    const j = skipNoncodeMarkup(src, i);
     if (j !== i) {
       i = j;
       continue;
@@ -169,7 +171,8 @@ function scanOpenTag(src: string, lt: number, end: number): { gt: number; selfCl
   let i = lt + 1;
   while (i < end && isIdent(src[i])) i += 1; // tag name
   while (i < end) {
-    const j = skipNoncode(src, i);
+    // G-01: markup lexis over the attribute list (see findElementEnd).
+    const j = skipNoncodeMarkup(src, i);
     if (j !== i) {
       i = j;
       continue;

@@ -105,7 +105,10 @@ static func _find_element_end(src: String, open: int, end: int) -> int:
 	var depth := 0
 	var i := open
 	while i < end:
-		var j := L.skip_noncode(src, i)
+		# G-01: this walks tag names/text/attributes -- markup lexis, so `#` in child text (e.g.
+		# "Score #3") stays literal and `//`/`/* */`/`<!-- -->` are recognized as comments. `{…}`
+		# attr/child holes are still routed through find_matching (GDScript lexis) below.
+		var j := L.skip_noncode_markup(src, i)
 		if j != i:
 			i = j
 			continue
@@ -154,7 +157,8 @@ static func _scan_open_tag(src: String, lt: int, end: int) -> Dictionary:
 	while i < end and L._is_ident(src[i]):
 		i += 1   # tag name
 	while i < end:
-		var j := L.skip_noncode(src, i)
+		# G-01: markup lexis over the attribute list (see _find_element_end).
+		var j := L.skip_noncode_markup(src, i)
 		if j != i:
 			i = j
 			continue

@@ -778,6 +778,14 @@ func _test_scanner_fixtures() -> void:
 	for c in fx["findMatching"]:
 		var got2: int = L.find_matching(c["input"], int(c["at"]))
 		_check_true(got2 == int(c["expect"]), "find_matching(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got2, int(c["expect"])])
+	# G-01: the markup-lexis mode-aware counterparts (find_matching_markup skips `#` as literal and
+	# `//`/`/* */`/`<!-- -->` as comments -- see guitkx_lexer.gd's docstring).
+	for c in fx["skipNoncodeMarkup"]:
+		var got3: int = L.skip_noncode_markup(c["input"], int(c["at"]))
+		_check_true(got3 == int(c["expect"]), "skip_noncode_markup(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got3, int(c["expect"])])
+	for c in fx["findMatchingMarkup"]:
+		var got4: int = L.find_matching_markup(c["input"], int(c["at"]))
+		_check_true(got4 == int(c["expect"]), "find_matching_markup(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got4, int(c["expect"])])
 
 func _test_deep_flatten() -> void:
 	# V._norm must deep-flatten nested arrays (Phase 4 §5: .map().map() children) + drop nulls at depth

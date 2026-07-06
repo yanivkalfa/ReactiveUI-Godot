@@ -3,7 +3,7 @@
 // keywords, attribute names, and on_<signal> events. Nothing inside {expr}/setup GDScript (Godot owns
 // that). One linear scan over scanner.ts primitives, delta-encoded per the LSP spec.
 
-import { skipNoncode, skipString, findMatching, isIdent } from "./scanner";
+import { skipNoncode, skipNoncodeMarkup, skipString, findMatching, isIdent } from "./scanner";
 import { findTag } from "./schema";
 import { markupWindows } from "./formatGuitkx";
 import { isEventAttr } from "./events";
@@ -86,7 +86,9 @@ export function buildSemanticTokens(src: string, isComponent: (name: string) => 
 function scanWindow(src: string, start: number, end: number, emit: (off: number, len: number, type: number, mods?: number) => void, isComponent: (name: string) => boolean): void {
   let i = start;
   while (i < end) {
-    const k = skipNoncode(src, i);
+    // G-01: this window is markup -- `#` in text (e.g. "Score #3") must stay literal, and
+    // `//`/`/* */`/`<!-- -->` are the real comment forms here, not `#`.
+    const k = skipNoncodeMarkup(src, i);
     if (k !== i) {
       i = Math.min(k, end);
       continue;

@@ -6,7 +6,7 @@
 // Markup/glue is never copied, so Godot only ever parses real GDScript. Embedded code is spliced
 // VERBATIM (length-preserving), so the offset SourceMap round-trips 1:1 and survives future rewrites.
 
-import { skipNoncode, skipString, findMatching, keywordAt } from "./scanner";
+import { skipNoncode, skipString, findMatching, findMatchingMarkup, keywordAt } from "./scanner";
 import { findDecl } from "./declScan";
 import { SourceMap } from "./sourceMap";
 import { neutralizeMarkup, neutralizeSetupMarkup } from "./jsxScan";
@@ -81,7 +81,7 @@ function emitModuleMembers(ctx: Ctx, moduleAt: number): void {
   while (i < to) {
     const d = findDecl(ctx.src, i, true);
     if (d.kind === "" || d.at >= to) break;
-    const b = readDeclBody(ctx.src, d.at);
+    const b = readDeclBody(ctx.src, d.at, d.kind === "component");
     if (d.kind === "module") emitModuleMembers(ctx, d.at);
     else emitDeclFunc(ctx, d.kind, d.at, `_${ctx.counter++}`);
     i = b ? b.start + b.text.length + 1 : d.at + 1;
@@ -89,7 +89,7 @@ function emitModuleMembers(ctx: Ctx, moduleAt: number): void {
 }
 
 function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: string): void {
-  const body = readDeclBody(ctx.src, at);
+  const body = readDeclBody(ctx.src, at, kind === "component");
 
   if (kind === "hook") {
     if (!body) return;
@@ -272,7 +272,8 @@ function emitControl(ctx: Ctx, at: number, kw: string, end: number, indent: numb
   let b = pc + 1;
   while (b < end && /\s/.test(src[b])) b++;
   if (src[b] !== "{") return pc + 1;
-  const bclose = findMatching(src, b);
+  // G-01: the directive BODY is markup -- see scanner.ts findMatchingMarkup's docstring.
+  const bclose = findMatchingMarkup(src, b);
   if (bclose === -1 || bclose >= end) return pc + 1;
 
   if (kw === "match") {
@@ -298,7 +299,8 @@ function emitControl(ctx: Ctx, at: number, kw: string, end: number, indent: numb
       const cond = src.slice(ep + 1, epc).trim();
       let eb = epc + 1;
       while (eb < end && /\s/.test(src[eb])) eb++;
-      const ebc = findMatching(src, eb);
+      // G-01: directive BODY is markup.
+      const ebc = findMatchingMarkup(src, eb);
       if (ebc === -1) break;
       ctx.gen += `${pad}elif ${mapInline(ctx, ep + 1, cond)}:\n`;
       if (!emitMarkup(ctx, eb + 1, ebc, indent + 1)) ctx.gen += `${"\t".repeat(indent + 1)}pass\n`;
@@ -306,7 +308,8 @@ function emitControl(ctx: Ctx, at: number, kw: string, end: number, indent: numb
     } else if (src[k] === "@" && keywordAt(src, k + 1, "else")) {
       let eb = k + 5;
       while (eb < end && /\s/.test(src[eb])) eb++;
-      const ebc = findMatching(src, eb);
+      // G-01: directive BODY is markup.
+      const ebc = findMatchingMarkup(src, eb);
       if (ebc === -1) break;
       ctx.gen += `${pad}else:\n`;
       if (!emitMarkup(ctx, eb + 1, ebc, indent + 1)) ctx.gen += `${"\t".repeat(indent + 1)}pass\n`;
@@ -333,7 +336,8 @@ function emitMatchArms(ctx: Ctx, start: number, end: number, indent: number): vo
       const val = src.slice(p + 1, pc).trim();
       let b = pc + 1;
       while (b < end && /\s/.test(src[b])) b++;
-      const bclose = findMatching(src, b);
+      // G-01: @case's arm BODY is markup.
+      const bclose = findMatchingMarkup(src, b);
       if (bclose === -1) break;
       ctx.gen += `${pad}${mapInline(ctx, p + 1, val)}:\n`;
       if (!emitMarkup(ctx, b + 1, bclose, indent + 1)) ctx.gen += `${"\t".repeat(indent + 1)}pass\n`;
@@ -342,7 +346,8 @@ function emitMatchArms(ctx: Ctx, start: number, end: number, indent: number): vo
     } else if (src[i] === "@" && keywordAt(src, i + 1, "default")) {
       let b = i + 8;
       while (b < end && /\s/.test(src[b])) b++;
-      const bclose = findMatching(src, b);
+      // G-01: @default's arm BODY is markup.
+      const bclose = findMatchingMarkup(src, b);
       if (bclose === -1) break;
       ctx.gen += `${pad}_:\n`;
       if (!emitMarkup(ctx, b + 1, bclose, indent + 1)) ctx.gen += `${"\t".repeat(indent + 1)}pass\n`;
@@ -477,7 +482,13 @@ function declareHookStubs(ctx: Ctx): void {
 
 // --- declaration / window helpers (mirror guitkx.gd) ----------------------------------------
 
-function readDeclBody(src: string, declAt: number): { text: string; start: number } | null {
+// `markupBody`: true for a "component" declaration, whose body mixes GDScript setup with a markup
+// return (needs findMatchingMarkup -- G-01: a plain GDScript scan misreads `#`/`//`/`/* */`/
+// `<!-- -->` inside that markup and can close the body early). false for "hook"/"module", whose
+// bodies are pure GDScript (a module's own top-level content is a MIX of hook -- GDScript -- and
+// component -- markup -- declarations, so it stays GDScript-lexis too, same as guitkx.gd
+// _compile_module/_parse_hook_at).
+function readDeclBody(src: string, declAt: number, markupBody = false): { text: string; start: number } | null {
   const n = src.length;
   let j = declAt;
   while (j < n && src[j] !== "{") {
@@ -495,7 +506,7 @@ function readDeclBody(src: string, declAt: number): { text: string; start: numbe
     j++;
   }
   if (j >= n || src[j] !== "{") return null;
-  const close = findMatching(src, j);
+  const close = markupBody ? findMatchingMarkup(src, j) : findMatching(src, j);
   if (close === -1) return null;
   return { text: src.slice(j + 1, close), start: j + 1 };
 }
@@ -543,7 +554,8 @@ function splitReturn(src: string, start: number, end: number): ReturnSplit {
       let eol = src.indexOf("\n", i);
       if (eol === -1 || eol > end) eol = end;
       if (src[p] === "(") {
-        const close = findMatching(src, p);
+        // G-01: the `return ( ... )` window is markup, not GDScript -- see findMatchingMarkup.
+        const close = findMatchingMarkup(src, p);
         // A half-typed `return (`: keep analysing the setup ABOVE the return (empty markup window)
         // instead of abandoning the whole body — mid-keystroke intelligence stays alive.
         if (close === -1 || close >= end) return { setupEnd: i, markupStart: end, markupEnd: end };
