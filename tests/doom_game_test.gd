@@ -1,8 +1,13 @@
 extends SceneTree
-## Doom-game port (plans/DOOM_GAME_GUITKX_PORT_PLAN.md) pure-logic regression suite.
+## Doom-game port (plans/DOOM_GAME_GUITKX_PORT_PLAN.md) regression suite.
 ## Phase 0: doom_types.gd / doom_textures.gd / doom_maps.gd. Phase 1: raycast.gd +
-## game_logic.gd's new_game/cast_frame (the sector-based renderer) -- no reconciler/UI
-## involved. Run: godot --headless --path <project> --script res://tests/doom_game_test.gd
+## game_logic.gd's new_game/cast_frame (the sector-based renderer). Phase 2:
+## tick/update_player (movement, mouse-look, jump/crouch, collision). All of the
+## above is pure logic, no reconciler/UI involved -- the one deliberate exception
+## is _test_integration_tick(), which mounts DoomGameScreen for real and drives
+## DoomInputState + physics_frame, since that's the only way to exercise the
+## hook's view_ref/get_tree() wiring itself (plan §1.2). Run:
+## godot --headless --path <project> --script res://tests/doom_game_test.gd
 
 const DOOM_DIR := "res://examples/demos/doom/"
 
@@ -27,6 +32,8 @@ func _run() -> void:
 	_test_raycast()
 	_test_game_logic()
 	_test_screen_logic()
+	_test_player_movement()
+	await _test_integration_tick()
 	print("\n[doom_game_test] %d passed, %d failed" % [_passes, _fails])
 	quit(1 if _fails > 0 else 0)
 
@@ -263,3 +270,103 @@ func _test_screen_logic() -> void:
 	# sprite_scale / sprite_vertical_anchor sanity.
 	_ok(DoomGameScreenLogic.sprite_scale(DoomTypes.MobjKind.BARON) == 1.6, "sprite_scale(BARON)")
 	_ok(DoomGameScreenLogic.sprite_vertical_anchor(DoomTypes.MobjKind.CACODEMON) == 0.0, "sprite_vertical_anchor(CACODEMON)")
+
+func _test_player_movement() -> void:
+	var st := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var start_x := st.player.x
+	var start_angle := st.player.angle
+
+	# Mouse-look: yaw adds directly; pitch is negated and scaled by
+	# MOUSE_PITCH_SENS, then clamped.
+	var input := DoomTypes.InputCmd.new()
+	input.yaw_delta = 0.1
+	input.pitch_delta = 10.0
+	GameLogic.update_player(st, input, 0.016)
+	_ok(is_equal_approx(st.player.angle, start_angle + 0.1), "yaw_delta adds directly to player.angle")
+	_ok(is_equal_approx(st.player.pitch, -10.0 * DoomTypes.C.MOUSE_PITCH_SENS), "pitch_delta is negated and scaled by MOUSE_PITCH_SENS")
+
+	var clamp_input := DoomTypes.InputCmd.new()
+	clamp_input.pitch_delta = -100000.0
+	GameLogic.update_player(st, clamp_input, 0.016)
+	_ok(st.player.pitch >= -DoomTypes.C.MAX_PITCH, "pitch is clamped to -MAX_PITCH")
+
+	# Forward movement along a known-clear corridor (level 1 spawn, facing
+	# straight down -Y at angle=-PI/2, per DoomMaps.level1's PlayerStart).
+	var st2 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var y0 := st2.player.y
+	var move_input := DoomTypes.InputCmd.new()
+	move_input.forward = true
+	for i in range(10):
+		GameLogic.update_player(st2, move_input, 1.0 / 60.0)
+	_ok(st2.player.y < y0, "forward movement decreases Y (facing -PI/2, matches level 1's corridor heading toward the door)")
+	_ok(absf(st2.player.x - start_x) < 0.05, "forward movement at angle=-PI/2 doesn't drift X")
+
+	# Collision: running forward for a long time should never leave the map's
+	# bounds -- walls must actually stop the player somewhere.
+	var st3 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var long_move := DoomTypes.InputCmd.new()
+	long_move.forward = true
+	for i in range(600): # 10 simulated seconds
+		GameLogic.update_player(st3, long_move, 1.0 / 60.0)
+	_ok(st3.player.x >= 0.0 and st3.player.x < st3.map.width, "collision keeps player.x in map bounds after sustained forward movement")
+	_ok(st3.player.y >= 0.0 and st3.player.y < st3.map.height, "collision keeps player.y in map bounds after sustained forward movement")
+
+	# Jump: from grounded (z==0, z_vel==0), a rising jump-key edge applies JUMP_VELOCITY.
+	var st4 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	_ok(st4.player.z <= 0.001, "player starts on the ground (z ~ 0)")
+	var jump_input := DoomTypes.InputCmd.new()
+	jump_input.jump = true
+	GameLogic.update_player(st4, jump_input, 1.0 / 60.0)
+	_ok(st4.player.z > 0.0, "jump lifts the player off the ground on the next tick")
+
+	# Weapon switch: only switches to an OWNED weapon slot.
+	var st5 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var switch_to_unowned := DoomTypes.InputCmd.new()
+	switch_to_unowned.weapon_switch = 3 # index 2 = Shotgun, not owned at new_game
+	GameLogic.update_player(st5, switch_to_unowned, 1.0 / 60.0)
+	_ok(st5.player.weapon == DoomTypes.WeaponType.PISTOL, "weapon_switch to an unowned slot is ignored")
+	var switch_to_owned := DoomTypes.InputCmd.new()
+	switch_to_owned.weapon_switch = 1 # index 0 = Fist, owned by default
+	GameLogic.update_player(st5, switch_to_owned, 1.0 / 60.0)
+	_ok(st5.player.weapon == DoomTypes.WeaponType.FIST, "weapon_switch to an owned slot switches weapon")
+
+	# Hurt: damage reduces health, sets hurt_flash, and kills at 0.
+	var st6 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var hp0 := st6.player.health
+	GameLogic.hurt(st6, st6.player, 10, 0)
+	_ok(st6.player.health == hp0 - 10, "hurt (Normal difficulty, no armor) reduces health by the exact damage amount")
+	_ok(st6.player.hurt_flash > 0.0, "hurt sets hurt_flash")
+	GameLogic.hurt(st6, st6.player, 10000, 0)
+	_ok(st6.player.health == 0 and not st6.player.alive and st6.game_over, "lethal damage zeroes health, kills the player, and sets game_over")
+
+	# tick(): the full per-frame dispatch keeps advancing tic/time_accum and
+	# re-running cast_frame without error, even with a fully-neutral input.
+	var st7 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var idle_input := DoomTypes.InputCmd.new()
+	var tic0 := st7.tic
+	for i in range(5):
+		GameLogic.tick(st7, 1.0 / 60.0, idle_input)
+	_ok(st7.tic == tic0 + 5, "tick() advances the tic counter once per call")
+	_ok(st7.time_accum > 0.0, "tick() accumulates time_accum")
+	_ok(st7.frame.columns.size() == DoomTypes.C.VIEW_W, "tick() keeps re-running cast_frame (VIEW_W columns present)")
+
+## The one reconciler-based check in this file (see the header comment): mounts
+## DoomGameScreen for real, drives DoomInputState + physics_frame directly, and
+## confirms the full hook -> tick -> re-render pipeline survives without
+## crashing. Pure-logic tests above can't exercise view_ref/get_tree() wiring.
+func _test_integration_tick() -> void:
+	var c := Control.new()
+	root.add_child(c)
+	var app := ReactiveRoot.create(c, V.fc(DoomGameScreen.render))
+	await process_frame
+	await process_frame
+
+	DoomInputState.shared.reset()
+	DoomInputState.shared.forward = true
+	for i in range(10):
+		await physics_frame
+	DoomInputState.shared.reset()
+
+	_ok(c.get_child_count() > 0, "DoomGameScreen keeps rendering after 10 live physics ticks with input held")
+	app.unmount()
+	c.queue_free()

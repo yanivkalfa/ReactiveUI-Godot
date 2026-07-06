@@ -173,3 +173,22 @@ Leading comments preserved (G2); `{expr}` children + markup comments preserved (
 
 ## 9. Probe artifacts
 `rg_probe.js` (session scratchpad) drives G1–G6 via node against `out/formatGuitkx.js`. For GDScript confirmation of G-01/G-02 add the same inputs to `tests/guitkx_test.gd` / the golden corpus and run headless.
+
+---
+
+## 10. Post-audit finding — NOT part of the fixed v5 batch above (found 2026-07-06, during unrelated `.guitkx` authoring)
+
+### G-23 — **P1** — a parenthetical comment split across two `#`/`//` lines desyncs paren-balance tracking, surfaces as a spurious "unclosed component body" far downstream
+
+**Status: reported, root cause partially diagnosed, NOT fixed.** Found while hand-authoring a large `.guitkx` component (`examples/demos/doom/doom_game_screen.guitkx`, part of an unrelated feature — see `plans/DOOM_GAME_GUITKX_PORT_PLAN.md`); the compiler itself was not touched while chasing this.
+
+- **Repro:** a component whose setup code (or a directive body) contains a doc-comment where one open paren `(` is on one `#`/`//` comment line and its matching `)` is on the *next* comment line, e.g.:
+  ```
+  # Faithful port of Foo's per-column texture windowing (BackgroundSize +
+  # BackgroundPositionX/Y in the original): select the texel column...
+  ```
+  Both lines are individually valid, ordinary GDScript/markup comments — the paren only "closes" when read across the line break, which a human reads fine but the compiler apparently doesn't. Confirmed via bisection: with all doc-comments stripped from the file it compiles clean (`ok:true`, zero diagnostics); reintroducing just this style of split-parenthetical comment reproduces `GUITKX0304 "unclosed component body"`, anchored at the component's own opening `{` — i.e. the reported location is nowhere near the actual defect, which is what made this slow to isolate.
+- **Root-cause hypothesis (not fully confirmed):** `guitkx_lexer.gd`'s `find_matching_markup` (the mode-aware scanner added by the G-01 fix above) documents itself as starting in **MARKUP mode** from the component's opening `{` — including over the setup code that precedes any actual markup/`return`. In markup mode, `skip_noncode_markup` does not treat a bare `#` as a comment-starter at all (correct for markup *content*, where `#` is literal text, e.g. a hex color or `Score #3`) — so a `#`-prefixed GDScript comment sitting in genuine setup/prep code, scanned under markup-mode rules, has its `#` treated as literal text rather than "skip to end of line," and any `(`/`)` inside that comment gets counted as real delimiters. This would explain the setup-code case precisely. **Not independently re-verified**: whether the same failure also reproduces from a `//`-style comment sitting in an actual markup position (where `skip_noncode_markup` *does* special-case `//` and should skip the whole line in one jump) — several such comments were fixed in the same batch as the setup-code one before re-testing, so it's not yet confirmed whether those were independently required or incidental. A follow-up audit should isolate each case with its own minimal repro before writing a fix recipe.
+- **Impact:** LOW-frequency (needs a specific split-comment style most authors won't naturally write) but confusing when hit — the reported diagnostic location is the component's opening brace, arbitrarily far from the actual malformed comment, making it hard to spot without bisection.
+- **Workaround (not a fix):** keep every parenthetical phrase inside a single comment line; rephrase with em-dashes/semicolons instead of parens if a comment must wrap. Applied throughout `doom_game_screen.guitkx`.
+- **Suggested fix surface for a follow-up session:** `guitkx_lexer.gd find_matching_markup`'s initial mode (should setup/prep code scan in CODE mode, switching to MARKUP only once the `return (` window is entered?), and/or wherever `guitkx_markup.gd _parse_component_at`'s outer body-bclose scan invokes it. Write minimal per-case repros (setup-code `#` comment; markup-position `//` comment) as new `tests/contract` fixtures before touching the scanner, per this document's own "write the failing test first" convention.

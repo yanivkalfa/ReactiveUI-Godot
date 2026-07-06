@@ -2,11 +2,12 @@ class_name GameLogic
 extends RefCounted
 
 ## Faithful port of the Unity ReactiveUIToolKit `DoomGame` sample's `GameLogic.uitkx` --
-## the simulation + sector/portal raycasting renderer. This file currently ports only
-## the Phase-1 scope of plans/DOOM_GAME_GUITKX_PORT_PLAN.md: `new_game` and the renderer
-## (`cast_frame`/`build_column_sector`/`cast_ray`) needed to draw one static frame.
-## Player movement/physics, weapons, AI, and damage are the original's Tick() path --
-## ported in a later phase (§3 of the plan: Phase 2 input/movement, Phase 3 combat/AI).
+## the simulation + sector/portal raycasting renderer. Ports through Phase 2 of
+## plans/DOOM_GAME_GUITKX_PORT_PLAN.md: `new_game`, the renderer (`cast_frame`/
+## `build_column_sector`/`cast_ray`), and `tick`/`update_player` (movement, mouse-look,
+## jump/crouch/step-up, collision). Weapons, monster/projectile/pickup AI, damage, and
+## the door FSM are the original's Tick() path too, but ported in Phase 3 (combat/AI/
+## pickups/doors) -- see the "Tick / Player" section below for exactly what's deferred.
 ##
 ## `ref GameState`/`ref Sector`/etc in the original become plain mutation, since GDScript
 ## objects are already reference types (no `ref` keyword needed) -- see plan §1.4.
@@ -91,6 +92,326 @@ static func new_game(level: int, diff: int) -> DoomTypes.GameState:
 
 	cast_frame(st)
 	return st
+
+# ───── Tick / Player (Phase 2 scope) ─────
+# Doors, sector-light animation, monster/projectile/pickup updates, and weapon
+# firing are also part of the original's Tick()/UpdatePlayer() path, but are
+# ported in Phase 3 (combat/AI/pickups/doors) -- every deferred call site below
+# is marked with a comment, not silently dropped. Closed doors still correctly
+# block movement in the meantime (blocks_movement_z checks door_state), they
+# just never open since update_doors isn't ported yet.
+
+static func tick(st: DoomTypes.GameState, dt: float, input: DoomTypes.InputCmd) -> void:
+	if st.game_over or st.victory:
+		st.time_accum += dt
+		advance_face(st, dt) # still advance face timer for fun
+		cast_frame(st)
+		return
+	st.tic += 1
+	st.time_accum += dt
+
+	update_player(st, input, dt)
+	# Phase 3 (original): update_doors(st, dt); update_sectors(st, dt) -- door
+	# FSM + sector light animation.
+	# Phase 3 (original): for i in range(1, st.mobj_count + 1): update_mobj(st, i, dt)
+	# -- monsters/projectiles/pickups are frozen until AI/combat lands.
+
+	compact_mobjs(st)
+	advance_face(st, dt)
+
+	# decay flashes
+	if st.player.hurt_flash > 0:
+		st.player.hurt_flash = maxf(0.0, st.player.hurt_flash - dt * 2.0)
+	if st.player.pickup_flash > 0:
+		st.player.pickup_flash = maxf(0.0, st.player.pickup_flash - dt * 3.0)
+	if st.player.muzzle_flash > 0:
+		st.player.muzzle_flash = maxf(0.0, st.player.muzzle_flash - dt)
+	if st.player.message_timer > 0:
+		st.player.message_timer = maxf(0.0, st.player.message_timer - dt)
+
+	# Phase 8 (original): age hitscan tracers (ms units; capped at LIFE so dead
+	# slots are skipped at render time and naturally overwritten by ring index).
+	if st.tracers != null:
+		var dt_ms := dt * 1000.0
+		for i in range(st.tracers.size()):
+			if st.tracers[i].age_ms < DoomTypes.C.TRACER_LIFE_MS:
+				st.tracers[i].age_ms = minf(DoomTypes.C.TRACER_LIFE_MS, st.tracers[i].age_ms + dt_ms)
+
+	cast_frame(st)
+
+static func update_player(st: DoomTypes.GameState, input: DoomTypes.InputCmd, dt: float) -> void:
+	var p := st.player
+	if not p.alive:
+		return
+
+	# Mouse-look (ALWAYS ON)
+	p.angle += input.yaw_delta
+	p.pitch -= input.pitch_delta * DoomTypes.C.MOUSE_PITCH_SENS
+	p.pitch = clampf(p.pitch, -DoomTypes.C.MAX_PITCH, DoomTypes.C.MAX_PITCH)
+
+	# Keyboard turn
+	if input.turn_left:
+		p.angle -= DoomTypes.C.TURN_SPEED * dt
+	if input.turn_right:
+		p.angle += DoomTypes.C.TURN_SPEED * dt
+
+	var speed: float = DoomTypes.C.MOVE_SPEED * (DoomTypes.C.RUN_MULT if input.run else 1.0)
+	var strafe: float = DoomTypes.C.STRAFE_SPEED * (DoomTypes.C.RUN_MULT if input.run else 1.0)
+	var fwd_x := cos(p.angle)
+	var fwd_y := sin(p.angle)
+	var rgt_x := -fwd_y
+	var rgt_y := fwd_x
+
+	var dx := 0.0
+	var dy := 0.0
+	if input.forward:
+		dx += fwd_x * speed * dt
+		dy += fwd_y * speed * dt
+	if input.back:
+		dx -= fwd_x * speed * dt
+		dy -= fwd_y * speed * dt
+	if input.strafe_right:
+		dx += rgt_x * strafe * dt
+		dy += rgt_y * strafe * dt
+	if input.strafe_left:
+		dx -= rgt_x * strafe * dt
+		dy -= rgt_y * strafe * dt
+
+	move_actor(st, p, dx, dy, DoomTypes.C.PLAYER_RADIUS, true)
+
+	# Phase 2 (original): keep player.sector_id tracking the current sector for
+	# the sector-based renderer/collision. Cheap hint-walk; falls back to brute
+	# force if hint fails.
+	if st.sector_map.is_valid():
+		p.sector_id = Raycast.point_in_sector_from_hint(st.sector_map, Vector2(p.x, p.y), p.sector_id)
+
+	# Phase 7 (original): vertical movement -- gravity, jump, crouch. Player
+	# feet (Z) are anchored to the current sector floor unless airborne.
+	update_player_vertical(st, p, input, dt)
+
+	if absf(dx) > 0.001 or absf(dy) > 0.001:
+		p.bob_t += dt * 8.0
+
+	# exit?
+	var gx := int(p.x)
+	var gy := int(p.y)
+	var c := st.map.at_safe(gx, gy)
+	if c.kind == DoomTypes.CellKind.EXIT:
+		if st.boss_exit_gated and any_boss_alive(st):
+			if (st.tic % 60) == 0:
+				p.message_text = "Kill the boss first."
+				p.message_timer = 1.5
+		else:
+			st.victory = true
+			return
+	if c.kind == DoomTypes.CellKind.LIQUID:
+		# damage 1hp/sec for nukage etc
+		if (st.tic % 30) == 0:
+			hurt(st, p, 1, 0)
+
+	# weapon switch
+	if input.weapon_switch != 0:
+		var idx: int = input.weapon_switch - 1
+		if idx >= 0 and idx < p.owned_weapons.size() and p.owned_weapons[idx]:
+			p.weapon = idx
+
+	# shooting
+	if p.shoot_cooldown > 0:
+		p.shoot_cooldown -= dt
+	# Phase 3 (original): if input.attack and p.shoot_cooldown <= 0: fire_weapon(st)
+	# -- weapons aren't ported yet; the Attack input is captured but does nothing.
+
+	# use key (open doors)
+	# Phase 3 (original): if input.use: try_use(st) -- doors aren't ported yet;
+	# the Use input is captured but does nothing.
+
+# Phase 7 (original): vertical physics for the player. Tracks Z (feet height)
+# against the floor of the player's current sector. Jump applies upward
+# velocity when on the ground; crouch lowers the view height temporarily.
+static func update_player_vertical(st: DoomTypes.GameState, p: DoomTypes.PlayerState, input: DoomTypes.InputCmd, dt: float) -> void:
+	var floor_z := 0.0
+	var ceil_z := 1.0
+	if st.sector_map.is_valid() and p.sector_id >= 0:
+		var sec: DoomTypes.Sector = st.sector_map.sectors[p.sector_id]
+		floor_z = standing_floor_in(sec, p.z, DoomTypes.C.STEP_HEIGHT)
+		ceil_z = ceiling_above_in(sec, p.z, DoomTypes.C.PLAYER_HEIGHT)
+	var on_ground: bool = p.z <= floor_z + 0.001 and p.z_vel <= 0.0
+	# Edge-detect: only jump on the rising edge of the Jump key, not while held.
+	var jump_edge: bool = input.jump and not p.jump_held_prev
+	p.jump_held_prev = input.jump
+	if on_ground and jump_edge:
+		p.z_vel = DoomTypes.C.JUMP_VELOCITY
+		on_ground = false
+	if not on_ground:
+		p.z_vel -= DoomTypes.C.GRAVITY * dt
+		p.z += p.z_vel * dt
+		if p.z <= floor_z:
+			p.z = floor_z
+			p.z_vel = 0.0
+		# Bonk into ceiling
+		if p.z + DoomTypes.C.PLAYER_HEIGHT > ceil_z:
+			p.z = ceil_z - DoomTypes.C.PLAYER_HEIGHT
+			if p.z_vel > 0.0:
+				p.z_vel = 0.0
+	else:
+		p.z = floor_z
+	# Crouch lowers view height (smooth)
+	var target_view: float = DoomTypes.C.CROUCH_HEIGHT if input.crouch else DoomTypes.C.PLAYER_VIEW_HEIGHT
+	p.view_height = lerpf(p.view_height, target_view, minf(1.0, dt * 8.0))
+
+## `actor` is either `st.player` or a `DoomTypes.Mobj` -- both independently
+## declare `x`/`y` fields; GDScript's duck typing reaches either via plain
+## property access, standing in for the original's `ref float x, ref float y`
+## (GDScript has no reference parameters for value types like float, but
+## mutating a shared object's fields directly achieves the same effect and is
+## the more idiomatic GDScript translation -- see plan §1.4).
+static func move_actor(st: DoomTypes.GameState, actor, dx: float, dy: float, radius: float, is_player: bool, self_idx: int = -1) -> void:
+	var x: float = actor.x
+	var y: float = actor.y
+	var nx := x + dx
+	var ny := y + dy
+	# X axis
+	if not collides_at(st, nx, y, radius, is_player, self_idx):
+		x = nx
+	if not collides_at(st, x, ny, radius, is_player, self_idx):
+		y = ny
+	actor.x = x
+	actor.y = y
+
+	# Phase 7 (original): step-up. After horizontal motion, snap player Z up to
+	# the tallest cell footprint they're standing on (within STEP_HEIGHT).
+	# Phase 9 (original): step-up uses the actor's CURRENT foot_z as the lower
+	# bound, not 0 -- otherwise dropping into a pit at Z<0 trampolines the
+	# player back to Z=0 because every neighbor cell's floor (Z=0) is greater
+	# than the trivially-initialized best_floor.
+	if is_player:
+		var foot_z := st.player.z
+		var gx0 := int(x - radius)
+		var gx1 := int(x + radius)
+		var gy0 := int(y - radius)
+		var gy1 := int(y + radius)
+		var best_floor := foot_z
+		for gy in range(gy0, gy1 + 1):
+			for gx in range(gx0, gx1 + 1):
+				var fz: float = st.map.floor_at(gx, gy, foot_z, DoomTypes.C.STEP_HEIGHT)
+				if fz > best_floor and fz - foot_z <= DoomTypes.C.STEP_HEIGHT + 0.001:
+					best_floor = fz
+		# Only auto-snap up while on or near the ground; jumping/falling is
+		# handled by gravity in update_player_vertical.
+		if best_floor > foot_z and absf(st.player.z_vel) < 0.01:
+			st.player.z = best_floor
+			st.player.z_vel = 0.0
+
+static func collides_at(st: DoomTypes.GameState, x: float, y: float, r: float, is_player: bool, self_idx: int) -> bool:
+	# wall collision with circle vs cell. For the player we use Z-aware
+	# blocking so they can step over short ledges and crouch under low
+	# ceilings; monsters retain the old 2D blocker semantics.
+	var gx0 := int(x - r)
+	var gx1 := int(x + r)
+	var gy0 := int(y - r)
+	var gy1 := int(y + r)
+	var foot_z: float = st.player.z if is_player else 0.0
+	var head_z: float
+	if is_player:
+		head_z = st.player.z + (DoomTypes.C.CROUCH_HEIGHT + 0.15 if st.player.view_height < DoomTypes.C.PLAYER_VIEW_HEIGHT else DoomTypes.C.PLAYER_HEIGHT)
+	else:
+		head_z = 0.7
+	for gy in range(gy0, gy1 + 1):
+		for gx in range(gx0, gx1 + 1):
+			var blocks: bool = st.map.blocks_movement_z(gx, gy, foot_z, head_z, DoomTypes.C.STEP_HEIGHT) if is_player else st.map.blocks_movement(gx, gy)
+			if blocks:
+				var cx: float = clampf(x, gx, gx + 1)
+				var cy: float = clampf(y, gy, gy + 1)
+				var ddx := x - cx
+				var ddy := y - cy
+				if ddx * ddx + ddy * ddy < r * r:
+					return true
+	# mobj-vs-mobj (only for monsters)
+	if not is_player and self_idx > 0:
+		# don't push other monsters too aggressively, but block on big ones
+		for j in range(1, st.mobj_count + 1):
+			if j == self_idx:
+				continue
+			var m: DoomTypes.Mobj = st.mobjs[j]
+			if m == null or m.id == 0 or (not is_monster(m.kind) and m.kind != DoomTypes.MobjKind.BARREL):
+				continue
+			if m.health <= 0:
+				continue
+			var dx2 := x - m.x
+			var dy2 := y - m.y
+			var r2 := r + m.radius
+			if dx2 * dx2 + dy2 * dy2 < r2 * r2 * 0.7:
+				return true
+		# collide with player
+		var pdx := x - st.player.x
+		var pdy := y - st.player.y
+		var pr := r + DoomTypes.C.PLAYER_RADIUS
+		if pdx * pdx + pdy * pdy < pr * pr:
+			return true
+	return false
+
+static func hurt(st: DoomTypes.GameState, p: DoomTypes.PlayerState, dmg_in: int, dir_hint: int) -> void:
+	if not p.alive:
+		return
+	var dmg := dmg_in
+	var diff: int = st.difficulty
+	if diff == 0:
+		dmg = int(dmg * 0.6)
+	elif diff == 2:
+		dmg = int(dmg * 1.5)
+	if dmg < 1:
+		dmg = 1
+
+	if p.armor_class > 0 and p.armor > 0:
+		var frac: float = 0.5 if p.armor_class == 2 else 0.33
+		var absorb: int = mini(p.armor, int(dmg * frac))
+		p.armor -= absorb
+		dmg -= absorb
+		if p.armor <= 0:
+			p.armor_class = 0
+	p.health -= dmg
+	p.hurt_flash = minf(1.0, p.hurt_flash + dmg / 60.0)
+	p.last_damage_dir = dir_hint
+	p.face_state = 6
+	p.face_timer = 0.5 # hurt face
+	if p.health <= 0:
+		p.health = 0
+		p.alive = false
+		p.face_state = 7
+		st.game_over = true
+
+## Widened from the original's `AdvanceFace(ref PlayerState p, dt)` to also
+## take `st` -- needed to call the single consolidated `frand` RNG (plan
+## §1.6, which replaces the original's stray `UnityEngine.Random.value`
+## jitter here with the same deterministic LCG used everywhere else, fixing
+## a real, minor inconsistency in the reference).
+static func advance_face(st: DoomTypes.GameState, dt: float) -> void:
+	var p := st.player
+	p.face_timer -= dt
+	if p.face_timer > 0:
+		return
+	if not p.alive:
+		p.face_state = 7
+		p.face_timer = 1.0
+		return
+	if p.hurt_flash > 0.3:
+		p.face_state = 6
+		p.face_timer = 0.4
+		return
+	var hp := p.health
+	var bucket: int
+	if hp >= 80:
+		bucket = 1
+	elif hp >= 60:
+		bucket = 2
+	elif hp >= 40:
+		bucket = 3
+	elif hp >= 20:
+		bucket = 4
+	else:
+		bucket = 5
+	p.face_state = bucket
+	p.face_timer = 0.45 + frand(st) * 0.4
 
 # ───── Mobj pool ─────
 
