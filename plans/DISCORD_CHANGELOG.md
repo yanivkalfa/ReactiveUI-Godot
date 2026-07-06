@@ -36,6 +36,38 @@ The repo is now dual-license-ready for distribution: an **MIT `LICENSE`** landed
 
 ---
 
+## [IDE 0.8.7] - 2026-07-06
+
+**Picks up the same compiler/formatter correctness fixes as Reactive UI 0.8.5** (see below) — the language server's markup/formatting logic is kept byte-for-byte in sync with the Godot addon, so VS Code and VS 2022 users get the identical fix, not a lagging port.
+
+Also: `guitkx.*` settings now apply live — the server re-reads them on a config-change notification instead of only at startup, so toggling `enableGdscriptAnalysis` etc. no longer needs a restart (VS Code rebuilds its client automatically; VS 2022's Tools > Options now pushes changes immediately too). `enableGdscriptAnalysis` is now actually enforced server-side across every request handler (previously persisted but silently unenforced on VS 2022). A closed file's diagnostics no longer linger in the Problems panel until it's reopened. `.guitkx` typing defaults on both editors now match the formatter's canonical spaces-at-2 style (previously tabs/4, so every hand-typed line got rewritten by the next format-on-save). The shipped VS Code package no longer bundles the language server's compiled test code.
+
+VS 2022 only: format-on-save now times out after 2s instead of risking an indefinite UI-thread hang; "Restart Language Server" now warns when Visual Studio's one-time-per-session auto-restart budget is already spent instead of promising a restart that won't happen; the server's stderr is now captured in a new "GUITKX Language Server" Output pane so a hang or crash is diagnosable without attaching a debugger.
+
+Reinstall **GUITKX 0.8.7** (VS Code + VS 2022).
+
+---
+
+## [Editor 0.6.2] - 2026-07-06
+
+**Format-on-save now tells you when it skipped formatting.** If a `.guitkx` file has a syntax error the formatter can't safely reflow around, `format()` used to fall back to leaving the buffer untouched — and report success identically to "already canonical," so a stale, unformatted file looked the same as a freshly-formatted one. The in-Godot editor now shows a one-time-per-file alert ("*\<file\> has syntax errors -- format skipped.*") instead of silently no-op'ing.
+
+Update to **Reactive UI Editor 0.6.2** (copy `addons/reactive_ui_editor/` into your project; needs `reactive_ui` 0.8.5+).
+
+---
+
+## [0.8.5] - 2026-07-06
+
+**A correctness sweep across the `.guitkx` compiler, formatter, and Fast Refresh — no API changes.** A full audit turned up (and this release fixes) 7 confirmed bugs. The big one: every scan that locates a component/directive body, a `@match` body, or a `return ( ... )` window used to treat markup content as plain GDScript — so a literal `#` in element text (`Score #3`), a hex color, or a markup comment (`//`, `/* */`, `<!-- -->`) containing `}`/`)` could miscount the delimiters being balanced and silently shift where a body was believed to end (a miscompile, not just a parse error). These scans now understand markup lexis by default, switching to GDScript lexis only inside `{expr}` islands and directive headers.
+
+Also fixed: the formatter no longer corrupts the interior of a triple-quoted string or drops blank lines inside a directive body's prep code; a truncated closing tag at the very end of a window now fails cleanly instead of scanning past it; an attribute value with an embedded `"` now falls back to verbatim instead of risking a corrupting re-emit; `@uss`/`@theme` no longer false-flags a `uid://` resource path as missing; and Fast Refresh's component-vs-module classification is no longer a fragile source-text guess (a comment containing `static func render(` could fool it) — generated components now carry an unambiguous marker read via reflection.
+
+Also documented (not changed): hook dependency-array comparison is value-based (deep `==`), not identity-based like React's `Object.is` — intentional, now called out in the README.
+
+Update to **Reactive UI 0.8.5** (copy `addons/reactive_ui/` into your project).
+
+---
+
 ## [IDE 0.8.6] - 2026-07-04
 
 **Deleting a component's whole folder now actually gets caught — on both the fast path and the slow one.** Two holes, closed together: the extension's folder-delete handling (shipped in 0.8.5) turned out to be correct but *unreachable* — VS Code only delivers folder-delete events to a watcher whose glob matches the folder path itself, and the registration listed per-extension file globs. It's a single `**` watcher now. Separately, the Godot addon's watch poll only went hot on stale mtimes — but a deleted folder takes its outputs down with it, so nothing looked stale and `GUITKX2107` waited for an unrelated save or editor focus-in. The poll now re-reads each tracked file's sidecar references every tick and goes hot on any state mismatch (flagged-but-restored, or missing-but-unflagged), settling once everything matches again.
