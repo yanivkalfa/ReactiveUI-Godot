@@ -419,10 +419,13 @@ function resPathFor(fsPath: string): string | null {
 // --- formatting (textDocument/formatting + rangeFormatting) — in-process, no Godot binary needed ---
 
 function formatOptsFor(uri: string): Partial<FmtOptions> {
-  // Phase D: Unity-exact default — SPACES at width 2 (the [guitkx] configurationDefaults mirror
-  // [uitkx]'s). Embedded-GDScript reflow converts gdscript-fmt's tab depth to the same unit, so
-  // the old mixed-indent hazard is handled at the splice. A project guitkx.config.json (walk-up,
-  // like Prettier / uitkx.config.json) overrides printWidth / indentStyle / indentSize / wrapping.
+  // Phase D: Unity-exact default — SPACES at width 2. G-19: this is the canon BOTH editors' typing
+  // defaults must match too (VS Code's `[guitkx]` configurationDefaults in package.json, VS2022's
+  // GuitkxEditorDefaults) — keep all three in lockstep, or every format-on-save churns the whole
+  // file's indentation against what the user just typed. Embedded-GDScript reflow converts
+  // gdscript-fmt's tab depth to the same unit, so the old mixed-indent hazard is handled at the
+  // splice. A project guitkx.config.json (walk-up, like Prettier / uitkx.config.json) overrides
+  // printWidth / indentStyle / indentSize / wrapping.
   let dir = "";
   try {
     dir = dirname(uriToProjectPath(uri));
