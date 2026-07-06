@@ -347,3 +347,15 @@ static func build_tracer_list(state: DoomTypes.GameState) -> Array:
 		list.append(e)
 
 	return list
+
+## Small `style` dict builders for the viewport markup. Not part of the
+## original DoomGameScreenLogic.uitkx -- exist purely so doom_game_screen.guitkx's
+## `@for` bodies pass an already-built Dictionary rather than writing an inline
+## `{...}` dict literal inside a directive body (a `.guitkx` compiler markup/
+## code-lexis scanning limitation for that specific construct, unrelated to
+## any of the ported game logic itself).
+static func mono_tint_style(v: float) -> Dictionary:
+	return {"modulate": Color(v, v, v, 1.0)}
+
+static func tint_style(c: Color) -> Dictionary:
+	return {"modulate": c}

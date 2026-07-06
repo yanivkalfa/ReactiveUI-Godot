@@ -1,0 +1,252 @@
+@class_name DoomGameScreen
+component DoomGameScreen {
+  # Phase 1 (plans/DOOM_GAME_GUITKX_PORT_PLAN.md): a single static frame, no
+  # game loop/input yet -- those are Phase 2/3. useMemo with empty deps
+  # builds the GameState exactly once, mirroring "no Tick() yet."
+  var state = useMemo(func(): return GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL), [])
+
+  var walls = DoomTextures.walls()
+  var sprite_texs = DoomTextures.sprites()
+  var sky_tex = DoomTextures.sky()
+
+  # Faithful port of DoomGameScreen.uitkx's per-column texture windowing --
+  # original: BackgroundSize + BackgroundPositionX/Y + BackgroundRepeat-Y --
+  # select the single texel column at `tex_u` out of the 64x64 wall texture.
+  # NOTE: the original then TILES that column vertically every `texPx`
+  # screen pixels -- 1 world-Z unit equals 64 texels; this port instead
+  # stretches it once across the segment's full height via TextureRect plus
+  # STRETCH_SCALE -- a flagged, not-yet-visually-verified simplification,
+  # since Godot's tiling-capable Control -- NinePatchRect -- needs hands-on
+  # testing this port couldn't do. First thing to check once this renders.
+  var wall_atlas = func(tex_idx: int, tex_u: float) -> AtlasTexture:
+    var atlas := AtlasTexture.new()
+    atlas.atlas = walls[tex_idx]
+    var u := clampf(tex_u, 0.0, 0.984375) # keep a full 1px column in bounds (63/64)
+    atlas.region = Rect2(floor(u * 64.0), 0, 1, 64)
+    return atlas
+
+  # Sky panning approximation: select a horizontal window of the 512-wide
+  # sky texture based on player angle (wrapping around 360 degrees), then
+  # stretch it to fill the sky rect. Also flagged for visual verification --
+  # the original pans an oversized image under a fixed-size crop window,
+  # which has no direct Godot Control equivalent used here.
+  var sky_atlas = func() -> AtlasTexture:
+    var sky_w: float = sky_tex.get_width()
+    var window_w: float = sky_w * (DoomTypes.C.HALF_FOV * 2.0) / TAU
+    var u: float = fmod((state.player.angle / TAU) * sky_w, sky_w)
+    if u < 0.0:
+      u += sky_w
+    var atlas := AtlasTexture.new()
+    atlas.atlas = sky_tex
+    atlas.region = Rect2(u, 0, window_w, sky_tex.get_height())
+    return atlas
+
+  var ceiling_entries = DoomGameScreenLogic.build_merged_ceiling_bands(state)
+  var floor_entries = DoomGameScreenLogic.build_merged_floor_bands(state)
+  var extra_entries = DoomGameScreenLogic.build_extra_seg_list(state)
+  var sprite_entries = DoomGameScreenLogic.build_sprite_list(state)
+  var tracer_entries = DoomGameScreenLogic.build_tracer_list(state)
+
+  var sky_h = DoomTypes.C.VIEWPORT_H * 0.5 + state.player.pitch + state.player.view_shift_px
+  var horizon_y = DoomTypes.C.VIEWPORT_H * 0.5 + state.player.pitch
+
+  return (
+    <Control position={ Vector2(0, 0) } size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) } style={ {"clip": true} }>
+      // Sky
+      <TextureRect
+        key="sky"
+        position={ Vector2(0, 0) }
+        size={ Vector2(DoomTypes.C.VIEWPORT_W, sky_h) }
+        texture={ sky_atlas.call() }
+        stretch_mode={ TextureRect.STRETCH_SCALE }
+      />
+      // Floor backstop: a solid ground-color rect from horizon to bottom of
+      // viewport so any seam between merged floor bands reveals ground, not
+      // the dark void.
+      <ColorRect
+        key="floor_backstop"
+        mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+        position={ Vector2(0, horizon_y) }
+        size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+        color={ Color(0.34, 0.29, 0.22, 1.0) }
+      />
+      // Phase 8 (original): per-sector CEILING bands, mirror of floor
+      // bands. Painted BEFORE walls so any sub-pixel rounding leaves wall
+      // texels on top -- walls are pre-clipped to the same window so
+      // there's no overdraw.
+      @for (cb in ceiling_entries) {
+        var ctop = cb.band.top_px - 2.0 # 2px overdraw upward to seal sky seam
+        var cbot = cb.band.bot_px + 4.0 # 4px overdraw downward so wall texels overlap (no black hairline)
+        var ch = cbot - ctop
+        var cleft = cb.col_index * DoomTypes.C.STRIP_W - 1.0
+        var cw = DoomTypes.C.STRIP_W + 2.0
+        var clift = clampf(cb.band.ceiling_z * 0.04, 0.0, 0.20)
+        var clight = cb.band.light / 255.0
+        # Ceiling base color: cool grey-blue, brightened by sector light.
+        # Always >= backstop brightness so distant bands don't read as holes.
+        var cbright = maxf(1.0, 0.55 + clight * 0.85)
+        var cr = clampf((0.22 + clift) * cbright, 0.0, 1.0)
+        var cg = clampf((0.22 + clift) * cbright, 0.0, 1.0)
+        var cbb = clampf((0.26 + clift) * cbright, 0.0, 1.0)
+        if ch < 1.0:
+          return null
+        return (
+          <ColorRect
+            key={ "cb" + str(cb.col_index) + "_" + str(cb.slab_id) }
+            mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+            position={ Vector2(cleft, ctop) }
+            size={ Vector2(cw, ch) }
+            color={ Color(cr, cg, cbb, 1.0) }
+          />
+        )
+      }
+      // Phase 7 (original): per-sector floor BANDS. NOTE: build_merged_floor_bands
+      // does NOT actually horizontally-merge adjacent columns -- a real, faithfully
+      // ported characteristic of the original, see its own doc comment vs. its
+      // actual col_start==col_end body -- this stays one rect per column per band.
+      @for (mb in floor_entries) {
+        var top = mb.top_px
+        var h = mb.bot_px - top + 4.0
+        var left = mb.col_start * DoomTypes.C.STRIP_W - 0.5
+        var w = DoomTypes.C.STRIP_W + 1.0
+        var lift = clampf(mb.floor_z * 0.10, -0.1, 0.25)
+        var light = mb.light / 255.0
+        # Floor band must NEVER render darker than the backstop floor color
+        # (0.34, 0.29, 0.22) -- otherwise distant bands paint as dark holes
+        # on top of the brighter backstop, looking see-through.
+        var bright = maxf(1.0, 0.6 + light * 0.8)
+        var r = clampf((0.34 + lift) * bright, 0.0, 1.0)
+        var g = clampf((0.29 + lift) * bright, 0.0, 1.0)
+        var bl = clampf((0.22 + lift * 0.5) * bright, 0.0, 1.0)
+        if h < 1.0:
+          return null
+        return (
+          <ColorRect
+            key={ "fb" + str(mb.col_start) + "_" + str(mb.slab_id) }
+            mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+            position={ Vector2(left, top) }
+            size={ Vector2(w, h) }
+            color={ Color(r, g, bl, 1.0) }
+          />
+        )
+      }
+      // Step-down rim: when standing on top of a platform looking outward,
+      // the visible silhouette of where the platform ends is the TOP edge
+      // of the front floor band at the portal hop into a lower sector.
+      @for (mb in floor_entries) {
+        if not mb.rim_at_far:
+          return null
+        return (
+          <ColorRect
+            key={ "frim" + str(mb.col_start) + "_" + str(mb.slab_id) }
+            mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+            position={ Vector2(mb.col_start * DoomTypes.C.STRIP_W - 0.5, mb.top_px - 1.0) }
+            size={ Vector2(DoomTypes.C.STRIP_W + 1.0, 2.0) }
+            color={ Color(0.95, 0.85, 0.55, 1.0) }
+          />
+        )
+      }
+      // Phase 3 (original): extra wall segs (upper/lower portals). Render
+      // BEFORE main strips so the closer terminal wall stays on top.
+      @for (ex in extra_entries) {
+        var ecol = ex.seg
+        var etop = ecol.top_px
+        var eh = ecol.bot_px - ecol.top_px
+        # Floor min-brightness so distant step risers don't go black.
+        var elight_f = maxf(0.45, ecol.light_level / 255.0)
+        if eh < 1.0:
+          return null
+        return (
+          <TextureRect
+            key={ "x" + str(ex.col_index) + "_" + str(ex.seg_index) }
+            mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+            position={ Vector2(ex.col_index * DoomTypes.C.STRIP_W, etop) }
+            size={ Vector2(DoomTypes.C.STRIP_W + 2.0, eh) }
+            texture={ wall_atlas.call(ecol.wall_tex_idx, ecol.tex_u) }
+            stretch_mode={ TextureRect.STRETCH_SCALE }
+            style={ DoomGameScreenLogic.mono_tint_style(elight_f) }
+          />
+        )
+      }
+      // Rim outline: chalk-line at the top edge of every step riser.
+      // Adjacent ray columns share the same step boundary so these stack
+      // into one continuous outline along the platform's outer rim.
+      @for (ex in extra_entries) {
+        var ecol = ex.seg
+        var reh = ecol.bot_px - ecol.top_px
+        var not_riser = not ecol.is_riser
+        if not_riser or reh < 1.0:
+          return null
+        return (
+          <ColorRect
+            key={ "rim" + str(ex.col_index) + "_" + str(ex.seg_index) }
+            mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+            position={ Vector2(ex.col_index * DoomTypes.C.STRIP_W, ecol.top_px) }
+            size={ Vector2(DoomTypes.C.STRIP_W + 2.0, 2.0) }
+            color={ Color(0.95, 0.85, 0.55, 1.0) }
+          />
+        )
+      }
+      // Wall strips -- the main per-ray-column terminal wall.
+      @for (i in range(DoomTypes.C.VIEW_W)) {
+        var col = state.frame.columns[i].main
+        var top = col.top_px
+        var h = col.bot_px - col.top_px
+        var light_f = col.light_level / 255.0
+        var vert_dim = 0.85 if col.hit_vertical else 1.0
+        var shade = light_f * vert_dim
+        if col.is_sky:
+          return null
+        return (
+          <TextureRect
+            key={ "w" + str(i) }
+            position={ Vector2(i * DoomTypes.C.STRIP_W, top) }
+            size={ Vector2(DoomTypes.C.STRIP_W + 2.0, h) }
+            texture={ wall_atlas.call(col.wall_tex_idx, col.tex_u) }
+            stretch_mode={ TextureRect.STRETCH_SCALE }
+            style={ DoomGameScreenLogic.mono_tint_style(shade) }
+          />
+        )
+      }
+      // Sprite billboards.
+      @for (sprite in sprite_entries) {
+        return (
+          <TextureRect
+            key={ "s" + str(sprite.id) }
+            position={ Vector2(sprite.screen_x - sprite.size * 0.5, sprite.screen_y - sprite.size * 0.5) }
+            size={ Vector2(sprite.size, sprite.size) }
+            texture={ sprite_texs[sprite.sprite_idx] }
+            stretch_mode={ TextureRect.STRETCH_SCALE }
+            style={ DoomGameScreenLogic.tint_style(Color(sprite.tint.r * sprite.light, sprite.tint.g * sprite.light, sprite.tint.b * sprite.light, 1.0)) }
+          />
+        )
+      }
+      // Phase 8 (original): hitscan tracer streaks. One rotated rect per
+      // live tracer. Painted after sprites so they read as in-world --
+      // over enemies -- but never cover the gun.
+      @for (tr in tracer_entries) {
+        var tcg = 0.55 if tr.color_idx == 1 else 0.92
+        var tcb = 0.25 if tr.color_idx == 1 else 0.45
+        return (
+          <ColorRect
+            key={ "tr" + str(tr.slot) }
+            mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+            position={ Vector2(tr.left, tr.top) }
+            size={ Vector2(tr.length, DoomTypes.C.TRACER_THICKNESS_PX) }
+            color={ Color(1.0, tcg, tcb, tr.alpha) }
+            style={ {"rotation": tr.angle_deg, "pivot": Vector2(0.0, DoomTypes.C.TRACER_THICKNESS_PX * 0.5)} }
+          />
+        )
+      }
+      // Crosshair.
+      <ColorRect
+        key="crosshair"
+        mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+        position={ Vector2(DoomTypes.C.VIEWPORT_W * 0.5 - 4.0, DoomTypes.C.VIEWPORT_H * 0.5 - 4.0) }
+        size={ Vector2(8.0, 8.0) }
+        color={ Color(0.95, 0.95, 0.5, 0.7) }
+        style={ {"corner_radius": 4} }
+      />
+    </Control>
+  )
+}
