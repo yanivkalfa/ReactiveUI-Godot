@@ -1,9 +1,12 @@
 # VS Code → VS2022 Extension Parity Plan
 
 > **Goal:** every user-visible capability of the guitkx VS Code extension (0.8.6) exists in the
-> VS2022 extension. **Status: Phases 0-2 done, Phase 3 in progress** — inventories complete
-> (2026-07-05), reviewed + web-verified against Microsoft docs the same day, execution ongoing on
-> `feat/vs2022-parity`.
+> VS2022 extension. **Status: all 5 phases implemented and building clean on `feat/vs2022-parity`
+> (2026-07-06) — zero interactive verification done yet.** Every phase compiles, and every VSIX
+> artifact (both pkgdefs, the grammar, the language-configuration file, the command resource) has
+> been confirmed present and correct by inspecting the built `.vsix` directly. Nothing has been
+> driven through a real VS2022 UI — see each phase's verification checklist for what to test first
+> (Phase 3's format-on-save is the single riskiest item; start there).
 >
 > **2026-07-06 — pre-existing bug found and fixed, independent of this campaign's own scope:**
 > `guitkx.pkgdef` (the file that registers the TextMate grammar — i.e. **all `.guitkx` syntax
@@ -400,39 +403,41 @@ pre-existing bug this phase surfaced (`guitkx.pkgdef` never actually shipping in
 `<None>`→`<Content>` bug fix), `.csproj` (5 new `<Compile>` items + 1 new `<Content>` item).
 
 
-## 6. Phase 4 — Commands (bucket B3)
+## 6. Phase 4 — Commands (bucket B3) — **DONE 2026-07-06**
 
 **Outcome:** row 22 (+ the Phase 1 restart hook).
 
-1. `.vsct` with one command: **GUITKX: Restart Language Server** (Tools menu + context menu of
-   guitkx editors). Wire through the `AsyncPackage` from Phase 1.
-2. Restart mechanics — **there is no Microsoft-documented, supported restart API for a legacy MEF
-   `ILanguageClient`** (verified 2026-07-05: the official "Adding an LSP extension" walkthrough and
-   the Microsoft sample only cover one-shot `ActivateAsync`/`StartAsync`; `ILanguageClientBroker`'s
-   entire public surface is `LoadAsync(metadata, client)` — no `Stop`/`Restart`/`Reload`). Investigate
-   in order, budgeting for genuine API risk at every step (this is the correct framing, not "pick a,
-   done"):
-   a. Call `ILanguageClientBroker.LoadAsync()` again — the workaround described in a Microsoft Q&A
-      thread, **with known reliability caveats**: reported to work only once per client instance
-      unless the old one is disposed first, and a related Roslyn issue documents a race
-      (`InvalidOperationException: The language server has not yet shutdown`) on repeated attempts.
-      Treat as first-choice-with-caveats, not a guaranteed contract — wrap in a retry-with-backoff
-      loop, and expect to dispose/recreate the client instance between attempts.
-   b. else: own-the-connection restart — keep the `Connection`/process handle from
-      `ActivateAsync`, dispose + signal `StopAsync`/re-activate;
-   c. worst case: kill the `node.exe` child and rely on VS's automatic single-restart of crashed
-      servers, with the command as UX sugar; or simply tell the user to reload the solution/restart
-      VS, which may be the more honest answer given how thin (a) and (b) are in practice.
-   Record which path shipped in the code comment — this is the piece with real API risk. (A newer,
-   parallel extensibility model — `Microsoft.VisualStudio.Extensibility`'s `LanguageServerProvider`,
-   VS 17.9+ — does expose a real `Enabled` flag that stops/restarts a server, but adopting it means
-   migrating off `Microsoft.VisualStudio.LanguageServer.Client` entirely; out of scope for this plan,
-   noted here as the more official direction if the workarounds above prove too unreliable in field
-   use.)
-3. Also from Phase 1: option changes surface an info bar with a "Restart now" action bound here.
+1. **DONE, builds clean.** `GuitkxCommands.vsct` defines one command, **GUITKX: Restart Language
+   Server**, under its own group on the **Tools** menu (a new group parented to
+   `guidSHLMainMenu:IDM_VS_MENU_TOOLS`, rather than guessing an existing group's symbol name to
+   inject into — simpler and more robust). Not added to the guitkx editor's context menu (the
+   sketch's other suggested location) — out of scope for this pass, Tools menu is sufficient for a
+   rarely-used diagnostic command. Wired through `GuitkxPackage` via `[ProvideMenuResource]` +
+   `OleMenuCommandService.AddCommand` in `InitializeAsync`.
+2. **Restart mechanics — took option (c), not (a).** Confirmed (2026-07-05) there is no
+   Microsoft-documented, supported restart API for a legacy MEF `ILanguageClient`
+   (`ILanguageClientBroker`'s entire public surface is `LoadAsync` — no `Stop`/`Restart`/`Reload`).
+   Rather than the fragile `LoadAsync`-again workaround (option a — reported to work only once per
+   client instance, with a documented Roslyn shutdown race on repeat attempts), implemented option
+   (c): `GuitkxLanguageClient` now tracks its own child `Process`; the command kills it
+   (`GuitkxLanguageClient.RequestRestart()`) and leans on VS's own documented behavior of
+   auto-restarting a crashed `ILanguageClient` once. This is **more** under our control than (a),
+   not less — we own the process handle outright, so "kill it" can't hit the same instance-reuse
+   race a manual `LoadAsync` retry can. Shows a message box either way (nothing running to restart,
+   vs. restart requested) rather than silently no-op'ing.
+3. From Phase 1: `GuitkxOptionsPage.OnApply` already shows the "reload the solution" message;
+   updating it to reference this command by name (rather than "reload the solution") is a natural
+   follow-up but not done in this pass — the message is still accurate (reload also works), just not
+   maximally convenient.
 
-**Verification V4:** command visible in Command Window/Tools menu; after restart, edits in
-`guitkx.config.json` (formatter width) take effect without reloading VS.
+**Verification V4 — outstanding, needs a real VS2022 instance:** command visible in the Tools menu;
+after invoking it, confirm the server process actually exits and VS reconnects a new one (watch
+Task Manager for the `node.exe` child, and the Output pane for re-initialization); confirm the
+message box wording matches what actually happened.
+
+**Files:** new `GuitkxCommands.vsct`; edited `GuitkxLanguageClient.cs` (`RequestRestart`/process
+tracking), `GuitkxPackage.cs` (`ProvideMenuResource`, command registration), `.csproj`
+(`VSCTCompile` item, `System.Design` reference for `MenuCommandService`'s base assembly).
 
 ## 7. Versioning & release policy for parity
 
