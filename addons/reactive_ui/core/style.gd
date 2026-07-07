@@ -50,19 +50,30 @@ static func apply(node: Node, old_style: Dictionary, new_style: Dictionary) -> v
 		if old_style.get(st) != new_style.get(st):
 			_apply_state_box(node, st, new_style.get(st))
 
-	# 2. Generic theme channels (inner-diffed per item name).
+	# 2. Generic theme channels (inner-diffed per item name). Null-default get so a
+	# style with none of these 6 channels (the overwhelmingly common case) allocates
+	# ZERO throwaway empty dicts -- only the rare present-channel branch materializes
+	# {} for _apply_theme_map. Was `.get(ch, {})` x 6 x (old+new) = 12 empty-dict
+	# allocations per styled node per frame. [GO-06]
 	for ch in THEME_CHANNELS:
-		var oldm: Dictionary = old_style.get(ch, {})
-		var newm: Dictionary = new_style.get(ch, {})
-		if oldm != newm:
-			_apply_theme_map(node, THEME_CHANNELS[ch], oldm, newm)
+		var oldm = old_style.get(ch)
+		var newm = new_style.get(ch)
+		if oldm == null and newm == null:
+			continue
+		var od: Dictionary = oldm if oldm is Dictionary else {}
+		var nd: Dictionary = newm if newm is Dictionary else {}
+		if od != nd:
+			_apply_theme_map(node, THEME_CHANNELS[ch], od, nd)
 
-	# 3. Simple shorthands: reset removed, apply changed.
-	for k in old_style.keys():
+	# 3. Simple shorthands: reset removed, apply changed. Iterate the dicts directly
+	# instead of `.keys()` -- direct dict iteration yields keys with no Array
+	# allocation (the same [perf] pattern host_config.gd uses). Was 2 Array
+	# allocations per styled node per frame. [GO-06]
+	for k in old_style:
 		if new_style.has(k) or k in BOX_KEYS or k in STATE_SLOTS or THEME_CHANNELS.has(k):
 			continue
 		_reset(node, k)
-	for k in new_style.keys():
+	for k in new_style:
 		if k in BOX_KEYS or k in STATE_SLOTS or THEME_CHANNELS.has(k):
 			continue
 		if not old_style.has(k) or old_style[k] != new_style[k]:

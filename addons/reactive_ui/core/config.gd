@@ -13,6 +13,11 @@ extends RefCounted
 static var time_slicing := false
 static var frame_budget_ms := 8.0
 
+## Host-node pool (GO-05): recycle childless leaf Controls across keyed-list churn instead of
+## queue_free + ClassDB.instantiate. On by default — pure win for churn-heavy dynamic lists,
+## and a no-op for static UIs (nothing churns). Exposed so it can be A/B-measured or disabled.
+static var host_node_pool := true
+
 ## Dev diagnostics (Phase 7.0). Default ON in debug builds, OFF in exported games — they
 ## push_warning/push_error to surface misuse loudly while developing, and degrade silently
 ## in release (the port never throws catchable exceptions; GDScript can't).

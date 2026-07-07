@@ -1,28 +1,23 @@
-# Shape the archive the Godot Asset Library serves (provider zip of the download commit) and
-# any `git archive` output: an install should contain the addon, its license, and the README —
-# not the demo gallery, the test rig, the IDE toolchain, or the docs site.
-/examples export-ignore
-/tests export-ignore
-/ide-extensions export-ignore
-/ReactiveUIGodotDocs~ export-ignore
-/plans export-ignore
-/research export-ignore
-/.github export-ignore
-/.gitattributes export-ignore
-/.gitignore export-ignore
+# Normalize line endings for text files (binaries auto-detected, left alone).
+* text=auto eol=lf
+
+# Shape the archive the Godot Asset Library serves (provider zip of the download commit)
+# and any `git archive` output. This is an ALLOWLIST: everything is export-ignored by
+# default, then only the runtime addon is added back. New top-level files (agent tooling,
+# stray notes, project configs) can never silently leak into an install again — the failure
+# mode of the old denylist, which shipped .claude/, discordpost, and export_presets.cfg.
+#
+# The runtime addon carries its own LICENSE/README/CHANGELOG, so nothing at the repo root
+# needs to ship.
+/** export-ignore
+/addons !export-ignore
+/addons/reactive_ui !export-ignore
+/addons/reactive_ui/** !export-ignore
+
+# The editor addon ships through its OWN Asset Library listing (Custom provider + release
+# zip — a Download Commit can't carry it), so it must stay out of the runtime archive.
+# Dev-only material inside the runtime addon must not reach end users either.
 /addons/reactive_ui_editor export-ignore
+/addons/reactive_ui_editor/** export-ignore
 /addons/reactive_ui/dev export-ignore
-/godotLogo.png export-ignore
-/ReactiveUI-Godot.png export-ignore
-/godotLogo100.png export-ignore
-/CLAUDE.md export-ignore
-# Never let an addon install clobber the user's own project files.
-/project.godot export-ignore
-/icon.png export-ignore
-/.asset-template.json.hb export-ignore
-/.asset-template-editor.json.hb export-ignore
-# Store-install hygiene (field feedback from the Asset Library listing): the download must not
-# drop README/CHANGELOG/LICENSE into the user's project root — the addon folder carries its own.
-/README.md export-ignore
-/CHANGELOG.md export-ignore
-/LICENSE export-ignore
+/addons/reactive_ui/dev/** export-ignore

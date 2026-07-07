@@ -44,7 +44,10 @@ func _run() -> void:
 	await _test_reference_equality()
 	await _test_signal_rebind()
 	await _test_custom_draw()
+	await _test_host_node_pool()
+	await _test_reuse_by_slot()
 	print("\n[core_test] %d passed, %d failed" % [_passes, _fails])
+	quit(1 if _fails > 0 else 0)
 
 func _test_react_events() -> void:
 	# React-parity event names (host_config._resolve_signal): canonical camelCase binds to the right
@@ -116,6 +119,120 @@ func _test_custom_draw() -> void:
 	_ok(not panel.is_connected("draw", tramp), "trampoline disconnected from `draw`")
 	panel.free()
 
+func _test_reuse_by_slot() -> void:
+	# GO-09: a `reuse_by_slot` container reconciles a stateless-leaf list BY SLOT — even when every
+	# key changes every frame, the node at slot i is REUSED (in-place prop update), so there is ZERO
+	# mount/unmount churn. Default-off: without the prop, the same key-churn still churns nodes.
+	var ctrl := { "set": null }
+	var make := func(reuse: bool) -> Callable:
+		return func(_p, _ch):
+			var s = Hooks.useState(0)
+			ctrl["set"] = s[1]
+			var f: int = s[0]
+			var items: Array = []
+			for i in range(5):
+				# EVERY key changes every render -> the keyed path would delete+recreate all 5.
+				items.append(V.color_rect({ "key": "k%d_%d" % [i, f], "color": Color(float(i) / 5.0, float(f % 8) / 8.0, 0.5) }))
+			return V.control({ "reuse_by_slot": reuse }, items)
+
+	# With reuse_by_slot: capture the node instances, churn all keys, assert SAME instances + zero churn.
+	var m := _mount(make.call(true))
+	await process_frame
+	var cont: Node = m[0].get_child(0)
+	var n0 = cont.get_child(0)
+	var n4 = cont.get_child(4)
+	RUIDiagnostics.enabled = true
+	RUIDiagnostics.placements = 0
+	RUIDiagnostics.deletions = 0
+	ctrl["set"].call(1)
+	await process_frame
+	await process_frame
+	_ok(cont.get_child(0) == n0 and cont.get_child(4) == n4, "reuse_by_slot: nodes REUSED across a full key change")
+	_ok(RUIDiagnostics.placements == 0 and RUIDiagnostics.deletions == 0, "reuse_by_slot: ZERO mount/unmount churn (got p=%d d=%d)" % [RUIDiagnostics.placements, RUIDiagnostics.deletions])
+	_ok((cont.get_child(0) as ColorRect).color.g == float(1 % 8) / 8.0, "reuse_by_slot: reused node's props updated in place")
+	RUIDiagnostics.enabled = false
+	m[1].unmount()
+	m[0].queue_free()
+
+	# Default-off (no reuse_by_slot): the SAME all-keys-churn DOES churn nodes -> proves opt-in gating.
+	var m2 := _mount(make.call(false))
+	await process_frame
+	var cont2: Node = m2[0].get_child(0)
+	RUIDiagnostics.enabled = true
+	RUIDiagnostics.placements = 0
+	RUIDiagnostics.deletions = 0
+	ctrl["set"].call(2)
+	await process_frame
+	await process_frame
+	_ok(RUIDiagnostics.placements > 0 or RUIDiagnostics.deletions > 0, "without reuse_by_slot: all-keys-churn still churns nodes (opt-in gate works)")
+	RUIDiagnostics.enabled = false
+	m2[1].unmount()
+	m2[0].queue_free()
+
+func _test_host_node_pool() -> void:
+	# GO-05 recycle -> reuse contract (correctness-critical): a pooled node reused for a
+	# DIFFERENT element must carry NONE of its prior life's state — no stale event handler,
+	# no stale style, no stale removed plain prop. This mirrors exactly what the reconciler
+	# does: reset_for_pool on delete, then reset_removed_plain + apply_props(old,new) on reuse.
+	var hit := { "a": 0, "z": 0 }
+	var cbA := func(): hit["a"] += 1
+	var cbZ := func(): hit["z"] += 1
+	var btn := Button.new()
+	root.add_child(btn)
+	var propsA := { "onClick": cbA, "disabled": true, "style": { "modulate": Color.RED } }
+	RUIHost.apply_props(btn, {}, propsA)
+	_ok(btn.disabled and btn.modulate == Color.RED and btn.is_connected("pressed", cbA), "element A applied (event+style+plain)")
+
+	# Recycle A exactly as the reconciler does on key churn.
+	var accepted := RUIHost.reset_for_pool(btn, propsA)
+	_ok(accepted, "reset_for_pool accepts a plain Button")
+	_ok(btn.get_parent() == null, "recycled node is detached from the tree")
+	_ok(btn.has_meta("__rui_pool_old"), "recycled node stashed its last props for the reuse diff")
+
+	# Reuse the pooled node for element Z: different handler, different style, and NO `disabled`.
+	var propsZ := { "onClick": cbZ, "style": { "modulate": Color.GREEN } }
+	var stash: Dictionary = btn.get_meta("__rui_pool_old")
+	btn.remove_meta("__rui_pool_old")
+	RUIHost.reset_removed_plain(btn, stash, propsZ)
+	RUIHost.apply_props(btn, stash, propsZ)
+	_ok(btn.disabled == false, "reuse: removed plain prop `disabled` reset to class default")
+	_ok(btn.modulate == Color.GREEN, "reuse: style modulate is Z's, not A's stale red")
+	_ok(btn.is_connected("pressed", cbZ) and not btn.is_connected("pressed", cbA), "reuse: Z's handler bound, A's gone")
+	btn.emit_signal("pressed")
+	_ok(hit["z"] == 1 and hit["a"] == 0, "reuse: pressed fires Z's handler only (no stale A)")
+	btn.free()
+
+	# Item-model controls are NOT pooled (their non-node item state isn't generically cleared).
+	var ob := OptionButton.new()
+	_ok(RUIHost.reset_for_pool(ob, { "items": [{ "text": "x" }] }) == false, "item-model control refused by the pool")
+	ob.free()
+
+	# End-to-end: churn a keyed list many times through a live root; the pool must not corrupt
+	# identity, ordering, or leak (drained on unmount).
+	var ctrl := { "set": null }
+	var comp := func(_p, _ch):
+		var s = Hooks.useState(0)
+		ctrl["set"] = s[1]
+		var f: int = s[0]
+		var items: Array = []
+		for i in range(6):
+			var key: String = ("t%d_%d" % [i, f]) if i % 2 == 0 else ("s%d" % i)
+			items.append(V.label({ "text": "%d" % (i + f), "key": key }))
+		return V.vbox({}, items)
+	var m := _mount(comp)
+	await process_frame
+	await process_frame
+	var vbox: Node = m[0].get_child(0)
+	for step in range(8):
+		ctrl["set"].call(step + 1)
+		await process_frame
+		await process_frame
+	_ok(vbox.get_child_count() == 6, "keyed churn keeps the list size stable through the pool (got %d)" % vbox.get_child_count())
+	var last_label := vbox.get_child(5) as Label
+	_ok(last_label != null and last_label.text != "", "recycled/reused nodes render correct content after churn")
+	m[1].unmount()
+	m[0].queue_free()
+
 func _test_classes_lean_path() -> void:
 	# [audit #1] A `classes`-only element (no inline style / events / ref) must take the GENERIC
 	# apply path so the resolved class style is (re)applied and node.set("classes",...) never fires.
@@ -178,7 +295,6 @@ func _test_signal_rebind() -> void:
 	_ok(seen["v"] == 20, "useSignal re-bound to new selector 'b' = 20, got %s" % str(seen["v"]))
 	m[1].unmount()
 	m[0].queue_free()
-	quit(1 if _fails > 0 else 0)
 
 func _ok(cond: bool, msg: String) -> void:
 	if cond:
