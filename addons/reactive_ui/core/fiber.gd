@@ -61,6 +61,11 @@ var alternate: RUIFiber = null
 var effect_tag: int = EFFECT_NONE
 var next_effect: RUIFiber = null  ## singly-linked effect list (post-order)
 var deletions: Array = []         ## Array[RUIFiber] removed this render
+## Transient mark for the full-keyed reconcile mark-and-sweep (GO-08): set true when an
+## old fiber is matched to a vnode this pass, so the trailing sweep deletes only unmatched
+## fibers WITHOUT a per-frame `matched` Dictionary. Reset at the top of each full-keyed pass;
+## per-fiber (not key-keyed) so duplicate user keys are handled exactly as before.
+var matched_pass := false
 
 # --- context ---
 var provided_context = null       ## Dictionary or null

@@ -4,6 +4,38 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.6] — 2026-07-08
+
+A reconciler and style-layer performance pass, plus a packaging fix so an Asset
+Library install ships only the addon.
+
+### Added
+- **`reuse_by_slot` host prop.** Opt-in on a parent whose keyed leaf children are
+  positionally stable — a per-frame list whose keys encode *data identity* rather
+  than order. Those children then reconcile by slot (reused and patched in place)
+  instead of being torn down and recreated when their keys change. This is the
+  React-correct way to express slot reuse without dropping key semantics elsewhere.
+- **`RUIConfig.host_node_pool`** (default `true`). Destroyed leaf host nodes are
+  recycled through a per-class pool and re-diffed on reuse, instead of freed and
+  recreated, cutting node churn on lists that add and remove frequently.
+
+### Changed
+- **Keyed child reconciliation is now mark-and-sweep.** The full-keyed path no longer
+  allocates a per-frame key map and matched-set; it reuses a member key map plus a
+  per-fiber `matched_pass` flag and sweeps unmatched fibers in a single pass.
+- **`Style.apply` allocates far less.** It no longer builds throwaway per-node
+  dictionaries and key arrays for unchanged theme channels (eager `{}` defaults and
+  `.keys()` copies removed), substantially reducing per-styled-node overhead.
+
+### Fixed
+- **Asset Library / `git archive` install no longer ships repo tooling.** The
+  `.gitattributes` export map was a denylist and had gone stale, so a Download-Commit
+  install leaked `.claude/`, a stray `discordpost` note, and `export_presets.cfg` into
+  the user's project. It is now an allowlist — only `addons/reactive_ui` ships — so new
+  top-level files can never silently leak into an install again. ([#67])
+
+[#67]: https://github.com/yanivkalfa/ReactiveUI-Godot/issues/67
+
 ## [0.8.5] — 2026-07-06
 
 A correctness-focused pass from a full compiler/formatter/HMR audit. No API changes.

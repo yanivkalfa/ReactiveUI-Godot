@@ -22,13 +22,57 @@ extends RefCounted
 ##   "key"          -> reconciliation key (consumed by V; never applied)
 ##   anything else  -> set directly as a node property (text, editable, disabled, ...)
 
-const RESERVED := { "key": true, "ref": true, "style": true, "classes": true, "children": true, "items": true, "draw_fn": true, "redraw_key": true }  # O(1) lookup [perf #4]
+const RESERVED := { "key": true, "ref": true, "style": true, "classes": true, "children": true, "items": true, "draw_fn": true, "redraw_key": true, "reuse_by_slot": true }  # O(1) lookup [perf #4]
 
 static func create_node(type: String) -> Node:
 	if not ClassDB.class_exists(type):
 		push_error("[reactive_ui] Unknown host element type: '%s'. Falling back to Control." % type)
 		return Control.new()
 	return ClassDB.instantiate(type)
+
+## GO-05 host-node pool support. Prepare a childless leaf Control for reuse instead of
+## queue_free + a later native ClassDB.instantiate. Returns false if the node must NOT be
+## pooled (caller queue_free's it) — currently only item-model controls, whose non-node item
+## state we don't generically clear.
+##
+## Design (measured): the *cheap* path. Rather than eagerly resetting the node to class defaults
+## (which cost about as much as the instantiate it avoids), we only DETACH it and stash its
+## last-applied props under `__rui_pool_old`. When the reconciler reuses it, it calls
+## `apply_props(node, __rui_pool_old, new_props)` — a DIFF that (a) transitions events, (b) diffs
+## style, (c) sets only CHANGED plain props (cheaper than the fresh path's full set), and calls
+## `reset_removed_plain` for the audit-#23 gap (plain keys present last life but absent now). For
+## the homogeneous-shape churn this pool targets (list rows, Doom bands), the diff is minimal and
+## the removed-plain set is empty, so reuse is far cheaper than instantiate + full apply. A pooled
+## node is orphaned (out of the tree), so its retained signal connections cannot fire.
+static func reset_for_pool(node: Node, props) -> bool:
+	if props is Dictionary and props.has("items"):
+		return false  # item-model control (OptionButton/ItemList/…) — don't pool; caller frees.
+	var parent := node.get_parent()
+	if parent != null:
+		parent.remove_child(node)
+	node.set_meta("__rui_pool_old", props if props is Dictionary else {})
+	return true
+
+## GO-05: when reusing a pooled node for a DIFFERENT element, reset any plain prop it carried last
+## life that the new props don't set, back to the class default — so a recycled node never leaks a
+## stale plain value (events/style are handled by the apply_props diff; this closes the audit-#23
+## "removed plain prop not reset" gap for cross-element reuse). Empty loop when shapes match.
+static func reset_removed_plain(node: Node, old_props: Dictionary, new_props: Dictionary) -> void:
+	var cls := node.get_class()
+	for k in old_props:
+		if RESERVED.has(k) or _is_event(k) or new_props.has(k):
+			continue
+		node.set(k, _class_default(cls, k))
+
+## Cached (class, property) -> engine default value, so recycling isn't a per-node ClassDB probe.
+static var _default_cache: Dictionary = {}
+static func _class_default(cls: String, prop: String):
+	var ck := cls + ":" + prop
+	if _default_cache.has(ck):
+		return _default_cache[ck]
+	var d = ClassDB.class_get_property_default_value(cls, prop)
+	_default_cache[ck] = d
+	return d
 
 ## Where children of `node` should be parented. Unlike Unity's VisualElement (which
 ## auto-redirects Add() into contentContainer), Godot has no such indirection, so the

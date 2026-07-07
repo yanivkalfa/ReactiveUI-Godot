@@ -44,6 +44,19 @@ var _last_effect: RUIFiber = null
 var _deletions: Array = []
 var _reorder_set: Dictionary = {}        ## host/portal fibers whose child order may have changed
 var _pending_passive: Array = []
+## Reused across full-keyed reconcile passes (GO-08): cleared+refilled per call instead of a
+## fresh Dictionary each frame. Safe because _reconcile_children never re-enters before it
+## finishes (_reconcile creates a fiber but does not recurse into _reconcile_children), and
+## this member is per-reconciler so concurrent ReactiveRoots don't share it.
+var _key_map: Dictionary = {}
+
+## GO-05 host-node pool: class-name -> Array[Node] of reset, orphaned Controls available for
+## reuse instead of ClassDB.instantiate. Populated by _recycle_node (childless leaf nodes on
+## key churn), drained by _acquire_node and by unmount(). Per-reconciler so a torn-down root
+## frees exactly its own pool and nothing leaks. Capped per class so a one-off churn spike
+## can't retain unbounded orphaned nodes.
+var _node_pool: Dictionary = {}
+const _POOL_CAP_PER_CLASS := 256
 
 var _has_deletions := false
 var _is_committing := false
@@ -419,7 +432,15 @@ func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnod
 	# reusing the fibers in place. Skips the entire per-child fiber traversal (_reconcile +
 	# _perform_unit + _complete_work). This is the single biggest reconcile win for big dynamic
 	# lists, and the per-row bail-out makes mostly-static lists nearly free. [perf: fast-list]
-	if old_first != null and not vnodes.is_empty() and _try_fast_leaf_list(parent_fiber, old_first, vnodes):
+	#
+	# GO-09 `reuse_by_slot`: when the host container opts in, the fast path IGNORES key churn and
+	# reuses the node at slot i for whatever leaf lands at slot i (a pure props UPDATE — no add/
+	# remove/free). This routes a stateless-leaf list whose KEYS change every frame (but whose
+	# COUNT + TYPE per slot stay stable) onto the in-place path instead of the churning keyed path.
+	# CONTRACT: only for childless host leaves with NO per-node identity to preserve (no ref/focus/
+	# caret/scroll/selection/in-flight animation) — the caller asserts this by setting the prop.
+	var reuse_by_slot: bool = parent_fiber.pending_props is Dictionary and bool(parent_fiber.pending_props.get("reuse_by_slot", false))
+	if old_first != null and not vnodes.is_empty() and _try_fast_leaf_list(parent_fiber, old_first, vnodes, reuse_by_slot):
 		return true
 	parent_fiber.child = null
 	if vnodes.is_empty():
@@ -446,19 +467,23 @@ func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnod
 			return false   # stable -> no structural change -> skip reorder
 		# Full keyed path. Unkeyed children get a NAMESPACED positional key (control-char
 		# prefixed) so an integer key can't collide with a positional index. [audit M1]
-		var key_map := {}
+		# GO-08: reuse the persistent `_key_map` (cleared per call, no per-frame Dictionary
+		# alloc) and a per-fiber `matched_pass` flag (no `matched` Dictionary). Mirrors
+		# Unity's [ThreadStatic] s_childMap + mark-and-sweep. Behavior is identical, incl.
+		# duplicate user keys (the flag is per-fiber, so both duplicates are swept correctly).
+		_key_map.clear()
 		var ock := old_first
 		while ock != null:
-			key_map[_fiber_key(ock)] = ock
+			_key_map[_fiber_key(ock)] = ock
+			ock.matched_pass = false
 			ock = ock.sibling
-		var matched := {}
 		for i in vnodes.size():
 			var vn: RUIVNode = vnodes[i]
-			var old_match: RUIFiber = key_map.get(_vnode_key(vn, i))
-			if old_match != null and (matched.has(old_match) or not old_match.matches(vn)):
+			var old_match: RUIFiber = _key_map.get(_vnode_key(vn, i))
+			if old_match != null and (old_match.matched_pass or not old_match.matches(vn)):
 				old_match = null
 			if old_match != null:
-				matched[old_match] = true
+				old_match.matched_pass = true
 				if old_match.index != i:
 					structural = true   # moved
 			else:
@@ -470,9 +495,10 @@ func _reconcile_children(parent_fiber: RUIFiber, old_first: RUIFiber, child_vnod
 		var ocd := old_first
 		while ocd != null:
 			var nxtd := ocd.sibling
-			if not matched.has(ocd):
+			if not ocd.matched_pass:
 				_delete_fiber(parent_fiber, ocd)
 			ocd = nxtd
+		_key_map.clear()
 	else:
 		# index (positional) path
 		var oci := old_first
@@ -510,17 +536,19 @@ func _props_changed(pending, props) -> bool:
 ## adding only the CHANGED rows to the effect list (per-row bail-out). The host nodes persist;
 ## changed props are applied in the normal commit pass (two-phase preserved). Returns true iff
 ## it handled the whole list; falls back (false) for any non-host/non-leaf/reordered list.
-func _try_fast_leaf_list(parent_fiber: RUIFiber, old_first: RUIFiber, vnodes: Array) -> bool:
+func _try_fast_leaf_list(parent_fiber: RUIFiber, old_first: RUIFiber, vnodes: Array, ignore_keys: bool = false) -> bool:
 	var n := vnodes.size()
 	# 1. Eligibility scan (read-only): every position must be a childless HOST with matching
-	#    type + key, and the same count.
+	#    type + key, and the same count. With `ignore_keys` (GO-09 reuse_by_slot) the per-slot
+	#    key match is skipped — a stateless leaf is interchangeable by slot — but type + leafness
+	#    + count are still required (a slot must hold the same node CLASS to reuse it in place).
 	var oc := old_first
 	for i in n:
 		if oc == null:
 			return false
 		var vn: RUIVNode = vnodes[i]
 		# (oc.tag == HOST is implied by oc.type == vn.type, since only host fibers carry a type.)
-		if vn.kind != RUIVNode.Kind.HOST or oc.type != vn.type or oc.key != vn.key:
+		if vn.kind != RUIVNode.Kind.HOST or oc.type != vn.type or (not ignore_keys and oc.key != vn.key):
 			return false
 		if oc.child != null or not vn.children.is_empty():
 			return false   # must be leaves on both sides
@@ -532,6 +560,8 @@ func _try_fast_leaf_list(parent_fiber: RUIFiber, old_first: RUIFiber, vnodes: Ar
 	oc = old_first
 	for i in n:
 		var vn: RUIVNode = vnodes[i]
+		if ignore_keys:
+			oc.key = vn.key   # adopt the new key so the slot stays on the fast path next frame
 		oc.parent = parent_fiber
 		oc.index = i
 		oc.effect_tag = F.EFFECT_NONE
@@ -597,8 +627,17 @@ func _complete_work(fiber: RUIFiber) -> void:
 	match fiber.tag:
 		F.Tag.HOST:
 			if fiber.node == null:
-				fiber.node = RUIHost.create_node(fiber.type)
-				RUIHost.apply_props(fiber.node, {}, fiber.pending_props)
+				fiber.node = _acquire_node(fiber.type)
+				# GO-05: a pooled node carries its previous life's props under __rui_pool_old.
+				# Reuse it via a DIFF (apply_props with those as old) — transitions events, diffs
+				# style, sets only changed plain props — plus reset any plain prop it had that the
+				# new element doesn't. A fresh node has no such meta -> old = {} = the original path.
+				var old_props: Dictionary = {}
+				if fiber.node.has_meta("__rui_pool_old"):
+					old_props = fiber.node.get_meta("__rui_pool_old")
+					fiber.node.remove_meta("__rui_pool_old")
+					RUIHost.reset_removed_plain(fiber.node, old_props, fiber.pending_props)
+				RUIHost.apply_props(fiber.node, old_props, fiber.pending_props)
 				fiber.props = fiber.pending_props
 				fiber.effect_tag |= F.EFFECT_PLACEMENT
 			elif not is_same(fiber.pending_props, fiber.props) and fiber.pending_props != fiber.props:
@@ -874,12 +913,46 @@ func _collect_host_children(fiber: RUIFiber, out: Array) -> void:
 func _free_host_nodes(fiber: RUIFiber) -> void:
 	if fiber.node != null and not fiber.is_root():
 		if is_instance_valid(fiber.node):
-			fiber.node.queue_free()
+			# GO-05: recycle a CHILDLESS leaf (the churn-heavy case — Doom bands, list rows) into
+			# the pool for reuse; a node WITH children keeps the queue_free cascade (freeing the
+			# whole subtree at once, and never pooling a non-childless node). get_child_count()==0
+			# also excludes rui_content/custom-scene nodes, which carry internal children.
+			if RUIConfig.host_node_pool and fiber.node.get_child_count() == 0:
+				_recycle_node(fiber.node, fiber.props)
+			else:
+				fiber.node.queue_free()
 		return
 	var c := fiber.child
 	while c != null:
 		_free_host_nodes(c)
 		c = c.sibling
+
+## GO-05: pull a reset, orphaned node of `type` from the pool, or instantiate one. The pooled
+## node is indistinguishable from a fresh instantiate (see RUIHost.reset_for_pool), so the mount
+## path's apply_props(node, {}, new_props) applies cleanly.
+func _acquire_node(type: String) -> Node:
+	if RUIConfig.host_node_pool:
+		var bucket = _node_pool.get(type)
+		if bucket is Array and not bucket.is_empty():
+			return bucket.pop_back()
+	return RUIHost.create_node(type)
+
+## GO-05: reset `node` and return it to the pool (capped), or queue_free if it can't be pooled
+## (item-model control) or the bucket is full. `props` is the fiber's last-applied props, used to
+## undo exactly what was set.
+func _recycle_node(node: Node, props) -> void:
+	if not RUIHost.reset_for_pool(node, props):
+		node.queue_free()
+		return
+	var cls := node.get_class()
+	var bucket = _node_pool.get(cls)
+	if not (bucket is Array):
+		bucket = []
+		_node_pool[cls] = bucket
+	if bucket.size() < _POOL_CAP_PER_CLASS:
+		bucket.append(node)
+	else:
+		node.queue_free()
 
 ## The first child of `fiber`'s child list (or null) — the head of the old sibling chain
 ## that `_reconcile_children` walks. Replaces the old per-frame Array materialization. [perf P1]
@@ -999,6 +1072,16 @@ func unmount() -> void:
 	_release(_root_current)
 	_root_current = null
 	_root_vnode = null
+	_drain_node_pool()
+
+## GO-05: free every orphaned node still held in the pool. Called on unmount so a torn-down
+## root leaks nothing (the pool's whole purpose is transient reuse WITHIN a live root's churn).
+func _drain_node_pool() -> void:
+	for cls in _node_pool:
+		for n in _node_pool[cls]:
+			if is_instance_valid(n):
+				n.queue_free()
+	_node_pool.clear()
 
 # --------------------------------------------------------------------------
 # Fast Refresh (Phase H) — see core/hmr.gd for the pipeline overview

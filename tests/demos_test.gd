@@ -13,6 +13,10 @@ func _run() -> void:
 	for entry in DemoGalleryTable.entries():
 		await _smoke(entry["title"], entry["fn"])
 	await _smoke("Gallery shell", DemoGallery.render)
+	# Doom (plans/DOOM_GAME_GUITKX_PORT_PLAN.md) is a standalone scene, not routed
+	# through the gallery (§1.8) -- smoke it directly so it's still covered by
+	# this "every demo renders without error" sweep.
+	await _smoke("Doom (Phase 1 static frame)", DoomGameScreen.render)
 	await _test_root_fills()
 	await _test_diagnostics_buttons()
 	RUIDiagnostics.enabled = false   # demos may have toggled these
