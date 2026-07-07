@@ -8,8 +8,13 @@ module DoomGameScreenHooks {
   ## get_tree().process_frame-in-useEffect idiom (plan §1.2) rather than the
   ## original's manual 16ms UI-Toolkit scheduler, since this library's
   ## reconciler already coalesces multiple setState calls to one render per
-  ## frame -- physics_frame is used instead of process_frame to mirror the
-  ## original's fixed ~16ms cadence more closely than a variable frame rate.
+  ## frame. process_frame (NOT physics_frame): the original's `.Every(16)` is a
+  ## once-per-rendered-frame throttle with a real-time-clock dt, so process_frame
+  ## is its faithful analogue. physics_frame was wrong -- Godot sub-steps it
+  ## (running the tick multiple times per rendered frame to hold a fixed 60Hz
+  ## when frames are slow), and since dt here is real-clock-based, those extra
+  ## sub-steps re-run the full ~18ms cast_frame for near-zero added movement --
+  ## a compounding waste that made a slow frame much slower.
   ##
   ## Returns { state, restart } -- the original's onKeyDown/onPointerMove/
   ## onPointerDown/onPointerUp callables aren't needed here since the
@@ -20,6 +25,20 @@ module DoomGameScreenHooks {
     var state_ref = Hooks.useRef(initial_state)
     var last_time_ref = Hooks.useRef(-1.0)
 
+    # `view_ref["current"]` isn't populated until AFTER the first commit --
+    # same "target must be mounted first" gotcha examples/demos/portal works
+    # around, and the same fix: a mount-flag effect (deps=[]) that flips
+    # `mounted` true, with the real connect-effect depending on THAT instead
+    # of `deps=[]` directly, so it re-fires once the ref is guaranteed set.
+    # Without this the tick loop silently never connects at all -- found via
+    # a headless integration check that verified state actually changes
+    # across ticks (not just "renders without crashing").
+    var mounted_pair = Hooks.useState(false)
+    var mount_eff := func():
+      mounted_pair[1].call(true)
+      return Callable()
+    Hooks.useEffect(mount_eff, [])
+
     var restart = func():
       var fresh = GameLogic.new_game(level, difficulty)
       state_ref["current"] = fresh
@@ -29,6 +48,8 @@ module DoomGameScreenHooks {
       Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
     var setup := func():
+      if not mounted_pair[0]:
+        return Callable()
       var view: Control = view_ref["current"]
       if view == null or not view.is_inside_tree():
         return Callable()
@@ -64,17 +85,20 @@ module DoomGameScreenHooks {
 
         var s = state_ref["current"]
         GameLogic.tick(s, dt, cmd)
-        state_ref["current"] = s
-        state_pair[1].call(s)
+        # GameLogic.tick mutates `s` in place (matching the original's `ref
+        # GameState`); Hooks.useState's setter bails on a reference-equal
+        # value, so the setter needs a fresh top-level identity every tick
+        # to detect the change -- see GameState.snapshot() (doom_types.gd).
+        state_pair[1].call(s.snapshot())
         if s.game_over or s.victory:
           if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
             Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-      tree.physics_frame.connect(tick_fn)
+      tree.process_frame.connect(tick_fn)
       return func():
         if is_instance_valid(view) and view.is_inside_tree():
-          tree.physics_frame.disconnect(tick_fn)
-    Hooks.useEffect(setup, [])
+          tree.process_frame.disconnect(tick_fn)
+    Hooks.useEffect(setup, [mounted_pair[0]])
 
     return {"state": state_pair[0], "restart": restart}
   }

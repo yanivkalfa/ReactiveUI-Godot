@@ -288,6 +288,21 @@ class WallSeg extends RefCounted:
 	# by different amounts produce diagonal/staircase texture rows on flat walls.
 	var tex_offset_px: float
 
+	# GO-03 pooling: restore every field to what WallSeg.new() would produce, so a
+	# recycled instance behaves identically to a fresh one (some cast sites don't
+	# set is_riser/tex_offset_px). See FrameData's pool.
+	func reset() -> void:
+		top_px = 0.0
+		bot_px = 0.0
+		distance = 0.0
+		wall_tex_idx = 0
+		tex_u = 0.0
+		light_level = 0
+		hit_vertical = false
+		is_sky = false
+		is_riser = false
+		tex_offset_px = 0.0
+
 class FloorBand extends RefCounted:
 	var top_px: float # far edge of this floor slab on screen
 	var bot_px: float # near edge (toward bottom of screen)
@@ -297,6 +312,16 @@ class FloorBand extends RefCounted:
 	var behind_floor_z: float = NAN # floor_z of the slab IMMEDIATELY behind this one in the same ray (NAN if none)
 	var rim_at_far: bool # true if the far edge of this band is a visible step-down rim
 
+	# GO-03 pooling: reproduce FloorBand.new()'s field defaults for recycled instances.
+	func reset() -> void:
+		top_px = 0.0
+		bot_px = 0.0
+		floor_z = 0.0
+		light = 0
+		floor_tex = 0
+		behind_floor_z = NAN
+		rim_at_far = false
+
 # Phase 8 (original): ceiling band -- mirror of FloorBand. Painted only for
 # non-sky sectors; sky sectors leave the sky backdrop showing through.
 class CeilingBand extends RefCounted:
@@ -305,6 +330,14 @@ class CeilingBand extends RefCounted:
 	var ceiling_z: float # world Z (for shading)
 	var light: int
 	var ceiling_tex: int
+
+	# GO-03 pooling: reproduce CeilingBand.new()'s field defaults for recycled instances.
+	func reset() -> void:
+		top_px = 0.0
+		bot_px = 0.0
+		ceiling_z = 0.0
+		light = 0
+		ceiling_tex = 0
 
 class ColumnInfo extends RefCounted:
 	var main: WallSeg
@@ -350,6 +383,60 @@ class Tracer extends RefCounted:
 class FrameData extends RefCounted:
 	var columns: Array # of ColumnInfo
 	var depth_buffer: PackedFloat32Array
+
+	# GO-03 pooling: a per-frame linear allocator for the WallSeg/FloorBand/
+	# CeilingBand records that build_column_sector would otherwise heap-allocate
+	# ~13x per column, every column, every tick (the struct->class translation
+	# tax -- the originals are C# structs). reset_pools() rewinds the used-cursors
+	# at the top of cast_frame; take_* hand out a reset() instance, growing the
+	# backing pool only when a frame needs more records than any prior frame did.
+	# Safe because the reconciler's render (a call_deferred _tick) fully consumes
+	# a frame's records before the next tick reuses them, and time_slicing (which
+	# could park a render past the next tick) is off by default and unused here.
+	var _wallseg_pool: Array = []
+	var _wallseg_used: int = 0
+	var _floorband_pool: Array = []
+	var _floorband_used: int = 0
+	var _ceilband_pool: Array = []
+	var _ceilband_used: int = 0
+
+	func reset_pools() -> void:
+		_wallseg_used = 0
+		_floorband_used = 0
+		_ceilband_used = 0
+
+	func take_wallseg() -> WallSeg:
+		var o: WallSeg
+		if _wallseg_used < _wallseg_pool.size():
+			o = _wallseg_pool[_wallseg_used]
+		else:
+			o = WallSeg.new()
+			_wallseg_pool.append(o)
+		_wallseg_used += 1
+		o.reset()
+		return o
+
+	func take_floorband() -> FloorBand:
+		var o: FloorBand
+		if _floorband_used < _floorband_pool.size():
+			o = _floorband_pool[_floorband_used]
+		else:
+			o = FloorBand.new()
+			_floorband_pool.append(o)
+		_floorband_used += 1
+		o.reset()
+		return o
+
+	func take_ceilband() -> CeilingBand:
+		var o: CeilingBand
+		if _ceilband_used < _ceilband_pool.size():
+			o = _ceilband_pool[_ceilband_used]
+		else:
+			o = CeilingBand.new()
+			_ceilband_pool.append(o)
+		_ceilband_used += 1
+		o.reset()
+		return o
 
 class Vertex extends RefCounted:
 	var p: Vector2
@@ -587,6 +674,38 @@ class GameState extends RefCounted:
 	# Slots with age_ms >= TRACER_LIFE_MS are skipped by the renderer.
 	var tracers: Array # of Tracer
 	var tracer_count: int
+
+	# GameLogic.tick() mutates this object in place (matching the original's
+	# `ref GameState`), but Hooks.useState's setter bails on a reference-equal
+	# value (Object.is semantics, matching React) -- passing the SAME mutated
+	# object back to the setter every tick would never trigger a re-render even
+	# though its fields changed. snapshot() gives the setter a fresh top-level
+	# identity to detect (nested objects stay shared by reference; only this
+	# tick loop's own in-place mutation semantics needed the workaround, not a
+	# deep clone of the whole state graph).
+	func snapshot() -> GameState:
+		var copy := GameState.new()
+		copy.player = player
+		copy.mobjs = mobjs
+		copy.mobj_count = mobj_count
+		copy.next_mobj_id = next_mobj_id
+		copy.map = map
+		copy.frame = frame
+		copy.level = level
+		copy.score = score
+		copy.kill_count = kill_count
+		copy.kill_total = kill_total
+		copy.tic = tic
+		copy.game_over = game_over
+		copy.victory = victory
+		copy.boss_exit_gated = boss_exit_gated
+		copy.difficulty = difficulty
+		copy.rng_seed = rng_seed
+		copy.time_accum = time_accum
+		copy.sector_map = sector_map
+		copy.tracers = tracers
+		copy.tracer_count = tracer_count
+		return copy
 
 class InputCmd extends RefCounted:
 	var forward: bool

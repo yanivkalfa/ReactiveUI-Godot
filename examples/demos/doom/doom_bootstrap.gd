@@ -20,10 +20,63 @@ extends Control
 
 var _app: ReactiveRoot
 
+# TEMP DIAGNOSTIC (remove after profiling): live perf HUD to read the REAL built-game
+# cost split. --headless never rasterizes, so this is the only way to tell whether the
+# frame is CPU-bound (TIME_PROCESS ~= frame time) or render-bound (thousands of draw
+# calls / high objects). vsync is disabled here so fps shows the true ceiling, not 60.
+var _perf_label: Label
+var _perf_timer := 0.0
+
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Default mouse_filter is STOP -- this full-screen Control would otherwise
+	# swallow every mouse motion/click as its OWN GUI input before it ever
+	# becomes "unhandled" input, so _unhandled_input below would never fire at
+	# all (the same reasoning doom_game_screen.guitkx's rendered elements
+	# already got IGNORE for, just missed here on the outer bootstrap node).
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_app = ReactiveRoot.create(self, V.fc(DoomGameScreen.render))
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_build_perf_overlay()
+
+func _build_perf_overlay() -> void:
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	Engine.max_fps = 0
+	var layer := CanvasLayer.new()
+	layer.layer = 128
+	add_child(layer)
+	_perf_label = Label.new()
+	_perf_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
+	_perf_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_perf_label.add_theme_constant_override("outline_size", 4)
+	_perf_label.add_theme_font_size_override("font_size", 15)
+	_perf_label.position = Vector2(8, 8)
+	_perf_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_perf_label)
+
+func _process(delta: float) -> void:
+	if _perf_label == null:
+		return
+	_perf_timer += delta
+	if _perf_timer < 0.25:
+		return
+	_perf_timer = 0.0
+	var fps := Engine.get_frames_per_second()
+	var proc_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var phys_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	var draws := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	var objs := int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
+	var prims := int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+	var nodes := int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
+	var frame_ms := 1000.0 / maxf(1.0, float(fps))
+	# Split the CPU frame: sim (GameLogic.tick = raycast + movement + doors) vs
+	# reconcile+render (the rest of process time = rebuild vnodes + diff 2384 nodes + commit).
+	var tick_ms := GameLogic.last_tick_us / 1000.0
+	var cast_ms := GameLogic.last_cast_us / 1000.0
+	var reconcile_ms := maxf(0.0, proc_ms - tick_ms)
+	var bound := "CPU-bound" if proc_ms >= frame_ms * 0.6 else "RENDER-bound"
+	_perf_label.text = "FPS %d   frame %.1f ms   [%s]\nCPU process %.1f ms   physics %.1f ms\n  sim(tick) %.1f ms   (of which cast_frame %.1f ms)\n  reconcile+render ~%.1f ms\ndraw calls %d   objects %d   prims %d   nodes %d" % [
+		fps, frame_ms, bound, proc_ms, phys_ms, tick_ms, cast_ms, reconcile_ms, draws, objs, prims, nodes]
 
 func _exit_tree() -> void:
 	if _app != null:
@@ -35,7 +88,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
 		s.pending_yaw += motion.relative.x * DoomTypes.C.MOUSE_YAW_SENS
-		s.pending_pitch -= motion.relative.y
+		# Godot's InputEventMouseMotion.relative.y is positive DOWNWARD (screen
+		# coords, Y-down); Unity's Mouse.delta.y is positive UPWARD. The original
+		# accumulates `pendingPitch -= d.y`, so to reproduce the same look-feel
+		# under the flipped axis we accumulate `+= relative.y` (a straight port of
+		# `-= relative.y` would invert the vertical axis -- that was the bug).
+		s.pending_pitch += motion.relative.y
 		return
 
 	if event is InputEventMouseButton:

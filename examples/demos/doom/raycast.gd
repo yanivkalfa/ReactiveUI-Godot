@@ -4,8 +4,21 @@ extends RefCounted
 ## Faithful port of the Unity ReactiveUIToolKit `DoomGame` sample's `Raycast.uitkx` --
 ## portal-walking ray/segment/sector math. Pure Vector2 geometry, no engine dependency.
 ## C#'s `out` parameters have no GDScript equivalent -- functions that used them return
-## a Dictionary of named results instead (the natural, unavoidable translation, not a
-## behavior change). See plans/DOOM_GAME_GUITKX_PORT_PLAN.md.
+## a Dictionary of named results instead (the natural translation, not a behavior change).
+## PERF (GO-04): `cast()`'s inner line-test used to call `ray_segment()` (~thousands of
+## Dictionary allocs + string-key hashes per frame -- the single biggest cast_frame cost)
+## and `WallHit.new()` per hop. Both are now allocation-free: the ray-segment math is
+## inlined into `cast()` (matching the original's zero-alloc out-params) and WallHits are
+## pooled. `ray_segment()` itself is kept (tested, off the hot path). See
+## plans/FINAL_AUDIT_GODOT_OPTIMIZATIONS.md GO-04.
+
+# GO-03-style pool for cast()'s per-hop WallHit records. cast() rewinds to index
+# 0 each call (indexing by the growing hits array's size), so this only ever holds
+# up to MAX_RAY_HOPS records total and is reused across all 160 rays every frame
+# instead of heap-allocating thousands of WallHits. Safe because every caller
+# consumes cast()'s returned list fully and sequentially before the next call
+# (build_column_sector reads it into a fresh column and keeps no WallHit refs).
+static var _wallhit_pool: Array = []
 
 class WallHit extends RefCounted:
 	var distance: float # ray parameter t at hit
@@ -116,14 +129,28 @@ static func cast(map: DoomTypes.MapData, origin: Vector2, origin_sector: int, di
 			var ln: DoomTypes.Linedef = map.lines[line_id]
 			var a: Vector2 = map.vertices[ln.v1].p
 			var b: Vector2 = map.vertices[ln.v2].p
-			var res := ray_segment(cursor, dir, a, b)
-			if res["hit"]:
-				var t: float = res["t"]
-				if t > 1e-4 and t < best_t:
+			# Inlined ray-vs-segment test. This runs ~4 lines x ~11-30 hops x 160
+			# rays = thousands of times per frame; ray_segment() used to return a
+			# fresh Dictionary (heap alloc + 4 string-key hashes) each call, which
+			# dominated cast_frame. The original uses out-params (zero alloc); this
+			# is the same math with no allocation -- t/u/backside computed inline,
+			# u only evaluated once a line beats best_t. Behavior-identical.
+			var sdx := b.x - a.x
+			var sdy := b.y - a.y
+			var denom := dir.x * sdy - dir.y * sdx
+			if absf(denom) < 1e-7:
+				continue # parallel
+			var inv_neg_denom := -1.0 / denom
+			var oax := cursor.x - a.x
+			var oay := cursor.y - a.y
+			var t: float = (oax * sdy - oay * sdx) * inv_neg_denom
+			if t > 1e-4 and t < best_t:
+				var u: float = (oax * dir.y - oay * dir.x) * inv_neg_denom
+				if u >= 0.0 and u <= 1.0:
 					best_t = t
 					best_line_local = line_id
-					best_u = res["u"]
-					best_back = res["backside"]
+					best_u = u
+					best_back = denom > 0.0
 
 		if best_line_local < 0:
 			break # ray escaped (shouldn't happen on closed sector)
@@ -146,7 +173,13 @@ static func cast(map: DoomTypes.MapData, origin: Vector2, origin_sector: int, di
 		if neighbor >= 0:
 			is_sky = map.sectors[neighbor].is_sky
 
-		var wh := WallHit.new()
+		# Pooled WallHit (index = current hits count -> rewound to 0 each cast call).
+		var wh: WallHit
+		if hits.size() < _wallhit_pool.size():
+			wh = _wallhit_pool[hits.size()]
+		else:
+			wh = WallHit.new()
+			_wallhit_pool.append(wh)
 		wh.distance = accumulated_t + best_t
 		wh.hit = hit_pos
 		wh.linedef_id = best_line_local

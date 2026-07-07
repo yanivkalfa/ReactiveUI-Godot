@@ -29,6 +29,11 @@ class RayHit extends RefCounted:
 # off if a regression appears -- the engine should still play.
 const USE_SECTOR_RAYCAST := true
 
+# TEMP DIAGNOSTIC (remove): microsecond timing so the built-game overlay can split
+# the CPU frame into sim (tick: raycast+movement+doors) vs reconcile (process-tick).
+static var last_tick_us: int = 0
+static var last_cast_us: int = 0
+
 # ───── Public API ─────
 
 static func new_game(level: int, diff: int) -> DoomTypes.GameState:
@@ -102,18 +107,20 @@ static func new_game(level: int, diff: int) -> DoomTypes.GameState:
 # just never open since update_doors isn't ported yet.
 
 static func tick(st: DoomTypes.GameState, dt: float, input: DoomTypes.InputCmd) -> void:
+	var _t0 := Time.get_ticks_usec()
 	if st.game_over or st.victory:
 		st.time_accum += dt
 		advance_face(st, dt) # still advance face timer for fun
 		cast_frame(st)
+		last_tick_us = Time.get_ticks_usec() - _t0
 		return
 	st.tic += 1
 	st.time_accum += dt
 
 	update_player(st, input, dt)
-	# Phase 3 (original): update_doors(st, dt); update_sectors(st, dt) -- door
-	# FSM + sector light animation.
-	# Phase 3 (original): for i in range(1, st.mobj_count + 1): update_mobj(st, i, dt)
+	update_doors(st, dt) # Phase 3a: door open/close FSM + ceiling_z mirror.
+	update_sectors(st, dt) # Phase 3a: animated sector light specials.
+	# Phase 3b/c (original): for i in range(1, st.mobj_count + 1): update_mobj(st, i, dt)
 	# -- monsters/projectiles/pickups are frozen until AI/combat lands.
 
 	compact_mobjs(st)
@@ -138,6 +145,7 @@ static func tick(st: DoomTypes.GameState, dt: float, input: DoomTypes.InputCmd) 
 				st.tracers[i].age_ms = minf(DoomTypes.C.TRACER_LIFE_MS, st.tracers[i].age_ms + dt_ms)
 
 	cast_frame(st)
+	last_tick_us = Time.get_ticks_usec() - _t0
 
 static func update_player(st: DoomTypes.GameState, input: DoomTypes.InputCmd, dt: float) -> void:
 	var p := st.player
@@ -222,8 +230,8 @@ static func update_player(st: DoomTypes.GameState, input: DoomTypes.InputCmd, dt
 	# -- weapons aren't ported yet; the Attack input is captured but does nothing.
 
 	# use key (open doors)
-	# Phase 3 (original): if input.use: try_use(st) -- doors aren't ported yet;
-	# the Use input is captured but does nothing.
+	if input.use:
+		try_use(st)
 
 # Phase 7 (original): vertical physics for the player. Tracks Z (feet height)
 # against the floor of the player's current sector. Jump applies upward
@@ -258,6 +266,154 @@ static func update_player_vertical(st: DoomTypes.GameState, p: DoomTypes.PlayerS
 	# Crouch lowers view height (smooth)
 	var target_view: float = DoomTypes.C.CROUCH_HEIGHT if input.crouch else DoomTypes.C.PLAYER_VIEW_HEIGHT
 	p.view_height = lerpf(p.view_height, target_view, minf(1.0, dt * 8.0))
+
+# ───── Doors + sectors (Phase 3a) ─────
+
+# Phase 3 (original): the E-key handler. Probe the 5 cells 0.4..1.4u ahead along
+# the player's facing; the first door found starts opening (door_timer = 1),
+# gated by keycard for colored doors. A plain Wall stops the probe. door_state
+# 200+ means already (nearly) open, so we don't re-trigger.
+static func try_use(st: DoomTypes.GameState) -> void:
+	var p := st.player
+	var fwd_x := cos(p.angle)
+	var fwd_y := sin(p.angle)
+	var d := 0.4
+	while d <= 1.4:
+		var gx := int(p.x + fwd_x * d)
+		var gy := int(p.y + fwd_y * d)
+		d += 0.2
+		if gx < 0 or gx >= st.map.width or gy < 0 or gy >= st.map.height:
+			continue
+		var c: DoomTypes.Cell = st.map.cells[gy * st.map.width + gx]
+		if c.kind == DoomTypes.CellKind.DOOR:
+			if c.door_state < 200:
+				c.door_timer = 1
+			return
+		if c.kind == DoomTypes.CellKind.DOOR_BLUE:
+			if (p.keys & DoomTypes.KeyCard.BLUE) != 0:
+				if c.door_state < 200:
+					c.door_timer = 1
+			else:
+				message(p, "You need a BLUE keycard!", 2.0)
+			return
+		if c.kind == DoomTypes.CellKind.DOOR_YELLOW:
+			if (p.keys & DoomTypes.KeyCard.YELLOW) != 0:
+				if c.door_state < 200:
+					c.door_timer = 1
+			else:
+				message(p, "You need a YELLOW keycard!", 2.0)
+			return
+		if c.kind == DoomTypes.CellKind.DOOR_RED:
+			if (p.keys & DoomTypes.KeyCard.RED) != 0:
+				if c.door_state < 200:
+					c.door_timer = 1
+			else:
+				message(p, "You need a RED keycard!", 2.0)
+			return
+		if c.kind == DoomTypes.CellKind.WALL:
+			return
+
+# Phase 3 (original): door animation FSM, driven off each door Cell's door_timer:
+# 1 = opening, 2 = open & waiting, 3 = closing. door_state is the 0..255 open
+# fraction; it's mirrored onto the matching sector's ceiling_z each frame so the
+# renderer + collision see the door move. Doors won't close on top of an actor
+# (checked via actor_in_cell) and re-open if squeezed while closing.
+static func update_doors(st: DoomTypes.GameState, dt: float) -> void:
+	var n := st.map.cells.size()
+	var delta := int(clampf(dt * 220.0, 1.0, 30.0))
+	var has_sector_map: bool = st.sector_map.is_valid() and st.sector_map.cell_to_sector.size() > 0
+	for i in range(n):
+		var c: DoomTypes.Cell = st.map.cells[i]
+		if c.kind != DoomTypes.CellKind.DOOR and c.kind != DoomTypes.CellKind.DOOR_BLUE \
+				and c.kind != DoomTypes.CellKind.DOOR_YELLOW and c.kind != DoomTypes.CellKind.DOOR_RED:
+			continue
+		if c.door_timer == 1:
+			var s := c.door_state + delta
+			if s >= 255:
+				c.door_state = 255
+				c.door_timer = 2
+				# store wait countdown in the sector
+				if has_sector_map:
+					var sid := st.sector_map.cell_to_sector[i]
+					if sid >= 0:
+						st.sector_map.sectors[sid].door_wait_timer = DoomTypes.C.DOOR_AUTO_CLOSE_DELAY
+			else:
+				c.door_state = s
+		elif c.door_timer == 2:
+			# waiting open
+			if has_sector_map:
+				var sid := st.sector_map.cell_to_sector[i]
+				if sid >= 0:
+					var sec: DoomTypes.Sector = st.sector_map.sectors[sid]
+					sec.door_wait_timer -= dt
+					# Don't close on top of player or monsters: check the cell.
+					var cx := i % st.map.width
+					var cy := i / st.map.width
+					var blocked := actor_in_cell(st, cx, cy)
+					if sec.door_wait_timer <= 0.0 and not blocked:
+						c.door_timer = 3
+					elif blocked:
+						sec.door_wait_timer = 1.0 # keep checking
+		elif c.door_timer == 3:
+			# closing
+			var s := c.door_state - delta
+			if s <= 0:
+				c.door_state = 0
+				c.door_timer = 0
+			else:
+				c.door_state = s
+			# Re-open immediately if blocked
+			var cx2 := i % st.map.width
+			var cy2 := i / st.map.width
+			if actor_in_cell(st, cx2, cy2):
+				c.door_timer = 1
+		# Phase 2/3: mirror cell door_state onto the matching sector's ceiling_z.
+		if has_sector_map:
+			var sec_id := st.sector_map.cell_to_sector[i]
+			if sec_id >= 0:
+				st.sector_map.sectors[sec_id].ceiling_z = (c.door_state / 255.0) * 1.5
+
+# True if the player or any live monster/barrel's footprint overlaps tile (cx,cy).
+static func actor_in_cell(st: DoomTypes.GameState, cx: int, cy: int) -> bool:
+	var p := st.player
+	if p.alive and int(p.x) == cx and int(p.y) == cy:
+		return true
+	for j in range(1, st.mobj_count + 1):
+		var m: DoomTypes.Mobj = st.mobjs[j]
+		if m.id == 0 or m.health <= 0:
+			continue
+		if not is_monster(m.kind) and m.kind != DoomTypes.MobjKind.BARREL:
+			continue
+		if int(m.x) == cx and int(m.y) == cy:
+			return true
+	return false
+
+# Phase 3 (original): animate sector light specials (flicker/blink/glow). Base
+# light is 200 (FromTiles default); the original notes it can't recover a true
+# per-sector base, so it clamps to 200 -- faithfully preserved.
+static func update_sectors(st: DoomTypes.GameState, dt: float) -> void:
+	if not st.sector_map.is_valid():
+		return
+	var sectors := st.sector_map.sectors
+	var tic := st.tic
+	for i in range(sectors.size()):
+		var sp: int = sectors[i].special
+		if sp == DoomTypes.SectorSpecial.NONE:
+			continue
+		var base_l := 200
+		match sp:
+			DoomTypes.SectorSpecial.LIGHT_FLICKER:
+				var seed := (tic + i * 7) & 31
+				# 7/32 frames dim; rest bright
+				sectors[i].light = int(base_l / 3) if seed < 7 else base_l
+			DoomTypes.SectorSpecial.LIGHT_BLINK:
+				var phase := (tic + i * 11) & 63
+				sectors[i].light = int(base_l / 3) if phase < 8 else base_l
+			DoomTypes.SectorSpecial.LIGHT_GLOW:
+				# smooth sin wave 0.5..1.0 of base
+				var t := (tic + i * 13) * 0.05
+				var w := 0.5 + 0.5 * sin(t)
+				sectors[i].light = int(clampf(base_l * (0.5 + 0.5 * w), 30.0, 255.0))
 
 ## `actor` is either `st.player` or a `DoomTypes.Mobj` -- both independently
 ## declare `x`/`y` fields; GDScript's duck typing reaches either via plain
@@ -482,6 +638,7 @@ static func ceiling_above_in(sec: DoomTypes.Sector, foot_z: float, actor_height:
 # ───── Renderer ─────
 
 static func cast_frame(st: DoomTypes.GameState) -> void:
+	var _tc := Time.get_ticks_usec()
 	var p := st.player
 	var cols := st.frame.columns
 	var depth := st.frame.depth_buffer
@@ -493,6 +650,11 @@ static func cast_frame(st: DoomTypes.GameState) -> void:
 	var view_z := p.z + (0.6 if p.view_height <= 0.0 else p.view_height)
 	var horizon := DoomTypes.C.VIEWPORT_H * 0.5 + p.pitch
 	st.player.view_shift_px = 0.0
+
+	# GO-03 pooling: rewind the per-frame WallSeg/FloorBand/CeilingBand allocator
+	# before rebuilding this frame's columns. Every take_* below reuses last
+	# frame's records instead of heap-allocating fresh ones.
+	st.frame.reset_pools()
 
 	for i in range(DoomTypes.C.VIEW_W):
 		var camera_x := 2.0 * i / float(DoomTypes.C.VIEW_W) - 1.0 # -1..1
@@ -516,7 +678,7 @@ static func cast_frame(st: DoomTypes.GameState) -> void:
 			var bot := horizon + wall_h * 0.5
 			var light := light_from_dist(perp, hit.light)
 			var col_info := DoomTypes.ColumnInfo.new()
-			var main_seg := DoomTypes.WallSeg.new()
+			var main_seg := st.frame.take_wallseg()
 			main_seg.top_px = top
 			main_seg.bot_px = bot
 			main_seg.distance = perp
@@ -530,6 +692,7 @@ static func cast_frame(st: DoomTypes.GameState) -> void:
 			col_info.floor_bands = []
 			col_info.ceiling_bands = []
 			cols[i] = col_info
+	last_cast_us = Time.get_ticks_usec() - _tc
 
 # Phase 3 + Plan C (original): portal-walking column build with Doom-style
 # vertical occlusion clipping. Maintains a per-ray (win_top, win_bot) screen-Y
@@ -619,7 +782,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 						and not terminal \
 						and (fz - back.floor_z) >= 0.15 \
 						and b_top <= y_floor_far + 0.5
-				var fb := DoomTypes.FloorBand.new()
+				var fb := st.frame.take_floorband()
 				fb.top_px = b_top
 				fb.bot_px = b_bot
 				fb.floor_z = fz
@@ -649,7 +812,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 			if c_bot_band > win_bot:
 				c_bot_band = win_bot
 			if c_bot_band > c_top_band + 0.5:
-				var cb := DoomTypes.CeilingBand.new()
+				var cb := st.frame.take_ceilband()
 				cb.top_px = c_top_band
 				cb.bot_px = c_bot_band
 				cb.ceiling_z = cz
@@ -690,7 +853,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var bt: float = win_top if y_top_far < win_top else y_top_far
 					var bb: float = win_bot if y_top_near > win_bot else y_top_near
 					if bb > bt + 0.5:
-						var fb2 := DoomTypes.FloorBand.new()
+						var fb2 := st.frame.take_floorband()
 						fb2.top_px = bt
 						fb2.bot_px = bb
 						fb2.floor_z = ef.top_z
@@ -712,7 +875,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var ct := win_top
 					var cb2: float = win_bot if y_bot_far > win_bot else y_bot_far
 					if cb2 > ct + 0.5:
-						var cbd := DoomTypes.CeilingBand.new()
+						var cbd := st.frame.take_ceilband()
 						cbd.top_px = ct
 						cbd.bot_px = cb2
 						cbd.ceiling_z = ef.bottom_z
@@ -736,7 +899,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var c_top: float = win_top if w_top < win_top else w_top
 					var c_bot: float = win_bot if w_bot > win_bot else w_bot
 					if c_bot > c_top + 0.5:
-						var seg := DoomTypes.WallSeg.new()
+						var seg := st.frame.take_wallseg()
 						seg.top_px = c_top
 						seg.bot_px = c_bot
 						seg.distance = perp
@@ -797,7 +960,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 				var c_top2: float = win_top if y_top_far2 < win_top else y_top_far2
 				var c_bot2: float = win_bot if y_bot_far2 > win_bot else y_bot_far2
 				if c_bot2 > c_top2 + 0.5:
-					var seg2 := DoomTypes.WallSeg.new()
+					var seg2 := st.frame.take_wallseg()
 					seg2.top_px = c_top2
 					seg2.bot_px = c_bot2
 					seg2.distance = perp
@@ -816,7 +979,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var bt2: float = win_top if y_top_far_flip < win_top else y_top_far_flip
 					var bb2: float = win_bot if y_top_near2 > win_bot else y_top_near2
 					if bb2 > bt2 + 0.5:
-						var fb3 := DoomTypes.FloorBand.new()
+						var fb3 := st.frame.take_floorband()
 						fb3.top_px = bt2
 						fb3.bot_px = bb2
 						fb3.floor_z = ef2.top_z
@@ -831,7 +994,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var ct2 := win_top
 					var cb3: float = win_bot if y_bot_far2 > win_bot else y_bot_far2
 					if cb3 > ct2 + 0.5:
-						var cbd2 := DoomTypes.CeilingBand.new()
+						var cbd2 := st.frame.take_ceilband()
 						cbd2.top_px = ct2
 						cbd2.bot_px = cb3
 						cbd2.ceiling_z = ef2.bottom_z
@@ -883,7 +1046,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 				w_top2 = win_top
 			if w_bot2 > win_bot:
 				w_bot2 = win_bot
-			var main := DoomTypes.WallSeg.new()
+			var main := st.frame.take_wallseg()
 			main.top_px = w_top2
 			main.bot_px = w_bot2
 			main.distance = perp
@@ -918,7 +1081,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 			if c_bot3 > win_bot:
 				c_bot3 = win_bot
 			if c_bot3 > c_top3 + 0.5:
-				var seg3 := DoomTypes.WallSeg.new()
+				var seg3 := st.frame.take_wallseg()
 				seg3.top_px = c_top3
 				seg3.bot_px = c_bot3
 				seg3.distance = perp
@@ -950,7 +1113,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 			if c_bot4 > c_top4 + 0.5:
 				# Riser flag -> chalk-line rim, only for tall steps.
 				var tall_step := (back.floor_z - front.floor_z) >= 0.5
-				var seg4 := DoomTypes.WallSeg.new()
+				var seg4 := st.frame.take_wallseg()
 				seg4.top_px = c_top4
 				seg4.bot_px = c_bot4
 				seg4.distance = perp
@@ -977,7 +1140,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 
 		# Window collapsed -> nothing past this hit can be visible.
 		if win_bot - win_top < 1.0:
-			var main5 := DoomTypes.WallSeg.new()
+			var main5 := st.frame.take_wallseg()
 			main5.top_px = 0.0
 			main5.bot_px = 0.0
 			main5.distance = perp
@@ -999,7 +1162,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 			return col5
 
 	# Ray escaped -- sky column.
-	var main6 := DoomTypes.WallSeg.new()
+	var main6 := st.frame.take_wallseg()
 	main6.top_px = 0.0
 	main6.bot_px = 0.0
 	main6.distance = DoomTypes.C.MAX_RAY

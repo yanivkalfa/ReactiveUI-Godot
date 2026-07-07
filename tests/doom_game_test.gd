@@ -33,6 +33,7 @@ func _run() -> void:
 	_test_game_logic()
 	_test_screen_logic()
 	_test_player_movement()
+	_test_doors()
 	await _test_integration_tick()
 	print("\n[doom_game_test] %d passed, %d failed" % [_passes, _fails])
 	quit(1 if _fails > 0 else 0)
@@ -350,6 +351,53 @@ func _test_player_movement() -> void:
 	_ok(st7.time_accum > 0.0, "tick() accumulates time_accum")
 	_ok(st7.frame.columns.size() == DoomTypes.C.VIEW_W, "tick() keeps re-running cast_frame (VIEW_W columns present)")
 
+## Phase 3a: door FSM (try_use -> update_doors) + keycard gating. Level 1 has a
+## plain door at tile (24,37) and a locked DOOR_RED at (9,27).
+func _test_doors() -> void:
+	var st := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var w: int = st.map.width
+	var door: DoomTypes.Cell = st.map.cells[37 * w + 24]
+	_ok(door.kind == DoomTypes.CellKind.DOOR, "level1 has a plain door at (24,37)")
+	_ok(door.door_state == 0 and door.door_timer == 0, "door starts closed + idle")
+	_ok(st.map.blocks_movement(24, 37) == true, "closed door blocks movement")
+
+	# Face the door from just south of it and press Use.
+	st.player.x = 24.5
+	st.player.y = 38.5
+	st.player.angle = -PI / 2.0 # facing -Y (toward the door tile)
+	GameLogic.try_use(st)
+	_ok(door.door_timer == 1, "try_use starts the door opening (timer=1)")
+
+	# Animate to fully open.
+	var opened := false
+	for i in range(120):
+		GameLogic.update_doors(st, 1.0 / 60.0)
+		if door.door_state >= 255:
+			opened = true
+			break
+	_ok(opened and door.door_timer == 2, "door fully opens then enters wait state (timer=2)")
+	_ok(st.map.blocks_movement(24, 37) == false, "open door no longer blocks movement")
+	var sid: int = st.sector_map.cell_to_sector[37 * w + 24]
+	_ok(sid >= 0 and st.sector_map.sectors[sid].ceiling_z > 1.0, "open door mirrors onto sector ceiling_z")
+
+	# A locked colored door without the key does NOT open, and posts a message.
+	var red_door: DoomTypes.Cell = st.map.cells[27 * w + 9]
+	_ok(red_door.kind == DoomTypes.CellKind.DOOR_RED, "level1 has a red door at (9,27)")
+	# This door sits in a vertical wall (passable E<->W), so approach from the east.
+	st.player.keys = DoomTypes.KeyCard.NONE
+	st.player.x = 10.5
+	st.player.y = 27.5
+	st.player.angle = PI # facing -X (toward the door tile)
+	st.player.message_timer = 0.0
+	GameLogic.try_use(st)
+	_ok(red_door.door_timer == 0, "locked red door stays shut without the key")
+	_ok(st.player.message_timer > 0.0, "locked door posts a 'need keycard' message")
+
+	# With the key, it opens.
+	st.player.keys = DoomTypes.KeyCard.RED
+	GameLogic.try_use(st)
+	_ok(red_door.door_timer == 1, "red door opens once the player holds the red key")
+
 ## The one reconciler-based check in this file (see the header comment): mounts
 ## DoomGameScreen for real, drives DoomInputState + physics_frame directly, and
 ## confirms the full hook -> tick -> re-render pipeline survives without
@@ -361,12 +409,41 @@ func _test_integration_tick() -> void:
 	await process_frame
 	await process_frame
 
+	var before := _collect_positions(c)
+
 	DoomInputState.shared.reset()
 	DoomInputState.shared.forward = true
+	# The hook drives its tick loop off get_tree().process_frame (NOT physics_frame
+	# -- see doom_game_screen.hooks.guitkx for why), so advance process frames here.
 	for i in range(10):
-		await physics_frame
+		await process_frame
 	DoomInputState.shared.reset()
+	await process_frame
+
+	var after := _collect_positions(c)
 
 	_ok(c.get_child_count() > 0, "DoomGameScreen keeps rendering after 10 live physics ticks with input held")
+	# Regression guard for the mutate-in-place/reference-equal-bailout bug: tick()
+	# mutates GameState in place, so the hook's setState must hand the reconciler
+	# a genuinely new top-level reference (GameState.snapshot()) each tick, or the
+	# Object.is-equal bailout silently drops every re-render despite state
+	# actually changing (player.y visibly moved but the Control tree never did).
+	var n: int = min(before.size(), after.size())
+	var diffs := 0
+	for i in range(n):
+		if before[i] != after[i]:
+			diffs += 1
+	_ok(n > 0 and diffs > 0, "held forward input actually moves rendered node positions (%d/%d changed)" % [diffs, n])
 	app.unmount()
 	c.queue_free()
+
+func _collect_positions(node: Node) -> Array:
+	var out: Array = []
+	_collect_positions_into(node, out)
+	return out
+
+func _collect_positions_into(node: Node, out: Array) -> void:
+	if node is Control:
+		out.append((node as Control).position)
+	for child in node.get_children():
+		_collect_positions_into(child, out)
