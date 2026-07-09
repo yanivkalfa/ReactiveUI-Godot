@@ -47,6 +47,16 @@ static func build_sprite_list(state: DoomTypes.GameState) -> Array:
 		if ty < 0.2:
 			continue
 
+		# Wall occlusion via the AUTHORITATIVE tile line-of-sight (map.blocks_rays). The sector
+		# depth buffer under-occludes vs the tile map -- from_tiles doesn't wall off every solid
+		# tile, so a thing behind a solid tile would otherwise LEAK THROUGH THE WALL (both the BSP
+		# and ray-walker paths, since both read the sector map). tile-LOS is the documented source
+		# of truth for occlusion; the per-column depth clip below still trims partial occlusion by
+		# actually-rendered walls. (2D LOS -- vertical/3D-floor occlusion stays with the
+		# floor/ceiling occluder tests further down.)
+		if not GameLogic.has_line_of_sight(state, p.x, p.y, m.x, m.y):
+			continue
+
 		var screen_x: float = (DoomTypes.C.VIEWPORT_W * 0.5) + (tx / ty) * plane_scale
 		var sprite_h: float = (1.0 / ty) * plane_scale * sprite_scale(m.kind)
 		# Sprite anchor: feet (m.z) for floor-standing things, slight lift
@@ -348,14 +358,386 @@ static func build_tracer_list(state: DoomTypes.GameState) -> Array:
 
 	return list
 
-## Small `style` dict builders for the viewport markup. Not part of the
-## original DoomGameScreenLogic.uitkx -- exist purely so doom_game_screen.guitkx's
-## `@for` bodies pass an already-built Dictionary rather than writing an inline
-## `{...}` dict literal inside a directive body (a `.guitkx` compiler markup/
-## code-lexis scanning limitation for that specific construct, unrelated to
-## any of the ported game logic itself).
-static func mono_tint_style(v: float) -> Dictionary:
-	return {"modulate": Color(v, v, v, 1.0)}
-
+## Small `style` dict builder for the viewport markup. Exists purely so
+## doom_game_screen.guitkx's `@for` bodies pass an already-built Dictionary rather than
+## writing an inline `{...}` dict literal inside a directive body (a `.guitkx` compiler
+## markup/code-lexis scanning limitation for that construct, unrelated to game logic).
 static func tint_style(c: Color) -> Dictionary:
 	return {"modulate": c}
+
+# ───── Unified world render list (Unity's single-container painter's algorithm) ─────
+# One flat list of every solid world quad -- terminal walls, portal/stair extra-segs,
+# and actor sprites -- each carrying a `z_index` so Godot's native (C++) canvas sort does the
+# depth ordering. The list is NOT sorted in GDScript and NOT reordered per frame: it's emitted
+# in a STABLE order (by column), so the reconciler only rewrites CHANGED props instead of every
+# slot after a re-sort -- the real per-frame win over the old `sort_custom` painter's list.
+#
+# z_index = zband * WORLD_Z_STRIDE + distanceRank (nearer = higher). The ZBAND encodes Unity's
+# paint order so bands can never z-fight walls (the drips): ceiling bands 0, floor bands 1,
+# SOLIDS (walls + segs + sprites) 2. Within the solids band, walls and sprites depth-rank against
+# each other, so a nearer wall column paints over a sprite PER COLUMN (fixes sprite-through-wall).
+#
+# HUD isolation without a CanvasLayer: the markup gives the world_group container z_index
+# WORLD_GROUP_Z, and z_as_relative (Godot default) shifts EVERY world child down by that, so a
+# child's effective z is WORLD_GROUP_Z + (0..3071) = -4000..-929 -- strictly BELOW the HUD, which
+# stays at the default z 0. Sky + floor backstop go to BACKDROP_Z (below the whole world). So the
+# global canvas sort can never leak a world quad over the crosshair/gun/minimap (the old z_index
+# footgun) and never lets the sky paint over a wall.
+const WORLD_Z_STRIDE := 1024
+const ZBAND_CEILING := 0
+const ZBAND_FLOOR := 1
+const ZBAND_SOLID := 2                     # world child z_index range: 0..3071
+const WORLD_GROUP_Z := -4000               # container offset -> world children ride to -4000..-929
+const BACKDROP_Z := -4096                  # sky + floor backstop, below the whole world
+
+static func world_z(zband: int, distance: float) -> int:
+	# distance 0..MAX_RAY -> rank STRIDE-1..0 (nearer = higher), offset into the band.
+	var t: float = clampf((DoomTypes.C.MAX_RAY - distance) / DoomTypes.C.MAX_RAY, 0.0, 1.0)
+	return zband * WORLD_Z_STRIDE + int(t * (WORLD_Z_STRIDE - 1))
+
+class WorldQuad extends RefCounted:
+	var x: float
+	var y: float
+	var w: float
+	var h: float
+	var texture: Texture2D
+	var modulate: Color        # tint (sprites: tint*light; walls/bands: mono shade)
+	var self_modulate: Color
+	var material: Material
+	var distance: float
+	var z_index: int = 0       # = world_z(zband, distance); Godot's canvas sort orders by this
+	var key: String = ""       # STABLE per-element key (Unity's scheme) -> keyed reconcile, no churn
+
+# 1x1 white texture -- solid band/sprite quads tint it via modulate, so every world quad
+# is the same node type (TextureRect) and slot-reuses without type churn as the sort order
+# and count shift each frame.
+static var _white_tex: Texture2D
+
+static func white_tex() -> Texture2D:
+	if _white_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color.WHITE)
+		_white_tex = ImageTexture.create_from_image(img)
+	return _white_tex
+
+# Minimum wall/seg brightness. Dark sectors otherwise crush walls, thin stair risers and
+# mortar columns to near-black (hard black bars). Raise for a brighter level, lower for a
+# moodier one -- a top-level readability knob applied to every wall/seg's mono shade.
+const MIN_WALL_SHADE := 0.55
+
+# Vertical TILING wall shader (matches Unity's BackgroundRepeat-Y): 1 world-Z unit = 64 texels,
+# so one tile is texPx = VIEWPORT_H/distance screen px tall. Each wall/seg feeds its column's data
+# through SHADER UNIFORMS (set_shader_parameter -- the correct data path; self_modulate is a
+# post-shader tint that can't feed a shader, which is why packing data there failed before).
+# A ShaderMaterial pooled per element KEY keeps material identity stable for the keyed reconcile
+# (the style dict stays equal; only the uniforms change, so Godot re-renders without a re-diff).
+# This is the fix for the "walls stretch / warp / bend" limitation.
+static var _wall_shader: Shader
+static var _wall_mats: Dictionary = {} # element key -> ShaderMaterial, persists across frames
+
+static func _wall_shader_res() -> Shader:
+	if _wall_shader == null:
+		_wall_shader = Shader.new()
+		_wall_shader.code = "shader_type canvas_item;\nrender_mode unshaded;\nuniform sampler2D wall_tex : filter_nearest;\nuniform float tex_u = 0.0;\nuniform float tiles = 1.0;\nuniform float peg = 0.0;\nuniform float shade = 1.0;\nvoid fragment() {\n\tfloat vv = fract(UV.y * tiles - peg);\n\tvec4 c = texture(wall_tex, vec2(clamp(tex_u, 0.0, 0.999), vv));\n\tCOLOR = vec4(c.rgb * shade, c.a);\n}\n"
+	return _wall_shader
+
+static func _wall_material(key: String) -> ShaderMaterial:
+	var m: ShaderMaterial = _wall_mats.get(key)
+	if m == null:
+		m = ShaderMaterial.new()
+		m.shader = _wall_shader_res()
+		_wall_mats[key] = m
+	return m
+
+# One wall/seg column, vertically TILED (no stretch). The shader samples wall_tex at
+# (tex_u, fract(UV.y*tiles - peg)) where tiles = h/texPx (texPx = VIEWPORT_H/distance) and
+# peg = tex_offset_px/texPx pegs the tile grid across the raycaster's vertical clip. Shade in-shader.
+static func _wall_quad(x: float, y: float, w: float, h: float, wall_tex: Texture2D, tex_u: float, distance: float, tex_offset_px: float, shade: float, zband: int, key: String) -> WorldQuad:
+	var q := WorldQuad.new()
+	q.x = floorf(x) # integer pixel: sub-pixel x + nearest leaves a 1px seam every column
+	q.y = y
+	q.w = w
+	q.h = h
+	q.texture = white_tex() # the shader reads wall_tex; the TextureRect just needs SOME texture for UVs
+	q.modulate = Color.WHITE
+	q.self_modulate = Color.WHITE
+	var mat := _wall_material(key)
+	var texpx: float = DoomTypes.C.VIEWPORT_H / maxf(0.1, distance)
+	mat.set_shader_parameter("wall_tex", wall_tex)
+	mat.set_shader_parameter("tex_u", tex_u)
+	mat.set_shader_parameter("tiles", h / texpx)
+	mat.set_shader_parameter("peg", tex_offset_px / texpx)
+	mat.set_shader_parameter("shade", shade)
+	q.material = mat
+	q.distance = distance
+	q.z_index = world_z(zband, distance)
+	q.key = key
+	return q
+
+# Flat-color quad (floor/ceiling bands): the 1x1 white texture tinted by modulate, no shader.
+static func _band_quad(x: float, y: float, w: float, h: float, color: Color, distance: float, zband: int, key: String) -> WorldQuad:
+	var q := WorldQuad.new()
+	q.x = floorf(x) # integer pixel -> no per-column seam (see _wall_quad)
+	q.y = y
+	q.w = w
+	q.h = h
+	q.texture = white_tex()
+	q.modulate = color
+	q.self_modulate = Color.WHITE
+	q.material = null
+	q.distance = distance
+	q.z_index = world_z(zband, distance)
+	q.key = key
+	return q
+
+static func build_world_geometry(state: DoomTypes.GameState) -> Array:
+	var list: Array = [] # of WorldQuad
+	var walls := DoomTextures.walls()
+	var strip: float = DoomTypes.C.STRIP_W
+
+	# Floor + ceiling BANDS -- in the SAME container but on FIXED PAINT LAYERS (Unity's
+	# DoomGameScreen order: ceiling band 0, floor band 1, seg 2, wall 3). Sorting purely
+	# by ray distance let a nearer dark ceiling/floor band paint OVER a wall (the "ceiling
+	# leaking onto the wall" drips, and the per-column top comb). Layer order guarantees
+	# every wall/seg paints over every band -- exactly Unity's "painted BEFORE walls so
+	# wall texels stay on top." Within a layer we still sort far->near for band-vs-band and
+	# wall-vs-wall occlusion. Colors + padding mirror the formulas from the Unity markup.
+	for i in range(DoomTypes.C.VIEW_W):
+		var ci: DoomTypes.ColumnInfo = state.frame.columns[i]
+		if ci == null:
+			continue
+		var col_x: float = i * strip
+		# FAR -> NEAR (reverse ray order) so nearer bands land LATER in the list -- the tie-break
+		# for equal z-ranks matches Unity (nearer paints on top). Keyed by column + band index so
+		# identity survives the per-column count changing frame to frame (no unkeyed churn).
+		# MERGE consecutive same-slab floor bands (one per crossed tile) into ONE tall quad.
+		# E1M1 is one-sector-per-tile, so a ray over flat floor emits ~15 identical-slab bands;
+		# collapsing them cuts ~1900 floor quads to ~160 -- the real per-frame allocation win.
+		if ci.floor_bands != null:
+			var fbands: Array = ci.floor_bands
+			var fn: int = fbands.size()
+			var fg: int = 0
+			var fgi: int = 0
+			while fg < fn:
+				var fslab: int = roundi(fbands[fg].floor_z * 5.0)
+				var ftop: float = INF
+				var fbot: float = -INF
+				var fnear: DoomTypes.FloorBand = fbands[fg]
+				var fe: int = fg
+				while fe < fn and roundi(fbands[fe].floor_z * 5.0) == fslab:
+					var b: DoomTypes.FloorBand = fbands[fe]
+					ftop = minf(ftop, b.top_px)
+					fbot = maxf(fbot, b.bot_px)
+					if b.distance < fnear.distance:
+						fnear = b
+					fe += 1
+				fg = fe
+				var fh: float = (fbot - ftop) + 4.0
+				if fh < 1.0:
+					fgi += 1
+					continue
+				var lift: float = clampf(fnear.floor_z * 0.10, -0.1, 0.25)
+				var flight: float = fnear.light / 255.0
+				var fbright: float = maxf(1.0, 0.6 + flight * 0.8)
+				var fcol := Color(clampf((0.34 + lift) * fbright, 0.0, 1.0), clampf((0.29 + lift) * fbright, 0.0, 1.0), clampf((0.22 + lift * 0.5) * fbright, 0.0, 1.0), 1.0)
+				list.append(_band_quad(col_x - 0.5, ftop, strip + 2.0, fh, fcol, fnear.distance, ZBAND_FLOOR, "fb%d_%d" % [i, fgi]))
+				fgi += 1
+		if ci.ceiling_bands != null:
+			var cbands: Array = ci.ceiling_bands
+			var cn: int = cbands.size()
+			var cg: int = 0
+			var cgi: int = 0
+			while cg < cn:
+				var cslab: int = roundi(cbands[cg].ceiling_z * 5.0)
+				var ctopmin: float = INF
+				var cbotmax: float = -INF
+				var cnear: DoomTypes.CeilingBand = cbands[cg]
+				var ce: int = cg
+				while ce < cn and roundi(cbands[ce].ceiling_z * 5.0) == cslab:
+					var b: DoomTypes.CeilingBand = cbands[ce]
+					ctopmin = minf(ctopmin, b.top_px)
+					cbotmax = maxf(cbotmax, b.bot_px)
+					if b.distance < cnear.distance:
+						cnear = b
+					ce += 1
+				cg = ce
+				var ctop: float = ctopmin - 2.0
+				var ch: float = (cbotmax + 4.0) - ctop
+				if ch < 1.0:
+					cgi += 1
+					continue
+				var clift: float = clampf(cnear.ceiling_z * 0.04, 0.0, 0.20)
+				var clight: float = cnear.light / 255.0
+				var cbright: float = maxf(1.0, 0.55 + clight * 0.85)
+				var ccol := Color(clampf((0.22 + clift) * cbright, 0.0, 1.0), clampf((0.22 + clift) * cbright, 0.0, 1.0), clampf((0.26 + clift) * cbright, 0.0, 1.0), 1.0)
+				list.append(_band_quad(col_x - 1.0, ctop, strip + 2.0, ch, ccol, cnear.distance, ZBAND_CEILING, "cb%d_%d" % [i, cgi]))
+				cgi += 1
+
+	# Portal / stair extra-segs (upper + lower walls at each traversed portal).
+	for ex in build_extra_seg_list(state):
+		var ecol: DoomTypes.WallSeg = ex.seg
+		var eh: float = ecol.bot_px - ecol.top_px
+		if eh < 1.0:
+			continue
+		# Floor brightness at MIN_WALL_SHADE so dark sectors don't crush walls/segs to black
+		# (that's what turned mortar columns, thin risers and distant slivers into hard black bars).
+		var elight_f: float = maxf(MIN_WALL_SHADE, ecol.light_level / 255.0)
+		list.append(_wall_quad(ex.col_index * strip, ecol.top_px, strip + 2.0, eh, walls[ecol.wall_tex_idx], ecol.tex_u, ecol.distance, ecol.tex_offset_px, elight_f, ZBAND_SOLID, "x%d_%d" % [ex.col_index, ex.seg_index]))
+
+	# Main per-column terminal walls.
+	for i in range(DoomTypes.C.VIEW_W):
+		var col: DoomTypes.WallSeg = state.frame.columns[i].main
+		if col.is_sky:
+			continue
+		var light_f: float = col.light_level / 255.0
+		var vert_dim: float = 0.85 if col.hit_vertical else 1.0
+		list.append(_wall_quad(i * strip, col.top_px, strip + 2.0, col.bot_px - col.top_px, walls[col.wall_tex_idx], col.tex_u, col.distance, col.tex_offset_px, maxf(MIN_WALL_SHADE, light_f * vert_dim), ZBAND_SOLID, "w%d" % i))
+
+	# Actor SPRITES -- folded into the SAME container, in the SOLID z-band. A billboard is ONE
+	# quad with a single z (its center distance), so a z-band can't clip it per column: a
+	# monster whose center peeks past a wall edge / through a doorway jamb would bleed its whole
+	# body over the nearer wall (the "enemy through the wall" bug). So we depth-clip HERE in
+	# screen columns: walk the columns the sprite covers, keep only those where it's in front of
+	# that column's wall (depth buffer), and emit one AtlasTexture quad per contiguous visible
+	# run -- the un-occluded slice, CUT (not squashed) at the wall edge. Usually 1 quad; 2 when a
+	# wall edge crosses it. build_sprite_list still does the floor/ceiling-occluder + fully-behind
+	# culls, so most sprites arrive already visible.
+	var sprite_texs := DoomTextures.sprites()
+	var depth := state.frame.depth_buffer
+	var nvcols: int = DoomTypes.C.VIEW_W
+	for s in build_sprite_list(state):
+		var e: SpriteEntry = s
+		if e.sprite_idx < 0 or e.sprite_idx >= sprite_texs.size() or e.size <= 0.5:
+			continue
+		var tex: Texture2D = sprite_texs[e.sprite_idx]
+		var tw: float = float(tex.get_width())
+		var th: float = float(tex.get_height())
+		var left_px: float = e.screen_x - e.size * 0.5
+		var right_px: float = e.screen_x + e.size * 0.5
+		var top_px: float = e.screen_y - e.size * 0.5
+		var mod := Color(e.tint.r * e.light, e.tint.g * e.light, e.tint.b * e.light, 1.0)
+		var zi: int = world_z(ZBAND_SOLID, e.distance)
+		var c0: int = maxi(0, int(floor(left_px / strip)))
+		var c1: int = mini(nvcols - 1, int(floor((right_px - 0.001) / strip)))
+		# Contiguous runs of columns where the sprite is in front of the wall.
+		var runs: Array = [] # of [start_col, end_col]
+		var rs: int = -1
+		for col in range(c0, c1 + 1):
+			var dwall: float = depth[col] if col < depth.size() else 1e9
+			var vis: bool = e.distance <= dwall + 0.05
+			if vis and rs < 0:
+				rs = col
+			elif (not vis) and rs >= 0:
+				runs.append([rs, col - 1]); rs = -1
+		if rs >= 0:
+			runs.append([rs, c1])
+		for run in runs:
+			var gx0: float = maxf(left_px, run[0] * strip)
+			var gx1: float = minf(right_px, (run[1] + 1) * strip)
+			if gx1 <= gx0 + 0.5:
+				continue
+			var u0: float = (gx0 - left_px) / e.size
+			var u1: float = (gx1 - left_px) / e.size
+			var atlas := AtlasTexture.new()
+			atlas.atlas = tex
+			atlas.region = Rect2(u0 * tw, 0.0, maxf(1.0, (u1 - u0) * tw), th)
+			var sq := WorldQuad.new()
+			sq.x = gx0; sq.y = top_px; sq.w = gx1 - gx0; sq.h = e.size
+			sq.texture = atlas
+			sq.modulate = mod
+			sq.self_modulate = Color.WHITE
+			sq.material = null
+			sq.distance = e.distance
+			sq.z_index = zi
+			# Keyed by sprite id + run start column -- stable identity as the clip shifts.
+			sq.key = "s%d_%d" % [e.id, run[0]]
+			list.append(sq)
+
+	# NO GDScript sort: every quad carries a z_index (world_z), and Godot's native canvas sort
+	# does the depth ordering. The list stays in stable build order (column-major, then sprites)
+	# so the reconciler only rewrites CHANGED props each frame instead of every slot.
+	return list
+
+# ───── Minimap feed (DoomMinimap.uitkx's two inline @foreach loops) ─────
+# Ported here as pure builders (house pattern) rather than inline in the markup.
+# Colors are the minimap palette, baked in so the markup stays a trivial @for.
+
+class MinimapCell extends RefCounted:
+	var cx: int
+	var cy: int
+	var color: Color
+
+class MinimapDot extends RefCounted:
+	var x: float
+	var y: float
+	var color: Color
+
+static func build_minimap_cells(state: DoomTypes.GameState) -> Array:
+	var list: Array = [] # of MinimapCell
+	var map := state.map
+	var mw: int = map.width
+	var mh: int = map.height
+	var wall_clr := Color(0.55, 0.40, 0.20, 1.0)
+	var door_clr := Color(0.85, 0.65, 0.10, 1.0)
+	var door_blue := Color(0.30, 0.55, 1.00, 1.0)
+	var door_yellow := Color(0.95, 0.85, 0.20, 1.0)
+	var door_red := Color(0.95, 0.20, 0.20, 1.0)
+	var exit_clr := Color(0.40, 0.95, 0.40, 1.0)
+	for cy in range(mh):
+		for cx in range(mw):
+			var cell: DoomTypes.Cell = map.cells[cy * mw + cx]
+			var col: Color
+			match cell.kind:
+				DoomTypes.CellKind.WALL:
+					col = wall_clr
+				DoomTypes.CellKind.EXIT:
+					col = exit_clr
+				DoomTypes.CellKind.DOOR_BLUE:
+					col = door_blue
+				DoomTypes.CellKind.DOOR_YELLOW:
+					col = door_yellow
+				DoomTypes.CellKind.DOOR_RED:
+					col = door_red
+				DoomTypes.CellKind.DOOR:
+					col = door_clr
+				_:
+					continue
+			var e := MinimapCell.new()
+			e.cx = cx
+			e.cy = cy
+			e.color = col
+			list.append(e)
+	return list
+
+static func build_minimap_dots(state: DoomTypes.GameState) -> Array:
+	var list: Array = [] # of MinimapDot
+	var enemy_clr := Color(0.95, 0.20, 0.15, 1.0)
+	var pickup_clr := Color(0.30, 0.85, 0.85, 1.0)
+	var door_blue := Color(0.30, 0.55, 1.00, 1.0)
+	var door_yellow := Color(0.95, 0.85, 0.20, 1.0)
+	var door_red := Color(0.95, 0.20, 0.20, 1.0)
+	for i in range(1, state.mobj_count + 1):
+		var m: DoomTypes.Mobj = state.mobjs[i]
+		if m == null or m.id == 0 or m.collected:
+			continue
+		if GameLogic.is_monster(m.kind) and m.state == DoomTypes.AIState.DEAD:
+			continue
+		var col: Color
+		if GameLogic.is_monster(m.kind):
+			col = enemy_clr
+		elif m.kind == DoomTypes.MobjKind.KEY_BLUE:
+			col = door_blue
+		elif m.kind == DoomTypes.MobjKind.KEY_YELLOW:
+			col = door_yellow
+		elif m.kind == DoomTypes.MobjKind.KEY_RED:
+			col = door_red
+		elif GameLogic.is_pickup(m.kind):
+			col = pickup_clr
+		else:
+			continue
+		var e := MinimapDot.new()
+		e.x = m.x
+		e.y = m.y
+		e.color = col
+		list.append(e)
+	return list

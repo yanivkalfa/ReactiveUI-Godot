@@ -23,6 +23,11 @@ var jump := false
 var crouch := false
 var attack := false
 
+# Set by DoomGame (screen == GAME) and the tick loop (false on death/victory):
+# whether a mouse click should (re)capture the cursor. False in the menu and on
+# overlays so their buttons stay clickable rather than re-grabbing the cursor.
+var allow_capture := false
+
 # One-shot flags: set on key/click-down, consumed (and reset to false/0) by
 # the next tick -- matches the original's pendingUse/pendingWeaponSwitch.
 var pending_use := false

@@ -90,6 +90,9 @@ module DoomGameScreenHooks {
         # value, so the setter needs a fresh top-level identity every tick
         # to detect the change -- see GameState.snapshot() (doom_types.gd).
         state_pair[1].call(s.snapshot())
+        # Death/victory overlays release the cursor so their buttons are clickable;
+        # normal play keeps click-to-(re)capture armed for the bootstrap.
+        in_state.allow_capture = not (s.game_over or s.victory)
         if s.game_over or s.victory:
           if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
             Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

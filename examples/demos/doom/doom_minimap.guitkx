@@ -1,0 +1,78 @@
+@class_name DoomMinimap
+
+## Faithful port of the Unity `DoomMinimap.uitkx` -- top-right automap. Its two
+## inline @foreach loops are ported to DoomGameScreenLogic.build_minimap_cells /
+## build_minimap_dots (pure builders); this component just lays out the rects.
+component DoomMinimap(state: DoomTypes.GameState = null) {
+  var MAP_PX = 160
+  var map = state.map
+  var mw: int = map.width
+  var mh: int = map.height
+  var scale = float(MAP_PX) / float(maxi(mw, mh))
+  var inner_w = roundi(mw * scale)
+  var inner_h = roundi(mh * scale)
+  var cell_px = maxi(1, roundi(scale))
+  var px_x = state.player.x * scale
+  var px_y = (mh - state.player.y) * scale
+
+  var bg_clr = Color(0.05, 0.05, 0.05, 0.78)
+  var border_clr = Color(0.85, 0.55, 0.20, 1.0)
+  var player_clr = Color(0.95, 0.95, 0.50, 1.0)
+
+  var cells = DoomGameScreenLogic.build_minimap_cells(state)
+  var dots = DoomGameScreenLogic.build_minimap_dots(state)
+
+  var frame_x = DoomTypes.C.VIEWPORT_W - (inner_w + 6) - 8
+
+  return (
+    <Panel
+      mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+      position={ Vector2(frame_x, 8) }
+      size={ Vector2(inner_w + 6, inner_h + 6) }
+      style={ {"bg_color": bg_clr, "border_color": border_clr, "border_width": 1, "corner_radius": 2} }
+    >
+      <Control mouse_filter={ Control.MOUSE_FILTER_IGNORE } position={ Vector2(3, 3) } size={ Vector2(inner_w, inner_h) } style={ {"clip": true} }>
+        @for (i in range(cells.size())) {
+          var c = cells[i]
+          return (
+            <ColorRect
+              key={ "c" + str(i) }
+              mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+              position={ Vector2(c.cx * scale, (mh - 1 - c.cy) * scale) }
+              size={ Vector2(cell_px, cell_px) }
+              color={ c.color }
+            />
+          )
+        }
+        @for (i in range(dots.size())) {
+          var d = dots[i]
+          return (
+            <ColorRect
+              key={ "m" + str(i) }
+              mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+              position={ Vector2(d.x * scale - 2.0, (mh - d.y) * scale - 2.0) }
+              size={ Vector2(4, 4) }
+              color={ d.color }
+              style={ {"corner_radius": 2} }
+            />
+          )
+        }
+        <ColorRect
+          key="player"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(px_x - 3.0, px_y - 3.0) }
+          size={ Vector2(6, 6) }
+          color={ player_clr }
+          style={ {"corner_radius": 3} }
+        />
+        <ColorRect
+          key="heading"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(px_x + cos(state.player.angle) * 4.0 - 1.0, px_y - sin(state.player.angle) * 4.0 - 1.0) }
+          size={ Vector2(2, 2) }
+          color={ player_clr }
+        />
+      </Control>
+    </Panel>
+  )
+}

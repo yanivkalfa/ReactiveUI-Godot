@@ -204,6 +204,8 @@ static func _apply_key(node: Control, key: String, value) -> void:
 		"mouse_filter": node.mouse_filter = _mouse_filter(value)
 		"tooltip": node.tooltip_text = str(value)
 		"z_index": node.z_index = value
+		"material": node.material = value
+		"texture_filter": node.texture_filter = value
 		"color", "font_color": node.add_theme_color_override("font_color", value)
 		"font": node.add_theme_font_override("font", value)
 		"font_size": node.add_theme_font_size_override("font_size", value)
@@ -236,6 +238,8 @@ static func _reset(node: Control, key: String) -> void:
 		"mouse_filter": node.mouse_filter = Control.MOUSE_FILTER_STOP
 		"tooltip": node.tooltip_text = ""
 		"z_index": node.z_index = 0
+		"material": node.material = null
+		"texture_filter": node.texture_filter = CanvasItem.TEXTURE_FILTER_PARENT_NODE
 		"color", "font_color": node.remove_theme_color_override("font_color")
 		"font": node.remove_theme_font_override("font")
 		"font_size": node.remove_theme_font_size_override("font_size")

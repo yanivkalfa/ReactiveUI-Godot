@@ -20,28 +20,31 @@ extends Control
 
 var _app: ReactiveRoot
 
-# TEMP DIAGNOSTIC (remove after profiling): live perf HUD to read the REAL built-game
-# cost split. --headless never rasterizes, so this is the only way to tell whether the
-# frame is CPU-bound (TIME_PROCESS ~= frame time) or render-bound (thousands of draw
-# calls / high objects). vsync is disabled here so fps shows the true ceiling, not 60.
+# Optional perf overlay, toggled with F3 (hidden by default). A convenience for
+# diagnosing which stages spike: it splits the CPU frame into sim (GameLogic.tick)
+# vs reconcile+render and reports node/draw-call/object counts.
 var _perf_label: Label
+var _perf_on := false
 var _perf_timer := 0.0
+
+# Simple FPS counter, toggled with Ctrl+R, pinned to the top-right corner.
+var _fps_label: Label
+var _fps_on := false
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	# Default mouse_filter is STOP -- this full-screen Control would otherwise
 	# swallow every mouse motion/click as its OWN GUI input before it ever
-	# becomes "unhandled" input, so _unhandled_input below would never fire at
-	# all (the same reasoning doom_game_screen.guitkx's rendered elements
-	# already got IGNORE for, just missed here on the outer bootstrap node).
+	# becomes "unhandled" input, so _unhandled_input below would never fire.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_app = ReactiveRoot.create(self, V.fc(DoomGameScreen.render))
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_app = ReactiveRoot.create(self, V.fc(DoomGame.render))
+	# Start at the menu with the cursor free. DoomGame captures the cursor when it
+	# switches to the game screen (its screen-change effect) and releases it again
+	# on the menu / death / victory overlays.
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_build_perf_overlay()
 
 func _build_perf_overlay() -> void:
-	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
-	Engine.max_fps = 0
 	var layer := CanvasLayer.new()
 	layer.layer = 128
 	add_child(layer)
@@ -52,7 +55,19 @@ func _build_perf_overlay() -> void:
 	_perf_label.add_theme_font_size_override("font_size", 15)
 	_perf_label.position = Vector2(8, 8)
 	_perf_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_perf_label.visible = false
 	layer.add_child(_perf_label)
+
+	# Standalone FPS counter (Ctrl+R), top-right corner.
+	_fps_label = Label.new()
+	_fps_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.4))
+	_fps_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_fps_label.add_theme_constant_override("outline_size", 4)
+	_fps_label.add_theme_font_size_override("font_size", 16)
+	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_label.visible = false
+	layer.add_child(_fps_label)
 
 func _process(delta: float) -> void:
 	if _perf_label == null:
@@ -61,22 +76,24 @@ func _process(delta: float) -> void:
 	if _perf_timer < 0.25:
 		return
 	_perf_timer = 0.0
+	if _fps_on and _fps_label != null:
+		_fps_label.text = "FPS %d" % Engine.get_frames_per_second()
+		# Pin to the top-right corner (recomputed in case the window resized).
+		_fps_label.position = Vector2(get_viewport_rect().size.x - 96.0, 8.0)
+	if not _perf_on:
+		return
 	var fps := Engine.get_frames_per_second()
 	var proc_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
-	var phys_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	var draws := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	var objs := int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
-	var prims := int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 	var nodes := int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	var frame_ms := 1000.0 / maxf(1.0, float(fps))
-	# Split the CPU frame: sim (GameLogic.tick = raycast + movement + doors) vs
-	# reconcile+render (the rest of process time = rebuild vnodes + diff 2384 nodes + commit).
 	var tick_ms := GameLogic.last_tick_us / 1000.0
-	var cast_ms := GameLogic.last_cast_us / 1000.0
 	var reconcile_ms := maxf(0.0, proc_ms - tick_ms)
 	var bound := "CPU-bound" if proc_ms >= frame_ms * 0.6 else "RENDER-bound"
-	_perf_label.text = "FPS %d   frame %.1f ms   [%s]\nCPU process %.1f ms   physics %.1f ms\n  sim(tick) %.1f ms   (of which cast_frame %.1f ms)\n  reconcile+render ~%.1f ms\ndraw calls %d   objects %d   prims %d   nodes %d" % [
-		fps, frame_ms, bound, proc_ms, phys_ms, tick_ms, cast_ms, reconcile_ms, draws, objs, prims, nodes]
+	var renderer := "BSP" if GameLogic.last_cast_bsp else "ray-walker"
+	_perf_label.text = "FPS %d   frame %.1f ms   [%s]   renderer: %s\nsim(tick) %.1f ms   reconcile+render ~%.1f ms\ndraw calls %d   objects %d   nodes %d" % [
+		fps, frame_ms, bound, renderer, tick_ms, reconcile_ms, draws, objs, nodes]
 
 func _exit_tree() -> void:
 	if _app != null:
@@ -99,9 +116,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed:
-			s.attack = true
-			# Re-engage cursor lock on click (in case Escape was pressed earlier).
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			# Only capture/shoot from the game screen -- in the menu or on a death/
+			# victory overlay a click belongs to the buttons (allow_capture gates it).
+			if s.allow_capture:
+				s.attack = true
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else:
 			s.attack = false
 		return
@@ -154,6 +173,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if key.pressed:
 					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			KEY_R:
+				# Ctrl+R toggles the simple top-right FPS counter (plain R is unbound).
+				if key.pressed and key.ctrl_pressed:
+					_fps_on = not _fps_on
+					if _fps_label != null:
+						_fps_label.visible = _fps_on
+			KEY_F3:
+				if key.pressed:
+					_perf_on = not _perf_on
+					if _perf_label != null:
+						_perf_label.visible = _perf_on
 
 ## Clear all held keys when the game window loses OS focus -- otherwise a key
 ## released while focus was elsewhere stays "down" forever. Matches the

@@ -18,7 +18,15 @@ as the design/root-cause record, not as work to do. The live plans stay in `plan
 | `SYNTAX_PARITY_EXECUTION_PLAN.md` | The parity execution — 31/32 tasks shipped (0.7.0). Sole leftover **T6.1 (docs authoring)** moved to the docs wave (Wave 3). |
 | `FIELD_TRIAGE_FIX_PLAN.md` | 0.6.0 field-triage wave (0105 storm, markup leak, 2101 masking, stale sidecar…) — all shipped across 0.6.x–0.8.x. |
 | `HMR_FAST_REFRESH_PLAN.md` | Fast Refresh / HMR — shipped as addon 0.8.0 (+0.8.1 hot-link/`V.comp` hardening). |
+| `GODOT_ANALYZER_INTEGRATION_PLAN.md` | Native gdext analyzer binding — **ALL PHASES DONE** (2026-07-05), shipped editor 0.3.0–0.6.0. Archived 2026-07-08 after full test suite green. |
+| `NATIVE_EDITOR_PARITY_PLAN.md` | Native-editor parity M1–M3 — **ALL MILESTONES DONE** (2026-07-05), editor 0.4.0–0.6.0 (E17 + P3 incremental remap consciously skipped). Archived 2026-07-08. |
+| `GODOT_EDITOR_EXTENSION_PLAN.md` | Full `.guitkx` tooling in the Godot editor — P1–P2 + **P3 shipped as editor 0.6.0** (now 0.6.2): embedded-GDScript intelligence via the native gdext analyzer bridge. Last of its trio; archived 2026-07-08. Kept as mechanism/constraint reference. |
+| `DOOM_GAME_GUITKX_PORT_PLAN.md` | Software-rendered Doom FPS `.guitkx` sample — **all 6 phases done** (2026-07-08), `tests/doom_game_test.gd` green (179 checks). Audio/tween/gallery-entry consciously deferred as out-of-scope optionals. |
 
-Still live in `plans/`: `ASSET_STORE_PLAN.md` (in flight), `GODOT_ANALYZER_INTEGRATION_PLAN.md`
-(P3 gdext binding — design of record), `GODOT_EDITOR_EXTENSION_PLAN.md` (P3 remainder),
-`PARITY_PLAN.md` (living status; G2 docs phases open), `DISCORD_CHANGELOG.md` (needs 0.6→0.8 backfill).
+Still live in `plans/`: `ASSET_STORE_PLAN.md` (published, but docs/screenshots pass + new-store API automation open),
+`PARITY_PLAN.md` (living status; G2 docs phases 9/10 open),
+`VSCODE_VS2022_PARITY_PLAN.md` (code done, interactive verification outstanding),
+`FINAL_AUDIT_GODOT_FINDINGS.md` (G-01…G-22 fixed; **only G-23 open**),
+`FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` (reconciler batch shipped 0.8.6; tooling-perf items G-08/G-10/G-15/GO-10/ColumnInfo open),
+`TECH_DEBT.md` (TD-01 open/accepted),
+`DISCORD_CHANGELOG.md` (release log; needs 0.8.3/0.8.4/0.8.6 backfill).

@@ -26,7 +26,10 @@ export const UitkxGettingStartedPage: FC = () => (
     </Typography>
     <List>
       <ListItem disablePadding>
-        <ListItemText primary="Copy the addons/reactive_ui/ folder into your project's res://addons/ directory." />
+        <ListItemText
+          primary="From the Asset Library: open the AssetLib tab, search “Reactive UI”, then Download → Install (keep the addons/reactive_ui/ folder). The editor tooling ships as a separate asset — search “Reactive UI Editor” to add it too."
+          secondary="Or, manually: copy the addons/reactive_ui/ folder into your project's res://addons/ directory."
+        />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText primary="Enable the plugin under Project Settings → Plugins to turn on .guitkx compile-on-save." />
