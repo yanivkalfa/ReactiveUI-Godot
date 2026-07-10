@@ -5,7 +5,7 @@ extends RefCounted
 ## function component driven by either an awaited Godot Signal or a per-frame poll — not an exception.
 ##
 ## Usage (via V.suspense):
-##   V.suspense({ "fallback": V.label({"text":"Loading…"}), "ready_signal": res_loaded_signal },
+##   V.suspense({ "fallback": V.Label({"text":"Loading…"}), "ready_signal": res_loaded_signal },
 ##              [ <the real content> ])
 ##   V.suspense({ "fallback": …, "is_ready": func(): return ResourceLoader.has_cached(path) }, [ … ])
 ##

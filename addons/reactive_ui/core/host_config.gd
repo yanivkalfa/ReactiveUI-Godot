@@ -9,14 +9,17 @@ extends RefCounted
 ## Prop conventions on a host vnode's props Dictionary:
 ##   "style"        -> handed to RUIStyle
 ##   "ref"          -> a Callable(node) or a { "current": ... } box, receives the node
-##   event handlers -> a Callable connected to a Godot signal on the node. Two spellings, both valid:
-##                     • React camelCase (canonical): onClick, onChange, onSubmit, onInput, onFocus,
-##                       onBlur, onPointerDown/Up/Enter/Leave, onResize — plus any onXxxYyy that maps
-##                       to the `xxx_yyy` signal. `onChange` is polymorphic (React-style): it binds to
-##                       whichever value/selection signal the node has (value_changed / text_changed /
-##                       item_selected / tab_changed / toggled). See _EVENT_ALIASES / _resolve_signal.
-##                     • Native escape hatch: on_<signal> binds verbatim to "<signal>" (e.g.
-##                       on_gui_input, on_id_pressed, on_mouse_entered) — reaches ANY Godot signal.
+##   event handlers -> a Callable connected to a Godot signal on the node. NAMING IS 1:1 LOYAL TO
+##                     GODOT (0.9.0, plans/NAMING_LOYALTY_PROPOSAL.md): the event prop is the exact
+##                     signal name with an `on` marker. Two spellings, both valid:
+##                     • onPascalCase (canonical): on + PascalCase(signal) -> the snake_case signal.
+##                       onPressed -> pressed, onValueChanged -> value_changed, onTextSubmitted ->
+##                       text_submitted, onGuiInput -> gui_input. Reaches ANY signal of ANY node.
+##                     • on_<signal> (verbatim escape): binds literally to "<signal>" (e.g.
+##                       on_gui_input, on_id_pressed) — the most literal spelling, same coverage.
+##                     The pre-0.9 React aliases (onClick, polymorphic onChange, onInput, onSubmit,
+##                     onFocus/onBlur, onPointer*, onResize) were REMOVED — _RENAMED_EVENTS_090
+##                     turns them into a precise "renamed" warning instead of a silent no-op.
 ##   "draw_fn"      -> a Callable(canvas_item) for custom drawing (invoked via the node's `draw` signal)
 ##   "redraw_key"   -> bump to repaint `draw_fn` without changing the callback (pair with useStableCallback)
 ##   "key"          -> reconciliation key (consumed by V; never applied)
@@ -186,29 +189,25 @@ static func _set_prop(node: Node, key: String, val) -> void:
 		return
 	node.set(key, val)
 
-# React-event name -> ordered candidate Godot signals. The FIRST signal the node actually HAS wins,
-# so one React name binds correctly across control types (mirrors React's element-sensitive onChange).
-# Order matters: more-specific signals first, so a Button subclass that also carries `toggled` (e.g.
-# OptionButton, which is a Button) still binds onChange -> item_selected, not toggled. Names absent
-# here fall back to a generic camelCase->snake_case transform (onValueChanged -> value_changed); a
-# native on_<signal> binds verbatim. This table only holds names whose React spelling differs from
-# the signal, or that are polymorphic.
-const _EVENT_ALIASES := {
-	"onClick": ["pressed"],
-	"onChange": ["item_selected", "value_changed", "text_changed", "tab_changed", "toggled"],
-	"onInput": ["text_changed"],
-	"onSubmit": ["text_submitted"],
-	"onFocus": ["focus_entered"],
-	"onBlur": ["focus_exited"],
-	"onPointerDown": ["button_down"],
-	"onPointerUp": ["button_up"],
-	"onPointerEnter": ["mouse_entered"],
-	"onPointerLeave": ["mouse_exited"],
-	"onResize": ["resized"],
+# Pre-0.9 React aliases -> what to write instead. NOT a compatibility shim (the aliases do NOT
+# bind); consulted only by the unknown-signal warning so a stale callsite gets the exact rename
+# instead of a mystery. Remove after one release. [0.9.0 naming loyalty]
+const _RENAMED_EVENTS_090 := {
+	"onClick": "onPressed",
+	"onChange": "the control's real signal: onToggled / onItemSelected / onValueChanged / onTextChanged / onTabChanged",
+	"onInput": "onTextChanged",
+	"onSubmit": "onTextSubmitted",
+	"onFocus": "onFocusEntered",
+	"onBlur": "onFocusExited",
+	"onPointerDown": "onButtonDown",
+	"onPointerUp": "onButtonUp",
+	"onPointerEnter": "onMouseEntered",
+	"onPointerLeave": "onMouseExited",
+	"onResize": "onResized",
 }
 
 ## An attribute is an event handler if it uses the native on_<signal> convention OR the React
-## camelCase convention (on + UpperCase…, e.g. onClick/onChange). Purely syntactic (no node needed)
+## camelCase convention (on + UpperCase…, e.g. onPressed/onValueChanged). Purely syntactic (no node needed)
 ## so the reconciler can classify props cheaply; signal resolution happens later in _resolve_signal.
 static func _is_event(key: String) -> bool:
 	if key.begins_with("on_"):
@@ -220,17 +219,10 @@ static func _is_ascii_upper(c: int) -> bool:
 
 ## Resolve an event prop key to the Godot signal name to connect on `node`:
 ##   • on_<signal>  -> "<signal>" verbatim (escape hatch to any signal)
-##   • a React alias in _EVENT_ALIASES -> the first candidate signal `node` actually has (polymorphic)
-##   • any other on<Camel>  -> camelCase->snake_case (onValueChanged -> value_changed)
+##   • on<Pascal>   -> PascalCase->snake_case (onPressed -> pressed, onValueChanged -> value_changed)
 static func _resolve_signal(node: Object, key: String) -> String:
 	if key.begins_with("on_"):
 		return key.substr(3)
-	if _EVENT_ALIASES.has(key):
-		var candidates: Array = _EVENT_ALIASES[key]
-		for sig in candidates:
-			if node != null and node.has_signal(sig):
-				return sig
-		return candidates[0]  # none present — return the primary (connect warns below)
 	return _camel_to_snake(key.substr(2))  # strip "on"
 
 static func _camel_to_snake(s: String) -> String:
@@ -250,7 +242,10 @@ static func _connect_event(node: Node, key: String, cb) -> void:
 		return
 	var sig := _resolve_signal(node, key)
 	if sig == "" or not node.has_signal(sig):
-		push_warning("[reactive_ui] %s has no signal for event prop '%s' (resolved '%s')." % [node.get_class(), key, sig])
+		if _RENAMED_EVENTS_090.has(key):
+			push_warning("[reactive_ui] event prop '%s' was renamed in 0.9.0 -- use %s (see MIGRATION-0.9.md)." % [key, _RENAMED_EVENTS_090[key]])
+		else:
+			push_warning("[reactive_ui] %s has no signal for event prop '%s' (resolved '%s')." % [node.get_class(), key, sig])
 		return
 	if not node.is_connected(sig, cb):   # guard against a stale meta/connection divergence [audit C1]
 		node.connect(sig, cb)
@@ -341,7 +336,7 @@ static func _apply_item_model(node: Node, old_props: Dictionary, new_props: Dict
 ## ItemList: declarative `items` prop (Array of String or { text, icon, disabled }).
 ## Rebuilds only when the items array changes, preserving the user's selection by index
 ## (the "tracker" pattern — runtime state survives a re-render). Wire selection changes
-## with `onChange` (or the native `on_item_selected` / `on_item_activated`).
+## with `onItemSelected` / `onItemActivated`.
 static func _apply_item_list(node: ItemList, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -378,8 +373,8 @@ static func _item_id(it):
 	return str(it)
 
 ## TabBar: declarative `items` (Array of String or { text, icon, disabled }). Rebuilds on change,
-## preserving the current tab by item IDENTITY. Wire tab changes with `onChange` (or the native
-## `on_tab_changed` / `on_tab_selected`).
+## preserving the current tab by item IDENTITY. Wire tab changes with `onTabChanged` /
+## `onTabSelected`.
 static func _apply_tab_bar(node: TabBar, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -406,7 +401,7 @@ static func _apply_tab_bar(node: TabBar, old_props: Dictionary, new_props: Dicti
 		node.current_tab = restore
 
 ## OptionButton: declarative `items` (Array of String or { text, icon, disabled, id }). Rebuilds on
-## change, preserving the selection by item IDENTITY. Wire changes with `onChange` (native: `on_item_selected`).
+## change, preserving the selection by item IDENTITY. Wire changes with `onItemSelected`.
 static func _apply_option_button(node: OptionButton, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return
@@ -480,7 +475,7 @@ static func warn_capacity(node: Node, count: int) -> void:
 ## Tree: declarative hierarchical `items` (Array of { id, text, children:[...], collapsed? }).
 ## Rebuilds on change but PRESERVES the user's expand/collapse state and selection by `id`
 ## (the tracker pattern) — so re-rendering a tree doesn't reset what the user expanded.
-## Wire selection/activation with `onChange` (or the native `on_item_selected` / `on_item_activated`).
+## Wire selection/activation with `onItemSelected` / `onItemActivated`.
 static func _apply_tree(node: Tree, old_props: Dictionary, new_props: Dictionary) -> void:
 	if not new_props.has("items"):
 		return

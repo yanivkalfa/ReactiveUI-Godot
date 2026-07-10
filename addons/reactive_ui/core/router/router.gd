@@ -351,7 +351,7 @@ static func nav_link_fn(props: Dictionary, _children: Array):
 	var extra: Dictionary = props.get("button_props", {})
 	for k in extra:
 		btn[k] = extra[k]
-	return V.button(btn)
+	return V.Button(btn)
 
 # =============================================================================
 # Link — V.link (plain navigation button; base-relative `to`)
@@ -375,7 +375,7 @@ static func link(props: Dictionary, _children: Array):
 	var extra: Dictionary = props.get("button_props", {})
 	for k in extra:
 		btn[k] = extra[k]
-	return V.button(btn)
+	return V.Button(btn)
 
 # =============================================================================
 # Hooks

@@ -6,9 +6,15 @@ extends RefCounted
 ## factory is `V.fc(...)` ("function component"), not `V.func(...)`.
 ##
 ## Usage:
-##   V.fc(MyComponent.render, { "title": "Hi" })          # function component
-##   V.button({ "text": "OK", "on_pressed": _on_ok })     # host element
-##   V.vbox({ "style": { "separation": 8 } }, [ ...kids ]) # container + children
+##   V.fc(MyComponent.render, { "title": "Hi" })                    # function component
+##   V.Button({ "text": "OK", "onPressed": _on_ok })                # host element
+##   V.VBoxContainer({ "style": { "separation": 8 } }, [ ...kids ]) # container + children
+##
+## NAMING (0.9.0, plans/NAMING_LOYALTY_PROPOSAL.md): element factories are named EXACTLY
+## after the Godot class they instantiate (V.VBoxContainer, V.Button, V.RichTextLabel) —
+## 1:1 loyal to the engine, matching the .guitkx tag vocabulary verbatim. Only structural,
+## non-engine factories (fc/comp/memo/h/text/fragment/portal/suspense/error_boundary and
+## the router set) stay lowercase.
 ##
 ## A render function has the signature:  func(props: Dictionary, children: Array) -> RUIVNode | Array
 
@@ -65,68 +71,81 @@ static func h(type: String, props := {}, children = null, key = null) -> RUIVNod
 	return n
 
 # --- host element factories (the generic `h()` reaches any other Godot Control) ---
+# Each is named EXACTLY after the Godot class it instantiates (GDScript allows methods that
+# share a native class's name — verified on 4.7; member access `V.Button` always resolves to
+# the method, never the global class).
 
 # Containers
-static func control(props := {}, children = null, key = null) -> RUIVNode: return h("Control", props, children, key)
-static func vbox(props := {}, children = null, key = null) -> RUIVNode: return h("VBoxContainer", props, children, key)
-static func hbox(props := {}, children = null, key = null) -> RUIVNode: return h("HBoxContainer", props, children, key)
-static func grid(props := {}, children = null, key = null) -> RUIVNode: return h("GridContainer", props, children, key)
-static func margin(props := {}, children = null, key = null) -> RUIVNode: return h("MarginContainer", props, children, key)
-static func panel(props := {}, children = null, key = null) -> RUIVNode: return h("PanelContainer", props, children, key)
-static func center(props := {}, children = null, key = null) -> RUIVNode: return h("CenterContainer", props, children, key)
-static func scroll(props := {}, children = null, key = null) -> RUIVNode: return h("ScrollContainer", props, children, key)
-static func flow_h(props := {}, children = null, key = null) -> RUIVNode: return h("HFlowContainer", props, children, key)
-static func flow_v(props := {}, children = null, key = null) -> RUIVNode: return h("VFlowContainer", props, children, key)
-static func tabs(props := {}, children = null, key = null) -> RUIVNode: return h("TabContainer", props, children, key)
-static func split_h(props := {}, children = null, key = null) -> RUIVNode: return h("HSplitContainer", props, children, key)
-static func split_v(props := {}, children = null, key = null) -> RUIVNode: return h("VSplitContainer", props, children, key)
-static func aspect(props := {}, children = null, key = null) -> RUIVNode: return h("AspectRatioContainer", props, children, key)
-static func foldable(props := {}, children = null, key = null) -> RUIVNode: return h("FoldableContainer", props, children, key)
+static func Control(props := {}, children = null, key = null) -> RUIVNode: return h("Control", props, children, key)
+static func VBoxContainer(props := {}, children = null, key = null) -> RUIVNode: return h("VBoxContainer", props, children, key)
+static func HBoxContainer(props := {}, children = null, key = null) -> RUIVNode: return h("HBoxContainer", props, children, key)
+static func BoxContainer(props := {}, children = null, key = null) -> RUIVNode: return h("BoxContainer", props, children, key)
+static func GridContainer(props := {}, children = null, key = null) -> RUIVNode: return h("GridContainer", props, children, key)
+static func MarginContainer(props := {}, children = null, key = null) -> RUIVNode: return h("MarginContainer", props, children, key)
+static func PanelContainer(props := {}, children = null, key = null) -> RUIVNode: return h("PanelContainer", props, children, key)
+static func CenterContainer(props := {}, children = null, key = null) -> RUIVNode: return h("CenterContainer", props, children, key)
+static func ScrollContainer(props := {}, children = null, key = null) -> RUIVNode: return h("ScrollContainer", props, children, key)
+static func FlowContainer(props := {}, children = null, key = null) -> RUIVNode: return h("FlowContainer", props, children, key)
+static func HFlowContainer(props := {}, children = null, key = null) -> RUIVNode: return h("HFlowContainer", props, children, key)
+static func VFlowContainer(props := {}, children = null, key = null) -> RUIVNode: return h("VFlowContainer", props, children, key)
+static func TabContainer(props := {}, children = null, key = null) -> RUIVNode: return h("TabContainer", props, children, key)
+static func SplitContainer(props := {}, children = null, key = null) -> RUIVNode: return h("SplitContainer", props, children, key)
+static func HSplitContainer(props := {}, children = null, key = null) -> RUIVNode: return h("HSplitContainer", props, children, key)
+static func VSplitContainer(props := {}, children = null, key = null) -> RUIVNode: return h("VSplitContainer", props, children, key)
+static func AspectRatioContainer(props := {}, children = null, key = null) -> RUIVNode: return h("AspectRatioContainer", props, children, key)
+static func FoldableContainer(props := {}, children = null, key = null) -> RUIVNode: return h("FoldableContainer", props, children, key)
+static func SubViewportContainer(props := {}, children = null, key = null) -> RUIVNode: return h("SubViewportContainer", props, children, key)
 
 # Text / display
-static func label(props := {}, children = null, key = null) -> RUIVNode: return h("Label", props, children, key)
+static func Label(props := {}, children = null, key = null) -> RUIVNode: return h("Label", props, children, key)
 
 ## A text node: renders a string as a Label. Raw String children are AUTO-WRAPPED to this, so
-## `V.vbox({}, ["Score: ", score_str])` and a component returning a bare String both work instead of
-## the string being silently dropped. (Godot renders text via Label nodes — this is the text leaf.)
+## `V.VBoxContainer({}, ["Score: ", score_str])` and a component returning a bare String both work
+## instead of the string being silently dropped. (Godot renders text via Label nodes — this is the
+## text leaf; structural, so it keeps its lowercase non-class name.)
 static func text(s, key = null) -> RUIVNode: return h("Label", { "text": str(s) }, null, key)
-static func rich_text(props := {}, children = null, key = null) -> RUIVNode: return h("RichTextLabel", props, children, key)
-static func color_rect(props := {}, children = null, key = null) -> RUIVNode: return h("ColorRect", props, children, key)
-static func texture_rect(props := {}, children = null, key = null) -> RUIVNode: return h("TextureRect", props, children, key)
-static func nine_patch(props := {}, children = null, key = null) -> RUIVNode: return h("NinePatchRect", props, children, key)
-static func h_separator(props := {}, children = null, key = null) -> RUIVNode: return h("HSeparator", props, children, key)
-static func v_separator(props := {}, children = null, key = null) -> RUIVNode: return h("VSeparator", props, children, key)
+static func RichTextLabel(props := {}, children = null, key = null) -> RUIVNode: return h("RichTextLabel", props, children, key)
+static func Panel(props := {}, children = null, key = null) -> RUIVNode: return h("Panel", props, children, key)
+static func ColorRect(props := {}, children = null, key = null) -> RUIVNode: return h("ColorRect", props, children, key)
+static func TextureRect(props := {}, children = null, key = null) -> RUIVNode: return h("TextureRect", props, children, key)
+static func NinePatchRect(props := {}, children = null, key = null) -> RUIVNode: return h("NinePatchRect", props, children, key)
+static func ReferenceRect(props := {}, children = null, key = null) -> RUIVNode: return h("ReferenceRect", props, children, key)
+static func HSeparator(props := {}, children = null, key = null) -> RUIVNode: return h("HSeparator", props, children, key)
+static func VSeparator(props := {}, children = null, key = null) -> RUIVNode: return h("VSeparator", props, children, key)
 
 # Buttons
-static func button(props := {}, children = null, key = null) -> RUIVNode: return h("Button", props, children, key)
-static func check_box(props := {}, children = null, key = null) -> RUIVNode: return h("CheckBox", props, children, key)
-static func check_button(props := {}, children = null, key = null) -> RUIVNode: return h("CheckButton", props, children, key)
-static func option_button(props := {}, children = null, key = null) -> RUIVNode: return h("OptionButton", props, children, key)
-static func menu_button(props := {}, children = null, key = null) -> RUIVNode: return h("MenuButton", props, children, key)
-static func link_button(props := {}, children = null, key = null) -> RUIVNode: return h("LinkButton", props, children, key)
-static func texture_button(props := {}, children = null, key = null) -> RUIVNode: return h("TextureButton", props, children, key)
+static func Button(props := {}, children = null, key = null) -> RUIVNode: return h("Button", props, children, key)
+static func CheckBox(props := {}, children = null, key = null) -> RUIVNode: return h("CheckBox", props, children, key)
+static func CheckButton(props := {}, children = null, key = null) -> RUIVNode: return h("CheckButton", props, children, key)
+static func OptionButton(props := {}, children = null, key = null) -> RUIVNode: return h("OptionButton", props, children, key)
+static func MenuButton(props := {}, children = null, key = null) -> RUIVNode: return h("MenuButton", props, children, key)
+static func LinkButton(props := {}, children = null, key = null) -> RUIVNode: return h("LinkButton", props, children, key)
+static func TextureButton(props := {}, children = null, key = null) -> RUIVNode: return h("TextureButton", props, children, key)
 
 # Inputs
-static func line_edit(props := {}, children = null, key = null) -> RUIVNode: return h("LineEdit", props, children, key)
-static func text_edit(props := {}, children = null, key = null) -> RUIVNode: return h("TextEdit", props, children, key)
-static func code_edit(props := {}, children = null, key = null) -> RUIVNode: return h("CodeEdit", props, children, key)
-static func spin_box(props := {}, children = null, key = null) -> RUIVNode: return h("SpinBox", props, children, key)
-static func h_slider(props := {}, children = null, key = null) -> RUIVNode: return h("HSlider", props, children, key)
-static func v_slider(props := {}, children = null, key = null) -> RUIVNode: return h("VSlider", props, children, key)
-static func progress_bar(props := {}, children = null, key = null) -> RUIVNode: return h("ProgressBar", props, children, key)
-static func texture_progress(props := {}, children = null, key = null) -> RUIVNode: return h("TextureProgressBar", props, children, key)
-static func color_picker(props := {}, children = null, key = null) -> RUIVNode: return h("ColorPicker", props, children, key)
-static func color_picker_button(props := {}, children = null, key = null) -> RUIVNode: return h("ColorPickerButton", props, children, key)
+static func LineEdit(props := {}, children = null, key = null) -> RUIVNode: return h("LineEdit", props, children, key)
+static func TextEdit(props := {}, children = null, key = null) -> RUIVNode: return h("TextEdit", props, children, key)
+static func CodeEdit(props := {}, children = null, key = null) -> RUIVNode: return h("CodeEdit", props, children, key)
+static func SpinBox(props := {}, children = null, key = null) -> RUIVNode: return h("SpinBox", props, children, key)
+static func HSlider(props := {}, children = null, key = null) -> RUIVNode: return h("HSlider", props, children, key)
+static func VSlider(props := {}, children = null, key = null) -> RUIVNode: return h("VSlider", props, children, key)
+static func HScrollBar(props := {}, children = null, key = null) -> RUIVNode: return h("HScrollBar", props, children, key)
+static func VScrollBar(props := {}, children = null, key = null) -> RUIVNode: return h("VScrollBar", props, children, key)
+static func ProgressBar(props := {}, children = null, key = null) -> RUIVNode: return h("ProgressBar", props, children, key)
+static func TextureProgressBar(props := {}, children = null, key = null) -> RUIVNode: return h("TextureProgressBar", props, children, key)
+static func ColorPicker(props := {}, children = null, key = null) -> RUIVNode: return h("ColorPicker", props, children, key)
+static func ColorPickerButton(props := {}, children = null, key = null) -> RUIVNode: return h("ColorPickerButton", props, children, key)
+static func VirtualJoystick(props := {}, children = null, key = null) -> RUIVNode: return h("VirtualJoystick", props, children, key)
 
 # Media (Godot's audio/video are scene nodes — thin host elements; see also useSfx for one-shots)
-static func audio(props := {}, key = null) -> RUIVNode: return h("AudioStreamPlayer", props, null, key)
-static func video(props := {}, key = null) -> RUIVNode: return h("VideoStreamPlayer", props, null, key)
+static func AudioStreamPlayer(props := {}, key = null) -> RUIVNode: return h("AudioStreamPlayer", props, null, key)
+static func VideoStreamPlayer(props := {}, key = null) -> RUIVNode: return h("VideoStreamPlayer", props, null, key)
 
 # Item-model controls (declarative props; see RUIHost adapters)
-static func tab_bar(props := {}, children = null, key = null) -> RUIVNode: return h("TabBar", props, children, key)
-static func item_list(props := {}, children = null, key = null) -> RUIVNode: return h("ItemList", props, children, key)
-static func tree(props := {}, children = null, key = null) -> RUIVNode: return h("Tree", props, children, key)
-static func menu_bar(props := {}, children = null, key = null) -> RUIVNode: return h("MenuBar", props, children, key)
+static func TabBar(props := {}, children = null, key = null) -> RUIVNode: return h("TabBar", props, children, key)
+static func ItemList(props := {}, children = null, key = null) -> RUIVNode: return h("ItemList", props, children, key)
+static func Tree(props := {}, children = null, key = null) -> RUIVNode: return h("Tree", props, children, key)
+static func MenuBar(props := {}, children = null, key = null) -> RUIVNode: return h("MenuBar", props, children, key)
 
 # --- structural vnodes ---
 
