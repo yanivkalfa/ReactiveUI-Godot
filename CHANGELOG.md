@@ -4,6 +4,43 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.7] — 2026-07-10
+
+Four new `style` keys, a compiler correctness fix for a whole family of
+comment-related miscompiles, and a measured compiler speed-up.
+
+### Added
+- **`material`, `texture_filter`, `texture_repeat`, and `z_as_relative` style keys.**
+  All four CanvasItem properties are now recognized inside `style={ {...} }` with full
+  reset-on-removal semantics (a removed key restores the class default), completing
+  their natural pairs: `z_index` ↔ `z_as_relative`, `texture_filter` ↔ `texture_repeat`.
+  `material` in particular lets a pooled `ShaderMaterial` ride the style dict with a
+  stable identity, so per-frame uniform changes never force a reconcile — the pattern
+  the Doom demo's wall shader uses.
+
+### Fixed
+- **A parenthetical comment split across two `#`/`##` lines inside a component or
+  directive body's setup code no longer desyncs brace matching.** The body scanner
+  treated setup code as markup (where `#` is literal text), so a `(` inside one comment
+  line opened a phantom code island whose `)` on the *next* comment line was then
+  comment-skipped — never closing, and surfacing as a bogus `GUITKX0304` "unclosed
+  component body" anchored at the component's own `{`, arbitrarily far from the actual
+  comment. Content mode is now tracked per delimiter-stack level with per-line
+  classification inside bodies: prelude statements (and their `#` comments) scan as
+  GDScript, markup-shaped lines and `return ( ... )` windows keep markup lexis
+  (`<Label>Score #3</Label>` stays literal). Also fixes the same desync from keyword
+  bait (`# early return (see docs`) and `#` comments inside multi-line array literals.
+
+### Changed
+- **The `.guitkx` compiler is ~28% faster per compile.** Every scanner hot loop
+  (lexer, markup parser, body splitters/validators, markup-in-expression detection)
+  now reads characters via `unicode_at` + integer comparisons instead of `s[i]`
+  single-char-String indexing (which allocates a fresh String per access), and the
+  markup parser's per-element line lookup is a binary search over a prebuilt
+  line-start table instead of an O(n) prefix copy. Generated output is byte-identical
+  across the whole example corpus; this is purely compile-time speed (per save, and
+  per keystroke for live diagnostics).
+
 ## [0.8.6] — 2026-07-08
 
 A reconciler and style-layer performance pass, plus a packaging fix so an Asset

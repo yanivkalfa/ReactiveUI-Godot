@@ -1,3 +1,17 @@
+## [0.8.7] - 2026-07-10
+
+**Four new `style` keys, a compiler miscompile fix, and a ~28% faster `.guitkx` compiler.** `style={ {...} }` now understands `material`, `texture_filter`, `texture_repeat`, and `z_as_relative` — all with reset-on-removal semantics, completing their natural pairs (`z_index` ↔ `z_as_relative`, filter ↔ repeat). `material` lets a pooled `ShaderMaterial` ride the style dict with stable identity, so per-frame uniform changes never force a reconcile.
+
+The compiler fix kills a whole family of comment-related desyncs: a parenthetical comment split across two `#`/`##` lines in a component's setup code (`## faithful port of (BackgroundSize +` / `## BackgroundPositionX) ...`) used to surface as a bogus GUITKX0304 "unclosed component body" pointing at the component's own `{`. Body scanning now tracks content mode per delimiter level (setup code is code, markup is markup), which also covers keyword bait in comments and `#` comments inside multi-line array literals. And the whole scanner stack moved to `unicode_at` + int comparisons: **compiles are ~28% faster**, with byte-identical output across the entire example corpus.
+
+Bonus for repo explorers: the **Doom demo** now runs on a real 2D BSP renderer (front-to-back tree walk, per-column occlusion, 3D floors) — **1.5–2.5× faster per frame** than the ray-walker it replaces, with pixel-identical output. Every wall column, floor band, and sprite is still a real `TextureRect` diffed by the reconciler — it just stress-tests it faster now.
+
+Update to **Reactive UI 0.8.7** (AssetLib "Reactive UI", or copy `addons/reactive_ui/` into your project).
+
+**Tooling:** GUITKX **0.8.8** (VS Code + VS 2022) mirrors the brace-matching fix in live diagnostics and speeds up per-keystroke markup parsing (per-element line lookup is now a binary search). Editor addon **0.6.3** tokenizes syntax highlighting ~17% faster and inherits the compiler fixes — pairs best with `reactive_ui` 0.8.7+.
+
+---
+
 ## [0.8.6] - 2026-07-08
 
 **A reconciler + style-layer performance pass, plus a packaging fix so an Asset Library install ships only the addon.** Two opt-in fast paths for lists: `reuse_by_slot` (a new host prop) lets a parent whose keyed leaf children are positionally stable reconcile them by slot — reused and patched in place instead of torn down and recreated when their keys change, the React-correct way to express slot reuse without dropping key semantics elsewhere; and `RUIConfig.host_node_pool` (on by default) recycles destroyed leaf host nodes through a per-class pool and re-diffs them on reuse, cutting node churn on lists that add/remove often. Under the hood, keyed child reconciliation is now mark-and-sweep (a member key map + per-fiber `matched_pass` flag, no per-frame key map/matched-set allocation), and `Style.apply` allocates far less — no more throwaway per-node dictionaries and `.keys()` copies for unchanged theme channels.
