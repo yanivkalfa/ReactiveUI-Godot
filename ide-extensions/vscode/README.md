@@ -11,7 +11,7 @@ no running Godot editor, no TCP connection, works fully offline.
 - **Syntax highlighting** — hand-tuned TextMate grammar; embedded GDScript inside
   `{expr}`, setup blocks, and `@if`/`@for` conditions gets real GDScript colouring.
 - **Completion & hover** for tags, attributes, attribute values, directives, hooks, and
-  events (React-style aliases like `onClick` plus the verbatim `on_<signal>` escape hatch).
+  events (React-style aliases like `onPressed` plus the verbatim `on_<signal>` escape hatch).
 - **Live diagnostics** — structural markup errors and dangling component references as you type.
 - **Formatting** — the same formatter the in-Godot editor uses, configured by a
   Prettier-style `guitkx.config.json` walk-up (`printWidth`, `indentStyle`, `indentSize`,

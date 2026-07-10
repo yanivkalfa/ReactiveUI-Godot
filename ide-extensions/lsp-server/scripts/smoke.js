@@ -63,7 +63,7 @@ function fail(m) {
   notify("initialized", {});
 
   const uri = "file:///tmp/Counter.guitkx";
-  const text = "component Counter() {\n\treturn (\n\t\t<VBox>\n\t\t\t<La\n\t\t</VBox>\n\t)\n}\n";
+  const text = "component Counter() {\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t<La\n\t\t</VBoxContainer>\n\t)\n}\n";
   notify("textDocument/didOpen", { textDocument: { uri, languageId: "guitkx", version: 1, text } });
 
   // completion at the "<La" position (line 3, after "\t\t\t<La" => char 6)
@@ -81,13 +81,13 @@ function fail(m) {
   const has = (n) => attrItems.some((i) => i.label === n);
   if (!has("text")) fail("attr completion missing ClassDB prop 'text': " + JSON.stringify(attrItems.slice(0, 8).map((i) => i.label)));
   if (!has("disabled")) fail("attr completion missing inherited ClassDB prop 'disabled'");
-  if (!has("onClick")) fail("attr completion missing Button React event handler onClick: " + JSON.stringify(attrItems.filter((i) => /^on/.test(i.label)).map((i) => i.label)));
+  if (!has("onPressed")) fail("attr completion missing Button loyal event handler onPressed: " + JSON.stringify(attrItems.filter((i) => /^on/.test(i.label)).map((i) => i.label)));
   if (!has("key")) fail("attr completion missing structural 'key'");
-  console.log(`attr completion OK (${attrItems.length} items, ClassDB props text/disabled + React event onClick + key)`);
+  console.log(`attr completion OK (${attrItems.length} items, ClassDB props text/disabled + loyal event onPressed + key)`);
 
   // duplicate-key diagnostic (markupDiagnostics)
   const uri3 = "file:///tmp/Dup.guitkx";
-  const text3 = 'component Dup() {\n\treturn (\n\t\t<VBox>\n\t\t\t<Label key="x" />\n\t\t\t<Label key="x" />\n\t\t</VBox>\n\t)\n}\n';
+  const text3 = 'component Dup() {\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t<Label key="x" />\n\t\t\t<Label key="x" />\n\t\t</VBoxContainer>\n\t)\n}\n';
   notify("textDocument/didOpen", { textDocument: { uri: uri3, languageId: "guitkx", version: 1, text: text3 } });
   await new Promise((r) => setTimeout(r, 400));
   const d = diagnostics[uri3] || [];
@@ -96,7 +96,7 @@ function fail(m) {
 
   // live loop single-root rule (GUITKX0108) — Phase D form: the directive body RETURNS its markup
   const uriLoop = "file:///tmp/Loop.guitkx";
-  const textLoop = 'component Loop(items: Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\treturn (\n\t\t\t\t<Label text={ str(it) } key={ it } />\n\t\t\t\t<Label text="dup" />\n\t\t\t\t)\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n';
+  const textLoop = 'component Loop(items: Array) {\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t@for (it in items) {\n\t\t\t\treturn (\n\t\t\t\t<Label text={ str(it) } key={ it } />\n\t\t\t\t<Label text="dup" />\n\t\t\t\t)\n\t\t\t}\n\t\t</VBoxContainer>\n\t)\n}\n';
   notify("textDocument/didOpen", { textDocument: { uri: uriLoop, languageId: "guitkx", version: 1, text: textLoop } });
   await new Promise((r) => setTimeout(r, 400));
   const dLoop = diagnostics[uriLoop] || [];
@@ -105,7 +105,7 @@ function fail(m) {
 
   // Phase D migration rule: the pre-0.7 bare-markup directive body flags GUITKX2103 live
   const uriLegacy = "file:///tmp/Legacy.guitkx";
-  notify("textDocument/didOpen", { textDocument: { uri: uriLegacy, languageId: "guitkx", version: 1, text: 'component L(items: Array) {\n\treturn ( <VBox>@for (it in items) { <Label text={ str(it) } /> }</VBox> )\n}\n' } });
+  notify("textDocument/didOpen", { textDocument: { uri: uriLegacy, languageId: "guitkx", version: 1, text: 'component L(items: Array) {\n\treturn ( <VBoxContainer>@for (it in items) { <Label text={ str(it) } /> }</VBoxContainer> )\n}\n' } });
   await new Promise((r) => setTimeout(r, 400));
   const dLegacy = diagnostics[uriLegacy] || [];
   if (!dLegacy.some((x) => x.message.includes("GUITKX2103"))) fail("live legacy-body diagnostic missing: " + JSON.stringify(dLegacy));
@@ -117,7 +117,7 @@ function fail(m) {
   // flagged `return (`/`)` as extra roots ("GUITKX0108 ... (got 3)") on every migrated file.
   const uriClean = "file:///tmp/CleanBody.guitkx";
   const textClean =
-    'component CleanBody(items: Array) {\n\treturn (\n\t\t<VBox>\n\t\t\t@for (it in items) {\n\t\t\t\tvar label = "row " + str(it)\n\t\t\t\tif it < 3:\n\t\t\t\t\treturn null\n\t\t\t\treturn (\n\t\t\t\t\t<Label text={ label } key={ str(it) } />\n\t\t\t\t)\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n';
+    'component CleanBody(items: Array) {\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t@for (it in items) {\n\t\t\t\tvar label = "row " + str(it)\n\t\t\t\tif it < 3:\n\t\t\t\t\treturn null\n\t\t\t\treturn (\n\t\t\t\t\t<Label text={ label } key={ str(it) } />\n\t\t\t\t)\n\t\t\t}\n\t\t</VBoxContainer>\n\t)\n}\n';
   notify("textDocument/didOpen", { textDocument: { uri: uriClean, languageId: "guitkx", version: 1, text: textClean } });
   await new Promise((r) => setTimeout(r, 400));
   const dClean = diagnostics[uriClean] || [];
@@ -172,12 +172,12 @@ function fail(m) {
 
   // in-process formatting: a messy doc returns a canonical edit (no Godot binary)
   const uri6 = "file:///tmp/Fmt.guitkx";
-  const text6 = 'component Z(){\nreturn ( <VBox><Label text="hi"/></VBox> )\n}\n';
+  const text6 = 'component Z(){\nreturn ( <VBoxContainer><Label text="hi"/></VBoxContainer> )\n}\n';
   notify("textDocument/didOpen", { textDocument: { uri: uri6, languageId: "guitkx", version: 1, text: text6 } });
   const fmtRes = await request("textDocument/formatting", { textDocument: { uri: uri6 }, options: { tabSize: 4, insertSpaces: false } });
   const edits = fmtRes.result || [];
   // Phase D: the canonical style is spaces-2 (Unity-exact) -- markup sits at level 2 = four spaces
-  if (!edits.length || !edits[0].newText.includes("    <VBox>") || !edits[0].newText.includes('<Label text="hi" />')) fail("in-process formatting edit wrong: " + JSON.stringify(fmtRes.result));
+  if (!edits.length || !edits[0].newText.includes("    <VBoxContainer>") || !edits[0].newText.includes('<Label text="hi" />')) fail("in-process formatting edit wrong: " + JSON.stringify(fmtRes.result));
   console.log("formatting OK (in-process, no Godot binary, canonical edit)");
 
   // semantic tokens: <Label> host (type) + <A> component (class) in the module file

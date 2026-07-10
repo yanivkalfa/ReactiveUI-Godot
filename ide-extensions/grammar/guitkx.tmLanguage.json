@@ -141,7 +141,7 @@
       ]
     },
     "attribute-event": {
-      "comment": "event handler attribute names — React camelCase (onClick) + native on_<signal>",
+      "comment": "event handler attribute names — loyal on<Pascal> (onPressed) + native on_<signal>",
       "name": "entity.other.attribute-name.event.guitkx",
       "match": "\\b(on_[A-Za-z0-9_]*|on[A-Z][A-Za-z0-9]*)(?=\\s*[={])"
     },
