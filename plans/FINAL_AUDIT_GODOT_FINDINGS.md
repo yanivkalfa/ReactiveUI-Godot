@@ -12,10 +12,11 @@ configurationDefaults + VS2022 editor defaults), G-20 (`enableGdscriptAnalysis` 
 (OnApply text), G-22 (`RedirectStandardError` + restart messaging), G-23 (per-level content modes +
 line classification, 2026-07-10 — see §10). The VS2022 pkgdef packaging bug also shipped its fix
 (`vs2022-v0.8.7` tagged). **STILL OPEN:** G-09 (hooks deps deep-compare — document + optional
-`same_ref` hatch; design/doc-level) and, in `FINAL_AUDIT_GODOT_OPTIMIZATIONS.md`, the tail of G-10
-(stages 1–2 — lexer + markup loops — landed 2026-07-10 with measurements; `guitkx.gd` hot scanners
-+ the editor tokenizer remain; G-08 is DONE in both mirrors). The v5 text below (incl. §0's "what
-remains") predates these fixes — read it as the audit record.
+`same_ref` hatch; design/doc-level) — everything else is closed: G-08 is DONE in both mirrors and
+G-10 is DONE across all 4 stages (lexer, markup, guitkx.gd+jsx_scan, editor tokenizer — compile
+-28%, tokenize -17%, byte-identical corpus + hash-identical token stream; see the optimizations
+doc's G-10 entry for numbers + lessons). The v5 text below (incl. §0's "what remains") predates
+these fixes — read it as the audit record.
 
 **VERIFICATION PASS (v5, 2026-07-06):** the node probe suite re-ran against the current compiled TS formatter — **all confirmed findings still reproduce**: G-02 (triple-quoted interior re-indented AND interior double-space collapsed), G-03 (blank line in body segment deleted), and the G-01 failure modes G3/G4 (both parse-fail into verbatim fallback). The trivia guards still pass (G2 leading comment, G5 `{expr}` child preserved). Additionally verified clean in the v5 sweep (do not re-audit): `liveMarkup.ts` (mirrors `_validate_node`/`_validate_body` faithfully; its `findHookCall` has the correct token-boundary + noncode-skipping semantics), `sourceMap.ts` (length-preserving span model, correct bidirectional lookup), `server.ts` `onDidClose` (re-indexes from disk — one LOW gap added to §4 smalls), the diagnostics sidecar staleness gate (`srcHash` FNV-1a pinned to `RUIGuitkxCodegen.src_hash`). The v5 sweep found no new substantive issues in this repo.
 

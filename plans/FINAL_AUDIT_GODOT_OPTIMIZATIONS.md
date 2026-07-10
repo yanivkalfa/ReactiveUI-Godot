@@ -127,20 +127,28 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 1. P1 — Scanner character access (the big one)
 
-### G-10 — All GDScript scanners use `src[i]` single-char-String indexing — **STAGES 1–2 DONE (2026-07-10)**
-- **STATUS:** `guitkx_lexer.gd` (stage 1) and `guitkx_markup.gd`'s inner loops (stage 2) are fully
-  converted to `unicode_at` + `C_*` int consts (the lexer hosts the shared const table). Measured on
-  the 12.4 KB doom component (`tests/guitkx_bench.gd`, now a permanent harness): full compile
-  **71.96 → ~58 ms (-19%)**, `skip_noncode` whole-file walk **4.58 → 2.65 ms (-42%)**,
-  `find_matching_markup` **6.33 → 4.04 ms (-36%)**. All contract cases + guitkx/demos/doom/core
-  suites green; all 49 example `.guitkx` recompile **byte-identical**. Public String APIs kept
-  (`_is_ident(String)` delegates to `_is_ident_code(int)` — guitkx.gd call sites unchanged).
-  **REMAINING (stages 3–4):** `guitkx.gd`'s own hot scanners (`_find_decl`, `_split_return`,
-  `_split_body`, `_validate_*`, `_hook_signature` — post-conversion, compile time is dominated by
-  these passes + codegen emit, so this is where the next win is) and the editor
-  tokenizer/highlighter (`addons/reactive_ui_editor` — the per-keystroke path; update the
-  `guitkx_editor_view.gd:13` ms/KB comment when converted). TS mirrors deliberately NOT ported
-  (charCodeAt-style access is already cheap in JS; the shared contract corpus pins behavior).
+### G-10 — All GDScript scanners use `src[i]` single-char-String indexing — **DONE, ALL 4 STAGES (2026-07-10)**
+- **STATUS:** fully converted to `unicode_at` + int consts across the compiler stack AND the editor
+  tokenizer: stage 1 `guitkx_lexer.gd` (hosts the shared `C_*` const table), stage 2
+  `guitkx_markup.gd` inner loops (+ G-08), stage 3 `guitkx.gd`'s ~25 scan sites across 26 functions
+  plus `guitkx_jsx_scan.gd`, stage 4 `guitkx_tokenizer.gd` (the per-keystroke highlight path; the
+  highlighter itself has no char reads — it delegates). Measured (`tests/guitkx_bench.gd`, permanent
+  harness, 12.4 KB doom component): full compile **71.96 → ~51-52 ms (-28%)**, `skip_noncode`
+  whole-file walk **4.58 → 2.65 ms (-42%)**, tokenizer whole-file tokenize **8.4 → 7.0 ms (-17%)**.
+  Verified behavior-preserving: all contract cases; guitkx/core/style/update/demos/doom suites
+  green; all 49 example `.guitkx` recompile **byte-identical**; the tokenizer's full token stream
+  over all 49 files × both modes is **hash-identical** to pre-conversion. Public String APIs kept
+  (`_is_ident(String)` delegates to `_is_ident_code(int)`).
+- **Lessons (measured, for future scanner work):** `unicode_at`+int is ~4x faster than
+  `s[i]`+String inline, BUT (a) a GDScript `match` with many patterns compiles to LINEAR
+  interpreted compares — a 22-arm match made the tokenizer 64% SLOWER than the old
+  `String.contains()`; the fix is a `const` int-keyed Dictionary set (`.has` = one C++ hash);
+  (b) flatten hot char-class helpers into a single body — nested helper calls cost more than the
+  int compares they save; (c) `const L = GlobalClassName` is not a constant expression in 4.7 —
+  use `preload()`. TS mirrors deliberately NOT ported (charCodeAt-style access is already cheap in
+  JS; the shared contract corpus pins behavior). Adjacent surface NOT in this pass: the editor
+  addon's `lsp/` layer (`guitkx_virtual_doc.gd` etc.) has its own `_src[i]` scanners — same recipe
+  applies if in-editor LSP latency ever measures hot.
 - **Anchors (historical):** `guitkx_lexer.gd` (0 uses of `unicode_at`), `guitkx_markup.gd` (0), most of `guitkx.gd`, `guitkx_tokenizer.gd`/highlighter. In GDScript 4, `s[i]` allocates a fresh 1-char String per access and comparisons are string-compares. These loops run per keystroke (highlighter, live diagnostics), per save (compiler), and per poll tick (watch sweeps).
 - **RECIPE:**
   1. Convert the LEXER first (`skip_noncode`, `_skip_string`, `find_matching`, `keyword_at`, `_is_ident`): `var c := src.unicode_at(i)` + int-constant comparisons (named `const` ints at the top: `const C_HASH := 35`, `C_QUOTE := 34`, …).

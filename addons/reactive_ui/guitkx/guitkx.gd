@@ -161,7 +161,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 	while i < n:
 		i = _skip_ws_and_comments(source, i)
 		# T3.5: directive keywords require a token boundary (`@class_nameFoo` is not a directive).
-		if source.substr(i, 11) == "@class_name" and (i + 11 >= n or not _is_ident_char(source[i + 11])):
+		if source.substr(i, 11) == "@class_name" and (i + 11 >= n or not L._is_ident_code(source.unicode_at(i + 11))):
 			var le := source.find("\n", i)
 			if le == -1: le = n
 			var cn_raw := source.substr(i + 11, le - i - 11)
@@ -177,8 +177,8 @@ static func compile(source: String, basename: String = "Component", known_compon
 		# T2.3 (Unity @uss): `@uss "res://theme.tres"` preloads a Theme and applies it to the
 		# component's root element (theme prop) unless one is set explicitly. `@theme` is the
 		# Godot-idiomatic alias. One per file; component files only (2210, like Unity).
-		var is_uss := source.substr(i, 4) == "@uss" and (i + 4 >= n or not _is_ident_char(source[i + 4]))
-		var is_theme := source.substr(i, 6) == "@theme" and (i + 6 >= n or not _is_ident_char(source[i + 6]))
+		var is_uss := source.substr(i, 4) == "@uss" and (i + 4 >= n or not L._is_ident_code(source.unicode_at(i + 4)))
+		var is_theme := source.substr(i, 6) == "@theme" and (i + 6 >= n or not L._is_ident_code(source.unicode_at(i + 6)))
 		if is_uss or is_theme:
 			var dlen := 4 if is_uss else 6
 			var le2 := source.find("\n", i)
@@ -261,9 +261,6 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 		i += 1
 	return { "kind": "", "at": -1 }
 
-static func _is_ident_char(c: String) -> bool:
-	return c == "_" or (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or (c >= "0" and c <= "9")
-
 ## True if `s` is a single valid GDScript identifier ([A-Za-z_][A-Za-z0-9_]*), non-empty. [BUG-V2]
 static func _is_valid_identifier(s: String) -> bool:
 	if s.is_empty():
@@ -287,9 +284,9 @@ static func _nearest_decl_keyword(source: String, from: int) -> Dictionary:
 		if k != i:
 			i = k
 			continue
-		if L._is_ident(source[i]):
+		if L._is_ident_code(source.unicode_at(i)):
 			var s := i
-			while i < n and L._is_ident(source[i]):
+			while i < n and L._is_ident_code(source.unicode_at(i)):
 				i += 1
 			var word := source.substr(s, i - s)
 			var best := ""
@@ -360,7 +357,7 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 	var j := ci + 9
 	j = _skip_ws_only(source, j)
 	var ns := j
-	while j < n and L._is_ident(source[j]):
+	while j < n and L._is_ident_code(source.unicode_at(j)):
 		j += 1
 	var comp_name := source.substr(ns, j - ns)
 	if comp_name == "":
@@ -368,12 +365,12 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		return { "ok": false }
 	# T2.6 (Unity UITKX2100): component names are PascalCase -- they become the generated class_name
 	# and the <Tag/> other files reference. Parsing continues so further diagnostics still surface.
-	if not (comp_name[0] >= "A" and comp_name[0] <= "Z"):
+	if not (comp_name.unicode_at(0) >= 65 and comp_name.unicode_at(0) <= 90):
 		diags.append(D.make("GUITKX2100", D.ERROR, "component name `%s` must be PascalCase" % comp_name, ns, comp_name.length()))
 	var params := ""
 	var params_at := -1
 	j = _skip_ws_only(source, j)
-	if j < n and source[j] == "(":
+	if j < n and source.unicode_at(j) == L.C_LPAREN:
 		var pc := L.find_matching(source, j)
 		if pc == -1:
 			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in component params", j, 1))
@@ -382,7 +379,7 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		params_at = j + 1
 		j = pc + 1
 	j = _skip_ws_only(source, j)
-	if j >= n or source[j] != "{":
+	if j >= n or source.unicode_at(j) != L.C_LBRACE:
 		diags.append(D.make("GUITKX0303", D.ERROR, "component body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false }
 	# G-01: a component's body mixes GDScript setup with a markup return -- find_matching_markup
@@ -424,13 +421,13 @@ static func _parse_component_at(source: String, ci: int, diags: Array) -> Dictio
 		var bto: int = mini(int(part["end"]), vsetup.length())
 		var blank := ""
 		for bi in range(bfrom, bto):
-			blank += "\n" if vsetup[bi] == "\n" else " "
+			blank += "\n" if vsetup.unicode_at(bi) == L.C_NL else " "
 		vsetup = vsetup.substr(0, bfrom) + blank + vsetup.substr(bto)
 	# T1.4 (Unity LooksLikeMarkupRoot parity): the chosen return's content must BE markup -- an
 	# element, `<>` fragment, @directive, or `{expr}` -- not a plain parenthesized value. Markup
 	# comments before the root are skipped, exactly like Unity's TrySkipNonCodeSpan.
 	var mfirst := _first_markup_real(body, int(split["m_start"]), int(split["m_end"]))
-	if mfirst == -1 or not (body[mfirst] == "<" or body[mfirst] == "@" or body[mfirst] == "{"):
+	if mfirst == -1 or not (body.unicode_at(mfirst) == L.C_LT or body.unicode_at(mfirst) == L.C_AT or body.unicode_at(mfirst) == L.C_LBRACE):
 		diags.append(D.make("GUITKX2102", D.ERROR, "`return` must return markup (an element, `<>` fragment, @directive, or `{expr}`)", body_at + int(split.get("chosen_at", int(split["m_start"]))), 6))
 		return { "ok": false }
 	# BUG-V5 + Phase C: code after an unconditional return is unreachable (the compiler drops what
@@ -546,7 +543,7 @@ static func _find_ident(s: String, name: String) -> int:
 		if j != i:
 			i = j
 			continue
-		if (i == 0 or not L._is_ident(s[i - 1])) and L.keyword_at(s, i, name):
+		if (i == 0 or not L._is_ident_code(s.unicode_at(i - 1))) and L.keyword_at(s, i, name):
 			return i
 		i += 1
 	return -1
@@ -561,7 +558,7 @@ static func _validate_effect_deps(setup: String, diags: Array, base_off: int = -
 		if j != i:
 			i = j
 			continue
-		var boundary := i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != ".")
+		var boundary := i == 0 or (not L._is_ident_code(setup.unicode_at(i - 1)) and setup.unicode_at(i - 1) != L.C_DOT)
 		var hooks_member := i >= 6 and setup.substr(i - 6, 6) == "Hooks."   # Hooks.useEffect counts
 		if boundary or hooks_member:
 			var matched := ""
@@ -571,9 +568,9 @@ static func _validate_effect_deps(setup: String, diags: Array, base_off: int = -
 					break
 			if matched != "":
 				var p := i + matched.length()
-				while p < n and (setup[p] == " " or setup[p] == "\t"):
+				while p < n and (setup.unicode_at(p) == L.C_SPACE or setup.unicode_at(p) == L.C_TAB):
 					p += 1
-				if p < n and setup[p] == "(":
+				if p < n and setup.unicode_at(p) == L.C_LPAREN:
 					var close := L.find_matching(setup, p)
 					if close != -1:
 						var inner := setup.substr(p + 1, close - p - 1)
@@ -608,7 +605,7 @@ static func _find_hook_call(code: String) -> int:
 		if j != i:
 			i = j
 			continue
-		if i == 0 or (not L._is_ident(code[i - 1]) and code[i - 1] != "."):
+		if i == 0 or (not L._is_ident_code(code.unicode_at(i - 1)) and code.unicode_at(i - 1) != L.C_DOT):
 			for h in hook_names():
 				if L.keyword_at(code, i, h) and _is_call_at(code, i + h.length()):
 					return i
@@ -716,12 +713,12 @@ static func _top_level_colon(s: String) -> bool:
 		if j != i:
 			i = j
 			continue
-		var c := s[i]
-		if c == "(" or c == "[" or c == "{":
+		var c := s.unicode_at(i)
+		if c == L.C_LPAREN or c == L.C_LBRACKET or c == L.C_LBRACE:
 			depth += 1
-		elif c == ")" or c == "]" or c == "}":
+		elif c == L.C_RPAREN or c == L.C_RBRACKET or c == L.C_RBRACE:
 			depth -= 1
-		elif c == ":" and depth <= 0:
+		elif c == L.C_COLON and depth <= 0:
 			return true
 		i += 1
 	return false
@@ -867,7 +864,7 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 	var j := hi + 4
 	j = _skip_ws_only(source, j)
 	var ns := j
-	while j < n and L._is_ident(source[j]):
+	while j < n and L._is_ident_code(source.unicode_at(j)):
 		j += 1
 	var hook_name := source.substr(ns, j - ns)
 	if hook_name == "":
@@ -879,7 +876,7 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 		diags.append(D.make("GUITKX2203", D.WARNING, "hook name `%s` should start with `use_`" % hook_name, ns, hook_name.length()))
 	var params := ""
 	j = _skip_ws_only(source, j)
-	if j < n and source[j] == "(":
+	if j < n and source.unicode_at(j) == L.C_LPAREN:
 		var pc := L.find_matching(source, j)
 		if pc == -1:
 			diags.append(D.make("GUITKX0304", D.ERROR, "unclosed `(` in hook params", j, 1))
@@ -888,13 +885,13 @@ static func _parse_hook_at(source: String, hi: int, diags: Array) -> Dictionary:
 		j = pc + 1
 	var ret_hint := ""
 	j = _skip_ws_only(source, j)
-	if j + 1 < n and source[j] == "-" and source[j + 1] == ">":
+	if j + 1 < n and source.unicode_at(j) == L.C_DASH and source.unicode_at(j + 1) == L.C_GT:
 		var rh := j + 2
-		while j < n and source[j] != "{":
+		while j < n and source.unicode_at(j) != L.C_LBRACE:
 			j += 1
 		ret_hint = source.substr(rh, j - rh).strip_edges()
 	j = _skip_ws_only(source, j)
-	if j >= n or source[j] != "{":
+	if j >= n or source.unicode_at(j) != L.C_LBRACE:
 		diags.append(D.make("GUITKX0303", D.ERROR, "hook body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false }
 	var bclose := L.find_matching(source, j)
@@ -910,14 +907,14 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	var j := mi + 6   # "module"
 	j = _skip_ws_only(source, j)
 	var ns := j
-	while j < n and L._is_ident(source[j]):
+	while j < n and L._is_ident_code(source.unicode_at(j)):
 		j += 1
 	var mod_name := source.substr(ns, j - ns)
 	if mod_name == "":
 		diags.append(D.make("GUITKX0300", D.ERROR, "`module` requires a name (module Name { ... })", j))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	j = _skip_ws_only(source, j)
-	if j >= n or source[j] != "{":
+	if j >= n or source.unicode_at(j) != L.C_LBRACE:
 		diags.append(D.make("GUITKX0303", D.ERROR, "module body `{ ... }` expected", mini(j, n - 1)))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var bclose := L.find_matching(source, j)
@@ -1057,7 +1054,7 @@ static func _split_return(body: String) -> Dictionary:
 			var eol := body.find("\n", i)
 			if eol == -1:
 				eol = n
-			if p < n and body[p] == "(":
+			if p < n and body.unicode_at(p) == L.C_LPAREN:
 				# G-01: the `return ( ... )` window is markup, not GDScript -- find_matching_markup
 				# keeps `#` literal and `//`/`/* */`/`<!-- -->` as comments (see its docstring).
 				var close := L.find_matching_markup(body, p)
@@ -1070,7 +1067,7 @@ static func _split_return(body: String) -> Dictionary:
 					rets.append({ "at": i, "m_start": p + 1, "m_end": close, "end": close + 1, "shape": "paren", "top": top_level, "depth": depth })
 				i = close + 1
 				continue
-			elif p < n and body[p] == "<":
+			elif p < n and body.unicode_at(p) == L.C_LT:
 				# bare `return <Tag.../>` -- markup by construction (`<` cannot start a GDScript expression)
 				rets.append({ "at": i, "m_start": p, "m_end": -1, "end": -1, "shape": "bare", "top": top_level, "depth": depth })
 				i = eol
@@ -1127,7 +1124,7 @@ static func _split_return(body: String) -> Dictionary:
 ## parenthesized value like `return (x + 1)` in a setup lambda.
 static func _paren_holds_markup(body: String, from: int, to: int) -> bool:
 	var f := _first_real(body, from, to)
-	return f != -1 and (body[f] == "<" or body[f] == "@")
+	return f != -1 and (body.unicode_at(f) == L.C_LT or body.unicode_at(f) == L.C_AT)
 
 # --- Phase D: directive-body splitter (Unity ParseControlBlockBody parity) ------------------------
 # Splits ONE directive body (raw code between the directive's braces) into ordered parts:
@@ -1164,7 +1161,7 @@ static func _split_body(body: String) -> Dictionary:
 	# The header line itself is OUTSIDE its own lambda; a line at depth <= a header pops it.
 	var line_start: Array = [0]
 	for ci in n:
-		if body[ci] == "\n":
+		if body.unicode_at(ci) == L.C_NL:
 			line_start.append(ci + 1)
 	var floors: Array = []
 	var fstack: Array = []
@@ -1198,16 +1195,16 @@ static func _split_body(body: String) -> Dictionary:
 		var prefix := body.substr(ls, i - ls)
 		var at_stmt: bool = prefix.strip_edges() == "" and bdepth <= 0
 		var in_lambda: bool = int(floors[line_idx]) != -1
-		var c := body[i]
-		if c == "(" or c == "[" or c == "{":
+		var c := body.unicode_at(i)
+		if c == L.C_LPAREN or c == L.C_LBRACKET or c == L.C_LBRACE:
 			bdepth += 1
 			i += 1
 			continue
-		if c == ")" or c == "]" or c == "}":
+		if c == L.C_RPAREN or c == L.C_RBRACKET or c == L.C_RBRACE:
 			bdepth -= 1
 			i += 1
 			continue
-		if c == "<" and JsxScan._markup_at(body, i, n):
+		if c == L.C_LT and JsxScan._markup_at(body, i, n):
 			# Markup outside a `return`: at statement position it is the pre-0.7 body grammar
 			# (GUITKX2103); inside a value (`var x = ( <X/> )`, any bracket depth) the segment
 			# emitter splices it. Either way SKIP the whole element -- its attr lambdas may
@@ -1218,7 +1215,7 @@ static func _split_body(body: String) -> Dictionary:
 			var ee := JsxScan._find_element_end(body, i, n)
 			i = n if ee == -1 else ee
 			continue
-		if c == "@" and at_stmt and not in_lambda and (L.keyword_at(body, i + 1, "if") or L.keyword_at(body, i + 1, "for") or L.keyword_at(body, i + 1, "while") or L.keyword_at(body, i + 1, "match")):
+		if c == L.C_AT and at_stmt and not in_lambda and (L.keyword_at(body, i + 1, "if") or L.keyword_at(body, i + 1, "for") or L.keyword_at(body, i + 1, "while") or L.keyword_at(body, i + 1, "match")):
 			# a nested directive can only live INSIDE a return's markup now
 			if legacy_at == -1:
 				legacy_at = i
@@ -1234,7 +1231,7 @@ static func _split_body(body: String) -> Dictionary:
 			depth += 1   # `if x: return ...` -- the return is the opener's body
 		if in_lambda:
 			# lambda-owned return: only markup payloads need parts (lower in place, keep `return`)
-			if p < n and body[p] == "(":
+			if p < n and body.unicode_at(p) == L.C_LPAREN:
 				# G-01: markup lexis, not GDScript -- see find_matching_markup's docstring.
 				var lc := L.find_matching_markup(body, p)
 				if lc == -1:
@@ -1244,7 +1241,7 @@ static func _split_body(body: String) -> Dictionary:
 					cursor = lc + 1
 				i = lc + 1
 				continue
-			if p < n and body[p] == "<":
+			if p < n and body.unicode_at(p) == L.C_LT:
 				var lb := JsxScan._find_element_end(body, p, n)
 				if lb == -1:
 					return { "error": D.make("GUITKX0304", D.ERROR, "unclosed markup in a `return`", p, 1) }
@@ -1256,12 +1253,12 @@ static func _split_body(body: String) -> Dictionary:
 			continue
 		# directive-level return: ALWAYS a rewrite target
 		rets += 1
-		if p >= n or body[p] == "\n":
+		if p >= n or body.unicode_at(p) == L.C_NL:
 			_push_body_ret(parts, cursor, { "at": i, "end": p, "m_start": p, "m_end": p, "shape": "void", "depth": depth, "markup": false, "rewrite": true })
 			cursor = p
 			i = p
 			continue
-		if body[p] == "(":
+		if body.unicode_at(p) == L.C_LPAREN:
 			# G-01: markup lexis, not GDScript -- see find_matching_markup's docstring.
 			var pc := L.find_matching_markup(body, p)
 			if pc == -1:
@@ -1270,7 +1267,7 @@ static func _split_body(body: String) -> Dictionary:
 			cursor = pc + 1
 			i = pc + 1
 			continue
-		if body[p] == "<":
+		if body.unicode_at(p) == L.C_LT:
 			var bb := JsxScan._find_element_end(body, p, n)
 			if bb == -1:
 				return { "error": D.make("GUITKX0304", D.ERROR, "unclosed markup in a `return`", p, 1) }
@@ -1319,12 +1316,12 @@ static func _stmt_end(body: String, from: int) -> int:
 		if j != i:
 			i = j
 			continue
-		var c := body[i]
-		if c == "(" or c == "[" or c == "{":
+		var c := body.unicode_at(i)
+		if c == L.C_LPAREN or c == L.C_LBRACKET or c == L.C_LBRACE:
 			depth += 1
-		elif c == ")" or c == "]" or c == "}":
+		elif c == L.C_RPAREN or c == L.C_RBRACKET or c == L.C_RBRACE:
 			depth -= 1
-		elif c == "\n" and depth <= 0:
+		elif c == L.C_NL and depth <= 0:
 			return i
 		i += 1
 	return n
@@ -1366,21 +1363,21 @@ static func _error_on_trailing(source: String, from: int, kind: String, diags: A
 static func _first_markup_real(s: String, from: int, to: int) -> int:
 	var i := from
 	while i < to:
-		var c := s[i]
-		if c == " " or c == "\t" or c == "\n" or c == "\r":
+		var c := s.unicode_at(i)
+		if c == L.C_SPACE or c == L.C_TAB or c == L.C_NL or c == L.C_CR:
 			i += 1
 			continue
-		if c == "/" and i + 1 < to and s[i + 1] == "/":
+		if c == L.C_SLASH and i + 1 < to and s.unicode_at(i + 1) == L.C_SLASH:
 			var le := s.find("\n", i)
 			i = to if (le == -1 or le > to) else le
 			continue
-		if c == "/" and i + 1 < to and s[i + 1] == "*":
+		if c == L.C_SLASH and i + 1 < to and s.unicode_at(i + 1) == L.C_STAR:
 			var bce := s.find("*/", i + 2)
 			if bce == -1 or bce + 2 > to:
 				return i
 			i = bce + 2
 			continue
-		if c == "<" and i + 3 < to and s.substr(i, 4) == "<!--":
+		if c == L.C_LT and i + 3 < to and s.unicode_at(i + 1) == L.C_BANG and s.unicode_at(i + 2) == L.C_DASH and s.unicode_at(i + 3) == L.C_DASH:
 			var hce := s.find("-->", i + 4)
 			if hce == -1 or hce + 3 > to:
 				return i
@@ -1397,8 +1394,8 @@ static func _first_real(s: String, from: int, to: int) -> int:
 		if k != i:
 			i = k
 			continue
-		var c := s[i]
-		if not (c == " " or c == "\t" or c == "\n" or c == "\r"):
+		var c := s.unicode_at(i)
+		if not (c == L.C_SPACE or c == L.C_TAB or c == L.C_NL or c == L.C_CR):
 			return i
 		i += 1
 	return -1
@@ -1411,8 +1408,8 @@ static func _last_real(s: String, from: int, to: int) -> int:
 		if k != i:
 			i = k
 			continue
-		var c := s[i]
-		if not (c == " " or c == "\t" or c == "\n" or c == "\r"):
+		var c := s.unicode_at(i)
+		if not (c == L.C_SPACE or c == L.C_TAB or c == L.C_NL or c == L.C_CR):
 			last = i
 		i += 1
 	return last
@@ -1421,7 +1418,7 @@ static func _line_at(s: String, offset: int) -> int:
 	var line := 0
 	var lim := mini(offset, s.length())
 	for idx in lim:
-		if s[idx] == "\n":
+		if s.unicode_at(idx) == L.C_NL:
 			line += 1
 	return line
 
@@ -1439,20 +1436,20 @@ static func unreachable_line_ranges(source: String) -> Array:
 		if L.keyword_at(source, i, "component"):
 			# skip name + optional (params) to reach the body `{`
 			var j := i + 9
-			while j < n and (source[j] == " " or source[j] == "\t"):
+			while j < n and (source.unicode_at(j) == L.C_SPACE or source.unicode_at(j) == L.C_TAB):
 				j += 1
-			while j < n and L._is_ident(source[j]):
+			while j < n and L._is_ident_code(source.unicode_at(j)):
 				j += 1
-			while j < n and (source[j] == " " or source[j] == "\t"):
+			while j < n and (source.unicode_at(j) == L.C_SPACE or source.unicode_at(j) == L.C_TAB):
 				j += 1
-			if j < n and source[j] == "(":
+			if j < n and source.unicode_at(j) == L.C_LPAREN:
 				var pcl := L.find_matching(source, j)
 				if pcl == -1:
 					break
 				j = pcl + 1
-			while j < n and (source[j] == " " or source[j] == "\t" or source[j] == "\n" or source[j] == "\r"):
+			while j < n and (source.unicode_at(j) == L.C_SPACE or source.unicode_at(j) == L.C_TAB or source.unicode_at(j) == L.C_NL or source.unicode_at(j) == L.C_CR):
 				j += 1
-			if j >= n or source[j] != "{":
+			if j >= n or source.unicode_at(j) != L.C_LBRACE:
 				i += 9
 				continue
 			# G-01: same component-body scan as _parse_component_at -- needs markup lexis.
@@ -1515,8 +1512,8 @@ static func _hook_signature(src: String) -> String:
 		if j != i:
 			i = j
 			continue
-		var qualified := i >= 6 and src.substr(i - 6, 6) == "Hooks." and (i == 6 or not L._is_ident(src[i - 7]))
-		var free := i == 0 or (not L._is_ident(src[i - 1]) and src[i - 1] != ".")
+		var qualified := i >= 6 and src.substr(i - 6, 6) == "Hooks." and (i == 6 or not L._is_ident_code(src.unicode_at(i - 7)))
+		var free := i == 0 or (not L._is_ident_code(src.unicode_at(i - 1)) and src.unicode_at(i - 1) != L.C_DOT)
 		if free or qualified:
 			var matched := ""
 			for h in hook_names():
@@ -1525,7 +1522,7 @@ static func _hook_signature(src: String) -> String:
 					break
 			if matched == "" and src.substr(i, 4) == "use_":
 				var k := i
-				while k < n and L._is_ident(src[k]):
+				while k < n and L._is_ident_code(src.unicode_at(k)):
 					k += 1
 				if _is_call_at(src, k):
 					matched = src.substr(i, k - i)
@@ -2157,7 +2154,11 @@ static func _has_statement(block: String) -> bool:
 
 static func _leading_ws(s: String) -> String:
 	var i := 0
-	while i < s.length() and (s[i] == "\t" or s[i] == " "):
+	var n := s.length()
+	while i < n:
+		var c := s.unicode_at(i)
+		if c != L.C_TAB and c != L.C_SPACE:
+			break
 		i += 1
 	return s.substr(0, i)
 
@@ -2177,10 +2178,10 @@ static func _indent_unit(lines: Array) -> int:
 		var s := l as String
 		var sp := 0
 		for i in s.length():
-			var c := s[i]
-			if c == " ":
+			var c := s.unicode_at(i)
+			if c == L.C_SPACE:
 				sp += 1
-			elif c == "\t":
+			elif c == L.C_TAB:
 				continue
 			else:
 				break
@@ -2201,10 +2202,10 @@ static func _indent_unit(lines: Array) -> int:
 static func _indent_depth(s: String, unit: int) -> int:
 	var cols := 0
 	for i in s.length():
-		var c := s[i]
-		if c == "\t":
+		var c := s.unicode_at(i)
+		if c == L.C_TAB:
 			cols += unit
-		elif c == " ":
+		elif c == L.C_SPACE:
 			cols += 1
 		else:
 			break
@@ -2318,15 +2319,15 @@ static func _find_lhs_start(src: String, from: int, op_pos: int) -> int:
 		if j != i:
 			i = j
 			continue
-		var c := src[i]
-		if c == "(" or c == "[":
+		var c := src.unicode_at(i)
+		if c == L.C_LPAREN or c == L.C_LBRACKET:
 			depth += 1
-		elif c == ")" or c == "]":
+		elif c == L.C_RPAREN or c == L.C_RBRACKET:
 			depth -= 1
 		elif depth == 0:
-			if c == "," or c == ";":
+			if c == L.C_COMMA or c == L.C_SEMI:
 				lhs = i + 1
-			elif i == from or not L._is_ident(src[i - 1]):
+			elif i == from or not L._is_ident_code(src.unicode_at(i - 1)):
 				if L.keyword_at(src, i, "or"):
 					lhs = i + 2
 				elif L.keyword_at(src, i, "if"):
@@ -2368,12 +2369,12 @@ static func _split_top_commas(s: String) -> Array:
 		if k != i:
 			i = k
 			continue
-		var c := s[i]
-		if c == "(" or c == "{" or c == "[":
+		var c := s.unicode_at(i)
+		if c == L.C_LPAREN or c == L.C_LBRACE or c == L.C_LBRACKET:
 			var close := L.find_matching(s, i)
 			i = (close + 1) if close != -1 else n
 			continue
-		if c == ",":
+		if c == L.C_COMMA:
 			out.append(s.substr(start, i - start))
 			start = i + 1
 		i += 1
@@ -2383,17 +2384,18 @@ static func _split_top_commas(s: String) -> Array:
 static func _find_top(s: String, ch: String) -> int:
 	var i := 0
 	var n := s.length()
+	var chc := ch.unicode_at(0)
 	while i < n:
 		var k := L.skip_noncode(s, i)
 		if k != i:
 			i = k
 			continue
-		var c := s[i]
-		if c == "(" or c == "{" or c == "[":
+		var c := s.unicode_at(i)
+		if c == L.C_LPAREN or c == L.C_LBRACE or c == L.C_LBRACKET:
 			var close := L.find_matching(s, i)
 			i = (close + 1) if close != -1 else n
 			continue
-		if c == ch:
+		if c == chc:
 			return i
 		i += 1
 	return -1
@@ -2415,7 +2417,7 @@ static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 			continue
 		# Only auto-prefix a FREE hook identifier — never a member call like `counter.useState(...)`
 		# (a preceding `.` is a non-identifier boundary, so guard against it explicitly). [audit]
-		if i == 0 or (not L._is_ident(setup[i - 1]) and setup[i - 1] != "."):
+		if i == 0 or (not L._is_ident_code(setup.unicode_at(i - 1)) and setup.unicode_at(i - 1) != L.C_DOT):
 			var matched := ""
 			for h in hook_names():
 				if h in skip:
@@ -2435,9 +2437,9 @@ static func _apply_hook_aliases(setup: String, skip: Array = []) -> String:
 # True if, skipping spaces/tabs from `at`, the next char is `(` (i.e. the name is being called).
 static func _is_call_at(s: String, at: int) -> bool:
 	var n := s.length()
-	while at < n and (s[at] == " " or s[at] == "\t"):
+	while at < n and (s.unicode_at(at) == L.C_SPACE or s.unicode_at(at) == L.C_TAB):
 		at += 1
-	return at < n and s[at] == "("
+	return at < n and s.unicode_at(at) == L.C_LPAREN
 
 
 ## Render a `-> ReturnType` suffix for a generated function signature. Empty when there is no hint;
@@ -2453,7 +2455,10 @@ static func _gd_str(v: String) -> String:
 
 static func _skip_ws_only(s: String, i: int) -> int:
 	var n := s.length()
-	while i < n and (s[i] == " " or s[i] == "\t" or s[i] == "\n" or s[i] == "\r"):
+	while i < n:
+		var c := s.unicode_at(i)
+		if c != L.C_SPACE and c != L.C_TAB and c != L.C_NL and c != L.C_CR:
+			break
 		i += 1
 	return i
 

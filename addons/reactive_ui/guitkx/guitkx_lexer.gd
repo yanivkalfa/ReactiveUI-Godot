@@ -31,9 +31,13 @@ const C_APOS := 39      # '
 const C_LPAREN := 40    # (
 const C_RPAREN := 41    # )
 const C_STAR := 42      # *
+const C_PLUS := 43      # +
+const C_COMMA := 44     # ,
 const C_DASH := 45      # -
 const C_DOT := 46       # .
 const C_SLASH := 47     # /
+const C_COLON := 58     # :
+const C_SEMI := 59      # ;
 const C_EQ := 61        # =
 const C_LT := 60        # <
 const C_GT := 62        # >
@@ -43,6 +47,7 @@ const C_BSLASH := 92    # \
 const C_RBRACKET := 93  # ]
 const C_CARET := 94     # ^
 const C_LBRACE := 123   # {
+const C_PIPE := 124     # |
 const C_RBRACE := 125   # }
 const C_LOW_R := 114    # r
 

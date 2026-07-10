@@ -5,7 +5,13 @@ extends SceneTree
 ##   pre-G-10 baseline:          compile 71.96 ms | skip_noncode walk 4.58 ms | fmm 6.33 ms
 ##   lexer unicode_at (stage 1): compile 59.27 ms | walk 2.62 ms (-43%)       | fmm 4.04 ms (-36%)
 ##   + markup loops + G-08:      compile ~58 ms   | walk ~2.65 ms             | (fmm micro is GC-noisy)
-## Remaining per the G-10 recipe: guitkx.gd hot scanners + the editor tokenizer/highlighter.
+##   + guitkx.gd + jsx_scan (3): compile ~51-52 ms (-28% total)
+##   + editor tokenizer (4):     tokenize doom file 8.4 -> 7.0 ms (-17%) -- ALL G-10 stages done.
+## Lessons (measured): unicode_at+int is ~4x faster than s[i]+String INLINE, but (a) a GDScript
+## `match` with many patterns is LINEAR interpreted compares -- a 22-arm match made the tokenizer
+## 64% SLOWER than String.contains(); use a const int-keyed Dictionary set (.has = one C++ hash);
+## (b) flatten hot char-class helpers to a single body -- nested helper calls cost more than the
+## int compares they save.
 func _initialize():
 	var src := FileAccess.get_file_as_string("res://examples/demos/doom/doom_game_screen.guitkx")
 	if src == "":

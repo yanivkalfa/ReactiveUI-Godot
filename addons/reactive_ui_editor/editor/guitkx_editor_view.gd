@@ -12,6 +12,9 @@ extends Control
 
 const MAX_LIVE_COMPILE := 150_000  # chars; above this, compile on Save only. Measured: ~2.1ms/KB on
                                    # the MAIN thread, so 150K ≈ 300ms worst-case stall per pause (P1).
+                                   # [G-10 2026-07-10] the unicode_at scanner conversion cut whole-file
+                                   # compile ~29% (71.96 -> 51.08ms on the 12.4KB doom component; see
+                                   # tests/guitkx_bench.gd), so the worst-case stall shrinks accordingly.
 const DEBOUNCE_SEC := 0.3
 
 # Preload (not the global class name): a freshly-added class_name is absent from the global class
