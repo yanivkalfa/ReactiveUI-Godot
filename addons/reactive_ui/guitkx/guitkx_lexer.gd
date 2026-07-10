@@ -9,6 +9,42 @@ extends RefCounted
 ## GDScript lexis (vs C#): comments are `#` to end-of-line only (NO `/* */`); strings are
 ## "..." / '...' / triple-quoted """...""" / '''...''' with `\` escapes; optional one-char
 ## prefixes r"" (raw), &"" (StringName), ^"" (NodePath). No C# `$"`/`@"`/interpolation.
+##
+## [G-10] All per-char reads use `unicode_at` + int-constant comparisons — GDScript `s[i]`
+## allocates a fresh 1-char String per access and compares by string, which dominated scanner
+## cost (these loops run per keystroke in the highlighter and per save in the compiler). The
+## TS mirror (scanner.ts) keeps `src[i]` — JS 1-char access is cheap; the shared contract corpus
+## (scanner-cases.json) pins the two implementations to identical BEHAVIOR, not identical code.
+
+# [G-10] Char codes (ASCII) for the int comparisons below.
+const C_TAB := 9        # \t
+const C_NL := 10        # \n
+const C_CR := 13        # \r
+const C_SPACE := 32
+const C_BANG := 33      # !
+const C_QUOTE := 34     # "
+const C_HASH := 35      # #
+const C_DOLLAR := 36    # $
+const C_PERCENT := 37   # %
+const C_AMP := 38       # &
+const C_APOS := 39      # '
+const C_LPAREN := 40    # (
+const C_RPAREN := 41    # )
+const C_STAR := 42      # *
+const C_DASH := 45      # -
+const C_DOT := 46       # .
+const C_SLASH := 47     # /
+const C_EQ := 61        # =
+const C_LT := 60        # <
+const C_GT := 62        # >
+const C_AT := 64        # @
+const C_LBRACKET := 91  # [
+const C_BSLASH := 92    # \
+const C_RBRACKET := 93  # ]
+const C_CARET := 94     # ^
+const C_LBRACE := 123   # {
+const C_RBRACE := 125   # }
+const C_LOW_R := 114    # r
 
 ## If `i` sits at the start of a comment or string literal, skip the whole token and return the
 ## index just past it. Otherwise return `i` unchanged. Never advances past `len`.
@@ -16,11 +52,11 @@ static func skip_noncode(src: String, i: int) -> int:
 	var n := src.length()
 	if i >= n:
 		return i
-	var c := src[i]
+	var c := src.unicode_at(i)
 	# line comment
-	if c == "#":
+	if c == C_HASH:
 		var j := i + 1
-		while j < n and src[j] != "\n":
+		while j < n and src.unicode_at(j) != C_NL:
 			j += 1
 		return j
 	# string, with optional one-char prefix: r"" (raw), &"" (StringName), ^"" (NodePath),
@@ -28,43 +64,49 @@ static func skip_noncode(src: String, i: int) -> int:
 	# char is itself an operator following a value (e.g. "fmt" % args, a & b, arr[i]^2) — so we
 	# never mis-skip code as a string. Must stay byte-identical with scanner.ts skipNoncode.
 	var q_at := i
-	if c == "r" or c == "&" or c == "^" or c == "$" or c == "%":
-		if i + 1 < n and (src[i + 1] == "\"" or src[i + 1] == "'") and (i == 0 or not _is_value_end(src[i - 1])):
-			q_at = i + 1
-	if q_at < n and (src[q_at] == "\"" or src[q_at] == "'"):
-		return _skip_string(src, q_at)
+	if c == C_LOW_R or c == C_AMP or c == C_CARET or c == C_DOLLAR or c == C_PERCENT:
+		if i + 1 < n:
+			var nx := src.unicode_at(i + 1)
+			if (nx == C_QUOTE or nx == C_APOS) and (i == 0 or not _is_value_end_code(src.unicode_at(i - 1))):
+				q_at = i + 1
+	if q_at < n:
+		var qc := src.unicode_at(q_at)
+		if qc == C_QUOTE or qc == C_APOS:
+			return _skip_string(src, q_at)
 	return i
 
-# True if `c` can end a value/operand, so a following r/&/^/$/% is an operator, not a string prefix.
-static func _is_value_end(c: String) -> bool:
-	return _is_ident(c) or c == ")" or c == "]" or c == "\"" or c == "'"
+# True if code `c` can end a value/operand, so a following r/&/^/$/% is an operator, not a
+# string prefix.
+static func _is_value_end_code(c: int) -> bool:
+	return _is_ident_code(c) or c == C_RPAREN or c == C_RBRACKET or c == C_QUOTE or c == C_APOS
 
 ## `i` points at a quote char. Skip the string (handles triple-quoted + escapes). Returns the
 ## index just past the closing quote (or `len` if unterminated).
 static func _skip_string(src: String, i: int) -> int:
 	var n := src.length()
-	var q := src[i]
+	var q := src.unicode_at(i)
 	# triple-quoted (spans newlines)
-	if i + 2 < n and src[i + 1] == q and src[i + 2] == q:
+	if i + 2 < n and src.unicode_at(i + 1) == q and src.unicode_at(i + 2) == q:
 		var j := i + 3
 		while j < n:
-			if src[j] == "\\":
+			var cj := src.unicode_at(j)
+			if cj == C_BSLASH:
 				j += 2
 				continue
-			if src[j] == q and j + 2 < n and src[j + 1] == q and src[j + 2] == q:
+			if cj == q and j + 2 < n and src.unicode_at(j + 1) == q and src.unicode_at(j + 2) == q:
 				return j + 3
 			j += 1
 		return n
 	# single/double-quoted
 	var k := i + 1
 	while k < n:
-		var ch := src[k]
-		if ch == "\\":
+		var ch := src.unicode_at(k)
+		if ch == C_BSLASH:
 			k += 2
 			continue
 		if ch == q:
 			return k + 1
-		if ch == "\n":   # GDScript single-line strings don't span newlines
+		if ch == C_NL:   # GDScript single-line strings don't span newlines
 			return k
 		k += 1
 	return n
@@ -81,14 +123,14 @@ static func find_matching(src: String, open_i: int) -> int:
 		if j != i:
 			i = j
 			continue
-		var c := src[i]
-		if c == "(" or c == "{" or c == "[":
+		var c := src.unicode_at(i)
+		if c == C_LPAREN or c == C_LBRACE or c == C_LBRACKET:
 			stack.append(c)
-		elif c == ")" or c == "}" or c == "]":
+		elif c == C_RPAREN or c == C_RBRACE or c == C_RBRACKET:
 			if stack.is_empty():
 				return -1
-			var top: String = stack.pop_back()
-			if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
+			var top: int = stack.pop_back()
+			if (c == C_RPAREN and top != C_LPAREN) or (c == C_RBRACE and top != C_LBRACE) or (c == C_RBRACKET and top != C_LBRACKET):
 				return -1
 			if stack.is_empty():
 				return i
@@ -106,19 +148,19 @@ static func skip_noncode_markup(src: String, i: int) -> int:
 	var n := src.length()
 	if i >= n:
 		return i
-	var c := src[i]
-	if c == "/" and i + 1 < n and src[i + 1] == "/":
+	var c := src.unicode_at(i)
+	if c == C_SLASH and i + 1 < n and src.unicode_at(i + 1) == C_SLASH:
 		var j := i + 2
-		while j < n and src[j] != "\n":
+		while j < n and src.unicode_at(j) != C_NL:
 			j += 1
 		return j
-	if c == "/" and i + 1 < n and src[i + 1] == "*":
+	if c == C_SLASH and i + 1 < n and src.unicode_at(i + 1) == C_STAR:
 		var close := src.find("*/", i + 2)
 		return (close + 2) if close != -1 else n
-	if c == "<" and i + 3 < n and src[i + 1] == "!" and src[i + 2] == "-" and src[i + 3] == "-":
+	if c == C_LT and i + 3 < n and src.unicode_at(i + 1) == C_BANG and src.unicode_at(i + 2) == C_DASH and src.unicode_at(i + 3) == C_DASH:
 		var close := src.find("-->", i + 4)
 		return (close + 3) if close != -1 else n
-	if c == "\"" or c == "'":
+	if c == C_QUOTE or c == C_APOS:
 		return _skip_string(src, i)
 	return i
 
@@ -157,8 +199,8 @@ const _MODE_CODE := 2
 
 static func find_matching_markup(src: String, open_i: int) -> int:
 	var n := src.length()
-	var delims: Array = [src[open_i]]
-	var modes: Array = [_MODE_BODY if src[open_i] == "{" else _MODE_MARKUP]
+	var delims: Array = [src.unicode_at(open_i)]
+	var modes: Array = [_MODE_BODY if src.unicode_at(open_i) == C_LBRACE else _MODE_MARKUP]
 	var expect_body := false
 	var expect_markup_paren := false
 	# [G-23] Per-line classification state for BODY levels (see docstring).
@@ -182,53 +224,53 @@ static func find_matching_markup(src: String, open_i: int) -> int:
 		if j != i:
 			i = j
 			continue
-		var c := src[i]
-		if c == " " or c == "\t" or c == "\n" or c == "\r":
+		var c := src.unicode_at(i)
+		if c == C_SPACE or c == C_TAB or c == C_NL or c == C_CR:
 			i += 1
 			continue
 		if not in_code:
-			if c == "@" and keyword_at(src, i + 1, "else"):
+			if c == C_AT and keyword_at(src, i + 1, "else"):
 				expect_body = true
 				expect_markup_paren = false
 				i += 5   # "@else"
 				continue
-			if c == "@" and keyword_at(src, i + 1, "default"):
+			if c == C_AT and keyword_at(src, i + 1, "default"):
 				expect_body = true
 				expect_markup_paren = false
 				i += 8   # "@default"
 				continue
-			if c == "r" and keyword_at(src, i, "return"):
+			if c == C_LOW_R and keyword_at(src, i, "return"):
 				expect_markup_paren = true
 				expect_body = false
 				i += 6   # "return"
 				continue
-			if c == "(":
+			if c == C_LPAREN:
 				delims.append(c)
 				modes.append(_MODE_MARKUP if expect_markup_paren else _MODE_CODE)
 				expect_body = false
 				expect_markup_paren = false
 				i += 1
 				continue
-			if c == "{":
+			if c == C_LBRACE:
 				delims.append(c)
 				modes.append(_MODE_BODY if expect_body else _MODE_CODE)
 				expect_body = false
 				expect_markup_paren = false
 				i += 1
 				continue
-			if c == "[":
+			if c == C_LBRACKET:
 				delims.append(c)
 				modes.append(mode)   # inherit -- markup text brackets stay markup, prelude arrays stay code
 				expect_body = false
 				expect_markup_paren = false
 				i += 1
 				continue
-			if c == ")" or c == "}" or c == "]":
+			if c == C_RPAREN or c == C_RBRACE or c == C_RBRACKET:
 				if delims.is_empty():
 					return -1
-				var top: String = delims.pop_back()
+				var top: int = delims.pop_back()
 				modes.pop_back()
-				if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
+				if (c == C_RPAREN and top != C_LPAREN) or (c == C_RBRACE and top != C_LBRACE) or (c == C_RBRACKET and top != C_LBRACKET):
 					return -1
 				if delims.is_empty():
 					return i
@@ -239,22 +281,22 @@ static func find_matching_markup(src: String, open_i: int) -> int:
 			i += 1
 			continue
 		else:
-			if c == "(" or c == "{" or c == "[":
+			if c == C_LPAREN or c == C_LBRACE or c == C_LBRACKET:
 				delims.append(c)
 				modes.append(_MODE_CODE)
 				i += 1
 				continue
-			if c == ")" or c == "}" or c == "]":
+			if c == C_RPAREN or c == C_RBRACE or c == C_RBRACKET:
 				if delims.is_empty():
 					return -1
-				var top: String = delims.pop_back()
+				var top: int = delims.pop_back()
 				modes.pop_back()
-				if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
+				if (c == C_RPAREN and top != C_LPAREN) or (c == C_RBRACE and top != C_LBRACE) or (c == C_RBRACKET and top != C_LBRACKET):
 					return -1
 				if delims.is_empty():
 					return i
 				if modes[modes.size() - 1] != _MODE_CODE:
-					expect_body = (top == "(")
+					expect_body = (top == C_LPAREN)
 				i += 1
 				continue
 			i += 1
@@ -267,15 +309,18 @@ static func find_matching_markup(src: String, open_i: int) -> int:
 static func _is_markup_line(src: String, ls: int, le: int) -> bool:
 	var k := ls
 	while k < le:
-		var c := src[k]
-		if c == " " or c == "\t" or c == "\r":
+		var c := src.unicode_at(k)
+		if c == C_SPACE or c == C_TAB or c == C_CR:
 			k += 1
 			continue
-		if c == "<" or c == "{":
+		if c == C_LT or c == C_LBRACE:
 			return true
-		if c == "/" and k + 1 < le and (src[k + 1] == "/" or src[k + 1] == "*"):
-			return true
-		if c == "@":
+		if c == C_SLASH and k + 1 < le:
+			var nx := src.unicode_at(k + 1)
+			if nx == C_SLASH or nx == C_STAR:
+				return true
+			return false
+		if c == C_AT:
 			return keyword_at(src, k + 1, "if") or keyword_at(src, k + 1, "elif") \
 					or keyword_at(src, k + 1, "else") or keyword_at(src, k + 1, "for") \
 					or keyword_at(src, k + 1, "while") or keyword_at(src, k + 1, "match") \
@@ -292,11 +337,17 @@ static func keyword_at(src: String, i: int, word: String) -> bool:
 		return false
 	if src.substr(i, wl) != word:
 		return false
-	if i > 0 and _is_ident(src[i - 1]):
+	if i > 0 and _is_ident_code(src.unicode_at(i - 1)):
 		return false
-	if i + wl < n and _is_ident(src[i + wl]):
+	if i + wl < n and _is_ident_code(src.unicode_at(i + wl)):
 		return false
 	return true
 
+# [G-10] Int-code identifier class: `_`, a-z, A-Z, 0-9.
+static func _is_ident_code(c: int) -> bool:
+	return c == 95 or (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57)
+
+## String-typed identifier check, kept for external callers (guitkx.gd scans still pass 1-char
+## Strings). Internal lexer paths use _is_ident_code.
 static func _is_ident(c: String) -> bool:
-	return c == "_" or (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or (c >= "0" and c <= "9")
+	return c != "" and _is_ident_code(c.unicode_at(0))

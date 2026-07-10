@@ -127,8 +127,21 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 1. P1 — Scanner character access (the big one)
 
-### G-10 — All GDScript scanners use `src[i]` single-char-String indexing
-- **Anchors:** `guitkx_lexer.gd` (0 uses of `unicode_at`), `guitkx_markup.gd` (0), most of `guitkx.gd`, `guitkx_tokenizer.gd`/highlighter. In GDScript 4, `s[i]` allocates a fresh 1-char String per access and comparisons are string-compares. These loops run per keystroke (highlighter, live diagnostics), per save (compiler), and per poll tick (watch sweeps).
+### G-10 — All GDScript scanners use `src[i]` single-char-String indexing — **STAGES 1–2 DONE (2026-07-10)**
+- **STATUS:** `guitkx_lexer.gd` (stage 1) and `guitkx_markup.gd`'s inner loops (stage 2) are fully
+  converted to `unicode_at` + `C_*` int consts (the lexer hosts the shared const table). Measured on
+  the 12.4 KB doom component (`tests/guitkx_bench.gd`, now a permanent harness): full compile
+  **71.96 → ~58 ms (-19%)**, `skip_noncode` whole-file walk **4.58 → 2.65 ms (-42%)**,
+  `find_matching_markup` **6.33 → 4.04 ms (-36%)**. All contract cases + guitkx/demos/doom/core
+  suites green; all 49 example `.guitkx` recompile **byte-identical**. Public String APIs kept
+  (`_is_ident(String)` delegates to `_is_ident_code(int)` — guitkx.gd call sites unchanged).
+  **REMAINING (stages 3–4):** `guitkx.gd`'s own hot scanners (`_find_decl`, `_split_return`,
+  `_split_body`, `_validate_*`, `_hook_signature` — post-conversion, compile time is dominated by
+  these passes + codegen emit, so this is where the next win is) and the editor
+  tokenizer/highlighter (`addons/reactive_ui_editor` — the per-keystroke path; update the
+  `guitkx_editor_view.gd:13` ms/KB comment when converted). TS mirrors deliberately NOT ported
+  (charCodeAt-style access is already cheap in JS; the shared contract corpus pins behavior).
+- **Anchors (historical):** `guitkx_lexer.gd` (0 uses of `unicode_at`), `guitkx_markup.gd` (0), most of `guitkx.gd`, `guitkx_tokenizer.gd`/highlighter. In GDScript 4, `s[i]` allocates a fresh 1-char String per access and comparisons are string-compares. These loops run per keystroke (highlighter, live diagnostics), per save (compiler), and per poll tick (watch sweeps).
 - **RECIPE:**
   1. Convert the LEXER first (`skip_noncode`, `_skip_string`, `find_matching`, `keyword_at`, `_is_ident`): `var c := src.unicode_at(i)` + int-constant comparisons (named `const` ints at the top: `const C_HASH := 35`, `C_QUOTE := 34`, …).
   2. Run the scanner contract tests after EACH function conversion.
@@ -138,9 +151,13 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 2. P2 — Parser/compiler algorithmic costs
 
-### G-08 — `_line_of` is O(n²)-with-allocation on element-heavy files
-- **Anchors:** `guitkx_markup.gd _line_of` (l.396): `_src.substr(0, idx).count("\n")` — a full prefix COPY per element node.
-- **RECIPE:** build `_line_starts: PackedInt32Array` once in `parse()` (single pass over `[start,end)`); `_line_of` = binary search. Mirror check: grep `markup.ts` for the equivalent (`slice(0, …).split("\n")`-style) and fix if present. Contract behavior unchanged (line numbers identical).
+### G-08 — `_line_of` is O(n²)-with-allocation on element-heavy files — **DONE (2026-07-10)**
+- **STATUS:** fixed in BOTH mirrors. `guitkx_markup.gd`: `_line_starts: PackedInt32Array` built once
+  per `parse()`, `_line_of` = binary search (substr-count fallback kept for pre-parse calls).
+  `markup.ts`: the equivalent per-call O(idx) scan in `lineOf` replaced with lazily-built
+  `lineStarts` + the same binary search (this one runs per keystroke in the LSP). Line numbers
+  identical (suites + 180 lsp tests + byte-identical corpus).
+- **Anchors (historical):** `guitkx_markup.gd _line_of` (l.396): `_src.substr(0, idx).count("\n")` — a full prefix COPY per element node.
 
 ### GO-01 — `guitkx.gd compile()` re-scans per tier
 - `_split_return`, `FindJsx`-style walks, `_validate_hooks`, `_validate_effect_deps`, and `_hook_signature` each walk setup/body text independently per compile. Compile cadence is per-save (not per keystroke), so this is acceptable today; if profiling after G-10 still shows compile > ~50 ms on large files, share one pass that produces (line starts, hook-call offsets, jsx spans) consumed by all tiers. Do NOT restructure preemptively.
