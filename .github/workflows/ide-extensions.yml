@@ -5,17 +5,22 @@ name: IDE Extensions
 # server bundle). The VS2022 extension needs the VS SDK and is built on Windows with the VS
 # toolchain, so it is not part of this matrix.
 #
-# changelog-sync guards the exact failure mode that shipped GUITKX 0.6.0-0.8.4: the per-IDE
-# CHANGELOG.md files are ONLY ever regenerated from ide-extensions/changelog.json at actual publish
-# time (.github/workflows/publish.yml) — nothing stops someone from hand-editing a CHANGELOG.md (or
-# adding a changelog.json entry without regenerating) in between publishes, and nothing did, which
-# is exactly how changelog.json silently fell 14 versions behind. This job fails loudly, with a
-# diff, on every push/PR instead.
+# changelog-sync guards the exact failure mode that shipped GUITKX 0.6.0-0.8.4: the generated
+# CHANGELOG.md files (vscode, vs2022, and the Godot editor addon since its 0.6.3 cutover) must be
+# regenerated from ide-extensions/changelog.json and committed together with it — nothing stops
+# someone from hand-editing a CHANGELOG.md (or adding a changelog.json entry without regenerating)
+# in between publishes, and nothing did, which is exactly how changelog.json silently fell 14
+# versions behind. This job fails loudly, with a diff, on every push/PR instead.
 
 on:
   push:
     branches: [master, dev]
-    paths: ["ide-extensions/**", ".github/workflows/ide-extensions.yml"]
+    paths:
+      [
+        "ide-extensions/**",
+        "addons/reactive_ui_editor/CHANGELOG.md",
+        ".github/workflows/ide-extensions.yml",
+      ]
   # No `paths:` filter on PRs: these jobs are *required* status checks, so they must
   # always report a conclusion — otherwise a PR that doesn't touch ide-extensions/ (e.g.
   # docs or issue templates) can never satisfy them and is permanently un-mergeable.
@@ -27,14 +32,14 @@ permissions:
 
 jobs:
   changelog-sync:
-    name: Changelog (changelog.json in sync with per-IDE CHANGELOG.md)
+    name: Changelog (changelog.json in sync with generated CHANGELOG.md files)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Verify vscode/CHANGELOG.md and visual-studio/CHANGELOG.md match changelog.json
+      - name: Verify vscode / visual-studio / editor-addon CHANGELOG.md match changelog.json
         run: node ide-extensions/scripts/changelog.mjs verify
 
   language-server:

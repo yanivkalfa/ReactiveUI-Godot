@@ -3,6 +3,16 @@
     {
       "date": "2026-07-10",
       "versions": {
+        "editor": "0.6.3"
+      },
+      "editor": [
+        "Syntax highlighting tokenizes ~17% faster. The per-line tokenizer (the per-keystroke path behind every visible line's colouring) now reads characters via `unicode_at` + integer comparisons instead of single-char-String indexing, classifies symbols through a constant int-keyed set instead of a per-char string scan, and keeps its char-code table local (cross-script constant access is a runtime lookup in GDScript). The emitted token stream is hash-identical to 0.6.2 across the whole example corpus -- purely faster, no visual change.",
+        "Live compiles and diagnostics inherit the runtime compiler's ~28% speed-up and its comment-desync fix (see `reactive_ui` 0.8.7's changelog) -- pairs best with `reactive_ui` 0.8.7+."
+      ]
+    },
+    {
+      "date": "2026-07-10",
+      "versions": {
         "vscode": "0.8.8",
         "vs2022": "0.8.8"
       },
@@ -364,5 +374,8 @@
         "Visual Studio 2022 extension registers the TextMate grammar via .pkgdef (VS does not colorize over LSP) and drives the same Node language server through an ILanguageClient. Requires Node.js on PATH."
       ]
     }
-  ]
+  ],
+  "legacyTailHashes": {
+    "editor": "7157c34ca090c550c3a71e186d2fe92e3d0eb5860a39984d09914a23517cb8bb"
+  }
 }
