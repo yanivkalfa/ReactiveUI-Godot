@@ -23,18 +23,18 @@ const COMPONENT_SAMPLE = `@class_name ButtonShowcase
 component ButtonShowcase() {
   var s = useState(true)
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       <Label text={ "Enabled: %s" % s[0] } />
       <Button
         text={ "Disable" if s[0] else "Enable" }
-        onClick={ func(): s[1].call(func(prev): return not prev) }
+        onPressed={ func(): s[1].call(func(prev): return not prev) }
       />
       <Button
         text="Secondary action"
         disabled={ not s[0] }
-        onClick={ func(): print("Clicked") }
+        onPressed={ func(): print("Clicked") }
       />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -43,11 +43,11 @@ component ButtonShowcase() {
 const FRAMEWORK_EXAMPLE = `component App {
   var ready = useState(false)
   return (
-    <VBox>
+    <VBoxContainer>
       { V.suspense(
           { "fallback": V.fc(Spinner.render), "is_ready": useCallback(func(): return ready[0], [ready[0]]) },
           [ V.fc(Content.render) ]) }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -62,62 +62,71 @@ const FRAMEWORK_EXAMPLE = `component App {
 type CompEntry = { name: string; factory: string; desc: string; hasTag?: false }
 
 const containers: CompEntry[] = [
-  { name: 'Control', factory: 'V.control', desc: 'Universal base container — the div of Godot UI' },
-  { name: 'VBox', factory: 'V.vbox', desc: 'Vertical box container (VBoxContainer)' },
-  { name: 'HBox', factory: 'V.hbox', desc: 'Horizontal box container (HBoxContainer)' },
-  { name: 'Grid', factory: 'V.grid', desc: 'Grid layout container (GridContainer)' },
-  { name: 'Margin', factory: 'V.margin', desc: 'Adds padding around children (MarginContainer)' },
-  { name: 'Panel', factory: 'V.panel', desc: 'Styled background panel (PanelContainer)' },
-  { name: 'Center', factory: 'V.center', desc: 'Centers its child (CenterContainer)' },
-  { name: 'Scroll', factory: 'V.scroll', desc: 'Scrollable container (ScrollContainer)' },
-  { name: 'Tabs', factory: 'V.tabs', desc: 'Tabbed container (TabContainer)' },
-  { name: 'Aspect', factory: 'V.aspect', desc: 'Keeps child at a fixed aspect ratio', hasTag: false },
-  { name: 'Foldable', factory: 'V.foldable', desc: 'Collapsible container (FoldableContainer)', hasTag: false },
+  { name: 'Control', factory: 'V.Control', desc: 'Universal base container — the div of Godot UI' },
+  { name: 'VBoxContainer', factory: 'V.VBoxContainer', desc: 'Vertical box container' },
+  { name: 'HBoxContainer', factory: 'V.HBoxContainer', desc: 'Horizontal box container' },
+  { name: 'BoxContainer', factory: 'V.BoxContainer', desc: 'Box container with a vertical flag (new in 0.9.0)' },
+  { name: 'GridContainer', factory: 'V.GridContainer', desc: 'Grid layout container' },
+  { name: 'MarginContainer', factory: 'V.MarginContainer', desc: 'Adds padding around children' },
+  { name: 'PanelContainer', factory: 'V.PanelContainer', desc: 'Container with a themed panel background' },
+  { name: 'CenterContainer', factory: 'V.CenterContainer', desc: 'Centers its child' },
+  { name: 'ScrollContainer', factory: 'V.ScrollContainer', desc: 'Scrollable container' },
+  { name: 'FlowContainer', factory: 'V.FlowContainer', desc: 'Wrapping flow layout — also HFlowContainer / VFlowContainer (new in 0.9.0)' },
+  { name: 'TabContainer', factory: 'V.TabContainer', desc: 'Tabbed container' },
+  { name: 'SplitContainer', factory: 'V.SplitContainer', desc: 'Draggable split — also HSplitContainer / VSplitContainer (new in 0.9.0)' },
+  { name: 'AspectRatioContainer', factory: 'V.AspectRatioContainer', desc: 'Keeps child at a fixed aspect ratio' },
+  { name: 'FoldableContainer', factory: 'V.FoldableContainer', desc: 'Collapsible container' },
+  { name: 'SubViewportContainer', factory: 'V.SubViewportContainer', desc: 'Displays a SubViewport (new in 0.9.0)' },
 ]
 
 const display: CompEntry[] = [
-  { name: 'Label', factory: 'V.label', desc: 'Single- or multi-line text' },
-  { name: 'RichText', factory: 'V.rich_text', desc: 'BBCode-formatted text (RichTextLabel)' },
-  { name: 'ColorRect', factory: 'V.color_rect', desc: 'Solid colour rectangle' },
-  { name: 'TextureRect', factory: 'V.texture_rect', desc: 'Displays a Texture2D' },
-  { name: 'NinePatch', factory: 'V.nine_patch', desc: 'Nine-patch texture (NinePatchRect)', hasTag: false },
-  { name: 'ProgressBar', factory: 'V.progress_bar', desc: 'Determinate progress indicator' },
+  { name: 'Label', factory: 'V.Label', desc: 'Single- or multi-line text' },
+  { name: 'RichTextLabel', factory: 'V.RichTextLabel', desc: 'BBCode-formatted text' },
+  { name: 'Panel', factory: 'V.Panel', desc: 'Plain themed rectangle — no layout (new in 0.9.0; the container is PanelContainer)' },
+  { name: 'ColorRect', factory: 'V.ColorRect', desc: 'Solid colour rectangle' },
+  { name: 'TextureRect', factory: 'V.TextureRect', desc: 'Displays a Texture2D' },
+  { name: 'NinePatchRect', factory: 'V.NinePatchRect', desc: 'Nine-patch texture' },
+  { name: 'ReferenceRect', factory: 'V.ReferenceRect', desc: 'Debug outline rectangle (new in 0.9.0)' },
+  { name: 'ProgressBar', factory: 'V.ProgressBar', desc: 'Determinate progress indicator' },
 ]
 
 const buttons: CompEntry[] = [
-  { name: 'Button', factory: 'V.button', desc: 'Standard clickable button' },
-  { name: 'CheckBox', factory: 'V.check_box', desc: 'Checkbox / boolean toggle' },
-  { name: 'CheckButton', factory: 'V.check_button', desc: 'Switch-style boolean toggle' },
-  { name: 'OptionButton', factory: 'V.option_button', desc: 'Dropdown / popup selector' },
-  { name: 'MenuButton', factory: 'V.menu_button', desc: 'Button that opens a PopupMenu' },
-  { name: 'LinkButton', factory: 'V.link_button', desc: 'Text-link-style button' },
-  { name: 'TextureButton', factory: 'V.texture_button', desc: 'Button drawn from textures' },
+  { name: 'Button', factory: 'V.Button', desc: 'Standard clickable button' },
+  { name: 'CheckBox', factory: 'V.CheckBox', desc: 'Checkbox / boolean toggle' },
+  { name: 'CheckButton', factory: 'V.CheckButton', desc: 'Switch-style boolean toggle' },
+  { name: 'OptionButton', factory: 'V.OptionButton', desc: 'Dropdown / popup selector' },
+  { name: 'MenuButton', factory: 'V.MenuButton', desc: 'Button that opens a PopupMenu' },
+  { name: 'LinkButton', factory: 'V.LinkButton', desc: 'Text-link-style button' },
+  { name: 'TextureButton', factory: 'V.TextureButton', desc: 'Button drawn from textures' },
 ]
 
 const textInputs: CompEntry[] = [
-  { name: 'LineEdit', factory: 'V.line_edit', desc: 'Single-line text input' },
-  { name: 'TextEdit', factory: 'V.text_edit', desc: 'Multi-line text input' },
-  { name: 'CodeEdit', factory: 'V.code_edit', desc: 'Code editor input (syntax-aware)' },
-  { name: 'SpinBox', factory: 'V.spin_box', desc: 'Numeric input with stepper' },
+  { name: 'LineEdit', factory: 'V.LineEdit', desc: 'Single-line text input' },
+  { name: 'TextEdit', factory: 'V.TextEdit', desc: 'Multi-line text input' },
+  { name: 'CodeEdit', factory: 'V.CodeEdit', desc: 'Code editor input (syntax-aware)' },
+  { name: 'SpinBox', factory: 'V.SpinBox', desc: 'Numeric input with stepper' },
 ]
 
 const pickers: CompEntry[] = [
-  { name: 'HSlider', factory: 'V.h_slider', desc: 'Horizontal range slider' },
-  { name: 'VSlider', factory: 'V.v_slider', desc: 'Vertical range slider' },
-  { name: 'ColorPicker', factory: 'V.color_picker', desc: 'Full colour picker', hasTag: false },
-  { name: 'ColorPickerButton', factory: 'V.color_picker_button', desc: 'Button that opens a colour picker', hasTag: false },
+  { name: 'HSlider', factory: 'V.HSlider', desc: 'Horizontal range slider' },
+  { name: 'VSlider', factory: 'V.VSlider', desc: 'Vertical range slider' },
+  { name: 'HScrollBar', factory: 'V.HScrollBar', desc: 'Horizontal scroll bar (new in 0.9.0)' },
+  { name: 'VScrollBar', factory: 'V.VScrollBar', desc: 'Vertical scroll bar (new in 0.9.0)' },
+  { name: 'ColorPicker', factory: 'V.ColorPicker', desc: 'Full colour picker' },
+  { name: 'ColorPickerButton', factory: 'V.ColorPickerButton', desc: 'Button that opens a colour picker' },
+  { name: 'VirtualJoystick', factory: 'V.VirtualJoystick', desc: 'On-screen touch joystick (new in 0.9.0)' },
 ]
 
 const dataViews: CompEntry[] = [
-  { name: 'ItemList', factory: 'V.item_list', desc: 'Selectable list, reconciled by item identity' },
-  { name: 'Tree', factory: 'V.tree', desc: 'Hierarchical tree (item-model control)' },
-  { name: 'TabBar', factory: 'V.tab_bar', desc: 'Standalone tab strip (item-model control)' },
-  { name: 'MenuBar', factory: 'V.menu_bar', desc: 'Application-style menu bar', hasTag: false },
+  { name: 'ItemList', factory: 'V.ItemList', desc: 'Selectable list, reconciled by item identity' },
+  { name: 'Tree', factory: 'V.Tree', desc: 'Hierarchical tree (item-model control)' },
+  { name: 'TabBar', factory: 'V.TabBar', desc: 'Standalone tab strip (item-model control)' },
+  { name: 'MenuBar', factory: 'V.MenuBar', desc: 'Application-style menu bar' },
 ]
 
 const media: CompEntry[] = [
-  { name: 'Audio', factory: 'V.audio', desc: 'AudioStreamPlayer wrapper', hasTag: false },
-  { name: 'Video', factory: 'V.video', desc: 'VideoStreamPlayer wrapper', hasTag: false },
+  { name: 'AudioStreamPlayer', factory: 'V.AudioStreamPlayer', desc: 'Plays an AudioStream' },
+  { name: 'VideoStreamPlayer', factory: 'V.VideoStreamPlayer', desc: 'Plays a VideoStream' },
 ]
 
 const framework: CompEntry[] = [
@@ -140,38 +149,19 @@ const router: CompEntry[] = [
 type Category = { label: string; rows: CompEntry[]; note?: string; example?: string }
 
 const allCategories: Category[] = [
-  {
-    label: 'Containers & Layout',
-    rows: containers,
-    note:
-      'Aspect and Foldable have no markup tag yet — reach them via { V.aspect(...) } / ' +
-      '{ V.foldable(...) } inside an embedded expression.',
-  },
-  {
-    label: 'Display',
-    rows: display,
-    note: 'NinePatch has no markup tag yet — reach it via { V.nine_patch(...) } inside an embedded expression.',
-  },
+  { label: 'Containers & Layout', rows: containers },
+  { label: 'Display', rows: display },
   { label: 'Buttons & Toggles', rows: buttons },
   { label: 'Text Input', rows: textInputs },
-  {
-    label: 'Pickers & Sliders',
-    rows: pickers,
-    note:
-      'ColorPicker and ColorPickerButton have no markup tag yet — reach them via ' +
-      '{ V.color_picker(...) } / { V.color_picker_button(...) } inside an embedded expression.',
-  },
-  {
-    label: 'Item-Model Controls',
-    rows: dataViews,
-    note: 'MenuBar has no markup tag yet — reach it via { V.menu_bar(...) } inside an embedded expression.',
-  },
+  { label: 'Pickers & Sliders', rows: pickers },
+  { label: 'Item-Model Controls', rows: dataViews },
   {
     label: 'Media',
     rows: media,
     note:
-      'Audio and Video wrap Godot scene nodes but have no markup tag — call the factory from an ' +
-      'embedded expression inside your .guitkx markup, e.g. { V.audio({ "stream": clip, "autoplay": true }) }.',
+      'AudioStreamPlayer and VideoStreamPlayer wrap Godot scene nodes — use the tag ' +
+      '(<AudioStreamPlayer stream={ clip } autoplay />) or the factory from an embedded ' +
+      'expression, e.g. { V.AudioStreamPlayer({ "stream": clip, "autoplay": true }) }.',
   },
   {
     label: 'Framework Components',
@@ -204,7 +194,7 @@ const baseProps: PropRow[] = [
   { name: 'style', type: 'Dictionary', desc: 'Inline style dictionary (RUIStyle shorthands + theme channels)' },
   { name: 'classes', type: 'String | Array', desc: 'Named style-set class names registered with RUIStyleSheet' },
   { name: '<any node property>', type: 'Variant', desc: 'Any property of the underlying Control (text, disabled, editable, …) is set directly' },
-  { name: 'on<Signal>', type: 'Callable', desc: 'Event handler — camelCase (onClick, onChange, …) or native on_<signal>' },
+  { name: 'on<Signal>', type: 'Callable', desc: 'Event handler — on + PascalCase(signal name) (onPressed, onValueChanged, …) or native on_<signal>' },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -218,10 +208,15 @@ export const UitkxComponentsPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       Reactive UI wraps every Godot <code>Control</code> as a declarative host element you can use in{' '}
-      <code>.guitkx</code> markup. Use intrinsic tag names for built-in controls and PascalCase names
-      for your own components. Each host tag has a matching <code>V.*</code> factory for authoring in
-      plain GDScript. For the full per-element property reference, see the data-driven{' '}
-      <strong>Components</strong> reference; this page is the conceptual overview.
+      <code>.guitkx</code> markup. From 0.9.0 the element names are <strong>1:1 the official Godot
+      class names</strong> — <code>{'<VBoxContainer>'}</code>, <code>{'<Label>'}</code>,{' '}
+      <code>{'<PanelContainer>'}</code> — and each curated element has a matching{' '}
+      <code>V.ClassName</code> factory for authoring in plain GDScript. Beyond the curated set,{' '}
+      <strong>any instantiable Godot <code>Node</code> class is a valid tag</strong> (an open
+      vocabulary resolved via <code>ClassDB</code>) — <code>{'<GraphEdit />'}</code> just works. Use
+      distinct PascalCase names for your own components. For the full per-element property
+      reference, see the data-driven <strong>Components</strong> reference; this page is the
+      conceptual overview.
     </Typography>
 
     <CodeBlock language="jsx" code={COMPONENT_SAMPLE} />
@@ -275,8 +270,11 @@ export const UitkxComponentsPage: FC = () => (
     ))}
 
     <Alert severity="info" sx={{ mt: 2 }}>
-      Any Godot control not listed above is one <code>V.h("SomeControl", props)</code> away — the
-      generic host factory creates any <code>Control</code> subclass by its Godot class name.
+      The catalog above is the <em>curated</em> set (each with a <code>V.ClassName</code> factory).
+      Any other instantiable Godot <code>Node</code> class is a valid tag too —{' '}
+      <code>{'<GraphEdit />'}</code>, <code>{'<TextureProgressBar />'}</code>, … — resolved through{' '}
+      <code>ClassDB</code> at runtime, or one <code>V.h("SomeControl", props)</code> away in plain
+      GDScript.
     </Alert>
 
     {/* ── Universal structural attributes ──────────────────────── */}
@@ -309,9 +307,10 @@ export const UitkxComponentsPage: FC = () => (
         </Table>
       </TableContainer>
       <Alert severity="info" sx={{ mt: 1 }}>
-        Event handlers use React-parity camelCase (<code>onClick</code>, <code>onChange</code>,{' '}
-        <code>onSubmit</code>, <code>onFocus</code>, …) and map to Godot signals. See the{' '}
-        <strong>Events &amp; Input Handling</strong> page for the complete mapping.
+        Event handler names are <code>on</code> + PascalCase(signal name) — <code>onPressed</code>{' '}
+        → <code>pressed</code>, <code>onTextChanged</code> → <code>text_changed</code>,{' '}
+        <code>onItemSelected</code> → <code>item_selected</code> — and the rule works for every
+        signal of every node. See the <strong>Events &amp; Input Handling</strong> page.
       </Alert>
     </Box>
 

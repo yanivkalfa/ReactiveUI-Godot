@@ -74,10 +74,12 @@ export const UitkxDifferencesPage: FC = () => (
       </Typography>
       <Typography variant="body1" paragraph>
         Host elements are Godot <code>Control</code> nodes, not DOM tags or Unity{' '}
-        <code>VisualElement</code>s. Layout is <strong>container-driven</strong> (VBox/HBox/Grid/…)
-        rather than CSS flexbox; there is no USS/UXML. Styling is a <code>style</code> dictionary of{' '}
+        <code>VisualElement</code>s — and the tags are the official Godot class names
+        (<code>{'<VBoxContainer>'}</code>/<code>{'<HBoxContainer>'}</code>/
+        <code>{'<GridContainer>'}</code>/…). Layout is <strong>container-driven</strong> rather than
+        CSS flexbox; there is no USS/UXML. Styling is a <code>style</code> dictionary of{' '}
         <code>Control</code> properties and <code>Theme</code> overrides, and events are Godot signals
-        surfaced through React-parity <code>on*</code> handlers.
+        surfaced through <code>on</code> + PascalCase(signal) handlers.
       </Typography>
     </Box>
 
@@ -91,13 +93,13 @@ export const UitkxDifferencesPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Prop spread</strong> is supported in <code>.guitkx</code>: <code>{'<Button {...cfg} onClick={ f } />'}</code> merges a <code>Dictionary</code> of props onto a host element or component, left-to-right with later winning — just like <code>{'{...obj}'}</code> in JSX.</>} />
+          <ListItemText primary={<><strong>Prop spread</strong> is supported in <code>.guitkx</code>: <code>{'<Button {...cfg} onPressed={ f } />'}</code> merges a <code>Dictionary</code> of props onto a host element or component, left-to-right with later winning — just like <code>{'{...obj}'}</code> in JSX.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<><strong>Context handles</strong> are supported: <code>Hooks.createContext(default)</code> returns an <code>RUIContext</code> you pass to <code>provideContext</code> / <code>useContext</code> — the parity of React&apos;s <code>createContext</code>, with a built-in default and no string-key collisions. (Bare String keys still work for back-compat.)</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Event handlers</strong> use React-parity camelCase — <code>onClick</code>, <code>onChange</code>, <code>onSubmit</code>, <code>onFocus</code>/<code>onBlur</code>, and so on — mapped to Godot signals. The native <code>on_&lt;signal&gt;</code> spelling remains as an escape hatch to any signal.</>} />
+          <ListItemText primary={<><strong>Event handlers</strong> are named after the Godot signal itself — <code>on</code> + PascalCase(signal name): <code>onPressed</code>, <code>onTextChanged</code>, <code>onValueChanged</code>, <code>onFocusEntered</code>, and so on, for every signal of every node. There are no React alias names (<code>onClick</code>/<code>onChange</code> were removed in 0.9.0 — see <code>MIGRATION-0.9.md</code>); the native <code>on_&lt;signal&gt;</code> spelling remains as a verbatim escape hatch.</>} />
         </ListItem>
       </List>
       <Typography variant="body1" paragraph sx={{ mt: 1 }}>
@@ -146,7 +148,7 @@ export const UitkxDifferencesPage: FC = () => (
           <ListItemText primary={<>The function-component factory is <code>V.fc</code> (GDScript reserves <code>func</code>), not <code>V.Func</code>.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<>Host elements are Godot <code>Control</code>s (<code>VBox</code>, <code>LineEdit</code>, <code>Panel</code>, …) rather than UI Toolkit <code>VisualElement</code>s.</>} />
+          <ListItemText primary={<>Host elements are Godot <code>Control</code>s (<code>VBoxContainer</code>, <code>LineEdit</code>, <code>PanelContainer</code>, …) rather than UI Toolkit <code>VisualElement</code>s.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<>Styling is a <code>Dictionary</code> of Godot properties + <code>Theme</code> channels, not USS/typed <code>Style</code> objects.</>} />

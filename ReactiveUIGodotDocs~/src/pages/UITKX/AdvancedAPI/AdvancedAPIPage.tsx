@@ -65,7 +65,7 @@ const priorities: PriorityRow[] = [
 type NodeTypeRow = { name: string; desc: string }
 
 const nodeTypes: NodeTypeRow[] = [
-  { name: 'Host element', desc: 'A Godot Control (Button, Label, …) — V.button / V.label / V.h' },
+  { name: 'Host element', desc: 'A Godot Control (Button, Label, …) — V.Button / V.Label / V.h' },
   { name: 'Function component', desc: 'A user render fn — V.fc(render, props) / V.memo(...)' },
   { name: 'Fragment', desc: 'Invisible grouping wrapper — V.fragment([...])' },
   { name: 'Portal', desc: 'Renders children under a different target Node — V.portal(target, [...])' },

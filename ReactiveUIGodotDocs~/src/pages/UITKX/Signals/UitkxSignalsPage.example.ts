@@ -7,17 +7,17 @@ component SignalCounterDemo() {
   var count = useSignalKey("demo.counter", 0)
 
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       <Label text="Signal Counter" />
       <Label text={ "Count: %d" % count } />
-      <HBox style={ {"separation": 8} }>
+      <HBoxContainer style={ {"separation": 8} }>
         // update() takes a func(old) -> new. set_value(x) sets directly.
         <Button text="Increment"
-                onClick={ func(): RUISignals.get_or_create("demo.counter").update(func(v): return v + 1) } />
+                onPressed={ func(): RUISignals.get_or_create("demo.counter").update(func(v): return v + 1) } />
         <Button text="Reset"
-                onClick={ func(): RUISignals.get_or_create("demo.counter").set_value(0) } />
-      </HBox>
-    </VBox>
+                onPressed={ func(): RUISignals.get_or_create("demo.counter").set_value(0) } />
+      </HBoxContainer>
+    </VBoxContainer>
   )
 }`
 

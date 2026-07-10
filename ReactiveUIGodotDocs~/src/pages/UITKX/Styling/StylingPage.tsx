@@ -116,20 +116,27 @@ export const StylingPage: FC = () => {
       Three layers of coverage
     </Typography>
     <Typography variant="body1" paragraph>
-      A style dict blends three levels of explicitness, from the common 90% to full theme reach:
+      A style dict blends three levels of explicitness, from the common 90% to full theme reach.
+      From 0.9.0 every key is the <strong>literal Godot name</strong> — the property, theme item,
+      or <code>StyleBoxFlat</code> property it sets:
     </Typography>
     <Box component="ol" sx={{ pl: 3, mb: 2 }}>
       <li>
-        <strong>Friendly shorthands</strong> — <code>min_size</code>, <code>expand_h</code>,{' '}
+        <strong>Control properties &amp; theme items</strong> —{' '}
+        <code>custom_minimum_size</code>, <code>size_flags_horizontal</code>,{' '}
         <code>font_size</code>, <code>font_color</code>, <code>separation</code>,{' '}
-        <code>modulate</code>, <code>rotation</code>, <code>tooltip</code>, and more. Each maps to a
-        single Control property or theme override.
+        <code>modulate</code>, <code>rotation</code> (radians, Godot semantics),{' '}
+        <code>tooltip_text</code>, and more. Each maps 1:1 to the Control property or theme
+        override of the same name. (<code>min_width</code> / <code>min_height</code> are kept as
+        documented extensions.)
       </li>
       <li>
         <strong>StyleBox builder</strong> — <code>bg_color</code>, <code>border_color</code>,{' '}
-        <code>border_width</code>, <code>corner_radius</code>, and <code>pad</code> combine into a
-        single <code>StyleBoxFlat</code> applied to the control&apos;s primary stylebox slot
-        (Panel, Button, LineEdit, ProgressBar).
+        <code>border_width_all</code>, <code>corner_radius_all</code>, and{' '}
+        <code>content_margin_all</code> combine into a single <code>StyleBoxFlat</code> applied to
+        the control&apos;s primary stylebox slot (PanelContainer, Button, LineEdit, ProgressBar).
+        The <code>*_all</code> keys mirror Godot&apos;s own <code>set_*_all</code> setters, and{' '}
+        <em>any</em> <code>StyleBoxFlat</code> property is accepted verbatim.
       </li>
       <li>
         <strong>Generic theme channels</strong> — <code>colors</code>, <code>constants</code>,{' '}
@@ -146,17 +153,17 @@ export const StylingPage: FC = () => {
       A StyleBox from one dict
     </Typography>
     <Typography variant="body1" paragraph>
-      The five box keys build a single <code>StyleBoxFlat</code>. This one dict gives a panel a
+      The box keys build a single <code>StyleBoxFlat</code>. This one dict gives a panel a
       background, rounded corners, a border, and inner padding:
     </Typography>
     <CodeBlock
       language="gdscript"
-      code={`<Panel style={ {\n    "bg_color": Color(0.16, 0.17, 0.24),\n    "corner_radius": 10,\n    "border_width": 2,\n    "border_color": Color(0.4, 0.5, 0.85),\n    "pad": 16,\n} } />`}
+      code={`<PanelContainer style={ {\n    "bg_color": Color(0.16, 0.17, 0.24),\n    "corner_radius_all": 10,\n    "border_width_all": 2,\n    "border_color": Color(0.4, 0.5, 0.85),\n    "content_margin_all": 16,\n} } />`}
     />
     <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>
-      The box keys need a control with a primary stylebox slot (Panel / Button / LineEdit /
-      ProgressBar). Requesting them on a bare <code>Label</code> or a box container warns once and
-      does nothing — use a <code>Panel</code> wrapper for the background.
+      The box keys need a control with a primary stylebox slot (PanelContainer / Panel / Button /
+      LineEdit / ProgressBar). Requesting them on a bare <code>Label</code> or a box container
+      warns once and does nothing — use a <code>PanelContainer</code> wrapper for the background.
     </Alert>
 
     {/* ── Three ways to reuse ───────────────────────────────── */}
@@ -237,7 +244,7 @@ export const StylingPage: FC = () => {
     </Typography>
     <CodeBlock
       language="gdscript"
-      code={`<Button text="Hover me" style={ {\n    "bg_color": Color(0.2, 0.2, 0.25),\n    "corner_radius": 8,\n    "pad": 12,\n    "hover":   { "bg_color": Color(0.3, 0.6, 0.9) },\n    "pressed": { "bg_color": Color(0.2, 0.45, 0.75) },\n} } />`}
+      code={`<Button text="Hover me" style={ {\n    "bg_color": Color(0.2, 0.2, 0.25),\n    "corner_radius_all": 8,\n    "content_margin_all": 12,\n    "hover":   { "bg_color": Color(0.3, 0.6, 0.9) },\n    "pressed": { "bg_color": Color(0.2, 0.45, 0.75) },\n} } />`}
     />
     <Alert severity="info" sx={{ mt: 1, mb: 2 }}>
       Available slots vary by control — Button has <code>hover</code> / <code>pressed</code> /{' '}

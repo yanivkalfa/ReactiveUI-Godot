@@ -6,12 +6,12 @@ component PlayerCard(player: PlayerInfo) {
     else PlayerCardStyle.DAMAGE_RED
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ player.name } />
       <Label text={ PlayerCardUtils.format_health(player.health, player.max_health) }
              style={ {"font_color": health_color} } />
       <Label text={ PlayerCardUtils.rank_label(player.rank) } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -55,8 +55,8 @@ module PlayerCardStyle {
 
   static var CARD := {
     "bg_color": Color(0.10, 0.10, 0.18),
-    "corner_radius": 8,
-    "pad": 8,
+    "corner_radius_all": 8,
+    "content_margin_all": 8,
     "separation": 8,
   }
 }`

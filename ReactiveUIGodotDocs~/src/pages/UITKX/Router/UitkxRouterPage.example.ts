@@ -10,40 +10,40 @@ component RouterDemo() {
   // Router, NavLink, Routes, Route, and Outlet have no markup tags — the whole
   // router tree below is built with V.* calls, then mounted with one embedded { expr }.
   var app = V.router({ "basename": "/app" }, [
-    V.vbox({ "style": { "separation": 8 } }, [
+    V.VBoxContainer({ "style": { "separation": 8 } }, [
       // nav_link applies active_style when its target matches the location.
       V.nav_link({ "to": "/", "end": true, "label": "Home", "style": IDLE, "active_style": ACTIVE }),
       V.nav_link({ "to": "/about", "label": "About", "style": IDLE, "active_style": ACTIVE }),
       V.nav_link({ "to": "/users", "label": "Users", "style": IDLE, "active_style": ACTIVE }),
 
-      V.button({ "text": "Open profile 42",
-                 "onClick": func(): navigate.call("/users/42?tab=profile") }),
+      V.Button({ "text": "Open profile 42",
+                 "onPressed": func(): navigate.call("/users/42?tab=profile") }),
 
       // routes picks the single best match using RR's ranking algorithm.
       V.routes({}, [
         // Index route — matches the parent path exactly.
-        V.route({ "index": true, "element": V.label({ "text": "Landing route" }) }),
+        V.route({ "index": true, "element": V.Label({ "text": "Landing route" }) }),
 
-        V.route({ "path": "/about", "element": V.label({ "text": "About route" }) }),
+        V.route({ "path": "/about", "element": V.Label({ "text": "About route" }) }),
 
         // Layout route — element wraps the matched child via V.outlet(...).
         V.route({ "path": "/users", "element": V.fc(UsersLayout.render) }, [
-            V.route({ "index": true, "element": V.label({ "text": "Pick a user" }) }),
+            V.route({ "index": true, "element": V.Label({ "text": "Pick a user" }) }),
             V.route({ "path": ":id", "element": V.fc(UserDetails.render) }),
         ]),
 
         // Declarative redirect (replace = true by default).
         V.route({ "path": "/old", "element": V.navigate({ "to": "/about" }) }),
 
-        V.route({ "path": "*", "element": V.label({ "text": "Not found" }) }),
+        V.route({ "path": "*", "element": V.Label({ "text": "Not found" }) }),
       ]),
     ]),
   ])
 
   return (
-    <VBox>
+    <VBoxContainer>
       { app }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -51,11 +51,11 @@ export const UITKX_ROUTER_LAYOUT_EXAMPLE = `@class_name UsersLayout
 
 component UsersLayout() {
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       <Label text="Users header" />
       // Nested route content renders here — Outlet has no markup tag either.
       { V.outlet() }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 

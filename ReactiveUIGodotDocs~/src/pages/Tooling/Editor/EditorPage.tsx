@@ -82,8 +82,9 @@ export const EditorPage: FC = () => (
                 <code>text=&quot;&quot;</code> lands with the caret inside the quotes),
                 attribute values (enum names, <code>true/false</code>, style-dict keys),
                 directives (<code>@</code>), <code>Color.</code>-style builtin constants, and
-                hook names. Events offer both spellings: React aliases (<code>onClick</code>)
-                and the verbatim <code>on_&lt;signal&gt;</code> escape hatch.
+                hook names. Events offer both spellings: <code>on</code> +
+                PascalCase(signal name) (<code>onPressed</code>) and the verbatim{' '}
+                <code>on_&lt;signal&gt;</code> escape hatch.
               </TableCell>
             </TableRow>
             <TableRow>

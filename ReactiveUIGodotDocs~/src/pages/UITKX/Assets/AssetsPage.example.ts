@@ -10,7 +10,7 @@ component Avatar(image_path) {
   var tex = load(image_path)   # -> Texture2D
   return (
     <TextureRect texture={ tex } expand_mode={ TextureRect.EXPAND_IGNORE_SIZE }
-                 style={ {"min_size": Vector2(64, 64)} } />
+                 style={ {"custom_minimum_size": Vector2(64, 64)} } />
   )
 }`
 
@@ -22,10 +22,10 @@ component Card() {
   var bg   = preload("res://ui/images/card_bg.png")    # Texture2D
   var icon = preload("res://ui/images/icon.svg")       # Texture2D
   return (
-    <Panel>
+    <PanelContainer>
       <TextureRect texture={ bg } />
-      <TextureRect texture={ icon } style={ {"min_size": Vector2(24, 24)} } />
-    </Panel>
+      <TextureRect texture={ icon } style={ {"custom_minimum_size": Vector2(24, 24)} } />
+    </PanelContainer>
   )
 }`
 
@@ -36,7 +36,7 @@ component Badge() {
   # Button.icon, or the "icons" theme channel in a style dict.
   var star = preload("res://ui/star.svg")
   return (
-    <Button text="Starred" icon={ star } onClick={ func(): print("clicked") } />
+    <Button text="Starred" icon={ star } onPressed={ func(): print("clicked") } />
   )
 }`
 
@@ -56,10 +56,10 @@ export const EXAMPLE_USS = `@class_name ThemedCard
 component ThemedCard() {
   var theme = preload("res://ui/dark_theme.tres")
   return (
-    <Panel theme={ theme }>
+    <PanelContainer theme={ theme }>
       <Label text="Styled by dark_theme.tres" />
       <Button text="OK" />
-    </Panel>
+    </PanelContainer>
   )
 }`
 
@@ -82,18 +82,18 @@ component Framed() {
   # theme channel — or let RUIStyle build one from bg_color/border/pad for you.
   var frame = preload("res://ui/frame.stylebox.tres")
   return (
-    <Panel style={ {"styleboxes": {"panel": frame}} }>
+    <PanelContainer style={ {"styleboxes": {"panel": frame}} }>
       <Label text="Framed by a .tres StyleBox" />
-    </Panel>
+    </PanelContainer>
   )
 }`
 
 export const EXAMPLE_AUDIO = `@class_name Chime
 
 component Chime() {
-  # AudioStream resources drive the AudioStreamPlayer element (V.audio factory).
+  # AudioStream resources drive the AudioStreamPlayer element (V.AudioStreamPlayer factory).
   var stream = preload("res://sfx/chime.ogg")
   return (
-    { V.audio({ "stream": stream, "autoplay": true }) }
+    { V.AudioStreamPlayer({ "stream": stream, "autoplay": true }) }
   )
 }`

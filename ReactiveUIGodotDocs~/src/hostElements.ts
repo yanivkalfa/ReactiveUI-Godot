@@ -1,6 +1,8 @@
 /**
- * Host element descriptors — the single source of truth for the 32 Godot
- * Control-based host tags that ReactiveUI-Godot exposes in `.guitkx` markup.
+ * Host element descriptors — the single source of truth for the curated Godot
+ * host tags (named 1:1 after their Godot classes) that ReactiveUI-Godot exposes
+ * in `.guitkx` markup. Beyond this curated set, any instantiable Godot Node
+ * class is a valid tag at runtime (open vocabulary via ClassDB).
  *
  * The data is injected at build time by `vite.config.ts` from the SAME sources
  * the LSP ships (`guitkx-schema.json` + the ClassDB dump), so the docs never
@@ -39,13 +41,13 @@ export interface HostSignal {
 
 /** Full descriptor for one host tag. */
 export interface HostElement {
-  /** The `.guitkx` tag name, e.g. `Button`, `VBox`. */
+  /** The `.guitkx` tag name — 1:1 the Godot class name, e.g. `Button`, `VBoxContainer`. */
   tag: string
   /** The underlying Godot class, e.g. `Button`, `VBoxContainer`. */
   godotClass: string
-  /** The GDScript factory function, e.g. `V.button`. */
+  /** The GDScript factory function, e.g. `V.Button`. */
   factory: string
-  /** Curated React-parity event names supported on this tag, e.g. `onClick`, `onChange`. */
+  /** Curated event-prop names supported on this tag — `on` + PascalCase(signal), e.g. `onPressed`, `onValueChanged`. */
   events: string[]
   /** All properties (own first, then inherited) flattened from the ClassDB. */
   props: HostProp[]

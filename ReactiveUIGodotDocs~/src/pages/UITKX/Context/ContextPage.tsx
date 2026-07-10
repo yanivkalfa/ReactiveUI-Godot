@@ -180,11 +180,12 @@ component AppLayout() {
   Hooks.provideContext("overlay_root", overlay_root)   # provide the ref box
 
   return (
-    <VBox>
+    <VBoxContainer>
       <PageContent />
-      # Modals/tooltips get parented under this Panel via V.portal(...)
-      <Panel ref={ overlay_root } style={ {"fill": true, "mouse_filter": "ignore"} } />
-    </VBox>
+      # Modals/tooltips get parented under this node via V.portal(...)
+      <PanelContainer ref={ overlay_root }
+                      style={ {"anchors_preset": Control.PRESET_FULL_RECT, "mouse_filter": "MOUSE_FILTER_IGNORE"} } />
+    </VBoxContainer>
   )
 }
 
@@ -194,7 +195,7 @@ component Tooltip() {
   if overlay_root == null or overlay_root["current"] == null:
     return null
   return V.portal(overlay_root["current"], [
-    V.label({ "text": "I render into the shared overlay root" }),
+    V.Label({ "text": "I render into the shared overlay root" }),
   ])
 }`} />
     </Box>

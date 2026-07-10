@@ -22,48 +22,24 @@ import { HOST_CONTENT } from '../../hostContent'
 import Styles from './ComponentPage.style'
 
 // ---------------------------------------------------------------------------
-// React-event → Godot-signal resolution (mirrors the LSP binding logic)
+// Event-prop → Godot-signal resolution (mirrors the host-config binding logic)
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve which Godot signal a React-parity event name binds to on a given
- * element. `onChange` is polymorphic: it picks the first candidate signal the
- * element actually exposes. Returns the matched signal, or undefined when the
+ * Resolve which Godot signal an event prop binds to on a given element.
+ * Since 0.9.0 the rule is uniform: `on` + PascalCase(signal name), so
+ * `onPressed` → `pressed`, `onValueChanged` → `value_changed`,
+ * `onGuiInput` → `gui_input`. Returns the matched signal, or undefined when the
  * element has no such signal (a defensive case — curated `events` shouldn't hit it).
  */
 const resolveSignal = (event: string, signals: HostSignal[]): HostSignal | undefined => {
-  const has = (name: string) => signals.find((s) => s.name === name)
-  switch (event) {
-    case 'onClick':
-      return has('pressed')
-    case 'onChange': {
-      // First of these the element carries wins (item lists, ranges, text, tabs, toggles).
-      const candidates = ['item_selected', 'value_changed', 'text_changed', 'tab_changed', 'toggled']
-      for (const name of candidates) {
-        const s = has(name)
-        if (s) return s
-      }
-      return undefined
-    }
-    case 'onSubmit':
-      return has('text_submitted')
-    case 'onPointerDown':
-      return has('button_down')
-    case 'onPointerUp':
-      return has('button_up')
-    case 'onFocus':
-      return has('focus_entered')
-    case 'onBlur':
-      return has('focus_exited')
-    case 'onPointerEnter':
-      return has('mouse_entered')
-    case 'onPointerLeave':
-      return has('mouse_exited')
-    case 'onResize':
-      return has('resized')
-    default:
-      return undefined
-  }
+  if (!event.startsWith('on')) return undefined
+  // onValueChanged -> value_changed (camelCase → snake_case, minus the `on` prefix).
+  const snake = event
+    .slice(2)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+  return signals.find((s) => s.name === snake)
 }
 
 /** Format a signal's argument list, e.g. `(int index)` or `()`. */
@@ -206,8 +182,10 @@ export const ComponentPage: FC<{ tag: string }> = ({ tag }) => {
             Events
           </Typography>
           <Typography variant="body2" paragraph sx={{ opacity: 0.7 }}>
-            React-parity event handlers bind to the underlying Godot signal shown below. The native{' '}
-            <code>on_&lt;signal&gt;</code> spelling also works as an escape hatch.
+            Event props are named <code>on</code> + PascalCase(signal name) and bind to the Godot
+            signal shown below — the rule works for <em>every</em> signal of the node, not just the
+            curated ones here. The native <code>on_&lt;signal&gt;</code> spelling also works,
+            verbatim.
           </Typography>
           <EventsTable element={element} />
         </Box>

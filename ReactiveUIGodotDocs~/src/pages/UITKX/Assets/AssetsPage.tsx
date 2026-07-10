@@ -158,7 +158,7 @@ export const AssetsPage: FC = () => (
             <TableRow>
               <TableCell><code>.ogg .wav .mp3</code></TableCell>
               <TableCell><code>AudioStream</code></TableCell>
-              <TableCell><code>AudioStreamPlayer</code> (via <code>V.audio</code>)</TableCell>
+              <TableCell><code>&lt;AudioStreamPlayer&gt;</code> (or <code>V.AudioStreamPlayer</code>)</TableCell>
             </TableRow>
             <TableRow>
               <TableCell><code>.tscn .scn</code></TableCell>

@@ -26,9 +26,9 @@ component AppRoot(my_theme: Dictionary) {
   Hooks.provideContext(AppContexts.Theme, my_theme)
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Toolbar />
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -41,9 +41,9 @@ component Toolbar() {
   var theme = Hooks.useContext(AppContexts.Theme)
 
   return (
-    <Panel style={ {"bg_color": theme["accent"]} }>
+    <PanelContainer style={ {"bg_color": theme["accent"]} }>
       <Label text="Toolbar" />
-    </Panel>
+    </PanelContainer>
   )
 }`
 
@@ -60,9 +60,9 @@ component ThemePanel(accent: Color = Color.MAGENTA) {
   Hooks.provideContext(ThemePanel.Theme, { "accent": accent })
 
   return (
-    <VBox>
+    <VBoxContainer>
       <AccentDot />
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -74,7 +74,7 @@ component AccentDot() {
   var theme = Hooks.useContext(ThemePanel.Theme)
 
   return (
-    <Panel style={ {"bg_color": theme["accent"], "min_size": Vector2(16, 16)} } />
+    <PanelContainer style={ {"bg_color": theme["accent"], "custom_minimum_size": Vector2(16, 16)} } />
   )
 }`
 
@@ -86,10 +86,10 @@ component AppRoot() {
   Hooks.provideContext("theme", "dark")
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Sidebar />
       <MainContent />
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -101,9 +101,9 @@ component Sidebar() {
   var theme = useContext("theme")
 
   return (
-    <Panel style={ {"bg_color": Color("#1e1e1e") if theme == "dark" else Color.WHITE} }>
+    <PanelContainer style={ {"bg_color": Color("#1e1e1e") if theme == "dark" else Color.WHITE} }>
       <Label text={ "Logged in as %s" % user_name } />
-    </Panel>
+    </PanelContainer>
   )
 }`
 
@@ -113,10 +113,10 @@ component OuterProvider() {
   Hooks.provideContext("theme", "light")
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ useContext("theme") } />   # "light"
       <InnerProvider />
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -126,9 +126,9 @@ component InnerProvider() {
   Hooks.provideContext("theme", "dark")   # shadows outer
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ useContext("theme") } />   # "dark"
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -139,11 +139,11 @@ component ThemeToggle() {
   Hooks.provideContext("theme", "dark" if dark[0] else "light")
 
   return (
-    <VBox>
+    <VBoxContainer>
       <CheckButton text="Dark mode" button_pressed={ dark[0] }
-                   onChange={ func(pressed): dark[1].call(pressed) } />
+                   onToggled={ func(pressed): dark[1].call(pressed) } />
       <ThemedPanel />
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -154,12 +154,12 @@ component ThemedPanel() {
   # Automatically re-renders when the provided value changes
 
   return (
-    <Panel style={ {
+    <PanelContainer style={ {
       "bg_color": Color("#1e1e1e") if theme == "dark" else Color.WHITE,
-      "pad": 16,
+      "content_margin_all": 16,
     } }>
       <Label text={ "Current theme: %s" % theme } />
-    </Panel>
+    </PanelContainer>
   )
 }`
 

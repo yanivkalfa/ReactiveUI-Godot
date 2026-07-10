@@ -18,7 +18,7 @@ export const UitkxSuspensePage: FC = () => (
       <code>{'<Suspense>'}</code> is not a recognized <code>.guitkx</code> element. Call{' '}
       <code>V.suspense(props, children)</code> from an embedded <code>{'{ expr }'}</code> inside a{' '}
       normal <code>.guitkx</code> component instead, e.g.{' '}
-      <code>{'<VBox>{ V.suspense({...}, [...]) }</VBox>'}</code>.
+      <code>{'<VBoxContainer>{ V.suspense({...}, [...]) }</VBoxContainer>'}</code>.
     </Alert>
     <Alert severity="info" sx={{ mb: 2 }}>
       GDScript has no throw-to-suspend (React&apos;s mechanism relies on throwing

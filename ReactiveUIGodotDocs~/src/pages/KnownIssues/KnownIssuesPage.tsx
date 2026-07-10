@@ -59,7 +59,7 @@ export const KnownIssuesPage: FC = () => (
         <ListItemText primary={<><code>preload()</code> requires a constant <code>res://</code> path — it resolves at compile time. For a path computed at runtime (a prop, a variable) use <code>load()</code>, which returns <code>null</code> on a missing file. Guard dynamic loads before use.</>} />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary={<>The AudioStreamPlayer element has a <code>V.audio</code> factory but no markup tag in the current schema — instance it from GDScript (<code>V.audio(&#123; "stream": stream &#125;)</code>) rather than a <code>&lt;Audio&gt;</code> tag.</>} />
+        <ListItemText primary={<>The <code>&lt;AudioStreamPlayer&gt;</code> / <code>&lt;VideoStreamPlayer&gt;</code> elements (and their <code>V.AudioStreamPlayer</code> / <code>V.VideoStreamPlayer</code> factories) wrap scene nodes and take no children — set <code>stream</code>, <code>autoplay</code>, etc. as props.</>} />
       </ListItem>
     </List>
 

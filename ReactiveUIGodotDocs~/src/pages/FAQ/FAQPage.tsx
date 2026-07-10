@@ -96,11 +96,14 @@ export const FAQPage: FC = () => (
       What do event handlers look like?
     </Typography>
     <Typography variant="body2" paragraph>
-      Use React-style camelCase names — <code>onClick</code>, <code>onChange</code>,{' '}
-      <code>onSubmit</code>, <code>onFocus</code>, <code>onBlur</code>,{' '}
-      <code>onPointerDown</code>. They map to the underlying Godot signals for you. The native{' '}
-      <code>on_&lt;signal&gt;</code> form (e.g. <code>on_pressed</code>) also works as an escape
-      hatch, but prefer the camelCase aliases in your components.
+      The handler name is the Godot signal name: <code>on</code> + PascalCase(signal) —{' '}
+      <code>onPressed</code> for <code>pressed</code>, <code>onTextChanged</code> for{' '}
+      <code>text_changed</code>, <code>onValueChanged</code> for <code>value_changed</code>,{' '}
+      <code>onGuiInput</code> for <code>gui_input</code>. One rule, every signal of every node —
+      there is no alias table. The native <code>on_&lt;signal&gt;</code> form (e.g.{' '}
+      <code>on_pressed</code>) also works, verbatim. (The 0.8 React aliases like{' '}
+      <code>onClick</code>/<code>onChange</code> were removed in 0.9.0 — see{' '}
+      <code>MIGRATION-0.9.md</code> at the repo root.)
     </Typography>
 
     <Typography variant="body1" sx={Styles.question}>
@@ -146,7 +149,7 @@ export const FAQPage: FC = () => (
       No — Godot has no USS/CSS, and neither does this library. You pass a{' '}
       <code>style</code> Dictionary on any element and <code>RUIStyle</code> maps it onto Godot{' '}
       <code>Control</code> properties, size flags, and <code>Theme</code>/<code>StyleBox</code>{' '}
-      overrides (e.g. <code>{'{ "bg_color": Color(0.1,0.1,0.18), "corner_radius": 8, "pad": 12 }'}</code>).
+      overrides (e.g. <code>{'{ "bg_color": Color(0.1,0.1,0.18), "corner_radius_all": 8, "content_margin_all": 12 }'}</code>).
       For shared bundles, register named styles with <code>RUIStyleSheet</code> and reference them
       through the <code>classes</code> prop. See the <em>Styling</em> page.
     </Typography>

@@ -44,12 +44,12 @@ component PolygonCanvas() {
   var sides = useState(3)
 
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       // draw_fn runs during the node's "draw" signal. Panel is a CanvasItem.
-      <Panel style={ {"min_size": Vector2(0, 130), "bg_color": Color(0.12, 0.12, 0.14)} }
+      <PanelContainer style={ {"custom_minimum_size": Vector2(0, 130), "bg_color": Color(0.12, 0.12, 0.14)} }
              draw_fn={ func(canvas): DrawHelpers.polygon(canvas, sides[0]) } />
-      <Button text="Add side" onClick={ func(): sides[1].call(sides[0] + 1) } />
-    </VBox>
+      <Button text="Add side" onPressed={ func(): sides[1].call(sides[0] + 1) } />
+    </VBoxContainer>
   )
 }`
 
@@ -60,11 +60,11 @@ component QuadCanvas() {
   var blue = useState(true)
 
   return (
-    <VBox style={ {"separation": 8} }>
-      <Panel style={ {"min_size": Vector2(0, 130)} }
+    <VBoxContainer style={ {"separation": 8} }>
+      <PanelContainer style={ {"custom_minimum_size": Vector2(0, 130)} }
              draw_fn={ func(canvas): DrawHelpers.quad(canvas, Color.BLUE if blue[0] else Color(1.0, 0.5, 0.2)) } />
-      <Button text="Toggle color" onClick={ func(): blue[1].call(not blue[0]) } />
-    </VBox>
+      <Button text="Toggle color" onPressed={ func(): blue[1].call(not blue[0]) } />
+    </VBoxContainer>
   )
 }`
 
@@ -79,12 +79,12 @@ component ScatterCanvas() {
   var draw = useStableAction(func(canvas): DrawHelpers.scatter(canvas))
 
   return (
-    <VBox style={ {"separation": 8} }>
-      <Panel style={ {"min_size": Vector2(0, 130)} }
+    <VBoxContainer style={ {"separation": 8} }>
+      <PanelContainer style={ {"custom_minimum_size": Vector2(0, 130)} }
              draw_fn={ draw }
              redraw_key={ tick[0] } />
-      <Button text="Shuffle" onClick={ func(): tick[1].call(tick[0] + 1) } />
-    </VBox>
+      <Button text="Shuffle" onPressed={ func(): tick[1].call(tick[0] + 1) } />
+    </VBoxContainer>
   )
 }`
 

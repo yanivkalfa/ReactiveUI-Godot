@@ -17,7 +17,7 @@ const DIRECTIVE_HEADER_EXAMPLE = `@class_name MyButton
 
 component MyButton(label: String = "Click") {
   return (
-    <Button text={ label } onClick={ func(): print("clicked") } />
+    <Button text={ label } onPressed={ func(): print("clicked") } />
   )
 }`
 
@@ -27,20 +27,20 @@ component Counter(label: String = "Count") {
   var s = useState(0)
   var count = s[0]
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "%s: %d" % [label, count] } />
-      <Button text="+" onClick={ func(): s[1].call(count + 1) } />
-    </VBox>
+      <Button text="+" onPressed={ func(): s[1].call(count + 1) } />
+    </VBoxContainer>
   )
 }`
 
-const CONTROL_FLOW_EXAMPLE = `<VBox>
+const CONTROL_FLOW_EXAMPLE = `<VBoxContainer>
   @if (is_logged_in) {
     return ( <Label text="Welcome back!" /> )
   } @elif (is_guest) {
     return ( <Label text="Browsing as guest" /> )
   } @else {
-    return ( <Button text="Log in" onClick={ func(): login() } /> )
+    return ( <Button text="Log in" onPressed={ func(): login() } /> )
   }
 
   @for (item in items) {
@@ -58,15 +58,15 @@ const CONTROL_FLOW_EXAMPLE = `<VBox>
     @case ("light") { return ( <Label text="Light mode" /> ) }
     @default        { return ( <Label text="Unknown mode" /> ) }
   }
-</VBox>`
+</VBoxContainer>`
 
-const EARLY_RETURN_EXAMPLE = `component Panel(ready: bool = false) {
+const EARLY_RETURN_EXAMPLE = `component StatusPanel(ready: bool = false) {
   if not ready:
     return ( <Label text="Loading…" /> )
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text="Ready!" />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -74,29 +74,29 @@ const PROP_SPREAD_EXAMPLE = `component Toolbar(cfg: Dictionary = {}) {
   var base := { "text": "Save", "disabled": false }
 
   return (
-    <VBox>
+    <VBoxContainer>
       # Spread a variable of props, then add an explicit handler.
-      <Button {...base} onClick={ func(): save() } />
+      <Button {...base} onPressed={ func(): save() } />
 
       # Explicit prop first, spread overrides it (later wins).
       <Button text="Placeholder" {...cfg} />
 
-      # Spread first as defaults; the trailing onClick always wins.
-      <Button {...cfg} text="Cancel" onClick={ func(): cancel() } />
+      # Spread first as defaults; the trailing onPressed always wins.
+      <Button {...cfg} text="Cancel" onPressed={ func(): cancel() } />
 
       # Spread works on components too.
       <Card {...base} title={ "Details" } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
 const EXPRESSION_EXAMPLE = `<Label text={ "Count: %d" % count } />
-<Button onClick={ func(): s[1].call(count + 1) } />
-<VBox>
+<Button onPressed={ func(): s[1].call(count + 1) } />
+<VBoxContainer>
   { my_custom_node }
   { a_node if cond else b_node }
   # This is a line comment
-</VBox>
+</VBoxContainer>
 
 // A raw expression (instead of markup) can be the whole return body:
 { V.router({ "initial": "/" }, [V.fc(App.render)]) }`
@@ -318,7 +318,7 @@ export const UitkxReferencePage: FC = () => (
         <TableBody>
           <TableRow>
             <TableCell><code>{'{ expr }'}</code></TableCell>
-            <TableCell><code>{'<VBox>{ my_node }</VBox>'}</code></TableCell>
+            <TableCell><code>{'<VBoxContainer>{ my_node }</VBoxContainer>'}</code></TableCell>
             <TableCell>
               A GDScript expression in <strong>markup-child</strong> position. It may evaluate to an{' '}
               <code>RUIVNode</code>, an <code>Array</code> of vnodes (rendered as siblings), a{' '}
@@ -337,12 +337,12 @@ export const UitkxReferencePage: FC = () => (
           </TableRow>
           <TableRow>
             <TableCell><code>{'onXxx={ func: … }'}</code></TableCell>
-            <TableCell><code>{'onClick={ func(): do_it() }'}</code></TableCell>
+            <TableCell><code>{'onPressed={ func(): do_it() }'}</code></TableCell>
             <TableCell>An event handler — a <code>Callable</code> connected to the mapped signal</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>{'{...obj}'}</code></TableCell>
-            <TableCell><code>{'<Button {...cfg} onClick={ f } />'}</code></TableCell>
+            <TableCell><code>{'<Button {...cfg} onPressed={ f } />'}</code></TableCell>
             <TableCell>
               Prop spread — merges a <code>Dictionary</code> of props onto the element (React&apos;s{' '}
               <code>{'{...obj}'}</code>). See <strong>Prop spread</strong> below.
@@ -411,16 +411,17 @@ export const UitkxReferencePage: FC = () => (
         Event handler attributes
       </Typography>
       <Typography variant="body2" paragraph sx={{ mb: 1 }}>
-        Event handlers use React-parity camelCase and map to Godot signals:{' '}
-        <code>onClick</code> → <code>pressed</code>, <code>onSubmit</code> →{' '}
-        <code>text_submitted</code>, <code>onFocus</code> → <code>focus_entered</code>,{' '}
-        <code>onBlur</code> → <code>focus_exited</code>,{' '}
-        <code>onPointerDown</code>/<code>Up</code>/<code>Enter</code>/<code>Leave</code>, and{' '}
-        <code>onResize</code> → <code>resized</code>. <code>onChange</code> is polymorphic — it binds
-        to <code>text_changed</code>, <code>value_changed</code>, <code>item_selected</code>,{' '}
-        <code>tab_changed</code>, or <code>toggled</code> depending on the control. Any other{' '}
-        <code>onXxxYyy</code> maps to the <code>xxx_yyy</code> signal. The native{' '}
-        <code>on_&lt;signal&gt;</code> spelling is also accepted as an escape hatch.
+        Event handlers follow one rule — <code>on</code> + PascalCase(signal name) — and it works
+        for every signal of every node: <code>onPressed</code> → <code>pressed</code>,{' '}
+        <code>onTextSubmitted</code> → <code>text_submitted</code>,{' '}
+        <code>onFocusEntered</code> → <code>focus_entered</code>,{' '}
+        <code>onValueChanged</code> → <code>value_changed</code>,{' '}
+        <code>onItemSelected</code> → <code>item_selected</code>,{' '}
+        <code>onGuiInput</code> → <code>gui_input</code>. The prop name <em>is</em> the Godot
+        signal name, camelCased — there is no alias table (the 0.8 React-style aliases such as{' '}
+        <code>onClick</code> and the polymorphic <code>onChange</code> were removed in 0.9.0; see{' '}
+        <code>MIGRATION-0.9.md</code> at the repository root). The native{' '}
+        <code>on_&lt;signal&gt;</code> spelling is also accepted, verbatim, as an escape hatch.
       </Typography>
     </Box>
 
@@ -436,9 +437,9 @@ export const UitkxReferencePage: FC = () => (
     </Typography>
     <Typography variant="body2" paragraph>
       Spreads and explicit attributes merge <strong>left-to-right, later wins</strong>, preserving
-      source order. So <code>{'<Button text="Hi" {...cfg} onClick={ f } />'}</code> lets{' '}
+      source order. So <code>{'<Button text="Hi" {...cfg} onPressed={ f } />'}</code> lets{' '}
       <code>cfg</code> override the literal <code>text</code>, while the trailing{' '}
-      <code>onClick</code> always wins over any <code>onClick</code> inside <code>cfg</code>. Put a
+      <code>onPressed</code> always wins over any <code>onPressed</code> inside <code>cfg</code>. Put a
       spread <em>last</em> to have it win, or <em>first</em> to treat it as defaults that explicit
       props override.
     </Typography>

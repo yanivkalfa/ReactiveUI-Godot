@@ -30,7 +30,7 @@ export const UitkxConceptsPage: FC = () => (
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary="Intrinsic host tag names (VBox, Button, Label, …) are reserved; custom components should use distinct names." />
+          <ListItemText primary="Intrinsic host tag names are the Godot class names (VBoxContainer, Button, Label, …) and any instantiable Godot Node class is a valid tag; custom components should use distinct names." />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary="Function-style components are the only form: setup code first (GDScript statements + hook calls), then a single returned markup tree." />
@@ -52,7 +52,7 @@ export const UitkxConceptsPage: FC = () => (
         Every host tag maps to a concrete Godot <code>Control</code>, and every one accepts the same
         universal structural attributes plus any property of the underlying node. The universal
         attributes available on <code>{'<Button>'}</code>, <code>{'<Label>'}</code>,{' '}
-        <code>{'<VBox>'}</code>, and all other host elements are:
+        <code>{'<VBoxContainer>'}</code>, and all other host elements are:
       </Typography>
       <Typography component="ul" variant="body2">
         <li><code>key</code> — stable identity for keyed reconciliation</li>
@@ -63,11 +63,11 @@ export const UitkxConceptsPage: FC = () => (
           <code>disabled</code>, <code>placeholder_text</code>, etc. — is set directly
         </li>
         <li>
-          Event handlers in React-parity camelCase: <code>onClick</code>, <code>onChange</code>,{' '}
-          <code>onSubmit</code>, <code>onFocus</code>, <code>onBlur</code>,{' '}
-          <code>onPointerDown</code>/<code>Up</code>/<code>Enter</code>/<code>Leave</code>,{' '}
-          <code>onResize</code>, plus any <code>onXxx</code> that maps to the <code>xxx</code> signal
-          (the native <code>on_&lt;signal&gt;</code> spelling is also accepted)
+          Event handlers named <code>on</code> + PascalCase(signal name): <code>onPressed</code> →{' '}
+          <code>pressed</code>, <code>onTextChanged</code> → <code>text_changed</code>,{' '}
+          <code>onValueChanged</code> → <code>value_changed</code>,{' '}
+          <code>onGuiInput</code> → <code>gui_input</code> — one rule that reaches every signal of
+          every node (the native <code>on_&lt;signal&gt;</code> spelling is also accepted)
         </li>
       </Typography>
     </Box>

@@ -23,7 +23,7 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Full hook set — useState, useReducer, useEffect, useMemo, useRef, useContext, useSignal, useTween</>} />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />~60 host elements mapping to Godot Controls (containers, buttons, inputs, item-model controls, media)</>} />
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />~60 curated host elements named 1:1 after Godot classes (containers, buttons, inputs, item-model controls, media), plus an open tag vocabulary — any instantiable Godot Node class via ClassDB (0.9.0)</>} />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Styling redesigned for Godot — RUIStyle style dicts (Control props + size flags + Theme/StyleBox) and RUIStyleSheet named bundles</>} />
@@ -35,7 +35,7 @@ export const RoadmapPage: FC = () => (
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Fragment, Portal, Suspense, and error-boundary components</>} />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />React-parity event handlers — onClick, onChange, onSubmit, onFocus/onBlur, onPointer*, onResize map to Godot signals, with on_&lt;signal&gt; as an escape hatch</>} />
+        <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Loyal-to-Godot event handlers (0.9.0) — on + PascalCase(signal name) works for every signal of every node (onPressed, onValueChanged, onGuiInput, …), with on_&lt;signal&gt; as a verbatim escape hatch. Replaces the earlier React-parity aliases (onClick, onChange, …); see MIGRATION-0.9.md</>} />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText primary={<><Chip label="Done" size="small" color="success" sx={{ mr: 1 }} />Prop spread <code>{'{...obj}'}</code> in .guitkx and context handles via Hooks.createContext (React createContext parity)</>} />

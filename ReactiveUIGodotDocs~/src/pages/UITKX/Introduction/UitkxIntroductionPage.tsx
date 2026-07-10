@@ -8,10 +8,10 @@ const QUICK_SAMPLE = `@class_name CounterCard
 component CounterCard() {
   var s = useState(0)
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "Count: %d" % s[0] } />
-      <Button text="+" onClick={ func(): s[1].call(s[0] + 1) } />
-    </VBox>
+      <Button text="+" onPressed={ func(): s[1].call(s[0] + 1) } />
+    </VBoxContainer>
   )
 }`
 

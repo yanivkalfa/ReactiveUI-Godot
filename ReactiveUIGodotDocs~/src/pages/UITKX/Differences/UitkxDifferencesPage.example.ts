@@ -5,10 +5,10 @@ component StateCounterExample() {
   var count = s[0]
   var set_count = s[1]
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "Count: %d" % count } />
-      <Button text="Increment" onClick={ func(): set_count.call(func(prev): return prev + 1) } />
-      <Button text="Reset" onClick={ func(): set_count.call(0) } />
-    </VBox>
+      <Button text="Increment" onPressed={ func(): set_count.call(func(prev): return prev + 1) } />
+      <Button text="Reset" onPressed={ func(): set_count.call(0) } />
+    </VBoxContainer>
   )
 }`
