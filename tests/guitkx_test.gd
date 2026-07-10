@@ -43,6 +43,7 @@ func _run() -> void:
 	_test_outlier_indent()
 	_test_deep_flatten()
 	_test_scanner_fixtures()
+	_test_g23_prelude_comments()
 	_test_markup_corpus()
 	_test_vocabulary()
 	_test_formatter()
@@ -822,6 +823,44 @@ func _test_scanner_fixtures() -> void:
 	for c in fx["findMatchingMarkup"]:
 		var got4: int = L.find_matching_markup(c["input"], int(c["at"]))
 		_check_true(got4 == int(c["expect"]), "find_matching_markup(%s, %d) = %d expected %d" % [c["input"], int(c["at"]), got4, int(c["expect"])])
+
+## G-23 regression (compile-level): a parenthetical comment split across two `#`/`##` lines in a
+## component's setup prelude desynced find_matching_markup (the prelude was scanned as markup, so
+## the comment's `(` opened a code island whose `)` on the next comment line was comment-skipped)
+## -- surfacing as a bogus GUITKX0304 "unclosed component body". The exact shape that bit
+## examples/demos/doom/doom_game_screen.guitkx.
+func _test_g23_prelude_comments() -> void:
+	var src := "component G23(title: String = \"\") {\n" + \
+		"\t## Faithful port of the per-column texture windowing (BackgroundSize +\n" + \
+		"\t## BackgroundPositionX/Y in the original): select the texel column.\n" + \
+		"\t# note: early return (see docs\n" + \
+		"\t# and { weird unbalanced\n" + \
+		"\tvar msg := title\n" + \
+		"\treturn (\n" + \
+		"\t\t<Panel>\n" + \
+		"\t\t\t<Label text={ msg } />\n" + \
+		"\t\t</Panel>\n" + \
+		"\t)\n" + \
+		"}\n"
+	var r := RUIGuitkx.compile(src, "G23")
+	_check_true(bool(r["ok"]), "G-23: split-paren prelude comments compile clean (got %s)" % str(r.get("diagnostics", [])))
+	if r["ok"]:
+		_check(r["gd"], "static func render", "G-23: render emitted")
+	# Directive-body prelude: same comment shape inside an @for body.
+	var src2 := "component G23b() {\n" + \
+		"\tvar xs := [1, 2]\n" + \
+		"\treturn (\n" + \
+		"\t\t<VBox>\n" + \
+		"\t\t\t@for (x in xs) {\n" + \
+		"\t\t\t\t# per-item note (one\n" + \
+		"\t\t\t\t# and two) done\n" + \
+		"\t\t\t\treturn ( <Label text={ str(x) } /> )\n" + \
+		"\t\t\t}\n" + \
+		"\t\t</VBox>\n" + \
+		"\t)\n" + \
+		"}\n"
+	var r2 := RUIGuitkx.compile(src2, "G23b")
+	_check_true(bool(r2["ok"]), "G-23: split-paren comment in a directive body compiles clean (got %s)" % str(r2.get("diagnostics", [])))
 
 func _test_deep_flatten() -> void:
 	# V._norm must deep-flatten nested arrays (Phase 4 §5: .map().map() children) + drop nulls at depth

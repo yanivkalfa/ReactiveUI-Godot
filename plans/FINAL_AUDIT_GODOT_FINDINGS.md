@@ -180,7 +180,25 @@ Leading comments preserved (G2); `{expr}` children + markup comments preserved (
 
 ### G-23 — **P1** — a parenthetical comment split across two `#`/`//` lines desyncs paren-balance tracking, surfaces as a spurious "unclosed component body" far downstream
 
-**Status: root cause CONFIRMED + traced (2026-07-10, empirical repro below); still NOT fixed — the correct fix is a scanner-mode redesign, not a targeted patch.** Found while hand-authoring a large `.guitkx` component (`examples/demos/doom/doom_game_screen.guitkx`, part of an unrelated feature — see `plans/archive/DOOM_GAME_GUITKX_PORT_PLAN.md`); the compiler itself was not touched while chasing this.
+**Status: FIXED 2026-07-10 (same day the root cause was confirmed — see below for the trace).**
+The fix is the per-level-mode redesign this entry called for, landed in BOTH mirrors
+(`guitkx_lexer.gd find_matching_markup` + `scanner.ts findMatchingMarkup`): content mode is now
+tracked **per delimiter-stack level** — `{` opens a BODY level (component/directive body), `(`
+after `return` opens a MARKUP window, headers/`{expr}` holes open CODE levels — and within a BODY
+level the lexis is **line-classified** (`_is_markup_line`/`isMarkupLine`: a line whose first
+non-ws char is `<`, `{`, `//`, `/*`, or a directive `@keyword` scans as markup; any other line is
+GDScript prelude and scans with code lexis, so its `#`/`##` comments are comments). MARKUP windows
+ignore line shape (a prelude-line `return ( <Label>Score #3</Label> )` keeps `#3` literal); `[`
+inherits its level's mode (prelude array literals get code lexis — fixing a sibling latent bug
+where a `#` comment inside a multi-line array desynced the stack). **Verified:** 7 new shared
+contract cases (`scanner-cases.json` — the G-23 repro, `##` docstring, keyword-bait, unbalanced
+brace, array-comment, plus 2 regression pins) run by both `tests/guitkx_test.gd` and the lsp-server
+suite (180/180); a compile-level regression test (`_test_g23_prelude_comments`, the exact doom
+comment shape incl. a directive-body variant); all 49 example `.guitkx` recompiled **byte-identical**
+to pre-fix outputs; live-fire: the real `doom_game_screen.guitkx` with the original split-paren
+comments injected compiles `ok:true`. The workaround comments in the doom file can be rephrased
+naturally at leisure — they are no longer load-bearing. Original confirmed-trace + repro kept below
+for the record.
 
 **CONFIRMED mechanism (2026-07-10).** Direct call of `RUIGuitkxLexer.find_matching_markup` on a component-body `{…}` reproduces it exactly: the body `{ # a (open⏎ # b) close⏎ var x=1⏎ return ( X ) }` returns **-1**; the same body with the paren balanced on one comment line, or with no comment, returns the correct `}` index. Trace: the prelude scans in MARKUP mode (default), where `skip_noncode_markup` keeps `#` literal, so the `(` inside the first comment line opens CODE mode (`code_depth++`); once in CODE mode, `skip_noncode` on the *next* line treats its leading `#` as a real comment and skips its `)` to EOL, so the `(` never closes; a later `}` then pops against the stray `(` → mismatch → -1. So the defect is precisely: **a body's code prelude (everything before its `return (`) is scanned as markup, not code.**
 

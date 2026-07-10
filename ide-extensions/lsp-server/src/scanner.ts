@@ -115,38 +115,62 @@ export function skipNoncodeMarkup(src: string, i: number): number {
   return i;
 }
 
-// [G-01 fix] Mode-aware counterpart to findMatching for spans whose content is primarily MARKUP
-// with embedded GDScript islands ({expr} attribute/child holes, directive/@case headers, a bare
-// `return (...)` window) -- e.g. a directive body, a component body, or the `return ( ... )` window
-// itself. The naive GDScript-lexis findMatching treats a literal `#` in markup text (or a markup
-// `//`/`/* */`/`<!-- -->` comment) as GDScript lexis, silently miscounting the delimiters it is
-// meant to balance (G-01).
+// [G-01 fix] Mode-aware counterpart to findMatching for spans whose content mixes MARKUP with
+// embedded GDScript ({expr} attribute/child holes, directive/@case headers, setup/prelude
+// statements, `return (...)` windows) -- e.g. a directive body, a component body, or the
+// `return ( ... )` window itself. The naive GDScript-lexis findMatching treats a literal `#` in
+// markup text (or a markup `//`/`/* */`/`<!-- -->` comment) as GDScript lexis, silently
+// miscounting the delimiters it is meant to balance (G-01).
 //
-// Mode starts MARKUP (skipNoncodeMarkup: `#` literal, `//`/`/* */`/`<!--` comments; `openI` itself
-// is the outer delimiter). A `{` seen in markup mode opens an `{expr}` island (CODE mode) UNLESS it
-// immediately follows a just-closed directive/@case header `(...)` or a bare `@else`/`@default`
-// keyword, in which case it opens a nested DIRECTIVE BODY whose content is more markup, so mode
-// stays markup. Symmetrically, a `(` seen in markup mode opens CODE mode (a directive/@case header)
-// UNLESS it immediately follows a bare `return` keyword, in which case it opens a nested
-// `return ( ... )` window whose content is MORE markup (a `return` inside a directive/@case body,
-// e.g. `@if (x) { return ( <Label>Score #3</Label> ) }`), so mode stays markup there too --
-// otherwise the SAME bug reappears one level deeper. (A bare `(` in literal markup text, matching
-// neither keyword, is a pre-existing, out-of-scope edge case unrelated to this fix -- it defaults
-// to a header, the more common construct.) A header/case-value close re-arms "the next `{` is a
-// body"; once inside CODE mode, everything nested (further ()/{}/[], GDScript `#` comments, string
-// prefixes) uses ordinary GDScript lexis via skipNoncode -- real GDScript has no markup/code
-// ambiguity internally.
+// [G-23 fix] Content mode is tracked PER DELIMITER-STACK LEVEL, not globally:
+//   - `{` opens a BODY level (component/directive body: GDScript prelude statements mixed with
+//     markup) -- including `openI` itself when it is a `{`. Within a BODY level the lexis is
+//     LINE-CLASSIFIED (isMarkupLine): a line whose first non-ws char is `<`, `{`, `//`, `/*`,
+//     or a directive `@keyword` scans as markup (`#` literal); any other line is GDScript prelude
+//     and scans as code (`#` = comment). This is what fixes G-23 -- a `(`/`{` inside a prelude
+//     `#`/`##` comment no longer desyncs the stack (previously the prelude was scanned as markup,
+//     so the comment's `(` opened a code island whose closing `)` on the NEXT comment line was
+//     then comment-skipped -- unclosed forever).
+//   - `(` after a bare `return` keyword opens a MARKUP level (the return window) -- including
+//     `openI` itself when it is a `(`. MARKUP levels always scan with markup lexis regardless of
+//     line shape (`return ( <Label>Score #3</Label> )` on a prelude-classified line keeps `#3`
+//     literal). Any other `(` is a directive/@case header and opens a CODE level; `{` not
+//     following a header-close/`@else`/`@default` is an `{expr}` island -- CODE as well. A `[`
+//     inherits the current level's mode (markup text brackets stay markup; prelude array
+//     literals scan as code, so their `#` comments are comments).
+//   - CODE levels use ordinary GDScript lexis via skipNoncode all the way down -- real GDScript
+//     has no markup/code ambiguity internally. A header/case-value close re-arms "the next `{`
+//     is a body".
+// (A bare `(` in literal markup text, matching neither keyword, is a pre-existing, out-of-scope
+// edge case -- it defaults to a header, the more common construct.)
 // Must stay byte-identical with guitkx_lexer.gd find_matching_markup.
+const MODE_BODY = 0;
+const MODE_MARKUP = 1;
+const MODE_CODE = 2;
+
 export function findMatchingMarkup(src: string, openI: number): number {
   const n = src.length;
   const delims: string[] = [src[openI]];
-  let codeDepth = 0;
+  const modes: number[] = [src[openI] === "{" ? MODE_BODY : MODE_MARKUP];
   let expectBody = false;
   let expectMarkupParen = false;
+  // [G-23] Per-line classification state for BODY levels (see docstring).
+  let lineStart = src.lastIndexOf("\n", openI) + 1;
+  let lineEnd = src.indexOf("\n", openI);
+  if (lineEnd === -1) lineEnd = n;
+  let lineMarkup = isMarkupLine(src, lineStart, lineEnd);
   let i = openI + 1;
   while (i < n) {
-    const inCode = codeDepth > 0;
-    const j = inCode ? skipNoncode(src, i) : skipNoncodeMarkup(src, i);
+    while (i > lineEnd) {
+      lineStart = lineEnd + 1;
+      lineEnd = src.indexOf("\n", lineStart);
+      if (lineEnd === -1) lineEnd = n;
+      lineMarkup = isMarkupLine(src, lineStart, lineEnd);
+    }
+    const mode = modes[modes.length - 1];
+    const inCode = mode === MODE_CODE;
+    const markupLexis = mode === MODE_MARKUP || (mode === MODE_BODY && lineMarkup);
+    const j = markupLexis ? skipNoncodeMarkup(src, i) : skipNoncode(src, i);
     if (j !== i) {
       i = j;
       continue;
@@ -177,7 +201,7 @@ export function findMatchingMarkup(src: string, openI: number): number {
       }
       if (c === "(") {
         delims.push(c);
-        if (!expectMarkupParen) codeDepth++;
+        modes.push(expectMarkupParen ? MODE_MARKUP : MODE_CODE);
         expectBody = false;
         expectMarkupParen = false;
         i++;
@@ -185,7 +209,7 @@ export function findMatchingMarkup(src: string, openI: number): number {
       }
       if (c === "{") {
         delims.push(c);
-        if (!expectBody) codeDepth++;
+        modes.push(expectBody ? MODE_BODY : MODE_CODE);
         expectBody = false;
         expectMarkupParen = false;
         i++;
@@ -193,6 +217,7 @@ export function findMatchingMarkup(src: string, openI: number): number {
       }
       if (c === "[") {
         delims.push(c);
+        modes.push(mode); // inherit -- markup text brackets stay markup, prelude arrays stay code
         expectBody = false;
         expectMarkupParen = false;
         i++;
@@ -201,6 +226,7 @@ export function findMatchingMarkup(src: string, openI: number): number {
       if (c === ")" || c === "}" || c === "]") {
         if (delims.length === 0) return -1;
         const top = delims.pop()!;
+        modes.pop();
         if ((c === ")" && top !== "(") || (c === "}" && top !== "{") || (c === "]" && top !== "[")) return -1;
         if (delims.length === 0) return i;
         i++;
@@ -213,17 +239,17 @@ export function findMatchingMarkup(src: string, openI: number): number {
     } else {
       if (c === "(" || c === "{" || c === "[") {
         delims.push(c);
-        codeDepth++;
+        modes.push(MODE_CODE);
         i++;
         continue;
       }
       if (c === ")" || c === "}" || c === "]") {
         if (delims.length === 0) return -1;
         const top = delims.pop()!;
+        modes.pop();
         if ((c === ")" && top !== "(") || (c === "}" && top !== "{") || (c === "]" && top !== "[")) return -1;
-        codeDepth--;
         if (delims.length === 0) return i;
-        if (codeDepth === 0) expectBody = top === "(";
+        if (modes[modes.length - 1] !== MODE_CODE) expectBody = top === "(";
         i++;
         continue;
       }
@@ -232,6 +258,37 @@ export function findMatchingMarkup(src: string, openI: number): number {
     }
   }
   return -1;
+}
+
+// [G-23] Line classification for BODY levels: does this line's content read as markup (elements,
+// expr children, markup comments, directives) rather than a GDScript prelude statement? Decided
+// by the first non-ws char -- the same convention the compiler's body splitter applies to parts.
+// Must stay byte-identical with guitkx_lexer.gd _is_markup_line.
+function isMarkupLine(src: string, ls: number, le: number): boolean {
+  let k = ls;
+  while (k < le) {
+    const c = src[k];
+    if (c === " " || c === "\t" || c === "\r") {
+      k++;
+      continue;
+    }
+    if (c === "<" || c === "{") return true;
+    if (c === "/" && k + 1 < le && (src[k + 1] === "/" || src[k + 1] === "*")) return true;
+    if (c === "@") {
+      return (
+        keywordAt(src, k + 1, "if") ||
+        keywordAt(src, k + 1, "elif") ||
+        keywordAt(src, k + 1, "else") ||
+        keywordAt(src, k + 1, "for") ||
+        keywordAt(src, k + 1, "while") ||
+        keywordAt(src, k + 1, "match") ||
+        keywordAt(src, k + 1, "case") ||
+        keywordAt(src, k + 1, "default")
+      );
+    }
+    return false;
+  }
+  return false;
 }
 
 /** True if `word` starts at `i` and is bounded by non-identifier chars (a real keyword). */

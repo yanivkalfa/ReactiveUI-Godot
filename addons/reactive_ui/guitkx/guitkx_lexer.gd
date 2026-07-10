@@ -122,38 +122,63 @@ static func skip_noncode_markup(src: String, i: int) -> int:
 		return _skip_string(src, i)
 	return i
 
-## [G-01 fix] Mode-aware counterpart to find_matching for spans whose content is primarily MARKUP
-## with embedded GDScript islands ({expr} attribute/child holes, directive/@case headers, a bare
-## `return (...)` window) -- e.g. a directive body, a component body, or the `return ( ... )` window
-## itself. The naive GDScript-lexis find_matching treats a literal `#` in markup text (or a markup
-## `//`/`/* */`/`<!-- -->` comment) as GDScript lexis, silently miscounting the delimiters it is
-## meant to balance (G-01).
+## [G-01 fix] Mode-aware counterpart to find_matching for spans whose content mixes MARKUP with
+## embedded GDScript ({expr} attribute/child holes, directive/@case headers, setup/prelude
+## statements, `return (...)` windows) -- e.g. a directive body, a component body, or the
+## `return ( ... )` window itself. The naive GDScript-lexis find_matching treats a literal `#` in
+## markup text (or a markup `//`/`/* */`/`<!-- -->` comment) as GDScript lexis, silently
+## miscounting the delimiters it is meant to balance (G-01).
 ##
-## Mode starts MARKUP (skip_noncode_markup: `#` literal, `//`/`/* */`/`<!--` comments; `open_i`
-## itself is the outer delimiter). A `{` seen in markup mode opens an `{expr}` island (CODE mode)
-## UNLESS it immediately follows a just-closed directive/@case header `(...)` or a bare
-## `@else`/`@default` keyword, in which case it opens a nested DIRECTIVE BODY whose content is more
-## markup, so mode stays markup. Symmetrically, a `(` seen in markup mode opens CODE mode (a
-## directive/@case header) UNLESS it immediately follows a bare `return` keyword, in which case it
-## opens a nested `return ( ... )` window whose content is MORE markup (a `return` inside a
-## directive/@case body, e.g. `@if (x) { return ( <Label>Score #3</Label> ) }`), so mode stays
-## markup there too -- otherwise the SAME bug reappears one level deeper. (A bare `(` in literal
-## markup text, matching neither keyword, is a pre-existing, out-of-scope edge case unrelated to
-## this fix -- it defaults to a header, the more common construct.) A header/case-value close
-## re-arms "the next `{` is a body"; once inside CODE mode, everything nested (further ()/{}/[],
-## GDScript `#` comments, string prefixes) uses ordinary GDScript lexis via skip_noncode -- real
-## GDScript has no markup/code ambiguity internally.
+## [G-23 fix] Content mode is tracked PER DELIMITER-STACK LEVEL, not globally:
+##   - `{` opens a BODY level (component/directive body: GDScript prelude statements mixed with
+##     markup) -- including `open_i` itself when it is a `{`. Within a BODY level the lexis is
+##     LINE-CLASSIFIED (_is_markup_line): a line whose first non-ws char is `<`, `{`, `//`, `/*`,
+##     or a directive `@keyword` scans as markup (`#` literal); any other line is GDScript prelude
+##     and scans as code (`#` = comment). This is what fixes G-23 -- a `(`/`{` inside a prelude
+##     `#`/`##` comment no longer desyncs the stack (previously the prelude was scanned as markup,
+##     so the comment's `(` opened a code island whose closing `)` on the NEXT comment line was
+##     then comment-skipped -- unclosed forever).
+##   - `(` after a bare `return` keyword opens a MARKUP level (the return window) -- including
+##     `open_i` itself when it is a `(`. MARKUP levels always scan with markup lexis regardless of
+##     line shape (`return ( <Label>Score #3</Label> )` on a prelude-classified line keeps `#3`
+##     literal). Any other `(` is a directive/@case header and opens a CODE level; `{` not
+##     following a header-close/`@else`/`@default` is an `{expr}` island -- CODE as well. A `[`
+##     inherits the current level's mode (markup text brackets stay markup; prelude array
+##     literals scan as code, so their `#` comments are comments).
+##   - CODE levels use ordinary GDScript lexis via skip_noncode all the way down -- real GDScript
+##     has no markup/code ambiguity internally. A header/case-value close re-arms "the next `{`
+##     is a body".
+## (A bare `(` in literal markup text, matching neither keyword, is a pre-existing, out-of-scope
+## edge case -- it defaults to a header, the more common construct.)
 ## Must stay byte-identical with scanner.ts findMatchingMarkup.
+const _MODE_BODY := 0
+const _MODE_MARKUP := 1
+const _MODE_CODE := 2
+
 static func find_matching_markup(src: String, open_i: int) -> int:
 	var n := src.length()
 	var delims: Array = [src[open_i]]
-	var code_depth := 0
+	var modes: Array = [_MODE_BODY if src[open_i] == "{" else _MODE_MARKUP]
 	var expect_body := false
 	var expect_markup_paren := false
+	# [G-23] Per-line classification state for BODY levels (see docstring).
+	var line_start: int = src.rfind("\n", open_i) + 1
+	var line_end := src.find("\n", open_i)
+	if line_end == -1:
+		line_end = n
+	var line_markup := _is_markup_line(src, line_start, line_end)
 	var i := open_i + 1
 	while i < n:
-		var in_code := code_depth > 0
-		var j: int = skip_noncode(src, i) if in_code else skip_noncode_markup(src, i)
+		while i > line_end:
+			line_start = line_end + 1
+			line_end = src.find("\n", line_start)
+			if line_end == -1:
+				line_end = n
+			line_markup = _is_markup_line(src, line_start, line_end)
+		var mode: int = modes[modes.size() - 1]
+		var in_code := mode == _MODE_CODE
+		var markup_lexis := mode == _MODE_MARKUP or (mode == _MODE_BODY and line_markup)
+		var j: int = skip_noncode_markup(src, i) if markup_lexis else skip_noncode(src, i)
 		if j != i:
 			i = j
 			continue
@@ -179,22 +204,21 @@ static func find_matching_markup(src: String, open_i: int) -> int:
 				continue
 			if c == "(":
 				delims.append(c)
-				if not expect_markup_paren:
-					code_depth += 1
+				modes.append(_MODE_MARKUP if expect_markup_paren else _MODE_CODE)
 				expect_body = false
 				expect_markup_paren = false
 				i += 1
 				continue
 			if c == "{":
 				delims.append(c)
-				if not expect_body:
-					code_depth += 1
+				modes.append(_MODE_BODY if expect_body else _MODE_CODE)
 				expect_body = false
 				expect_markup_paren = false
 				i += 1
 				continue
 			if c == "[":
 				delims.append(c)
+				modes.append(mode)   # inherit -- markup text brackets stay markup, prelude arrays stay code
 				expect_body = false
 				expect_markup_paren = false
 				i += 1
@@ -203,6 +227,7 @@ static func find_matching_markup(src: String, open_i: int) -> int:
 				if delims.is_empty():
 					return -1
 				var top: String = delims.pop_back()
+				modes.pop_back()
 				if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
 					return -1
 				if delims.is_empty():
@@ -216,25 +241,47 @@ static func find_matching_markup(src: String, open_i: int) -> int:
 		else:
 			if c == "(" or c == "{" or c == "[":
 				delims.append(c)
-				code_depth += 1
+				modes.append(_MODE_CODE)
 				i += 1
 				continue
 			if c == ")" or c == "}" or c == "]":
 				if delims.is_empty():
 					return -1
 				var top: String = delims.pop_back()
+				modes.pop_back()
 				if (c == ")" and top != "(") or (c == "}" and top != "{") or (c == "]" and top != "["):
 					return -1
-				code_depth -= 1
 				if delims.is_empty():
 					return i
-				if code_depth == 0:
+				if modes[modes.size() - 1] != _MODE_CODE:
 					expect_body = (top == "(")
 				i += 1
 				continue
 			i += 1
 			continue
 	return -1
+
+## [G-23] Line classification for BODY levels: does this line's content read as markup (elements,
+## expr children, markup comments, directives) rather than a GDScript prelude statement? Decided
+## by the first non-ws char -- the same convention the compiler's body splitter applies to parts.
+static func _is_markup_line(src: String, ls: int, le: int) -> bool:
+	var k := ls
+	while k < le:
+		var c := src[k]
+		if c == " " or c == "\t" or c == "\r":
+			k += 1
+			continue
+		if c == "<" or c == "{":
+			return true
+		if c == "/" and k + 1 < le and (src[k + 1] == "/" or src[k + 1] == "*"):
+			return true
+		if c == "@":
+			return keyword_at(src, k + 1, "if") or keyword_at(src, k + 1, "elif") \
+					or keyword_at(src, k + 1, "else") or keyword_at(src, k + 1, "for") \
+					or keyword_at(src, k + 1, "while") or keyword_at(src, k + 1, "match") \
+					or keyword_at(src, k + 1, "case") or keyword_at(src, k + 1, "default")
+		return false
+	return false
 
 ## True if `src.substr(i)` begins with `word` AND `word` is bounded by non-identifier chars on
 ## both sides (a real keyword, not a substring of a longer identifier). [port of TryReadKeywordAt]
