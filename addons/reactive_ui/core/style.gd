@@ -96,7 +96,7 @@ static func apply(node: Node, old_style: Dictionary, new_style: Dictionary) -> v
 
 	# 1b. Per-state StyleBox slots (hover/pressed/focus/disabled/read_only).
 	for st in STATE_SLOTS:
-		if old_style.get(st) != new_style.get(st):
+		if _changed(old_style.get(st), new_style.get(st)):
 			_apply_state_box(node, st, new_style.get(st))
 
 	# 2. Generic theme channels (inner-diffed per item name). Null-default get so a
@@ -124,8 +124,16 @@ static func apply(node: Node, old_style: Dictionary, new_style: Dictionary) -> v
 	for k in new_style:
 		if _is_box_key(k) or k in STATE_SLOTS or THEME_CHANNELS.has(k):
 			continue
-		if not old_style.has(k) or old_style[k] != new_style[k]:
+		if not old_style.has(k) or _changed(old_style[k], new_style[k]):
 			_apply_key(node, k, new_style[k])
+
+## Type-safe "value changed" — GDScript's `!=` RAISES on incompatible Variant operands
+## (`3 != "SIZE_FILL"` is a runtime error), and a style value legitimately changes type
+## across renders now that enum keys accept ints AND constant-name strings.
+static func _changed(a, b) -> bool:
+	if typeof(a) != typeof(b):
+		return true
+	return a != b
 
 # --------------------------------------------------------------------------
 # Generic theme channels
@@ -136,7 +144,7 @@ static func _apply_theme_map(node: Control, kind: String, old_map: Dictionary, n
 		if not new_map.has(name):
 			node.call("remove_theme_%s_override" % kind, name)
 	for name in new_map.keys():
-		if not old_map.has(name) or old_map[name] != new_map[name]:
+		if not old_map.has(name) or _changed(old_map[name], new_map[name]):
 			node.call("add_theme_%s_override" % kind, name, new_map[name])
 
 # --------------------------------------------------------------------------
@@ -161,7 +169,7 @@ static func _is_box_key(k) -> bool:
 
 static func _box_differs(old_style: Dictionary, new_style: Dictionary) -> bool:
 	for k in old_style:
-		if _is_box_key(k) and old_style[k] != new_style.get(k):
+		if _is_box_key(k) and _changed(old_style[k], new_style.get(k)):
 			return true
 	for k in new_style:
 		if _is_box_key(k) and not old_style.has(k):

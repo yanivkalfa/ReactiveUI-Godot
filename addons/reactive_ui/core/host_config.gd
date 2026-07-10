@@ -115,7 +115,9 @@ static func apply_props(node: Node, old_props: Dictionary, new_props: Dictionary
 				_connect_event(node, k, new_cb)
 			continue
 		var val = new_props[k]
-		if not old_props.has(k) or old_props[k] != val:
+		# typeof guard: GDScript's `!=` RAISES on incompatible Variant operands (int vs String),
+		# and a prop can legitimately change type across renders (e.g. enum int -> name string).
+		if not old_props.has(k) or typeof(old_props[k]) != typeof(val) or old_props[k] != val:
 			_set_prop(node, k, val)
 
 	# 3. ref (called every commit so the latest node is exposed).

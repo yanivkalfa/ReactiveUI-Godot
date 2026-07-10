@@ -46,6 +46,7 @@ func _run() -> void:
 	_test_g23_prelude_comments()
 	_test_markup_corpus()
 	_test_vocabulary()
+	_test_loyal_naming_090()
 	_test_formatter()
 	_test_formatter_corpus()
 	_test_format_unsafe_str_attr()
@@ -723,6 +724,39 @@ func _test_formatter_options() -> void:
 	_check_true(no_space.contains("/>") and not no_space.contains(" />"), "wrap path honors insertSpaceBeforeSelfClose=false")
 	var with_space: String = Fmt.format(src, { "singleAttributePerLine": true })["text"]
 	_check_true(with_space.contains(" />"), "wrap path default keeps the space before />")
+
+## 0.9.0 naming loyalty (plans/NAMING_LOYALTY_PROPOSAL.md): open tag vocabulary, renamed-tag
+## hints, and the engine-name-reserved warning.
+func _test_loyal_naming_090() -> void:
+	# Open vocabulary: a ClassDB Control with no curated factory compiles via the generic V.h.
+	var open := RUIGuitkx.compile("component O() {\n\treturn ( <GraphEdit /> )\n}\n", "O")
+	_check_true(bool(open["ok"]), "open vocabulary: <GraphEdit> compiles (got %s)" % str(open["diagnostics"]))
+	_check(str(open["gd"]), "V.h(\"GraphEdit\"", "open vocabulary emits V.h(\"GraphEdit\", ...)")
+	# A curated tag still emits its named factory, not V.h.
+	var cur := RUIGuitkx.compile("component C() {\n\treturn ( <Panel /> )\n}\n", "C")
+	_check(str(cur["gd"]), "V.Panel(", "<Panel> is Godot's Panel via the named factory")
+	# A pre-0.9 shorthand gets the exact rename, not a generic did-you-mean. (The PascalCase
+	# unknown-tag check arms only with a non-empty known-components set — plugin semantics.)
+	var renamed := RUIGuitkx.compile("component R() {\n\treturn ( <VBox /> )\n}\n", "R", ["SomeComp"])
+	_check_true(not bool(renamed["ok"]), "removed shorthand <VBox> no longer compiles")
+	var hit := false
+	for d in renamed["diagnostics"]:
+		if d["code"] == "GUITKX0105" and "renamed in 0.9.0" in str(d["message"]) and "VBoxContainer" in str(d["message"]):
+			hit = true
+	_check_true(hit, "<VBox> diagnostic carries the exact rename (got %s)" % str(renamed["diagnostics"]))
+	# Engine names are reserved: a known component that shadows a Godot class warns (0151)
+	# but the compile stays ok and the ENGINE element wins.
+	var shadowed := RUIGuitkx.compile("component S() {\n\treturn ( <Panel /> )\n}\n", "S", ["Panel", "SomeComp"])
+	_check_true(bool(shadowed["ok"]), "shadowed engine tag still compiles")
+	_check(str(shadowed["gd"]), "V.Panel(", "the engine element wins over the shadowing component")
+	var warned := false
+	for d in shadowed["diagnostics"]:
+		if d["code"] == "GUITKX0151":
+			warned = true
+	_check_true(warned, "GUITKX0151 warns that the component is shadowed (got %s)" % str(shadowed["diagnostics"]))
+	# The removed lowercase element tags error too (structural lowercase factories stay valid).
+	var low := RUIGuitkx.compile("component L() {\n\treturn ( <vbox /> )\n}\n", "L")
+	_check_true(not bool(low["ok"]), "removed lowercase <vbox> no longer compiles")
 
 func _test_vocabulary() -> void:
 	# T0.3: vocabulary.json is the single source of truth. The compiler tables must come from it…

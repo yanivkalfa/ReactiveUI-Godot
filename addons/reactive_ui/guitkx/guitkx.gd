@@ -1775,6 +1775,8 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	elif host_tags().has(tag):
 		is_host = true
 		factory = host_tags()[tag]
+		if (ctx.get("module_comps", {}) as Dictionary).has(tag) or (ctx.get("known_components", {}) as Dictionary).has(tag):
+			_shadowed_tag(ctx, nd, tag)   # engine names are reserved — curated tags included
 	elif ClassDB.class_exists(tag) and ClassDB.can_instantiate(tag) and ClassDB.is_parent_class(tag, "Node"):
 		# Open vocabulary (0.9.0 naming loyalty): any instantiable ClassDB Node class IS a host
 		# tag — emitted through the generic V.h, so the full official Control set works from
