@@ -1,6 +1,6 @@
 component X(v: int = 0) {
   return (
-    <VBox>
+    <VBoxContainer>
       @match (v) {
         @case (0) {
           return (
@@ -18,6 +18,6 @@ component X(v: int = 0) {
           )
         }
       }
-    </VBox>
+    </VBoxContainer>
   )
 }

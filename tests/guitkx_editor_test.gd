@@ -624,10 +624,10 @@ func _test_wave2_completion() -> void:
 	var s6 := RET + "<Button " + END
 	items = GuitkxCompletion.for_caret(s6, (RET + "<Button ").length())
 	names = items.map(func(it): return str((it as Dictionary).get("display", "")))
-	_ok(names.has("onClick") and names.has("on_pressed"), "both event spellings offered")
+	_ok(names.has("onPressed") and names.has("on_pressed"), "both event spellings offered")
 	_ok(names.has("on_gui_input"), "verbatim escape hatch covers every signal")
 	var inserts: Array = items.map(func(it): return str((it as Dictionary).get("insert", "")))
-	_ok(inserts.has("onClick={}") and inserts.has("text=\"\""), "attr inserts are snippet-shaped (G20)")
+	_ok(inserts.has("onPressed={}") and inserts.has("text=\"\""), "attr inserts are snippet-shaped (G20)")
 
 	# Context: the attr name resolves through braces (style value) and plain quotes.
 	var c1 := GuitkxContext.classify(s3, (RET + "<Label style={ {\"").length())
@@ -669,7 +669,7 @@ func _test_refs_and_rename() -> void:
 	var a_path := "res://tests/__refs_a.guitkx"
 	var b_path := "res://tests/__refs_b.guitkx"
 	var a_src := "@class_name RefsWidget\n\ncomponent RefsWidget() {\n\treturn (\n\t\t<Label text=\"w\" />\n\t)\n}\n"
-	var b_src := "component RefsHost() {\n\tvar x = 1\n\tvar y = x <RefsWidgetFake_not_a_tag\n\treturn (\n\t\t<VBox>\n\t\t\t<RefsWidget />\n\t\t\t<RefsWidget key=\"2\" />\n\t\t</VBox>\n\t)\n}\n"
+	var b_src := "component RefsHost() {\n\tvar x = 1\n\tvar y = x <RefsWidgetFake_not_a_tag\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t<RefsWidget />\n\t\t\t<RefsWidget key=\"2\" />\n\t\t</VBoxContainer>\n\t)\n}\n"
 	for pair in [[a_path, a_src], [b_path, b_src]]:
 		var f := FileAccess.open(pair[0], FileAccess.WRITE)
 		f.store_string(pair[1])
@@ -957,7 +957,7 @@ func _test_signature() -> void:
 	_ok((sig2.get("params", []) as Array).size() == 3, "item_clicked exposes all three params")
 
 	# React alias: onChange on OptionButton binds item_selected.
-	var src3 := "component S() {\n\treturn (\n\t\t<OptionButton onChange={ func (idx): pass } />\n\t)\n}\n"
+	var src3 := "component S() {\n\treturn (\n\t\t<OptionButton onItemSelected={ func (idx): pass } />\n\t)\n}\n"
 	var sig3: Dictionary = Sig.signature_at(src3, src3.find("func (") + "func (".length())
 	_ok(str(sig3.get("signal", "")) == "item_selected", "React alias resolves polymorphically")
 
@@ -1018,13 +1018,13 @@ func _test_wave7_editing() -> void:
 
 	# G30: Enter with the caret between >|</ splits the pair around an indented middle line.
 	var ce: CodeEdit = CodeEditScript.new()
-	ce.text = "\t\t<VBox></VBox>"
+	ce.text = "\t\t<VBoxContainer></VBoxContainer>"
 	ce.set_caret_line(0)
-	ce.set_caret_column("\t\t<VBox>".length())
+	ce.set_caret_column("\t\t<VBoxContainer>".length())
 	_ok(ce.handle_enter_between_tags(), "enter-between-tags arms on >|</")
 	_ok(ce.get_line_count() == 3, "pair splits onto three lines")
 	_ok(ce.get_line(1) == "\t\t  ", "middle line indents one level deeper")
-	_ok(ce.get_line(2) == "\t\t</VBox>", "closing tag keeps the base indent")
+	_ok(ce.get_line(2) == "\t\t</VBoxContainer>", "closing tag keeps the base indent")
 	_ok(ce.get_caret_line() == 1 and ce.get_caret_column() == 4, "caret lands on the middle line")
 	ce.undo()
 	_ok(ce.get_line_count() == 1, "the split is one undo step")
@@ -1087,7 +1087,7 @@ func _test_tokenizer_corpus() -> void:
 		["\"text run\"", { 0: "string", 9: "string" }],
 		["'sq'", { 0: "string" }],
 		["<Label />", { 0: "symbol", 1: "tag", 5: "tag", 7: "symbol", 8: "symbol" }],
-		["</VBox>", { 0: "symbol", 1: "symbol", 2: "tag", 6: "symbol" }],
+		["</VBoxContainer>", { 0: "symbol", 1: "symbol", 2: "tag", 6: "symbol" }],
 		["< 5", { 0: "symbol", 2: "number" }],
 		["@if cond", { 0: "directive", 2: "directive", 4: "" }],
 		["@ x", { 0: "symbol" }],
@@ -1204,7 +1204,7 @@ func _test_source_map() -> void:
 # hook stubs byte-identical to hooks.gd, misspelled-decl recovery, markup neutralization.
 func _test_virtual_doc() -> void:
 	const VD := preload("res://addons/reactive_ui_editor/lsp/guitkx_virtual_doc.gd")
-	var src := "component Probe(title) {\n\tvar b := Button.new()\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ title } />\n\t\t\t@if (b.visible) {\n\t\t\t\t<Label text={ str(b.text) } />\n\t\t\t}\n\t\t</VBox>\n\t)\n}\n"
+	var src := "component Probe(title) {\n\tvar b := Button.new()\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t<Label text={ title } />\n\t\t\t@if (b.visible) {\n\t\t\t\t<Label text={ str(b.text) } />\n\t\t\t}\n\t\t</VBoxContainer>\n\t)\n}\n"
 	var built: Dictionary = VD.build(src)
 	var gen := str(built["text"])
 	var map: RefCounted = built["map"]
@@ -1222,7 +1222,7 @@ func _test_virtual_doc() -> void:
 	for probe: int in [src.find("{ title }") + 2, src.find("Button.new"), src.find("b.visible")]:
 		var g: int = map.to_generated(probe)
 		_ok(g >= 0 and map.to_source(g) == probe, "offset %d round-trips through the map" % probe)
-	_ok(map.to_generated(src.find("<VBox>") + 1) == -1, "markup offsets stay unmapped (glue)")
+	_ok(map.to_generated(src.find("<VBoxContainer>") + 1) == -1, "markup offsets stay unmapped (glue)")
 
 	# Hook-stub parity: every stub's signature text must appear VERBATIM in hooks.gd (the same
 	# discipline the TS twin asserts in core.test.ts — three implementations, one authority).
@@ -1246,8 +1246,8 @@ func _test_virtual_doc() -> void:
 	_ok(hgen.contains("static func useThing(a: int, b := 2):"), "hook keeps name+params; tuple hint dropped")
 
 	# Markup nested inside an expression neutralizes to length-preserving null padding.
-	var n := VD._neutralize_markup("open and <Panel/> ")
-	_ok(n.length() == "open and <Panel/> ".length() and n.contains("null") and not n.contains("<Panel"),
+	var n := VD._neutralize_markup("open and <PanelContainer/> ")
+	_ok(n.length() == "open and <PanelContainer/> ".length() and n.contains("null") and not n.contains("<Panel"),
 		"nested markup neutralizes length-preserving")
 	var blk := "return <s></a>\nvar ok := 1\n"
 	var nb := VD._neutralize_setup_markup(blk)
@@ -1259,7 +1259,7 @@ func _test_virtual_doc() -> void:
 # asserted — instance() null, editor pipeline unaffected. Both paths stay covered somewhere.
 func _test_analyzer_bridge() -> void:
 	const Bridge := preload("res://addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd")
-	var src := "component Probe(title) {\n\tvar b := Button.new()\n\treturn (\n\t\t<VBox>\n\t\t\t<Label text={ title } />\n\t\t\t<Label text={ str(b.text) } />\n\t\t</VBox>\n\t)\n}\n"
+	var src := "component Probe(title) {\n\tvar b := Button.new()\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t<Label text={ title } />\n\t\t\t<Label text={ str(b.text) } />\n\t\t</VBoxContainer>\n\t)\n}\n"
 	if not Bridge.available():
 		print("[guitkx_editor_test]    (native analyzer ABSENT - asserting the degrade path)")
 		_ok(Bridge.instance() == null, "absent extension -> instance() is null")
@@ -1339,8 +1339,8 @@ func _test_analyzer_bridge() -> void:
 			"edits arrive descending (splice-safe)")
 
 	# Markup offsets are not the analyzer's domain.
-	_ok(not bridge.is_embedded_offset(p, src, src.find("<VBox>") + 1), "tag offsets stay unmapped")
-	_ok(bridge.completions(p, src, src.find("<VBox>") + 1).is_empty(),
+	_ok(not bridge.is_embedded_offset(p, src, src.find("<VBoxContainer>") + 1), "tag offsets stay unmapped")
+	_ok(bridge.completions(p, src, src.find("<VBoxContainer>") + 1).is_empty(),
 		"markup-caret queries return empty (markup tier owns them)")
 
 	# View integration: an embedded type error flows into the diagnostics pipeline as a GD: row.

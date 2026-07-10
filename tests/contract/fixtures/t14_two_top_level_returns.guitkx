@@ -1,7 +1,7 @@
 component TwoReturns {
-  return ( <label text="first" /> )
+  return ( <Label text="first" /> )
   var x = 5
   return (
-    <label text="last wins" />
+    <Label text="last wins" />
   )
 }

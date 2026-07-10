@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":80,\"attrs\":[{\"at\":86,\"end\":113,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":94}],\"children\":[{\"at\":121,\"attrs\":[{\"at\":128,\"end\":162,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"•  \\\" + str(item[\\\"text\\\"])\",\"vat\":135},{\"at\":163,\"end\":191,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"expand_h\\\": true}\",\"vat\":171}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":201,\"attrs\":[{\"at\":209,\"end\":219,\"kind\":\"str\",\"name\":\"text\",\"value\":\" ✕ \",\"vat\":215},{\"at\":220,\"end\":265,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): onRemove.call(item[\\\"id\\\"])\",\"vat\":230}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":5,\"t\":\"el\",\"tag\":\"HBox\"}]"
+			"tree": "[{\"at\":80,\"attrs\":[{\"at\":95,\"end\":122,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":103}],\"children\":[{\"at\":130,\"attrs\":[{\"at\":137,\"end\":171,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"•  \\\" + str(item[\\\"text\\\"])\",\"vat\":144},{\"at\":172,\"end\":233,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"size_flags_horizontal\\\": Control.SIZE_EXPAND_FILL}\",\"vat\":180}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":243,\"attrs\":[{\"at\":251,\"end\":261,\"kind\":\"str\",\"name\":\"text\",\"value\":\" ✕ \",\"vat\":257},{\"at\":262,\"end\":309,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): onRemove.call(item[\\\"id\\\"])\",\"vat\":274}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":5,\"t\":\"el\",\"tag\":\"HBoxContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 283,
+			"end": 336,
 			"start": 75
 		}
 	]

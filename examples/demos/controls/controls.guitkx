@@ -6,15 +6,15 @@ component DemoControls {
     <DemoBox title="Controls — a slice of the 60-control set">
       <CheckButton text="CheckButton" />
       <CheckBox text="CheckBox" />
-      <HBox style={ {"separation": 8} }>
+      <HBoxContainer style={ {"separation": 8} }>
         <HSlider
           min_value={ 0 }
           max_value={ 100 }
           value={ v[0] }
-          onChange={ func(x): v[1].call(x) }
+          onValueChanged={ func(x): v[1].call(x) }
           style={ {"min_width": 220} } />
         <Label text={ "%d" % int(v[0]) } />
-      </HBox>
+      </HBoxContainer>
       <ProgressBar min_value={ 0 } max_value={ 100 } value={ v[0] } style={ {"min_width": 260} } />
       <Label text="ItemList:" />
       <ItemList items={ ["Apple", "Banana", "Cherry", "Date"] } style={ {"min_height": 90} } />

@@ -4,9 +4,9 @@ extends RefCounted
 
 # component A
 static func A(props: Dictionary, children: Array) -> RUIVNode:
-	return V.label({ "text": "a" })
+	return V.Label({ "text": "a" })
 
 # component B
 static func B(props: Dictionary, children: Array) -> RUIVNode:
-	return V.button({ "text": "b" })
+	return V.Button({ "text": "b" })
 

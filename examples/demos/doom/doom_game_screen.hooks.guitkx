@@ -17,7 +17,7 @@ module DoomGameScreenHooks {
   ## a compounding waste that made a slow frame much slower.
   ##
   ## Returns { state, restart } -- the original's onKeyDown/onPointerMove/
-  ## onPointerDown/onPointerUp callables aren't needed here since the
+  ## onButtonDown/onButtonUp callables aren't needed here since the
   ## bootstrap script owns raw input capture directly (plan §1.5).
   hook use_doom_game(view_ref: Dictionary, level: int, difficulty: int) -> Dictionary {
     var initial_state = Hooks.useMemo(func(): return GameLogic.new_game(level, difficulty), [level, difficulty])

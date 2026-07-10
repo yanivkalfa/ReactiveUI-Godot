@@ -5,61 +5,61 @@ component DemoDirectives(items: Array = ["alpha", "beta"], mode: int = 1) {
   var count = useState(items.size())
   var style_base = { "modulate": Color(1, 1, 1) }
   return (
-    <vbox>
+    <VBoxContainer>
       // markup line comment
       /* markup block
 			   comment */
       <!-- html-style comment -->
-      <label {/* attr-list comment */} text="every directive lives here" />
+      <Label {/* attr-list comment */} text="every directive lives here" />
       @if (mode == 1) {
         return (
-          <label text="one" />
+          <Label text="one" />
         )
       } @elif (mode == 2) {
         return (
-          <label text="two" />
+          <Label text="two" />
         )
       } @else {
         return (
-          <label text="other" />
+          <Label text="other" />
         )
       }
       @for (it in items) {
         return (
-          <label key={ str(it) } text={ str(it) } />
+          <Label key={ str(it) } text={ str(it) } />
         )
       }
       @for (i in 3) {
         return (
           <Fragment key={ str(i) }>
-            <label text={ "row %d" % i } />
+            <Label text={ "row %d" % i } />
           </Fragment>
         )
       }
       @while (false) {
         return (
-          <label key="never" text="unreached" />
+          <Label key="never" text="unreached" />
         )
       }
       @match (mode) {
         @case (1) {
           return (
-            <label text="case one" />
+            <Label text="case one" />
           )
         }
         @case (2) {
           return (
-            <label text="case two" />
+            <Label text="case two" />
           )
         }
         @default {
           return (
-            <label text="default" />
+            <Label text="default" />
           )
         }
       }
-      <vbox {...style_base} key="spread-key" />
+      <VBoxContainer {...style_base} key="spread-key" />
       { count[0] }
-    </vbox>
+    </VBoxContainer>
   )
 }

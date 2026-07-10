@@ -109,9 +109,14 @@ func _initialize() -> void:
 	quit(0)
 
 func _compile_patterns() -> void:
-	_rx["tag"] = _mk("(</?)(%s)\\b" % "|".join(TAG_RENAMES.keys()))
-	_rx["ltag"] = _mk("(</?)(%s)\\b" % "|".join(FACTORY_RENAMES.keys()))
-	_rx["factory"] = _mk("\\bV\\.(%s)\\(" % "|".join(FACTORY_RENAMES.keys()))
+	# Tag patterns demand a markup-shaped tail (whitespace, `>`, or `/`), so a comparison in
+	# embedded GDScript (`i<tree.size()`, `a<label:`) can never be rewritten.
+	_rx["tag"] = _mk("(</?)(%s)\\b(?=[\\s/>])" % "|".join(TAG_RENAMES.keys()))
+	_rx["ltag"] = _mk("(</?)(%s)\\b(?=[\\s/>])" % "|".join(FACTORY_RENAMES.keys()))
+	# \b alone misses `V.` preceded by a literal \t/\n ESCAPE inside a GDScript string (the 't'
+	# is a word char) — sources that build component code as strings (HMR tests, generators) hit
+	# this, so allow an escape-sequence lookbehind too.
+	_rx["factory"] = _mk("(?:\\b|(?<=\\\\t)|(?<=\\\\n))V\\.(%s)\\(" % "|".join(FACTORY_RENAMES.keys()))
 	_rx["event"] = _mk("\\b(%s)\\b" % "|".join(EVENT_RENAMES.keys()))
 	_rx["onchange"] = _mk("\\bonChange\\b")
 	_rx["stylekey"] = _mk("\"(%s)\"\\s*:" % "|".join(STYLE_KEY_RENAMES.keys()))
@@ -157,9 +162,11 @@ func _migrate_file(path: String, is_guitkx: bool) -> void:
 		return
 	var out := src
 
-	# 1. tags (guitkx only): PascalCase shorthands, then lowercase element tags.
-	if is_guitkx:
-		out = _sub2(_rx["tag"], out, func(m): return m.get_string(1) + TAG_RENAMES[m.get_string(2)])
+	# 1. tags: PascalCase shorthands, then lowercase element tags. Applied to .gd too —
+	# markup embedded in GDScript strings (tests, generators, compile() callers) is a real
+	# pattern, and the `<`-anchored patterns can't collide with comparisons (`a < b` has a space).
+	out = _sub2(_rx["tag"], out, func(m): return m.get_string(1) + TAG_RENAMES[m.get_string(2)])
+	if is_guitkx or out.contains("<"):
 		out = _sub2(_rx["ltag"], out, func(m): return m.get_string(1) + FACTORY_RENAMES[m.get_string(2)])
 
 	# 2. factories (both file kinds — .guitkx embed GDScript).

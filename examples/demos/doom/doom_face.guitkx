@@ -9,9 +9,9 @@ component DoomFace(frame: int = 0) {
   var border = Color(0.85, 0.55, 0.20, 1.0)
   var label_clr = Color(0.85, 0.70, 0.35, 1.0)
   return (
-    <Panel style={ {"bg_color": panel_bg, "border_color": border, "border_width": 1, "corner_radius": 2, "min_width": 76} }>
-      <Margin style={ {"margin": 4} }>
-        <VBox style={ {"separation": 2} }>
+    <PanelContainer style={ {"bg_color": panel_bg, "border_color": border, "border_width_all": 1, "corner_radius_all": 2, "min_width": 76} }>
+      <MarginContainer style={ {"margin_left": 4, "margin_top": 4, "margin_right": 4, "margin_bottom": 4} }>
+        <VBoxContainer style={ {"separation": 2} }>
           <Label
             text="DOOMGUY"
             horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
@@ -20,10 +20,10 @@ component DoomFace(frame: int = 0) {
           <TextureRect
             texture={ faces[idx] }
             stretch_mode={ TextureRect.STRETCH_KEEP_CENTERED }
-            style={ {"min_size": Vector2(64, 64)} }
+            style={ {"custom_minimum_size": Vector2(64, 64)} }
           />
-        </VBox>
-      </Margin>
-    </Panel>
+        </VBoxContainer>
+      </MarginContainer>
+    </PanelContainer>
   )
 }

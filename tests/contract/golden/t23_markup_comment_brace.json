@@ -9,7 +9,7 @@
 		{
 			"code": "GUITKX2103",
 			"len": 1,
-			"off": 222,
+			"off": 231,
 			"severity": 0
 		}
 	],
@@ -18,13 +18,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":43,\"attrs\":[],\"children\":[{\"at\":53,\"raw\":\"// TODO: revisit }\",\"t\":\"comment\"},{\"at\":75,\"attrs\":[{\"at\":82,\"end\":90,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":88}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"label\"},{\"at\":97,\"raw\":\"<!-- a comment with a stray } inside -->\",\"t\":\"comment\"},{\"at\":141,\"attrs\":[{\"at\":148,\"end\":156,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":154}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"label\"},{\"at\":163,\"branches\":[{\"body_at\":175,\"body_markup\":\"\\n\\t\\t\\t\\t/* a block comment with a } inside */\\n\\t\\t\\t\\t<label text=\\\"c\\\" />\\n\\t\\t\\t\",\"cond\":\"true\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":43,\"attrs\":[],\"children\":[{\"at\":62,\"raw\":\"// TODO: revisit }\",\"t\":\"comment\"},{\"at\":84,\"attrs\":[{\"at\":91,\"end\":99,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":97}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":106,\"raw\":\"<!-- a comment with a stray } inside -->\",\"t\":\"comment\"},{\"at\":150,\"attrs\":[{\"at\":157,\"end\":165,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":163}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":172,\"branches\":[{\"body_at\":184,\"body_markup\":\"\\n\\t\\t\\t\\t/* a block comment with a } inside */\\n\\t\\t\\t\\t<Label text=\\\"c\\\" />\\n\\t\\t\\t\",\"cond\":\"true\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
 		}
 	],
 	"ok": false,
 	"windows": [
 		{
-			"end": 257,
+			"end": 275,
 			"start": 40
 		}
 	]

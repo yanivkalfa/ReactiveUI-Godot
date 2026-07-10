@@ -1,9 +1,9 @@
 component First {
   return (
-    <label text="a" />
+    <Label text="a" />
   )
 }
 
 component Second() {
-	return ( <label text="b" /> )
+	return ( <Label text="b" /> )
 }

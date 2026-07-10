@@ -9,7 +9,7 @@
 		{
 			"code": "GUITKX0150",
 			"len": 15,
-			"off": 138,
+			"off": 147,
 			"severity": 1
 		}
 	],
@@ -18,13 +18,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":45,\"attrs\":[],\"children\":[{\"at\":58,\"branches\":[{\"body_at\":67,\"body_markup\":\"\\n        return (\\n          <Label text=\\\"a\\\" />\\n        )\\n      \",\"cond\":\"c\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"},{\"at\":138,\"t\":\"text\",\"value\":\"#elif (false) {\"},{\"at\":160,\"attrs\":[{\"at\":167,\"end\":175,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":173}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":185,\"t\":\"text\",\"value\":\"}\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBox\"}]"
+			"tree": "[{\"at\":45,\"attrs\":[],\"children\":[{\"at\":67,\"branches\":[{\"body_at\":76,\"body_markup\":\"\\n        return (\\n          <Label text=\\\"a\\\" />\\n        )\\n      \",\"cond\":\"c\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"},{\"at\":147,\"t\":\"text\",\"value\":\"#elif (false) {\"},{\"at\":169,\"attrs\":[{\"at\":176,\"end\":184,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":182}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":194,\"t\":\"text\",\"value\":\"}\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 201,
+			"end": 219,
 			"start": 40
 		}
 	]

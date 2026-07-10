@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":116,\"attrs\":[{\"at\":123,\"end\":184,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": accent, \\\"corner_radius\\\": 6, \\\"pad\\\": 12}\",\"vat\":131}],\"children\":[{\"at\":192,\"attrs\":[{\"at\":199,\"end\":227,\"kind\":\"str\",\"name\":\"text\",\"value\":\"I'm tinted by context\",\"vat\":205},{\"at\":228,\"end\":265,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color.WHITE}\",\"vat\":236}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"Panel\"}]"
+			"tree": "[{\"at\":116,\"attrs\":[{\"at\":132,\"end\":212,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": accent, \\\"corner_radius_all\\\": 6, \\\"content_margin_all\\\": 12}\",\"vat\":140}],\"children\":[{\"at\":220,\"attrs\":[{\"at\":227,\"end\":255,\"kind\":\"str\",\"name\":\"text\",\"value\":\"I'm tinted by context\",\"vat\":233},{\"at\":256,\"end\":293,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color.WHITE}\",\"vat\":264}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"PanelContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 284,
+			"end": 321,
 			"start": 111
 		}
 	]

@@ -37,7 +37,7 @@ component DoomGame {
   , [screen[0]])
 
   return (
-    <Control style={ {"expand_h": true, "expand_v": true} }>
+    <Control style={ {"size_flags_horizontal": Control.SIZE_EXPAND_FILL, "size_flags_vertical": Control.SIZE_EXPAND_FILL} }>
       @if (screen[0] == DoomTypes.GameScreen.MAIN_MENU) {
         return (
           <DoomMainMenu

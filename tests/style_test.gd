@@ -54,7 +54,7 @@ func _test_style_apply_and_reset() -> void:
 		var style := { "min_width": 120, "modulate": Color(1, 0, 0) }
 		if s[0]:
 			style["font_size"] = 22
-		return V.label({ "text": "hi", "style": style })
+		return V.Label({ "text": "hi", "style": style })
 
 	var m := _mount(comp)
 	var lbl: Control = m[0].get_child(0)
@@ -78,7 +78,7 @@ func _test_theme_channels() -> void:
 		var colors := { "font_color": Color(0, 1, 0) }
 		if s[0]:
 			colors["font_outline_color"] = Color(0, 0, 1)
-		return V.label({ "text": "x", "style": { "colors": colors, "constants": { "outline_size": 3 } } })
+		return V.Label({ "text": "x", "style": { "colors": colors, "constants": { "outline_size": 3 } } })
 
 	var m := _mount(comp)
 	var lbl: Control = m[0].get_child(0)
@@ -96,7 +96,7 @@ func _test_theme_channels() -> void:
 
 func _test_stylebox_builder() -> void:
 	var comp := func(_p, _ch):
-		return V.panel({ "style": { "bg_color": Color(0.2, 0.2, 0.2), "corner_radius": 8, "border_width": 2, "border_color": Color(1, 1, 1) } })
+		return V.PanelContainer({ "style": { "bg_color": Color(0.2, 0.2, 0.2), "corner_radius_all": 8, "border_width_all": 2, "border_color": Color(1, 1, 1) } })
 	var m := _mount(comp)
 	var panel: Control = m[0].get_child(0)
 	var sb := panel.get_theme_stylebox("panel")
@@ -109,16 +109,16 @@ func _test_stylebox_builder() -> void:
 
 func _test_elements_instantiate() -> void:
 	var comp := func(_p, _ch):
-		return V.vbox({}, [
-			V.button({ "text": "B" }),
-			V.check_button({ "text": "C" }),
-			V.option_button({}),
-			V.h_slider({}),
-			V.progress_bar({ "value": 50 }),
-			V.rich_text({ "text": "rt" }),
-			V.tabs({}),
-			V.tree({}),
-			V.item_list({}),
+		return V.VBoxContainer({}, [
+			V.Button({ "text": "B" }),
+			V.CheckButton({ "text": "C" }),
+			V.OptionButton({}),
+			V.HSlider({}),
+			V.ProgressBar({ "value": 50 }),
+			V.RichTextLabel({ "text": "rt" }),
+			V.TabContainer({}),
+			V.Tree({}),
+			V.ItemList({}),
 		])
 	var m := _mount(comp)
 	var vbox: Node = m[0].get_child(0)

@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":344,\"attrs\":[{\"at\":350,\"end\":377,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":358}],\"children\":[{\"at\":385,\"attrs\":[{\"at\":392,\"end\":420,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Count: %d\\\" % count\",\"vat\":399}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":430,\"attrs\":[{\"at\":438,\"end\":447,\"kind\":\"str\",\"name\":\"text\",\"value\":\"+1\",\"vat\":444},{\"at\":448,\"end\":493,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): set_count.call(count + 1)\",\"vat\":458}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":503,\"branches\":[{\"body_at\":520,\"body_markup\":\"\\n        return (\\n          <Label text=\\\"High five!\\\" />\\n        )\\n      \",\"cond\":\"count > 5\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":10,\"t\":\"el\",\"tag\":\"VBox\"}]"
+			"tree": "[{\"at\":344,\"attrs\":[{\"at\":359,\"end\":386,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":367}],\"children\":[{\"at\":394,\"attrs\":[{\"at\":401,\"end\":429,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"Count: %d\\\" % count\",\"vat\":408}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":439,\"attrs\":[{\"at\":447,\"end\":456,\"kind\":\"str\",\"name\":\"text\",\"value\":\"+1\",\"vat\":453},{\"at\":457,\"end\":504,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): set_count.call(count + 1)\",\"vat\":469}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":514,\"branches\":[{\"body_at\":531,\"body_markup\":\"\\n        return (\\n          <Label text=\\\"High five!\\\" />\\n        )\\n      \",\"cond\":\"count > 5\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":10,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 608,
+			"end": 628,
 			"start": 339
 		}
 	]

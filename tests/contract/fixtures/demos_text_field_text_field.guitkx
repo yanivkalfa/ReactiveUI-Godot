@@ -7,7 +7,7 @@ component DemoTextField {
       <LineEdit
         text={ s[0] }
         placeholder_text="Type something…"
-        onChange={ func(t): s[1].call(t) }
+        onTextChanged={ func(t): s[1].call(t) }
         style={ {"min_width": 280} } />
       <Label text={ "You typed: \"%s\"  (%d chars)" % [s[0], s[0].length()] } />
     </DemoBox>

@@ -1,5 +1,5 @@
 component ForOnly() {
 	@for (i in 25) { return (
-		<label text={ str(i) } />
+		<Label text={ str(i) } />
 	) }
 }

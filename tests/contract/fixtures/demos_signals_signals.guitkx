@@ -10,7 +10,7 @@ component DemoSignals {
       <DemoSignalsDisplay />
       <Button
         text="Increment shared signal"
-        onClick={ func(): DemoSignalsStore.shared.update(func(v): return v + 1) } />
+        onPressed={ func(): DemoSignalsStore.shared.update(func(v): return v + 1) } />
     </DemoBox>
   )
 }

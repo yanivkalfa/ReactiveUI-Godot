@@ -1,15 +1,15 @@
 component Comments {
   return (
     // leading note
-    <vbox>
+    <VBoxContainer>
       /* block
 			   note */
-      <label {/* attr note */} text="a" />
+      <Label {/* attr note */} text="a" />
       <!-- html-style -->
       @if (true) {
         return ( // inside a body
-				<label text="b" /> )
+				<Label text="b" /> )
       }
-    </vbox>
+    </VBoxContainer>
   )
 }

@@ -77,7 +77,7 @@ static func use_stress_loop(area_ref: Dictionary, box_count: int, duration: floa
 			var cur_fps: float = (s["frames"] / s["total_ms"]) if s["total_ms"] > 0 else 0.0
 			if s["elapsed"] >= duration_ref["current"]:
 				fps[1].call(cur_fps); elapsed[1].call(s["elapsed"]); frames[1].call(s["frames"]); finished[1].call(true)
-				set_running.call(false)   # stop from the ticker (no stale-finished race on restart)
+				set_running.call(false) # stop from the ticker (no stale-finished race on restart)
 				return
 			s["boxes"] = step_boxes(s["boxes"], dt, s["w"], s["h"])
 			boxes[1].call(s["boxes"])

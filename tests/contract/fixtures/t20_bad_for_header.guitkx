@@ -1,11 +1,11 @@
 component T20 {
   return (
-    <vbox>
+    <VBoxContainer>
       @for (i in 2: int5) {
         return (
-          <label key={ str(i) } text="x" />
+          <Label key={ str(i) } text="x" />
         )
       }
-    </vbox>
+    </VBoxContainer>
   )
 }

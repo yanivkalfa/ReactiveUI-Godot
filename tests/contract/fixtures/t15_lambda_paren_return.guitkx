@@ -3,8 +3,8 @@ component LambdaGuard(items: Array = []) {
     return (i * 2)
   var total = 0
   return (
-    <vbox>
-      <label text={ str(pick.call(3)) } />
-    </vbox>
+    <VBoxContainer>
+      <Label text={ str(pick.call(3)) } />
+    </VBoxContainer>
   )
 }

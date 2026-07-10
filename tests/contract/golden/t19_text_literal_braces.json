@@ -9,7 +9,7 @@
 		{
 			"code": "GUITKX0150",
 			"len": 16,
-			"off": 82,
+			"off": 91,
 			"severity": 1
 		}
 	],
@@ -18,13 +18,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":53,\"attrs\":[],\"children\":[{\"at\":66,\"attrs\":[],\"children\":[{\"at\":82,\"t\":\"text\",\"value\":\"Count: {n} items\"}],\"line\":4,\"t\":\"el\",\"tag\":\"label\"},{\"at\":120,\"attrs\":[],\"children\":[{\"at\":136,\"code\":\"n\",\"t\":\"expr\",\"vat\":138},{\"at\":150,\"t\":\"text\",\"value\":\"at node start\"}],\"line\":7,\"t\":\"el\",\"tag\":\"label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":53,\"attrs\":[],\"children\":[{\"at\":75,\"attrs\":[],\"children\":[{\"at\":91,\"t\":\"text\",\"value\":\"Count: {n} items\"}],\"line\":4,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":129,\"attrs\":[],\"children\":[{\"at\":145,\"code\":\"n\",\"t\":\"expr\",\"vat\":147},{\"at\":159,\"t\":\"text\",\"value\":\"at node start\"}],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 193,
+			"end": 211,
 			"start": 48
 		}
 	]

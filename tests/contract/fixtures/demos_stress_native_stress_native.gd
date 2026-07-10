@@ -2,6 +2,10 @@ class_name DemoStressNative
 extends RefCounted
 ## AUTO-GENERATED from demos_stress_native_stress_native.guitkx -- do not edit.
 
+const __RUI_HOOK_SIG := "useState|useState|useState|useState|useState|useState|useRef"
+
+const __RUI_KIND := "component"
+
 static func render(props: Dictionary, children: Array) -> RUIVNode:
 	var box_count = Hooks.useState(300)
 	var duration = Hooks.useState(10.0)
@@ -29,4 +33,4 @@ static func render(props: Dictionary, children: Array) -> RUIVNode:
 			duration[1].call(d)
 			version[1].call(version[0] + 1)
 			running[1].call(true)
-	return V.fc(DemoBox.render, { "title": "Native stress test — raw ColorRects, no reconciler (engine ceiling)" }, [V.hbox({ "style": {"separation": 8} }, [V.label({ "text": status, "style": {"expand_h": true} }), V.label({ "text": "Boxes:" }), V.line_edit({ "text": count_text[0], "onChange": func(t): count_text[1].call(t), "style": {"min_width": 70} }), V.label({ "text": "Secs:" }), V.line_edit({ "text": dur_text[0], "onChange": func(t): dur_text[1].call(t), "style": {"min_width": 50} }), V.button({ "text": "Running…" if running[0] else ("Restart" if loop["finished"] else "Start"), "onClick": start })]), V.control({ "ref": area_ref, "clip_contents": true, "style": {"expand_h": true, "expand_v": true, "min_height": 320} })])
+	return V.fc(DemoBox.render, { "title": "Native stress test — raw ColorRects, no reconciler (engine ceiling)" }, [V.HBoxContainer({ "style": {"separation": 8} }, [V.Label({ "text": status, "style": {"size_flags_horizontal": Control.SIZE_EXPAND_FILL} }), V.Label({ "text": "Boxes:" }), V.LineEdit({ "text": count_text[0], "onTextChanged": func(t): count_text[1].call(t), "style": {"min_width": 70} }), V.Label({ "text": "Secs:" }), V.LineEdit({ "text": dur_text[0], "onTextChanged": func(t): dur_text[1].call(t), "style": {"min_width": 50} }), V.Button({ "text": "Running…" if running[0] else ("Restart" if loop["finished"] else "Start"), "onPressed": start })]), V.Control({ "ref": area_ref, "clip_contents": true, "style": {"size_flags_horizontal": Control.SIZE_EXPAND_FILL, "size_flags_vertical": Control.SIZE_EXPAND_FILL, "min_height": 320} })])

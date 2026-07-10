@@ -56,12 +56,12 @@ component DoomGameScreen(restart_version: int = 0,
   var white = Color(1.0, 1.0, 1.0, 1.0)
 
   return (
-    <VBox mouse_filter={ Control.MOUSE_FILTER_IGNORE } style={ {"separation": 0} }>
+    <VBoxContainer mouse_filter={ Control.MOUSE_FILTER_IGNORE } style={ {"separation": 0} }>
       // ── 3D viewport ──
       <Control
         ref={ view_ref }
         mouse_filter={ Control.MOUSE_FILTER_IGNORE }
-        style={ {"min_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H), "clip": true, "texture_filter": CanvasItem.TEXTURE_FILTER_NEAREST} }
+        style={ {"custom_minimum_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H), "clip_contents": true, "texture_filter": CanvasItem.TEXTURE_FILTER_NEAREST} }
       >
         // Sky
         <TextureRect
@@ -136,7 +136,7 @@ component DoomGameScreen(restart_version: int = 0,
                 position={ Vector2(tr.left, tr.top) }
                 size={ Vector2(tr.length, DoomTypes.C.TRACER_THICKNESS_PX) }
                 color={ Color(1.0, tcg, tcb, tr.alpha) }
-                style={ {"rotation": tr.angle_deg, "pivot": Vector2(0.0, DoomTypes.C.TRACER_THICKNESS_PX * 0.5)} } />
+                style={ {"rotation": deg_to_rad(tr.angle_deg), "pivot_offset": Vector2(0.0, DoomTypes.C.TRACER_THICKNESS_PX * 0.5)} } />
             )
           }
         </Control>
@@ -164,7 +164,7 @@ component DoomGameScreen(restart_version: int = 0,
           position={ Vector2(DoomTypes.C.VIEWPORT_W * 0.5 - 4.0, DoomTypes.C.VIEWPORT_H * 0.5 - 4.0) }
           size={ Vector2(8.0, 8.0) }
           color={ Color(0.95, 0.95, 0.5, 0.7) }
-          style={ {"corner_radius": 4} } />
+          style={ {"corner_radius_all": 4} } />
         // Hurt flash overlay.
         <ColorRect
           key="hurt_flash"
@@ -197,50 +197,50 @@ component DoomGameScreen(restart_version: int = 0,
         // Game-over overlay.
         @if (state.game_over) {
           return (
-            <Panel
+            <PanelContainer
               key="gameover"
               position={ Vector2(0, 0) }
               size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
               style={ {"bg_color": overlay_bg} }
             >
-              <Center
+              <CenterContainer
                 position={ Vector2(0, 0) }
                 size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
               >
-                <VBox style={ {"separation": 16} }>
+                <VBoxContainer style={ {"separation": 16} }>
                   <Label
                     text="YOU DIED"
                     horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
                     style={ {"font_size": 64, "font_color": Color(0.95, 0.15, 0.10, 1.0)} } />
-                  <HBox style={ {"separation": 12} }>
+                  <HBoxContainer style={ {"separation": 12} }>
                     <Button
                       text="Restart"
-                      onClick={ func(): doom["restart"].call() }
-                      style={ {"font_size": 18, "min_size": Vector2(140, 44)} } />
+                      onPressed={ func(): doom["restart"].call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
                     <Button
                       text="Main Menu"
-                      onClick={ func(): on_exit.call() }
-                      style={ {"font_size": 18, "min_size": Vector2(140, 44)} } />
-                  </HBox>
-                </VBox>
-              </Center>
-            </Panel>
+                      onPressed={ func(): on_exit.call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
+                  </HBoxContainer>
+                </VBoxContainer>
+              </CenterContainer>
+            </PanelContainer>
           )
         }
         // Victory overlay.
         @if (state.victory) {
           return (
-            <Panel
+            <PanelContainer
               key="victory"
               position={ Vector2(0, 0) }
               size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
               style={ {"bg_color": overlay_bg} }
             >
-              <Center
+              <CenterContainer
                 position={ Vector2(0, 0) }
                 size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
               >
-                <VBox style={ {"separation": 12} }>
+                <VBoxContainer style={ {"separation": 12} }>
                   <Label
                     text="LEVEL COMPLETE"
                     horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
@@ -249,19 +249,19 @@ component DoomGameScreen(restart_version: int = 0,
                     text={ "Kills: " + str(state.kill_count) + " / " + str(state.kill_total) + "    Score: " + str(state.score) }
                     horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
                     style={ {"font_size": 18, "font_color": white} } />
-                  <HBox style={ {"separation": 12} }>
+                  <HBoxContainer style={ {"separation": 12} }>
                     <Button
                       text={ "Next Level" if level < 6 else "Finish" }
-                      onClick={ func(): on_next_level.call() }
-                      style={ {"font_size": 18, "min_size": Vector2(140, 44)} } />
+                      onPressed={ func(): on_next_level.call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
                     <Button
                       text="Main Menu"
-                      onClick={ func(): on_exit.call() }
-                      style={ {"font_size": 18, "min_size": Vector2(140, 44)} } />
-                  </HBox>
-                </VBox>
-              </Center>
-            </Panel>
+                      onPressed={ func(): on_exit.call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
+                  </HBoxContainer>
+                </VBoxContainer>
+              </CenterContainer>
+            </PanelContainer>
           )
         }
       </Control>
@@ -279,6 +279,6 @@ component DoomGameScreen(restart_version: int = 0,
         kill_total={ state.kill_total }
         map_name={ state.map.name }
         face_state={ state.player.face_state } />
-    </VBox>
+    </VBoxContainer>
   )
 }
