@@ -1,8 +1,18 @@
-# Naming loyalty proposal — 1:1 to Godot (0.9.0, breaking) — AWAITING OWNER APPROVAL
+# Naming loyalty — 1:1 to Godot (0.9.0, breaking) — APPROVED & EXECUTED
 
-**Status: PROPOSAL. No code changed.** The Godot analogue of ReactiveUI-Unreal's D-33 decision
+**Status: APPROVED by the owner 2026-07-11 and EXECUTED the same day** (branch
+`feat/naming-loyalty-0.9.0`, one PR). The Godot analogue of ReactiveUI-Unreal's D-33 decision
 ("naming is 1:1 loyal to the engine"). Companion coverage artifact:
 plans/WIDGET_INVENTORY.md (every official Control accounted for).
+
+**Final owner decisions on the open questions:** (1) factories PascalCase verbatim (`V.Button`);
+(2) `<Panel>` repointed to Godot's Panel, codemod rewrites old usages to `<PanelContainer>`;
+(3) extensions kept: `min_width`/`min_height` + the `*_all` box keys (Godot's own `set_*_all`
+spellings); the non-native `fill` was renamed to the loyal `anchors_preset`; (4) renames + all 9
+Batch-1 controls in ONE batch, one branch, one PR, released as 0.9.0; (5) editor addon → 0.7.0
+(not synced to 0.9.0). **No back-compat shims** — the codemod
+(`addons/reactive_ui/dev/migrate_0_9_0.gd`) + MIGRATION-0.9.md are the migration path; compiler/
+runtime emit exact "renamed: use X" messages for one release.
 
 **The rule:** a Godot user should never have to learn a second vocabulary. Element/tag names are
 the official Godot class names; props are the exact Godot property names; style keys are the

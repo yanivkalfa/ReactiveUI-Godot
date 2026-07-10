@@ -33,10 +33,10 @@ Create `hello.guitkx` anywhere in your project:
 component Hello {
   var count = useState(0)
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       <Label text={ "clicked %d times" % count[0] } />
-      <Button text="click me" onClick={ func(): count[1].call(count[0] + 1) } />
-    </VBox>
+      <Button text="click me" onPressed={ func(): count[1].call(count[0] + 1) } />
+    </VBoxContainer>
   )
 }
 ```

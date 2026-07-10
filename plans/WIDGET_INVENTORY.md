@@ -20,9 +20,10 @@ channels (`colors`/`constants`/`fonts`/`font_sizes`/`icons`/`styleboxes`). So *c
 coverage is already ~100%. What this inventory tracks is the **curated** surface: a named `V.*`
 factory, a `.guitkx` tag, IDE metadata (completion/hover/events), item-model adapters, and tests.
 
-**Naming rule (proposed, see plans/NAMING_LOYALTY_PROPOSAL.md):** element tag = the official
-Godot class name, verbatim; factories match tags verbatim (`V.VBoxContainer`); props = exact Godot
-property names (already true); events = `on` + PascalCase(signal name); style keys = the exact
+**Naming rule (APPROVED + SHIPPED in 0.9.0, see plans/NAMING_LOYALTY_PROPOSAL.md):** element tag
+= the official Godot class name, verbatim — and ANY instantiable ClassDB Node class is a valid
+tag (open vocabulary, emitted as `V.h`); factories match tags verbatim (`V.VBoxContainer`); props
+= exact Godot property names; events = `on` + PascalCase(signal name); style keys = the exact
 Godot property / theme-item / StyleBoxFlat names.
 
 Statuses: `SHIPPED` (named factory + tag + demo/test coverage on dev) · `BATCH-1` (0.9.x
@@ -35,7 +36,7 @@ element) · `EDITOR` (editor-module — excluded by scope decision).
 
 ## Shipped — 44 Control classes + 2 non-Control nodes
 
-Tags below are the **proposed 0.9.0 names** (= Godot class names). "own props / own signals /
+Tags below are the **shipped 0.9.0 names** (= Godot class names). "own props / own signals /
 theme items" are the class's own (non-inherited) counts from the 4.7 ClassDB/ThemeDB dump — the
 surface the generic passthrough reaches; the *Adapter / special-case* column records everything
 that is NOT plain passthrough.
@@ -50,18 +51,18 @@ that is NOT plain passthrough.
 | PanelContainer | `PanelContainer` | 0 / 0 / 1 | primary stylebox slot `panel`; capacity warn: 1 child |
 | CenterContainer | `CenterContainer` | 1 / 0 / 0 | capacity warn: 1 child |
 | ScrollContainer | `ScrollContainer` | 12 / 2 / 6 | capacity warn: 1 child |
-| HFlowContainer | `HFlowContainer` | 0 / 0 / 2 | factory only today — **no tag until 0.9.0** |
-| VFlowContainer | `VFlowContainer` | 0 / 0 / 2 | factory only today — **no tag until 0.9.0** |
+| HFlowContainer | `HFlowContainer` | 0 / 0 / 2 | |
+| VFlowContainer | `VFlowContainer` | 0 / 0 / 2 | |
 | TabContainer | `TabContainer` | 11 / 7 / 30 | |
-| HSplitContainer | `HSplitContainer` | 0 / 0 / 6 | factory only today — no tag until 0.9.0; capacity warn: 2 children |
-| VSplitContainer | `VSplitContainer` | 0 / 0 / 6 | factory only today — no tag until 0.9.0; capacity warn: 2 children |
-| AspectRatioContainer | `AspectRatioContainer` | 4 / 0 / 0 | factory only today — no tag until 0.9.0; capacity warn: 1 child |
-| FoldableContainer | `FoldableContainer` | 8 / 1 / 18 | factory only today — no tag until 0.9.0; capacity warn: 1 child |
+| HSplitContainer | `HSplitContainer` | 0 / 0 / 6 | capacity warn: 2 children |
+| VSplitContainer | `VSplitContainer` | 0 / 0 / 6 | capacity warn: 2 children |
+| AspectRatioContainer | `AspectRatioContainer` | 4 / 0 / 0 | capacity warn: 1 child |
+| FoldableContainer | `FoldableContainer` | 8 / 1 / 18 | capacity warn: 1 child |
 | Label | `Label` | 22 / 0 / 12 | text-folding tag (all-text children → `text` prop); `V.text()` leaf |
 | RichTextLabel | `RichTextLabel` | 30 / 4 / 33 | text-folding tag |
 | ColorRect | `ColorRect` | 1 / 0 / 0 | |
 | TextureRect | `TextureRect` | 5 / 0 / 0 | |
-| NinePatchRect | `NinePatchRect` | 9 / 1 / 0 | factory only today — no tag until 0.9.0 |
+| NinePatchRect | `NinePatchRect` | 9 / 1 / 0 |  |
 | HSeparator | `HSeparator` | 0 / 0 / 2 | |
 | VSeparator | `VSeparator` | 0 / 0 / 2 | |
 | Button | `Button` | 13 / 0 / 24 | text-folding tag; primary stylebox slot `normal`; state slots hover/pressed/disabled/focus |
@@ -78,15 +79,15 @@ that is NOT plain passthrough.
 | HSlider | `HSlider` | 0 / 0 / 10 | |
 | VSlider | `VSlider` | 0 / 0 / 10 | |
 | ProgressBar | `ProgressBar` | 4 / 0 / 7 | primary stylebox slot `background` |
-| TextureProgressBar | `TextureProgressBar` | 16 / 0 / 0 | factory only today — no tag until 0.9.0 |
-| ColorPicker | `ColorPicker` | 12 / 3 / 27 | factory only today — no tag until 0.9.0 |
-| ColorPickerButton | `ColorPickerButton` | 3 / 3 / 16 | factory only today — no tag until 0.9.0 |
+| TextureProgressBar | `TextureProgressBar` | 16 / 0 / 0 |  |
+| ColorPicker | `ColorPicker` | 12 / 3 / 27 |  |
+| ColorPickerButton | `ColorPickerButton` | 3 / 3 / 16 |  |
 | TabBar | `TabBar` | 14 / 8 / 29 | **items adapter**: `{text, icon, disabled}`, current tab preserved by identity. Not mapped (recorded): per-tab tooltips, close/right buttons — reach via `ref` |
 | ItemList | `ItemList` | 18 / 5 / 24 | **items adapter**: `{text, icon, disabled, selectable, id}`, selection preserved as a multiset by identity. Not mapped (recorded): per-item tooltips, custom fg/bg colors, per-item metadata beyond `id` |
 | Tree | `Tree` | 16 / 15 / 77 | **items adapter**: hierarchical `{id, text, children, collapsed}` + `columns`/`hide_root`; expansion+selection preserved by `id`. Not mapped (recorded): multi-column cell content, per-cell icons/buttons/editable cells/custom draw, column titles — reach via `ref` |
-| MenuBar | `MenuBar` | 6 / 0 / 15 | factory only today — no tag until 0.9.0; menus are child PopupMenus |
-| VideoStreamPlayer | `VideoStreamPlayer` | 10 / 1 / 0 | `V.video` (media subsystem); childless |
-| — AudioStreamPlayer *(Node, not Control)* | `AudioStreamPlayer` | 10 / 1 / 0 | `V.audio` (media subsystem, + `useSfx` for one-shots); childless |
+| MenuBar | `MenuBar` | 6 / 0 / 15 | menus are child PopupMenus |
+| VideoStreamPlayer | `VideoStreamPlayer` | 10 / 1 / 0 | `V.VideoStreamPlayer` (media subsystem); childless |
+| — AudioStreamPlayer *(Node, not Control)* | `AudioStreamPlayer` | 10 / 1 / 0 | `V.AudioStreamPlayer` (media subsystem, + `useSfx` for one-shots); childless |
 | — PopupMenu *(Window, not Control)* | *(no tag)* | 14 / 4 / 37 | **items adapter only** (reached via MenuButton/OptionButton `ref` or `V.h`): `{text, id, disabled, checkable, checked, separator}`. Not mapped (recorded): icons, submenus, radio items, accelerators/shortcuts, tooltips |
 
 **Shipped-element prop/signal/theme coverage — the recorded decisions:**
@@ -120,20 +121,19 @@ that is NOT plain passthrough.
 
 ---
 
-## Batch 1 — the 0.9.x production line (named factory + tag + IDE metadata + test each)
-
-All are instantiable, core-API, user-facing, and currently reachable only via `V.h`.
+## Batch 1 — SHIPPED with 0.9.0 (named factory + tag + IDE metadata; exercised by the
+## open-vocabulary/instantiation tests — per-widget demos ride the gallery backlog)
 
 | Godot class | Notes |
 |---|---|
-| Panel | plain themed rectangle. **Naming hazard: the current `Panel` tag maps to PanelContainer** — repointed at 0.9.0 (see naming proposal §Panel) |
+| Panel | plain themed rectangle. The pre-0.9 `Panel` tag meant PanelContainer — **repointed at 0.9.0**; the codemod rewrites old usages |
 | ReferenceRect | debug outline rect — trivial leaf |
 | HScrollBar / VScrollBar | standalone scrollbars (Range subclasses); `onValueChanged` |
 | SubViewportContainer | 3D-in-UI / viewport embedding; pairs with a docs recipe |
 | BoxContainer | instantiable base with `vertical` prop — the official generic box |
 | FlowContainer | instantiable base with `vertical` prop |
 | SplitContainer | instantiable base with `vertical` prop; capacity 2 |
-| VirtualJoystick | **new Control in Godot 4.7** — touch joystick; verify headless-safe, then trivial |
+| VirtualJoystick | new Control in Godot 4.7 — touch joystick |
 
 ## Batch 2 — long tail / needs a dedicated design
 

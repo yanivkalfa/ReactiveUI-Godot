@@ -7,6 +7,9 @@ shared with the GUITKX IDE extensions) — add entries via `changelog.mjs add --
 editor`, then regenerate this file with `extract`; never edit it by hand. The history
 below the marker line predates the cutover and is preserved verbatim.
 
+## [0.7.0] - 2026-07-11
+- 0.9.0 naming loyalty support (BREAKING vocabulary, rides the library 0.9.0 — see MIGRATION-0.9.md): the bundled guitkx-schema.json is rewritten to the loyal vocabulary (54 curated elements, tags = official Godot class names, factories = V.ClassName, loyal per-element events, exact style keys); event intelligence is now derived LIVE from ClassDB — on + PascalCase(signal) for every signal of every class (the REACT_EVENTS alias table is gone); host-tag recognition gains the open vocabulary (any instantiable ClassDB Node class highlights and completes as a host element, matching the compiler).
+
 ## [0.6.3] - 2026-07-10
 - Syntax highlighting tokenizes ~17% faster. The per-line tokenizer (the per-keystroke path behind every visible line's colouring) now reads characters via `unicode_at` + integer comparisons instead of single-char-String indexing, classifies symbols through a constant int-keyed set instead of a per-char string scan, and keeps its char-code table local (cross-script constant access is a runtime lookup in GDScript). The emitted token stream is hash-identical to 0.6.2 across the whole example corpus -- purely faster, no visual change.
 - Live compiles and diagnostics inherit the runtime compiler's ~28% speed-up and its comment-desync fix (see `reactive_ui` 0.8.7's changelog) -- pairs best with `reactive_ui` 0.8.7+.

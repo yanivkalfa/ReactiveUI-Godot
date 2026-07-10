@@ -4,6 +4,70 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-07-11
+
+**BREAKING — naming is now 1:1 loyal to Godot.** Every user-facing name is the official
+Godot name: tags are class names, factories match tags verbatim, events are the native
+signal with an `on` marker, style keys are the exact property/theme/StyleBoxFlat names.
+No compatibility shims — a codemod migrates your project and every removed name fails
+loudly with the exact replacement. **Read [MIGRATION-0.9.md](MIGRATION-0.9.md).**
+Decision record: `plans/NAMING_LOYALTY_PROPOSAL.md` + `plans/WIDGET_INVENTORY.md` (every
+official Godot 4.7 Control class accounted for).
+
+### Changed
+- **Tags are the official Godot class names.** The shorthand tags (`VBox`, `HBox`,
+  `Grid`, `Margin`, `Panel`, `Center`, `Scroll`, `Tabs`, `RichText`) and lowercase
+  element tags (`<vbox>`, `<label>`) are removed; write `<VBoxContainer>`, `<Label>`, ….
+  **`<Panel>` now creates Godot's actual `Panel`** (the pre-0.9 alias meant
+  `PanelContainer` — the codemod rewrites old usages). A removed tag compiles to a
+  GUITKX0105 error carrying the exact rename.
+- **`V.*` element factories match tags verbatim** — `V.vbox` → `V.VBoxContainer`,
+  `V.button` → `V.Button`, `V.rich_text` → `V.RichTextLabel`, `V.audio` →
+  `V.AudioStreamPlayer`, … (all 46, no exceptions). Structural factories stay lowercase
+  (`fc`, `comp`, `memo`, `h`, `text`, `fragment`, `portal`, `suspense`,
+  `error_boundary`, and the router set).
+- **Events: the React aliases are removed.** The canonical form is `on` +
+  PascalCase(signal) — `onPressed`, `onValueChanged`, `onTextSubmitted` — which reaches
+  ANY signal of ANY node (this generic path already existed; it is now the only camelCase
+  path). `on_<signal>` still binds verbatim. Removed: `onClick`, the polymorphic
+  `onChange`, `onInput`, `onSubmit`, `onFocus`/`onBlur`, `onPointerDown/Up/Enter/Leave`,
+  `onResize` — each emits a runtime warning naming its exact replacement for one release.
+- **Style keys are the exact Godot names.** Renamed: `min_size` →
+  `custom_minimum_size`, `clip` → `clip_contents`, `tooltip` → `tooltip_text`, `pivot`
+  → `pivot_offset`, `color` → `font_color`, `outline_color` → `font_outline_color`,
+  `expand_h`/`grow_h`/`h_align` → `size_flags_horizontal` (and the `_v` family →
+  `size_flags_vertical`), `fill` → `anchors_preset`, `pad` → `content_margin_all`,
+  `border_width` → `border_width_all`, `corner_radius` → `corner_radius_all`, `margin`
+  → the four exact `margin_left/top/right/bottom` theme constants. Enum-valued keys take
+  Godot's own constants (`Control.SIZE_EXPAND_FILL`) or the exact constant name as a
+  case-insensitive string — the invented short strings (`"grow"`, `"stop"`, …) are gone.
+  **Style `rotation` is now radians** (Godot's own `Control.rotation` semantics; the
+  codemod wraps old degree values in `deg_to_rad(...)`). Kept extensions, explicitly
+  documented: `min_width`/`min_height` (the `.x`/`.y` of `custom_minimum_size`).
+
+### Added
+- **Open tag vocabulary: any instantiable Godot `Node` class is a valid tag.** The
+  compiler validates against ClassDB and emits `V.h("ClassName", …)`, so the entire
+  official Control set works from markup — `<GraphEdit />` just works. Engine names are
+  reserved: a project component shadowing a Godot class gets the new GUITKX0151 warning.
+- **9 new curated elements** (named factory + tag + IDE metadata): `Panel`,
+  `ReferenceRect`, `HScrollBar`, `VScrollBar`, `SubViewportContainer`, `BoxContainer`,
+  `FlowContainer`, `SplitContainer`, and `VirtualJoystick` (new in Godot 4.7).
+- **The StyleBox builder accepts any `StyleBoxFlat` property verbatim**
+  (`border_width_left`, `corner_radius_top_left`, `shadow_size`, `skew`,
+  `expand_margin_*`, …) plus the `*_all` umbrellas named after Godot's own setters
+  (`set_border_width_all` → `border_width_all`, …) — full StyleBoxFlat coverage with
+  zero maintained vocabulary.
+- **A migration codemod** — `addons/reactive_ui/dev/migrate_0_9_0.gd` rewrites a
+  project's `.guitkx` and hand-written `.gd` in place (dry-run mode, per-element
+  `onChange` resolution, behavior-preserving `deg_to_rad` wrapping) and reports the few
+  sites that need a human. Usage: [MIGRATION-0.9.md](MIGRATION-0.9.md).
+
+### Fixed
+- **A style/prop value that changes type between renders no longer crashes the diff.**
+  GDScript raises on `int != String` Variant comparisons; the style and plain-prop
+  diffs now compare `typeof` first. Reachable pre-0.9 with any prop that switched types
+  across renders; made likely by enum keys accepting ints and constant-name strings.
 ## [0.8.7] — 2026-07-10
 
 Four new `style` keys, a compiler correctness fix for a whole family of

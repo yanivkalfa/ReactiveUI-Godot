@@ -47,7 +47,7 @@ Requires **Godot 4.4+**.
   names AND the verbatim `on_<signal>` spelling, resolved via live `ClassDB`, plain properties),
   for **attribute values** (enum hint names, true/false, the 46 style-dict keys), after `@`
   (directives), and in embedded code (`Color.`-style builtin constants, hook names). Inserts are
-  **snippet-shaped** — confirming `text=""` / `onClick={}` / `@if ()` lands the caret inside the pair.
+  **snippet-shaped** — confirming `text=""` / `onPressed={}` / `@if ()` lands the caret inside the pair.
 - **Hover** for tags, attributes, directives, hooks, and your own components; **signature help**
   shows the bound signal's parameters (active one bolded) while you type an event-handler lambda.
 - **Navigation & refactoring**: Ctrl+click a component tag (or hook name) jumps to its declaration,
