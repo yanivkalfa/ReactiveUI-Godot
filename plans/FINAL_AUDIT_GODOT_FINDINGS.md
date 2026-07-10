@@ -1,5 +1,21 @@
 # ReactiveUI-Godot — Final Audit: FINDINGS & BUGS (v5, + VS2022 extension audit)
 
+**VERIFICATION PASS (v6, 2026-07-10) — most findings below are now FIXED; this doc is the record,
+not the work-list.** Code-verified against the current tree (grep for each entry's fix marker):
+**FIXED** — G-01 (`skip_noncode_markup` + `find_matching_markup` shipped; G-23 later refined the
+mode model to per-level), G-02/G-03 (`_string_line_mask` in both formatter mirrors), G-04
+(close-tag guard), G-05/G-06 (`fell_back` threaded; unsafe str-attr verbatim), G-07 (`uid://`
+short-circuit), G-12 (`onDidChangeConfiguration` in server.ts), G-13 (client restart listener),
+G-16 (`__RUI_KIND` emitted + read by hmr), G-17 (comment tokens in reflowEmbedded), G-18 (2s
+CancellationTokenSource on VS2022 format-on-save), G-19 (spaces/2 canon in VS Code
+configurationDefaults + VS2022 editor defaults), G-20 (`enableGdscriptAnalysis` gating), G-21
+(OnApply text), G-22 (`RedirectStandardError` + restart messaging), G-23 (per-level content modes +
+line classification, 2026-07-10 — see §10). The VS2022 pkgdef packaging bug also shipped its fix
+(`vs2022-v0.8.7` tagged). **STILL OPEN:** G-09 (hooks deps deep-compare — document + optional
+`same_ref` hatch; design/doc-level) and the performance items tracked in
+`FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` (G-10 scanner char access, G-08 `_line_of`). The v5 text below
+(incl. §0's "what remains") predates these fixes — read it as the audit record.
+
 **VERIFICATION PASS (v5, 2026-07-06):** the node probe suite re-ran against the current compiled TS formatter — **all confirmed findings still reproduce**: G-02 (triple-quoted interior re-indented AND interior double-space collapsed), G-03 (blank line in body segment deleted), and the G-01 failure modes G3/G4 (both parse-fail into verbatim fallback). The trivia guards still pass (G2 leading comment, G5 `{expr}` child preserved). Additionally verified clean in the v5 sweep (do not re-audit): `liveMarkup.ts` (mirrors `_validate_node`/`_validate_body` faithfully; its `findHookCall` has the correct token-boundary + noncode-skipping semantics), `sourceMap.ts` (length-preserving span model, correct bidirectional lookup), `server.ts` `onDidClose` (re-indexes from disk — one LOW gap added to §4 smalls), the diagnostics sidecar staleness gate (`srcHash` FNV-1a pinned to `RUIGuitkxCodegen.src_hash`). The v5 sweep found no new substantive issues in this repo.
 
 **Date:** 2026-07-06 (v4 = v3 split into two documents; this file = correctness findings/bugs with fix recipes. Performance items live in `FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` — IDs G-08, G-10, G-11, G-15 moved there unchanged.)

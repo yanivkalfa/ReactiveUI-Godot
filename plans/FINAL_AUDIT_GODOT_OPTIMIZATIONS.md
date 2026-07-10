@@ -156,9 +156,11 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 4. P2 — LSP server startup
 
-### G-15 — Synchronous workspace scan + library load inside `onInitialize`
-- **Anchors:** `ide-extensions/lsp-server/src/server.ts:95-100` — `scanWorkspace` + `loadLibraries` + `syncAllGuitkxLibraries` run before the initialize response returns → cold-open LSP latency on big projects; **also the direct enabler of the VS2022 save-hang (findings G-18)** — a save issued during the scan window blocks on the busy server.
-- **RECIPE:** move the three calls into `connection.onInitialized(...)` behind a `workspaceReady` promise; handlers await it or degrade gracefully (they already tolerate empty indices). Measure: time-to-first-hover on a large project before/after. Do together with findings G-18 (its timeout is the belt, this is the suspenders).
+### G-15 — Synchronous workspace scan + library load inside `onInitialize` — **DONE (verified 2026-07-10)**
+- **STATUS:** fixed — the scan runs behind `connection.onInitialized` (verified in `server.ts`); the
+  companion findings G-18 timeout (2s CancellationTokenSource in VS2022 format-on-save) also shipped.
+- **Anchors (historical):** `ide-extensions/lsp-server/src/server.ts:95-100` — `scanWorkspace` + `loadLibraries` + `syncAllGuitkxLibraries` ran before the initialize response returned → cold-open LSP latency on big projects; **also the direct enabler of the VS2022 save-hang (findings G-18)** — a save issued during the scan window blocked on the busy server.
+- **RECIPE (as executed):** move the three calls into `connection.onInitialized(...)` behind a `workspaceReady` promise; handlers await it or degrade gracefully (they already tolerate empty indices).
 
 ## 5. Suggested order & measurement
 1. **G-10** lexer conversion (contract-pinned, mechanical, biggest win) — before/after ms/KB in the PR.
@@ -167,6 +169,16 @@ permanent `tests/recon_bench.gd` harness.
 4. **G-11 / GO-01** — only with measurements showing need.
 
 ## 6. Doom demo — runtime reconciler/game-loop profiling (2026-07-06)
+
+> **SUPERSEDED IN PART (2026-07-10):** the renderer described below (per-column portal ray-walker)
+> is no longer the default. A 2D BSP (`examples/demos/doom/doom_bsp.gd`, gated by
+> `GameLogic.USE_BSP`, built once per level, cached on `GameState.bsp`) now fills the same
+> `columns[]` front-to-back — distance-independent (no MAX_RAY_HOPS cap) and **1.46–2.53× faster
+> per frame across L1–L6** (`tests/doom_bsp_bench.gd`; columns match the ray-walker to <1px via
+> `tests/doom_bsp_cmp.gd`). The ray-walker remains as the fallback path, so the GO-03/GO-04 notes
+> below stay valid for it; GO-03's un-pooled `ColumnInfo` (160/frame) now applies to
+> `DoomBSP.render_frame` as well. The "still render-bound in dense views" conclusion (reconciler
+> ~11µs/node) is unchanged and remains the open core-library lever.
 
 Measured while diagnosing the interactive "feels jumpy/slow" report during Phase 2 of
 `plans/DOOM_GAME_GUITKX_PORT_PLAN.md`. Scope note: unlike sections 1-4 above (all
