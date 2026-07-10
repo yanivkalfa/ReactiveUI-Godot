@@ -68,3 +68,47 @@ the same fix applied in the Godot port).
 **Status:** open / accepted. No observed bug is driving it in either port today (Godot's gate
 fails safe; Unity's is masked by the sample shape). Track before any reconciler rewrite so the
 Doom perf regression is anticipated, not discovered.
+
+---
+
+## TD-02 — `style` key whitelist is a curated subset, not full CanvasItem/Control coverage
+
+**Where:** `addons/reactive_ui/core/style.gd` — the `_apply_key` / `_reset` `match` (the friendly
+shorthands) + `BOX_KEYS` + `THEME_CHANNELS`.
+
+**Context (why this is a ledger entry, not a bug).** `style={{…}}` keys are a hand-maintained
+whitelist, **by design** (see the file header). Nothing is *inaccessible*: (a) any node property is
+settable as a plain element attribute via `host_config.gd`'s generic `node.set(k, v)`, and (b) the
+six generic theme channels (`colors`/`constants`/`fonts`/`font_sizes`/`icons`/`styleboxes`) give
+100% theme-item reach. The whitelist only decides which properties get a **friendly shorthand** and
+**reset-on-removal** semantics — plain props do NOT reset when omitted between renders (the
+audit-#23 behavior); style keys DO. So "missing from `style`" means "no shorthand + no auto-reset,"
+never "impossible."
+
+**Recently closed (2026-07-10).** Added `material` + `texture_filter` (routes the Doom wall shader
++ nearest filter through `style` so the dict stays reference-stable for the keyed reconcile — the
+material object identity doesn't change, only its uniforms), then their natural companions
+`texture_repeat` (pairs with `texture_filter`) and `z_as_relative` (pairs with the existing
+`z_index` — the Doom HUD-isolation code explicitly hit its absence and had to lean on the `true`
+default).
+
+**Deliberately deferred (accepted gap).** Reasonable `style` shorthands not added, because each is
+already settable as a plain attribute and none blocks anything:
+- **Candidates worth a shorthand later:** `mouse_default_cursor_shape` (CSS `cursor`), `focus_mode`
+  (focusability — reset default is per-control, so fiddly), `size_flags_stretch_ratio` (flex-grow),
+  `theme_type_variation` (a theme "class").
+- **Niche / skip:** `clip_children` (distinct from the existing `clip` = `clip_contents`),
+  `custom_maximum_size`, `layout_direction`, `theme` (whole resource), `top_level`,
+  `show_behind_parent`, `grow_horizontal`/`grow_vertical` (different from `grow_h`/`grow_v`, which
+  are size-flags).
+- **Accessibility** (`accessibility_name`/`_description`/`_live`/… — Godot 4.4+): a separate
+  category; deserves its own pass if a11y lands on the roadmap.
+
+**Production-grade fix, if ever wanted.** Add each deferred key exactly like the ones above — one
+`_apply_key` arm + one `_reset` arm with the class default. No architecture change; the whitelist
+is intentionally additive. Enum-valued keys (cursor/focus_mode/texture_repeat) should also accept a
+friendly string, following the existing `_mouse_filter` / `_size_flag` string→enum helpers.
+
+**Status:** open / accepted. Curated 90%-shorthand set over 100% generic reach; the deferred keys
+are convenience, not capability. (Runtime-addon `style` API grew by 4 keys unreleased — a patch bump
++ one CHANGELOG line at next Publish covers it; deliberately not bumped on the feature branch.)

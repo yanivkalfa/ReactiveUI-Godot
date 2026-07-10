@@ -1,5 +1,23 @@
 # ReactiveUI-Godot — Final Audit: FINDINGS & BUGS (v5, + VS2022 extension audit)
 
+**VERIFICATION PASS (v6, 2026-07-10) — most findings below are now FIXED; this doc is the record,
+not the work-list.** Code-verified against the current tree (grep for each entry's fix marker):
+**FIXED** — G-01 (`skip_noncode_markup` + `find_matching_markup` shipped; G-23 later refined the
+mode model to per-level), G-02/G-03 (`_string_line_mask` in both formatter mirrors), G-04
+(close-tag guard), G-05/G-06 (`fell_back` threaded; unsafe str-attr verbatim), G-07 (`uid://`
+short-circuit), G-12 (`onDidChangeConfiguration` in server.ts), G-13 (client restart listener),
+G-16 (`__RUI_KIND` emitted + read by hmr), G-17 (comment tokens in reflowEmbedded), G-18 (2s
+CancellationTokenSource on VS2022 format-on-save), G-19 (spaces/2 canon in VS Code
+configurationDefaults + VS2022 editor defaults), G-20 (`enableGdscriptAnalysis` gating), G-21
+(OnApply text), G-22 (`RedirectStandardError` + restart messaging), G-23 (per-level content modes +
+line classification, 2026-07-10 — see §10). The VS2022 pkgdef packaging bug also shipped its fix
+(`vs2022-v0.8.7` tagged). **STILL OPEN:** G-09 (hooks deps deep-compare — document + optional
+`same_ref` hatch; design/doc-level) — everything else is closed: G-08 is DONE in both mirrors and
+G-10 is DONE across all 4 stages (lexer, markup, guitkx.gd+jsx_scan, editor tokenizer — compile
+-28%, tokenize -17%, byte-identical corpus + hash-identical token stream; see the optimizations
+doc's G-10 entry for numbers + lessons). The v5 text below (incl. §0's "what remains") predates
+these fixes — read it as the audit record.
+
 **VERIFICATION PASS (v5, 2026-07-06):** the node probe suite re-ran against the current compiled TS formatter — **all confirmed findings still reproduce**: G-02 (triple-quoted interior re-indented AND interior double-space collapsed), G-03 (blank line in body segment deleted), and the G-01 failure modes G3/G4 (both parse-fail into verbatim fallback). The trivia guards still pass (G2 leading comment, G5 `{expr}` child preserved). Additionally verified clean in the v5 sweep (do not re-audit): `liveMarkup.ts` (mirrors `_validate_node`/`_validate_body` faithfully; its `findHookCall` has the correct token-boundary + noncode-skipping semantics), `sourceMap.ts` (length-preserving span model, correct bidirectional lookup), `server.ts` `onDidClose` (re-indexes from disk — one LOW gap added to §4 smalls), the diagnostics sidecar staleness gate (`srcHash` FNV-1a pinned to `RUIGuitkxCodegen.src_hash`). The v5 sweep found no new substantive issues in this repo.
 
 **Date:** 2026-07-06 (v4 = v3 split into two documents; this file = correctness findings/bugs with fix recipes. Performance items live in `FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` — IDs G-08, G-10, G-11, G-15 moved there unchanged.)
@@ -180,7 +198,29 @@ Leading comments preserved (G2); `{expr}` children + markup comments preserved (
 
 ### G-23 — **P1** — a parenthetical comment split across two `#`/`//` lines desyncs paren-balance tracking, surfaces as a spurious "unclosed component body" far downstream
 
-**Status: reported, root cause partially diagnosed, NOT fixed.** Found while hand-authoring a large `.guitkx` component (`examples/demos/doom/doom_game_screen.guitkx`, part of an unrelated feature — see `plans/DOOM_GAME_GUITKX_PORT_PLAN.md`); the compiler itself was not touched while chasing this.
+**Status: FIXED 2026-07-10 (same day the root cause was confirmed — see below for the trace).**
+The fix is the per-level-mode redesign this entry called for, landed in BOTH mirrors
+(`guitkx_lexer.gd find_matching_markup` + `scanner.ts findMatchingMarkup`): content mode is now
+tracked **per delimiter-stack level** — `{` opens a BODY level (component/directive body), `(`
+after `return` opens a MARKUP window, headers/`{expr}` holes open CODE levels — and within a BODY
+level the lexis is **line-classified** (`_is_markup_line`/`isMarkupLine`: a line whose first
+non-ws char is `<`, `{`, `//`, `/*`, or a directive `@keyword` scans as markup; any other line is
+GDScript prelude and scans with code lexis, so its `#`/`##` comments are comments). MARKUP windows
+ignore line shape (a prelude-line `return ( <Label>Score #3</Label> )` keeps `#3` literal); `[`
+inherits its level's mode (prelude array literals get code lexis — fixing a sibling latent bug
+where a `#` comment inside a multi-line array desynced the stack). **Verified:** 7 new shared
+contract cases (`scanner-cases.json` — the G-23 repro, `##` docstring, keyword-bait, unbalanced
+brace, array-comment, plus 2 regression pins) run by both `tests/guitkx_test.gd` and the lsp-server
+suite (180/180); a compile-level regression test (`_test_g23_prelude_comments`, the exact doom
+comment shape incl. a directive-body variant); all 49 example `.guitkx` recompiled **byte-identical**
+to pre-fix outputs; live-fire: the real `doom_game_screen.guitkx` with the original split-paren
+comments injected compiles `ok:true`. The workaround comments in the doom file can be rephrased
+naturally at leisure — they are no longer load-bearing. Original confirmed-trace + repro kept below
+for the record.
+
+**CONFIRMED mechanism (2026-07-10).** Direct call of `RUIGuitkxLexer.find_matching_markup` on a component-body `{…}` reproduces it exactly: the body `{ # a (open⏎ # b) close⏎ var x=1⏎ return ( X ) }` returns **-1**; the same body with the paren balanced on one comment line, or with no comment, returns the correct `}` index. Trace: the prelude scans in MARKUP mode (default), where `skip_noncode_markup` keeps `#` literal, so the `(` inside the first comment line opens CODE mode (`code_depth++`); once in CODE mode, `skip_noncode` on the *next* line treats its leading `#` as a real comment and skips its `)` to EOL, so the `(` never closes; a later `}` then pops against the stray `(` → mismatch → -1. So the defect is precisely: **a body's code prelude (everything before its `return (`) is scanned as markup, not code.**
+
+**Why it's a redesign, not a patch (both cheap fixes just move the bug):** (a) making markup-mode skip `#`-to-EOL breaks `@if (x) { <Label>#hot</Label> }` — it would skip the directive-body-closing `}`; (b) scanning the whole body in code-mode breaks a literal `#3`/`#FF0000` in the `return (…)` markup window. The correct fix tracks, **per delimiter-stack level**, whether that level is a *code prelude* or *markup content*, transitioning prelude→markup at `return (` — and it nests (component-body prelude, directive-body prelude). Load-bearing (every `.guitkx` body/return/window goes through `find_matching_markup`; a mistake breaks all compilation) and gated by the repo's byte-identical `scanner.ts findMatchingMarkup` mirror + `tests/contract` cases. A focused own-PR task; the minimal repro above is the first contract fixture. Workaround (keep parenthetical phrases on one comment line) is cheap and already applied throughout `doom_game_screen.guitkx`.
 
 - **Repro:** a component whose setup code (or a directive body) contains a doc-comment where one open paren `(` is on one `#`/`//` comment line and its matching `)` is on the *next* comment line, e.g.:
   ```

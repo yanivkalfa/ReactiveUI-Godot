@@ -24,15 +24,36 @@ class RayHit extends RefCounted:
 	var hit_vertical: bool
 	var is_sky: bool
 
+## Result of a hitscan trace (TraceShot): whether it hit a monster before a wall,
+## which mobj, and the world-space impact point (for the tracer streak endpoint).
+class ShotHit extends RefCounted:
+	var hit_mobj: bool
+	var mobj_idx: int
+	var x: float
+	var y: float
+
 # Phase 2 (original): when true, cast_frame uses Raycast.cast (portal walker on the
 # sector graph). When false, falls back to the original DDA grid walker. Toggle
 # off if a regression appears -- the engine should still play.
 const USE_SECTOR_RAYCAST := true
 
+# Godot-only divergence: when true, cast_frame walks a precomputed 2D BSP
+# (DoomBSP) front-to-back instead of casting one portal-walk ray per column.
+# Visible-surface finding becomes distance-independent -- no MAX_RAY_HOPS cap, no
+# open-room cost blow-up -- and per-column seams disappear (segs ARE the walls).
+# The tree is built once per level in new_game and cached on GameState.bsp; it
+# reads sector floor/ceiling heights live each frame, so doors still animate.
+# Falls back to the ray-walker automatically when the tree is null.
+const USE_BSP := true
+
 # TEMP DIAGNOSTIC (remove): microsecond timing so the built-game overlay can split
 # the CPU frame into sim (tick: raycast+movement+doors) vs reconcile (process-tick).
 static var last_tick_us: int = 0
 static var last_cast_us: int = 0
+# Which visible-surface path the last cast_frame actually took (true = 2D BSP walk,
+# false = per-column ray-walker). Surfaced in the F3 perf overlay so the active
+# renderer is visible at runtime, not just inferred from the flag.
+static var last_cast_bsp: bool = false
 
 # ───── Public API ─────
 
@@ -86,6 +107,10 @@ static func new_game(level: int, diff: int) -> DoomTypes.GameState:
 	st.sector_map.player_start_sector = Raycast.point_in_sector_from_hint(st.sector_map, st.sector_map.player_start, -1)
 	st.player.view_height = DoomTypes.C.PLAYER_VIEW_HEIGHT
 	st.player.sector_id = st.sector_map.player_start_sector
+	# Build the 2D BSP once for this level (topology-only: vertices/lines/sectors/
+	# cell_to_sector). Sector heights it reads live each frame, so doors still work.
+	if USE_BSP and st.sector_map.is_valid():
+		st.bsp = DoomBSP.build(st.sector_map)
 
 	for m in start.mobjs:
 		add_mobj(st, m)
@@ -120,8 +145,12 @@ static func tick(st: DoomTypes.GameState, dt: float, input: DoomTypes.InputCmd) 
 	update_player(st, input, dt)
 	update_doors(st, dt) # Phase 3a: door open/close FSM + ceiling_z mirror.
 	update_sectors(st, dt) # Phase 3a: animated sector light specials.
-	# Phase 3b/c (original): for i in range(1, st.mobj_count + 1): update_mobj(st, i, dt)
-	# -- monsters/projectiles/pickups are frozen until AI/combat lands.
+	# Phase 3b/c: monster AI, projectile motion, and pickup collection.
+	for i in range(1, st.mobj_count + 1):
+		var mo: DoomTypes.Mobj = st.mobjs[i]
+		if mo == null or mo.id == 0:
+			continue
+		update_mobj(st, i, dt)
 
 	compact_mobjs(st)
 	advance_face(st, dt)
@@ -226,8 +255,8 @@ static func update_player(st: DoomTypes.GameState, input: DoomTypes.InputCmd, dt
 	# shooting
 	if p.shoot_cooldown > 0:
 		p.shoot_cooldown -= dt
-	# Phase 3 (original): if input.attack and p.shoot_cooldown <= 0: fire_weapon(st)
-	# -- weapons aren't ported yet; the Attack input is captured but does nothing.
+	if input.attack and p.shoot_cooldown <= 0:
+		fire_weapon(st)
 
 	# use key (open doors)
 	if input.use:
@@ -643,6 +672,16 @@ static func cast_frame(st: DoomTypes.GameState) -> void:
 	var cols := st.frame.columns
 	var depth := st.frame.depth_buffer
 	var use_sector := USE_SECTOR_RAYCAST and st.sector_map.is_valid() and p.sector_id >= 0
+	# 2D BSP path: one front-to-back tree walk fills every column (walls + floor/
+	# ceiling/3D-floor bands + depth). Distance-independent and seam-free. Falls
+	# through to the per-column ray-walker below when the tree isn't available.
+	if USE_BSP and use_sector and st.bsp != null:
+		st.player.view_shift_px = 0.0
+		st.bsp.render_frame(st)
+		last_cast_bsp = true
+		last_cast_us = Time.get_ticks_usec() - _tc
+		return
+	last_cast_bsp = false
 	# Phase 7 (original): real eye height. Walls reproject against this so
 	# jump/crouch actually CHANGES geometry (walls get shorter, you see more
 	# floor) rather than simply tilting the horizon. Sky/floor bands stay
@@ -783,6 +822,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 						and (fz - back.floor_z) >= 0.15 \
 						and b_top <= y_floor_far + 0.5
 				var fb := st.frame.take_floorband()
+				fb.distance = perp
 				fb.top_px = b_top
 				fb.bot_px = b_bot
 				fb.floor_z = fz
@@ -813,6 +853,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 				c_bot_band = win_bot
 			if c_bot_band > c_top_band + 0.5:
 				var cb := st.frame.take_ceilband()
+				cb.distance = perp
 				cb.top_px = c_top_band
 				cb.bot_px = c_bot_band
 				cb.ceiling_z = cz
@@ -854,6 +895,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var bb: float = win_bot if y_top_near > win_bot else y_top_near
 					if bb > bt + 0.5:
 						var fb2 := st.frame.take_floorband()
+						fb2.distance = perp
 						fb2.top_px = bt
 						fb2.bot_px = bb
 						fb2.floor_z = ef.top_z
@@ -876,6 +918,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var cb2: float = win_bot if y_bot_far > win_bot else y_bot_far
 					if cb2 > ct + 0.5:
 						var cbd := st.frame.take_ceilband()
+						cbd.distance = perp
 						cbd.top_px = ct
 						cbd.bot_px = cb2
 						cbd.ceiling_z = ef.bottom_z
@@ -980,6 +1023,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var bb2: float = win_bot if y_top_near2 > win_bot else y_top_near2
 					if bb2 > bt2 + 0.5:
 						var fb3 := st.frame.take_floorband()
+						fb3.distance = perp
 						fb3.top_px = bt2
 						fb3.bot_px = bb2
 						fb3.floor_z = ef2.top_z
@@ -995,6 +1039,7 @@ static func build_column_sector(st: DoomTypes.GameState, ox: float, oy: float, r
 					var cb3: float = win_bot if y_bot_far2 > win_bot else y_bot_far2
 					if cb3 > ct2 + 0.5:
 						var cbd2 := st.frame.take_ceilband()
+						cbd2.distance = perp
 						cbd2.top_px = ct2
 						cbd2.bot_px = cb3
 						cbd2.ceiling_z = ef2.bottom_z
@@ -1408,3 +1453,714 @@ static func message(p: DoomTypes.PlayerState, text: String, dur: float) -> void:
 static func frand(st: DoomTypes.GameState) -> float:
 	st.rng_seed = wrapi(st.rng_seed * 1103515245 + 12345, -2147483648, 2147483648)
 	return float((st.rng_seed >> 16) & 0x7fff) / float(0x7fff)
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Phase 3b/c: mobj update dispatch, monster AI, projectiles, pickups, combat.
+#  Faithful port of GameLogic.uitkx's UpdateMobj/UpdateMonster/UpdateProjectile/
+#  UpdatePickup/DamageMobj/FireWeapon families. `ref m` -> typed local + in-place
+#  mutation on the pooled Mobj (objects are references in GDScript).
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ───── Mobj update dispatch (UpdateMobj) ─────
+
+static func update_mobj(st: DoomTypes.GameState, idx: int, dt: float) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	m.state_timer += dt
+	if m.attack_cooldown > 0:
+		m.attack_cooldown -= dt
+	# animation frame tick
+	if m.state_timer > 0.15:
+		m.anim_frame += 1
+		m.state_timer = 0
+	if is_projectile(m.kind):
+		update_projectile(st, idx, dt)
+		return
+	if is_monster(m.kind):
+		update_monster(st, idx, dt)
+		return
+	if is_pickup(m.kind):
+		update_pickup(st, idx)
+		return
+	if m.kind == DoomTypes.MobjKind.EXPLOSION:
+		if m.state_timer > 0.4 or m.anim_frame > 4:
+			m.id = 0
+		return
+	# barrels just sit there
+
+# ───── Projectiles (UpdateProjectile / OnProjectileHit / Splash / SpawnProjectile) ─────
+
+static func update_projectile(st: DoomTypes.GameState, idx: int, dt: float) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	var nx := m.x + m.mom_x * dt
+	var ny := m.y + m.mom_y * dt
+	var nz := m.z + m.z_vel * dt
+	var gx := int(nx)
+	var gy := int(ny)
+	var cell: DoomTypes.Cell = st.map.at_safe(gx, gy)
+	if cell.kind == DoomTypes.CellKind.WALL:
+		on_projectile_hit(st, idx, m.x, m.y, 0)
+		return
+	if (cell.kind == DoomTypes.CellKind.DOOR or cell.kind == DoomTypes.CellKind.DOOR_BLUE \
+			or cell.kind == DoomTypes.CellKind.DOOR_YELLOW or cell.kind == DoomTypes.CellKind.DOOR_RED) \
+			and cell.door_state < 200:
+		on_projectile_hit(st, idx, m.x, m.y, 0)
+		return
+	var cell_floor := cell.floor_z
+	var cell_ceil := 1e9 if cell.is_sky else (1.5 if cell.ceiling_z <= 0.0 else cell.ceiling_z)
+	if nz < cell_floor or nz > cell_ceil:
+		on_projectile_hit(st, idx, nx, ny, 0)
+		return
+	if cell.extra_floors != null:
+		for k in range(cell.extra_floors.size()):
+			var ef: DoomTypes.ExtraFloor = cell.extra_floors[k]
+			if not ef.solid:
+				continue
+			if nz >= ef.bottom_z - 0.001 and nz <= ef.top_z + 0.001:
+				on_projectile_hit(st, idx, nx, ny, 0)
+				return
+	# mobj hit? (not owner, not other projectiles/pickups/explosions)
+	var hit_mobj := 0
+	for j in range(1, st.mobj_count + 1):
+		if j == idx:
+			continue
+		var t: DoomTypes.Mobj = st.mobjs[j]
+		if t == null or t.id == 0 or t.id == m.owner_id:
+			continue
+		if is_projectile(t.kind) or t.kind == DoomTypes.MobjKind.EXPLOSION:
+			continue
+		if is_pickup(t.kind):
+			continue
+		if t.health <= 0 and t.kind != DoomTypes.MobjKind.BARREL:
+			continue
+		var dx := t.x - nx
+		var dy := t.y - ny
+		var rr := m.radius + t.radius
+		if dx * dx + dy * dy >= rr * rr:
+			continue
+		var t_bot := t.z - 0.05
+		var t_top := t.z + (t.height if t.height > 0.0 else 0.7) + 0.05
+		if nz < t_bot or nz > t_top:
+			continue
+		hit_mobj = j
+		break
+	# player hit (only enemy projectiles: owner_id != -1)
+	if m.owner_id != -1 and hit_mobj == 0:
+		var pdx := st.player.x - nx
+		var pdy := st.player.y - ny
+		var pr := m.radius + DoomTypes.C.PLAYER_RADIUS
+		if pdx * pdx + pdy * pdy < pr * pr:
+			var p_bot := st.player.z - 0.05
+			var p_top := st.player.z + (0.6 if st.player.view_height <= 0.0 else st.player.view_height) + 0.4
+			if nz >= p_bot and nz <= p_top:
+				hurt(st, st.player, m.damage, 0)
+				on_projectile_hit(st, idx, nx, ny, 0)
+				return
+	if hit_mobj != 0:
+		on_projectile_hit(st, idx, nx, ny, hit_mobj)
+		return
+	m.x = nx
+	m.y = ny
+	m.z = nz
+	if m.x < 0 or m.x >= st.map.width or m.y < 0 or m.y >= st.map.height:
+		m.id = 0
+
+static func on_projectile_hit(st: DoomTypes.GameState, idx: int, x: float, y: float, hit_mobj_idx: int) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	if hit_mobj_idx > 0:
+		damage_mobj(st, hit_mobj_idx, m.damage, m.owner_id)
+	if m.kind == DoomTypes.MobjKind.ROCKET_PROJ or m.kind == DoomTypes.MobjKind.BFG_PROJ:
+		var splash_radius := 4.0 if m.kind == DoomTypes.MobjKind.BFG_PROJ else 2.5
+		var splash_dmg := 200 if m.kind == DoomTypes.MobjKind.BFG_PROJ else 60
+		splash(st, x, y, splash_radius, splash_dmg, m.owner_id)
+		var ex := DoomTypes.Mobj.new()
+		ex.kind = DoomTypes.MobjKind.EXPLOSION
+		ex.x = x
+		ex.y = y
+		ex.radius = 0.5
+		ex.health = 1
+		add_mobj(st, ex)
+	m.id = 0
+
+static func splash(st: DoomTypes.GameState, x: float, y: float, radius: float, max_dmg: int, owner_id: int) -> void:
+	for j in range(1, st.mobj_count + 1):
+		var t: DoomTypes.Mobj = st.mobjs[j]
+		if t == null or t.id == 0 or is_projectile(t.kind) or is_pickup(t.kind) or t.kind == DoomTypes.MobjKind.EXPLOSION:
+			continue
+		var dx := t.x - x
+		var dy := t.y - y
+		var d := sqrt(dx * dx + dy * dy)
+		if d < radius:
+			var dmg := int(max_dmg * (1.0 - d / radius))
+			damage_mobj(st, j, dmg, owner_id)
+	var pdx := st.player.x - x
+	var pdy := st.player.y - y
+	var pd := sqrt(pdx * pdx + pdy * pdy)
+	if pd < radius:
+		var pdmg := int(max_dmg * (1.0 - pd / radius) * 0.6)
+		hurt(st, st.player, pdmg, 0)
+
+static func spawn_projectile(st: DoomTypes.GameState, kind: int, owner_id: int, damage: int, speed: float) -> void:
+	var p := st.player
+	var fwd_x := cos(p.angle)
+	var fwd_y := sin(p.angle)
+	var plane_scale := (DoomTypes.C.VIEWPORT_H * 0.5) / tan(DoomTypes.C.HALF_FOV)
+	var pitch_slope := p.pitch / plane_scale
+	var view_z := p.z + (0.6 if p.view_height <= 0.0 else p.view_height)
+	var m := DoomTypes.Mobj.new()
+	m.kind = kind
+	m.state = DoomTypes.AIState.HUNTING
+	m.x = p.x + fwd_x * 0.5
+	m.y = p.y + fwd_y * 0.5
+	m.z = view_z
+	m.mom_x = fwd_x * speed
+	m.mom_y = fwd_y * speed
+	m.z_vel = pitch_slope * speed
+	m.angle = p.angle
+	m.height = DoomMaps.height_for(kind)
+	m.health = 1
+	m.damage = damage
+	m.owner_id = owner_id
+	m.radius = DoomMaps.radius_for(kind)
+	add_mobj(st, m)
+
+# ───── Monster AI (UpdateMonster / DoAttack / SpawnEnemyProjectile / MonsterSpeed) ─────
+
+static func update_monster(st: DoomTypes.GameState, idx: int, dt: float) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	if m.state == DoomTypes.AIState.DEAD:
+		return
+	if m.state == DoomTypes.AIState.DYING:
+		if m.state_timer > 1.0 or m.anim_frame > 3:
+			m.state = DoomTypes.AIState.DEAD
+			m.kind = DoomTypes.MobjKind.CORPSE
+		return
+	var dx := st.player.x - m.x
+	var dy := st.player.y - m.y
+	var dist := sqrt(dx * dx + dy * dy)
+	m.angle = atan2(dy, dx)
+	var mon_eye_z := m.z + (m.height * 0.65 if m.height > 0.0 else 0.5)
+	var ply_eye_z := st.player.z + (0.6 if st.player.view_height <= 0.0 else st.player.view_height)
+	var sees := has_line_of_sight_3d(st, m.x, m.y, mon_eye_z, st.player.x, st.player.y, ply_eye_z, m.sector_id)
+	if m.state == DoomTypes.AIState.IDLE:
+		if dist < DoomTypes.C.SIGHT_RANGE and sees:
+			m.state = DoomTypes.AIState.HUNTING
+		else:
+			return
+	if m.state == DoomTypes.AIState.PAIN:
+		if m.state_timer > 0.3:
+			m.state = DoomTypes.AIState.HUNTING
+		return
+	# Hunting / Attacking
+	var speed := monster_speed(m.kind)
+	var melee_range := 1.6 if (m.kind == DoomTypes.MobjKind.DEMON or m.kind == DoomTypes.MobjKind.LOST_SOUL) else 1.2
+	var can_melee := dist < melee_range
+	var can_ranged := dist < 12.0 and sees
+	var ranged := m.kind == DoomTypes.MobjKind.IMP or m.kind == DoomTypes.MobjKind.BARON \
+			or m.kind == DoomTypes.MobjKind.CACODEMON or m.kind == DoomTypes.MobjKind.SHOTGUNNER \
+			or m.kind == DoomTypes.MobjKind.ZOMBIEMAN
+	if m.attack_cooldown <= 0 and (can_melee or (ranged and can_ranged)):
+		do_attack(st, idx, dist, can_melee)
+	else:
+		# chase
+		var mx := cos(m.angle) * speed * dt
+		var my := sin(m.angle) * speed * dt
+		move_actor(st, m, mx, my, m.radius, false, idx)
+		if st.sector_map.is_valid():
+			var sec := Raycast.point_in_sector_from_hint(st.sector_map, Vector2(m.x, m.y), m.sector_id)
+			if sec >= 0:
+				m.sector_id = sec
+				var sec_obj: DoomTypes.Sector = st.sector_map.sectors[sec]
+				var fz := standing_floor_in(sec_obj, m.z, DoomTypes.C.STEP_HEIGHT)
+				if m.kind != DoomTypes.MobjKind.CACODEMON and m.kind != DoomTypes.MobjKind.LOST_SOUL:
+					m.z = fz
+
+static func do_attack(st: DoomTypes.GameState, idx: int, _dist: float, melee: bool) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	m.attack_cooldown = 1.4 + frand(st) * 1.0
+	match m.kind:
+		DoomTypes.MobjKind.IMP:
+			if melee:
+				hurt(st, st.player, DoomTypes.C.DMG_IMP_MELEE, 0)
+			else:
+				spawn_enemy_projectile(st, idx, DoomTypes.MobjKind.IMP_FIREBALL, DoomTypes.C.DMG_IMP_BALL, DoomTypes.C.SPEED_IMPBALL)
+		DoomTypes.MobjKind.DEMON:
+			if melee:
+				hurt(st, st.player, DoomTypes.C.DMG_DEMON_BITE, 0)
+			else:
+				m.attack_cooldown = 0.2
+		DoomTypes.MobjKind.BARON:
+			if melee:
+				hurt(st, st.player, DoomTypes.C.DMG_BARON_CLAW, 0)
+			else:
+				spawn_enemy_projectile(st, idx, DoomTypes.MobjKind.BARON_BALL, DoomTypes.C.DMG_BARON_BALL, DoomTypes.C.SPEED_BARONBALL)
+		DoomTypes.MobjKind.CACODEMON:
+			spawn_enemy_projectile(st, idx, DoomTypes.MobjKind.CACO_BALL, DoomTypes.C.DMG_CACO_BALL, DoomTypes.C.SPEED_CACOBALL)
+		DoomTypes.MobjKind.LOST_SOUL:
+			if melee:
+				hurt(st, st.player, DoomTypes.C.DMG_LOST_RAM, 0)
+			else:
+				m.attack_cooldown = 0.2
+		DoomTypes.MobjKind.ZOMBIEMAN:
+			hurt(st, st.player, DoomTypes.C.DMG_ZOMBIE, 0)
+		DoomTypes.MobjKind.SHOTGUNNER:
+			for i in range(3):
+				if frand(st) < 0.6:
+					hurt(st, st.player, DoomTypes.C.DMG_SHOTG, 0)
+
+static func spawn_enemy_projectile(st: DoomTypes.GameState, src_idx: int, kind: int, damage: int, speed: float) -> void:
+	var src: DoomTypes.Mobj = st.mobjs[src_idx]
+	var ang := src.angle
+	var src_eye_z := src.z + (src.height * 0.75 if src.height > 0.0 else 0.6)
+	var ply_center_z := st.player.z + (0.6 if st.player.view_height <= 0.0 else st.player.view_height) - 0.1
+	var dx := st.player.x - src.x
+	var dy := st.player.y - src.y
+	var horiz := sqrt(dx * dx + dy * dy)
+	var z_slope := (ply_center_z - src_eye_z) / horiz if horiz > 0.01 else 0.0
+	var m := DoomTypes.Mobj.new()
+	m.kind = kind
+	m.x = src.x + cos(ang) * 0.5
+	m.y = src.y + sin(ang) * 0.5
+	m.z = src_eye_z
+	m.mom_x = cos(ang) * speed
+	m.mom_y = sin(ang) * speed
+	m.z_vel = z_slope * speed
+	m.angle = ang
+	m.health = 1
+	m.height = DoomMaps.height_for(kind)
+	m.damage = damage
+	m.owner_id = src.id
+	m.radius = DoomMaps.radius_for(kind)
+	add_mobj(st, m)
+
+static func monster_speed(k: int) -> float:
+	match k:
+		DoomTypes.MobjKind.IMP:
+			return DoomTypes.C.SPEED_IMP
+		DoomTypes.MobjKind.DEMON:
+			return DoomTypes.C.SPEED_DEMON
+		DoomTypes.MobjKind.BARON:
+			return DoomTypes.C.SPEED_BARON
+		DoomTypes.MobjKind.CACODEMON:
+			return DoomTypes.C.SPEED_CACO
+		DoomTypes.MobjKind.LOST_SOUL:
+			return DoomTypes.C.SPEED_LOST
+		DoomTypes.MobjKind.ZOMBIEMAN:
+			return DoomTypes.C.SPEED_ZOMBIE
+		DoomTypes.MobjKind.SHOTGUNNER:
+			return DoomTypes.C.SPEED_SHOTG
+		_:
+			return 1.0
+
+# ───── Pickups (UpdatePickup / TryGivePickup) ─────
+
+static func update_pickup(st: DoomTypes.GameState, idx: int) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	if m.collected:
+		m.id = 0
+		return
+	var dx := st.player.x - m.x
+	var dy := st.player.y - m.y
+	if dx * dx + dy * dy > 0.5 * 0.5:
+		return
+	if try_give_pickup(st, m.kind):
+		m.collected = true
+		st.player.pickup_flash = 0.6
+
+static func try_give_pickup(st: DoomTypes.GameState, k: int) -> bool:
+	var p := st.player
+	match k:
+		DoomTypes.MobjKind.PICKUP_HEALTH:
+			if p.health >= 100:
+				return false
+			p.health = mini(100, p.health + 25)
+			message(p, "Picked up a stimpack.", 1.5)
+			return true
+		DoomTypes.MobjKind.PICKUP_ARMOR:
+			p.armor = maxi(p.armor, 100)
+			p.armor_class = maxi(p.armor_class, 1)
+			message(p, "Picked up green armor.", 1.5)
+			return true
+		DoomTypes.MobjKind.PICKUP_ARMOR_BLUE:
+			p.armor = maxi(p.armor, 200)
+			p.armor_class = 2
+			message(p, "Picked up MEGA ARMOR!", 2.0)
+			return true
+		DoomTypes.MobjKind.PICKUP_BULLETS:
+			if p.ammo[0] >= DoomTypes.C.MAX_BULLETS:
+				return false
+			p.ammo[0] = mini(DoomTypes.C.MAX_BULLETS, p.ammo[0] + 20)
+			message(p, "Picked up a clip.", 1.5)
+			return true
+		DoomTypes.MobjKind.PICKUP_SHELLS:
+			if p.ammo[1] >= DoomTypes.C.MAX_SHELLS:
+				return false
+			p.ammo[1] = mini(DoomTypes.C.MAX_SHELLS, p.ammo[1] + 8)
+			message(p, "Picked up shotgun shells.", 1.5)
+			return true
+		DoomTypes.MobjKind.PICKUP_ROCKETS:
+			if p.ammo[2] >= DoomTypes.C.MAX_ROCKETS:
+				return false
+			p.ammo[2] = mini(DoomTypes.C.MAX_ROCKETS, p.ammo[2] + 5)
+			message(p, "Picked up rockets.", 1.5)
+			return true
+		DoomTypes.MobjKind.PICKUP_CELLS:
+			if p.ammo[3] >= DoomTypes.C.MAX_CELLS:
+				return false
+			p.ammo[3] = mini(DoomTypes.C.MAX_CELLS, p.ammo[3] + 40)
+			message(p, "Picked up an energy cell.", 1.5)
+			return true
+		DoomTypes.MobjKind.PICKUP_SHOTGUN:
+			var had_shotgun: bool = p.owned_weapons[DoomTypes.WeaponType.SHOTGUN]
+			p.owned_weapons[DoomTypes.WeaponType.SHOTGUN] = true
+			p.ammo[1] = mini(DoomTypes.C.MAX_SHELLS, p.ammo[1] + 8)
+			if not had_shotgun:
+				p.weapon = DoomTypes.WeaponType.SHOTGUN
+			message(p, "You got the SHOTGUN!", 2.0)
+			return true
+		DoomTypes.MobjKind.PICKUP_CHAINGUN:
+			var had_chain: bool = p.owned_weapons[DoomTypes.WeaponType.CHAINGUN]
+			p.owned_weapons[DoomTypes.WeaponType.CHAINGUN] = true
+			p.ammo[0] = mini(DoomTypes.C.MAX_BULLETS, p.ammo[0] + 20)
+			if not had_chain:
+				p.weapon = DoomTypes.WeaponType.CHAINGUN
+			message(p, "You got the CHAINGUN!", 2.0)
+			return true
+		DoomTypes.MobjKind.PICKUP_ROCKET_LAUNCHER:
+			var had_rl: bool = p.owned_weapons[DoomTypes.WeaponType.ROCKET_LAUNCHER]
+			p.owned_weapons[DoomTypes.WeaponType.ROCKET_LAUNCHER] = true
+			p.ammo[2] = mini(DoomTypes.C.MAX_ROCKETS, p.ammo[2] + 5)
+			if not had_rl:
+				p.weapon = DoomTypes.WeaponType.ROCKET_LAUNCHER
+			message(p, "You got the ROCKET LAUNCHER!", 2.0)
+			return true
+		DoomTypes.MobjKind.PICKUP_PLASMA:
+			var had_pl: bool = p.owned_weapons[DoomTypes.WeaponType.PLASMA_RIFLE]
+			p.owned_weapons[DoomTypes.WeaponType.PLASMA_RIFLE] = true
+			p.ammo[3] = mini(DoomTypes.C.MAX_CELLS, p.ammo[3] + 40)
+			if not had_pl:
+				p.weapon = DoomTypes.WeaponType.PLASMA_RIFLE
+			message(p, "You got the PLASMA RIFLE!", 2.0)
+			return true
+		DoomTypes.MobjKind.PICKUP_BFG:
+			var had_bfg: bool = p.owned_weapons[DoomTypes.WeaponType.BFG9000]
+			p.owned_weapons[DoomTypes.WeaponType.BFG9000] = true
+			p.ammo[3] = mini(DoomTypes.C.MAX_CELLS, p.ammo[3] + 40)
+			if not had_bfg:
+				p.weapon = DoomTypes.WeaponType.BFG9000
+			message(p, "YOU GOT THE BFG9000!  OH YES!", 3.0)
+			return true
+		DoomTypes.MobjKind.KEY_BLUE:
+			p.keys |= DoomTypes.KeyCard.BLUE
+			message(p, "Picked up a BLUE keycard.", 2.0)
+			return true
+		DoomTypes.MobjKind.KEY_YELLOW:
+			p.keys |= DoomTypes.KeyCard.YELLOW
+			message(p, "Picked up a YELLOW keycard.", 2.0)
+			return true
+		DoomTypes.MobjKind.KEY_RED:
+			p.keys |= DoomTypes.KeyCard.RED
+			message(p, "Picked up a RED keycard.", 2.0)
+			return true
+	return false
+
+# ───── Damage (DamageMobj / KillScore) ─────
+
+static func damage_mobj(st: DoomTypes.GameState, idx: int, dmg: int, _source_id: int) -> void:
+	var m: DoomTypes.Mobj = st.mobjs[idx]
+	if m.health <= 0:
+		return
+	m.health -= dmg
+	if m.kind == DoomTypes.MobjKind.BARREL and m.health <= 0:
+		splash(st, m.x, m.y, 2.2, DoomTypes.C.DMG_BARREL, m.owner_id)
+		var ex := DoomTypes.Mobj.new()
+		ex.kind = DoomTypes.MobjKind.EXPLOSION
+		ex.x = m.x
+		ex.y = m.y
+		ex.radius = 0.5
+		ex.health = 1
+		add_mobj(st, ex)
+		m.id = 0
+		st.score += DoomTypes.C.SCORE_BARREL
+		return
+	if is_monster(m.kind):
+		if m.health <= 0:
+			m.state = DoomTypes.AIState.DYING
+			m.state_timer = 0
+			m.anim_frame = 0
+			st.kill_count += 1
+			st.score += kill_score(m.kind)
+		else:
+			if frand(st) < 0.3:
+				m.state = DoomTypes.AIState.PAIN
+				m.state_timer = 0
+			m.state = DoomTypes.AIState.PAIN if m.state == DoomTypes.AIState.PAIN else DoomTypes.AIState.HUNTING
+
+static func kill_score(k: int) -> int:
+	match k:
+		DoomTypes.MobjKind.IMP:
+			return DoomTypes.C.SCORE_IMP
+		DoomTypes.MobjKind.DEMON:
+			return DoomTypes.C.SCORE_DEMON
+		DoomTypes.MobjKind.BARON:
+			return DoomTypes.C.SCORE_BARON
+		DoomTypes.MobjKind.CACODEMON:
+			return DoomTypes.C.SCORE_CACO
+		DoomTypes.MobjKind.LOST_SOUL:
+			return DoomTypes.C.SCORE_LOST
+		DoomTypes.MobjKind.ZOMBIEMAN:
+			return DoomTypes.C.SCORE_ZOMBIE
+		DoomTypes.MobjKind.SHOTGUNNER:
+			return DoomTypes.C.SCORE_SHOTG
+		_:
+			return 0
+
+# ───── Weapons (FireWeapon / FireMelee / FireHitscan / SpawnTracer / ammo+cooldown) ─────
+
+static func fire_weapon(st: DoomTypes.GameState) -> void:
+	var p := st.player
+	var w := p.weapon
+	var need := weapon_ammo_type(w)
+	var ammo_idx := need
+	if need != DoomTypes.AmmoType.NONE and p.ammo[ammo_idx] <= 0:
+		if p.owned_weapons[DoomTypes.WeaponType.PISTOL] and p.ammo[DoomTypes.AmmoType.BULLETS] > 0:
+			p.weapon = DoomTypes.WeaponType.PISTOL
+		else:
+			p.weapon = DoomTypes.WeaponType.FIST
+		p.shoot_cooldown = 0.2
+		return
+	if need != DoomTypes.AmmoType.NONE:
+		p.ammo[ammo_idx] -= 1
+	p.muzzle_flash = 0.1
+	p.shoot_cooldown = weapon_cooldown(w)
+	match w:
+		DoomTypes.WeaponType.FIST:
+			fire_melee(st, DoomTypes.C.DMG_FIST, DoomTypes.C.MELEE_RANGE)
+		DoomTypes.WeaponType.PISTOL:
+			fire_hitscan(st, DoomTypes.C.DMG_PISTOL, 0.04)
+		DoomTypes.WeaponType.SHOTGUN:
+			for i in range(7):
+				fire_hitscan(st, DoomTypes.C.DMG_PELLET, 0.18)
+		DoomTypes.WeaponType.CHAINGUN:
+			fire_hitscan(st, DoomTypes.C.DMG_CHAIN, 0.07)
+		DoomTypes.WeaponType.ROCKET_LAUNCHER:
+			spawn_projectile(st, DoomTypes.MobjKind.ROCKET_PROJ, -1, DoomTypes.C.DMG_ROCKET, DoomTypes.C.SPEED_ROCKET)
+		DoomTypes.WeaponType.PLASMA_RIFLE:
+			spawn_projectile(st, DoomTypes.MobjKind.PLASMA_PROJ, -1, DoomTypes.C.DMG_PLASMA, DoomTypes.C.SPEED_PLASMA)
+		DoomTypes.WeaponType.BFG9000:
+			spawn_projectile(st, DoomTypes.MobjKind.BFG_PROJ, -1, DoomTypes.C.DMG_BFG, DoomTypes.C.SPEED_BFG)
+
+static func fire_melee(st: DoomTypes.GameState, dmg: int, rng: float) -> void:
+	var p := st.player
+	var hit_idx := find_mobj_in_cone(st, p.x, p.y, p.angle, rng, 0.4)
+	if hit_idx > 0:
+		damage_mobj(st, hit_idx, dmg, 0)
+
+static func fire_hitscan(st: DoomTypes.GameState, dmg: int, spread: float) -> void:
+	var p := st.player
+	var ang := p.angle + (frand(st) - 0.5) * spread * 2.0
+	var hit := trace_shot(st, p.x, p.y, ang)
+	if hit.hit_mobj and hit.mobj_idx > 0:
+		damage_mobj(st, hit.mobj_idx, dmg, 0)
+	spawn_tracer(st, p, ang, hit, spread)
+
+static func spawn_tracer(st: DoomTypes.GameState, p: DoomTypes.PlayerState, ang: float, hit: ShotHit, spread: float) -> void:
+	if st.tracers == null:
+		return
+	var plane_scale := (DoomTypes.C.VIEWPORT_H * 0.5) / tan(DoomTypes.C.HALF_FOV)
+	var pitch_slope := p.pitch / plane_scale
+	var view_z := p.z + (0.6 if p.view_height <= 0.0 else p.view_height)
+	var fwd_x := cos(ang)
+	var fwd_y := sin(ang)
+	var ax := p.x + fwd_x * DoomTypes.C.MUZZLE_FORWARD
+	var ay := p.y + fwd_y * DoomTypes.C.MUZZLE_FORWARD
+	var az := view_z - DoomTypes.C.MUZZLE_BELOW_EYE
+	var bx := hit.x
+	var by := hit.y
+	var dist := sqrt((bx - p.x) * (bx - p.x) + (by - p.y) * (by - p.y))
+	var bz := view_z + pitch_slope * dist
+	var slot := st.tracer_count % DoomTypes.C.MAX_TRACERS
+	var tr: DoomTypes.Tracer = st.tracers[slot]
+	tr.ax = ax
+	tr.ay = ay
+	tr.az = az
+	tr.bx = bx
+	tr.by = by
+	tr.bz = bz
+	tr.age_ms = 0.0
+	tr.color_idx = 1 if spread > 0.10 else 0
+	st.tracer_count += 1
+
+static func weapon_ammo_type(w: int) -> int:
+	match w:
+		DoomTypes.WeaponType.PISTOL, DoomTypes.WeaponType.CHAINGUN:
+			return DoomTypes.AmmoType.BULLETS
+		DoomTypes.WeaponType.SHOTGUN:
+			return DoomTypes.AmmoType.SHELLS
+		DoomTypes.WeaponType.ROCKET_LAUNCHER:
+			return DoomTypes.AmmoType.ROCKETS
+		DoomTypes.WeaponType.PLASMA_RIFLE, DoomTypes.WeaponType.BFG9000:
+			return DoomTypes.AmmoType.CELLS
+		_:
+			return DoomTypes.AmmoType.NONE
+
+static func weapon_cooldown(w: int) -> float:
+	match w:
+		DoomTypes.WeaponType.FIST:
+			return DoomTypes.C.COOLDOWN_FIST
+		DoomTypes.WeaponType.PISTOL:
+			return DoomTypes.C.COOLDOWN_PISTOL
+		DoomTypes.WeaponType.SHOTGUN:
+			return DoomTypes.C.COOLDOWN_SHOTGUN
+		DoomTypes.WeaponType.CHAINGUN:
+			return DoomTypes.C.COOLDOWN_CHAIN
+		DoomTypes.WeaponType.ROCKET_LAUNCHER:
+			return DoomTypes.C.COOLDOWN_ROCKET
+		DoomTypes.WeaponType.PLASMA_RIFLE:
+			return DoomTypes.C.COOLDOWN_PLASMA
+		DoomTypes.WeaponType.BFG9000:
+			return DoomTypes.C.COOLDOWN_BFG
+		_:
+			return 0.3
+
+# ───── Line-of-sight + hitscan trace (HasLineOfSight[3D] / FindMobjInCone / TraceShot) ─────
+
+static func has_line_of_sight(st: DoomTypes.GameState, ax: float, ay: float, bx: float, by: float) -> bool:
+	var dx := bx - ax
+	var dy := by - ay
+	var dist := sqrt(dx * dx + dy * dy)
+	if dist < 0.01:
+		return true
+	var steps := int(dist * 6.0)
+	if steps < 1:
+		steps = 1
+	for i in range(1, steps):
+		var t := float(i) / float(steps)
+		var gx := int(ax + dx * t)
+		var gy := int(ay + dy * t)
+		if st.map.blocks_rays(gx, gy):
+			return false
+	return true
+
+static func has_line_of_sight_3d(st: DoomTypes.GameState, ax: float, ay: float, az: float, bx: float, by: float, bz: float, src_sector: int) -> bool:
+	if not st.sector_map.is_valid() or src_sector < 0:
+		return has_line_of_sight(st, ax, ay, bx, by)
+	var dx := bx - ax
+	var dy := by - ay
+	var big_d := sqrt(dx * dx + dy * dy)
+	if big_d < 0.01:
+		return true
+	var hits: Array = Raycast.cast(st.sector_map, Vector2(ax, ay), src_sector, Vector2(dx / big_d, dy / big_d))
+	if hits.size() == 0:
+		var s: DoomTypes.Sector = st.sector_map.sectors[src_sector]
+		var seg_min0 := minf(az, bz)
+		var seg_max0 := maxf(az, bz)
+		if seg_min0 <= s.floor_z + 0.001:
+			return false
+		if not s.is_sky and seg_max0 >= s.ceiling_z - 0.001:
+			return false
+		if s.extra_floors != null:
+			for k in range(s.extra_floors.size()):
+				var ef: DoomTypes.ExtraFloor = s.extra_floors[k]
+				if not ef.solid:
+					continue
+				if seg_max0 >= ef.bottom_z + 0.001 and seg_min0 <= ef.top_z - 0.001:
+					return false
+		return true
+	var prev_t := 0.0
+	for i in range(hits.size()):
+		var h: Raycast.WallHit = hits[i]
+		var front: DoomTypes.Sector = st.sector_map.sectors[h.from_sector]
+		var reached_target := h.distance >= big_d
+		var end_t := big_d if reached_target else h.distance
+		var z_start := az + (bz - az) * (prev_t / big_d)
+		var z_end := az + (bz - az) * (end_t / big_d)
+		var seg_min := minf(z_start, z_end)
+		var seg_max := maxf(z_start, z_end)
+		if seg_min <= front.floor_z + 0.001:
+			return false
+		if not front.is_sky and seg_max >= front.ceiling_z - 0.001:
+			return false
+		if front.extra_floors != null:
+			for k in range(front.extra_floors.size()):
+				var ef: DoomTypes.ExtraFloor = front.extra_floors[k]
+				if not ef.solid:
+					continue
+				if seg_max >= ef.bottom_z + 0.001 and seg_min <= ef.top_z - 0.001:
+					return false
+		if reached_target:
+			return true
+		if h.to_sector < 0:
+			return false
+		var back: DoomTypes.Sector = st.sector_map.sectors[h.to_sector]
+		if z_end <= back.floor_z + 0.001:
+			return false
+		if not back.is_sky and z_end >= back.ceiling_z - 0.001:
+			return false
+		prev_t = h.distance
+	return true
+
+static func find_mobj_in_cone(st: DoomTypes.GameState, ox: float, oy: float, ang: float, rng: float, half_angle: float) -> int:
+	var best := -1
+	var best_dist := rng
+	for i in range(1, st.mobj_count + 1):
+		var m: DoomTypes.Mobj = st.mobjs[i]
+		if m == null or m.id == 0 or not is_monster(m.kind) or m.health <= 0:
+			continue
+		var dx := m.x - ox
+		var dy := m.y - oy
+		var d := sqrt(dx * dx + dy * dy)
+		if d > best_dist:
+			continue
+		var ma := atan2(dy, dx)
+		var diff := angle_difference(ma, ang)
+		if absf(diff) > half_angle:
+			continue
+		if not has_line_of_sight(st, ox, oy, m.x, m.y):
+			continue
+		best = i
+		best_dist = d
+	return best
+
+static func trace_shot(st: DoomTypes.GameState, ox: float, oy: float, ang: float) -> ShotHit:
+	var rdx := cos(ang)
+	var rdy := sin(ang)
+	var rh := cast_ray(st, ox, oy, rdx, rdy)
+	var wall_dist := rh.distance
+	var p := st.player
+	var plane_scale := (DoomTypes.C.VIEWPORT_H * 0.5) / tan(DoomTypes.C.HALF_FOV)
+	var pitch_slope := p.pitch / plane_scale
+	var view_z := p.z + (0.6 if p.view_height <= 0.0 else p.view_height)
+	var best_idx := -1
+	var best_t := wall_dist
+	for i in range(1, st.mobj_count + 1):
+		var m: DoomTypes.Mobj = st.mobjs[i]
+		if m == null or m.id == 0 or not is_monster(m.kind) or m.health <= 0:
+			continue
+		var dx := m.x - ox
+		var dy := m.y - oy
+		var t := dx * rdx + dy * rdy
+		if t <= 0 or t > best_t:
+			continue
+		var perp_x := dx - rdx * t
+		var perp_y := dy - rdy * t
+		var perp2 := perp_x * perp_x + perp_y * perp_y
+		if perp2 > m.radius * m.radius:
+			continue
+		var bullet_z := view_z + pitch_slope * t
+		var mobj_bot := m.z - 0.05
+		var mobj_top := m.z + (m.height if m.height > 0.0 else 0.7) + 0.05
+		if bullet_z < mobj_bot or bullet_z > mobj_top:
+			continue
+		best_idx = i
+		best_t = t
+	var out := ShotHit.new()
+	if best_idx > 0:
+		out.hit_mobj = true
+		out.mobj_idx = best_idx
+		out.x = ox + rdx * best_t
+		out.y = oy + rdy * best_t
+	else:
+		out.hit_mobj = false
+		out.x = ox + rdx * wall_dist
+		out.y = oy + rdy * wall_dist
+	return out

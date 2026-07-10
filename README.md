@@ -46,8 +46,14 @@ compiles to — it's covered too, but as the escape hatch it's meant to be, not 
 **As a project:** open this folder in Godot 4.x and press Play (runs `examples/main.tscn`, the demo
 gallery — every demo is `.guitkx`).
 
-**As an addon in your own project:** copy `addons/reactive_ui/` into your project's
-`res://addons/`. The runtime is plain GDScript with global `class_name`s (`V`, `Hooks`,
+**As an addon in your own project:** two ways —
+
+- **From the Asset Library (in-editor):** open the **AssetLib** tab, search **"Reactive UI"**,
+  then **Download → Install** (keep `addons/reactive_ui/`). The editor addon ships as a separate
+  asset — search **"Reactive UI Editor"** to add it too.
+- **Manually:** copy `addons/reactive_ui/` into your project's `res://addons/`.
+
+Either way, the runtime is plain GDScript with global `class_name`s (`V`, `Hooks`,
 `ReactiveRoot`, ...), so they're available immediately — **no plugin enable required**.
 
 To actually *write* `.guitkx`, enable the plugin (**Project Settings → Plugins → Reactive UI**) —

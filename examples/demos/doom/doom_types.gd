@@ -311,6 +311,7 @@ class FloorBand extends RefCounted:
 	var floor_tex: int # sector floor texture index
 	var behind_floor_z: float = NAN # floor_z of the slab IMMEDIATELY behind this one in the same ray (NAN if none)
 	var rim_at_far: bool # true if the far edge of this band is a visible step-down rim
+	var distance: float = INF # perpendicular ray distance -- lets bands join the one depth-sorted paint list
 
 	# GO-03 pooling: reproduce FloorBand.new()'s field defaults for recycled instances.
 	func reset() -> void:
@@ -321,6 +322,7 @@ class FloorBand extends RefCounted:
 		floor_tex = 0
 		behind_floor_z = NAN
 		rim_at_far = false
+		distance = INF
 
 # Phase 8 (original): ceiling band -- mirror of FloorBand. Painted only for
 # non-sky sectors; sky sectors leave the sky backdrop showing through.
@@ -330,6 +332,7 @@ class CeilingBand extends RefCounted:
 	var ceiling_z: float # world Z (for shading)
 	var light: int
 	var ceiling_tex: int
+	var distance: float = INF # perpendicular ray distance -- lets bands join the one depth-sorted paint list
 
 	# GO-03 pooling: reproduce CeilingBand.new()'s field defaults for recycled instances.
 	func reset() -> void:
@@ -338,6 +341,7 @@ class CeilingBand extends RefCounted:
 		ceiling_z = 0.0
 		light = 0
 		ceiling_tex = 0
+		distance = INF
 
 class ColumnInfo extends RefCounted:
 	var main: WallSeg
@@ -670,6 +674,11 @@ class GameState extends RefCounted:
 	var time_accum: float
 	# -- Phase 1+ (original): sector-engine map (parallel to map). Built by new_game. --
 	var sector_map: MapData
+	# 2D BSP over the sector map (Godot-only divergence). Built once per level by
+	# new_game; cast_frame walks it front-to-back instead of per-column ray-casting
+	# (distance-independent visible-surface finding). Untyped to avoid a class-load
+	# cycle (DoomBSP -> DoomTypes). null = fall back to the ray-walker.
+	var bsp
 	# Phase 8 (original): hitscan tracer ring. Fixed-size; index = tracer_count % MAX_TRACERS.
 	# Slots with age_ms >= TRACER_LIFE_MS are skipped by the renderer.
 	var tracers: Array # of Tracer
@@ -703,6 +712,7 @@ class GameState extends RefCounted:
 		copy.rng_seed = rng_seed
 		copy.time_accum = time_accum
 		copy.sector_map = sector_map
+		copy.bsp = bsp
 		copy.tracers = tracers
 		copy.tracer_count = tracer_count
 		return copy
@@ -846,7 +856,10 @@ class C:
 	const MAX_RAY := 32.0
 
 	# -- Phase 1+ Sector engine constants (original) --
-	const MAX_RAY_HOPS := 16 # portal traversal cap
+	const MAX_RAY_HOPS := 64 # portal traversal cap. Must cover MAX_RAY at the map's sector density:
+	# E1M6/E1M1 are one-sector-per-tile, so a 32-unit diagonal ray crosses ~45 cell portals. At 16
+	# the ray stopped BEFORE reaching walls >16 cells away -> those far walls never rendered, so
+	# monsters/geometry behind them leaked through (the "see-through" until you walk close).
 	const STEP_HEIGHT := 0.4 # max floor step the player can walk up
 	const PLAYER_HEIGHT := 0.9 # feet->head
 	const PLAYER_VIEW_HEIGHT := 0.6 # feet->eye

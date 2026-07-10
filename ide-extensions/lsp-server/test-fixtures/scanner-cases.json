@@ -40,6 +40,16 @@
     { "input": "{ <A prop=\"#FF0000\"/> }", "at": 0, "expect": 22 },
     { "input": "{ /* ( */ <A/> }", "at": 0, "expect": 15 },
     { "input": "{ @if (x) { return ( <label>Score #3</label> ) } }", "at": 0, "expect": 49 },
-    { "input": "{ @if (x) { return <label>Score #3</label> } }", "at": 0, "expect": 45 }
+    { "input": "{ @if (x) { return <label>Score #3</label> } }", "at": 0, "expect": 45 },
+
+    { "comment": "G-23: prelude #/## comments scan as code -- delimiters inside them are inert",
+      "input": "{\n\t# a (open\n\t# b) close\n\tvar x = 1\n\treturn (\n\t\tX\n\t)\n}", "at": 0, "expect": 53 },
+    { "input": "{\n\t## doc (split\n\t## over) lines\n\treturn ( <X/> )\n}", "at": 0, "expect": 50 },
+    { "input": "{\n\t# early return (see docs\n\tvar a = 1\n\treturn ( <X/> )\n}", "at": 0, "expect": 56 },
+    { "input": "{\n\t# note { weird\n\treturn ( <X/> )\n}", "at": 0, "expect": 35 },
+    { "input": "{\n\tvar arr = [\n\t\t1, # note ( paren\n\t\t2,\n\t]\n\treturn ( <X/> )\n}", "at": 0, "expect": 60 },
+    { "comment": "G-23 guards: MARKUP windows keep # literal even on prelude-classified lines; // markup comments unchanged",
+      "input": "{\n\tvar x = 1\n\treturn ( <Label>Score #3</Label> )\n}", "at": 0, "expect": 49 },
+    { "input": "{\n\t<A/>\n\t// note (open\n\t// close) here\n\t<B/>\n}", "at": 0, "expect": 45 }
   ]
 }

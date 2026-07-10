@@ -1,5 +1,15 @@
 # Godot Port — Parity Plan & Live Status (ReactiveUIToolKit → ReactiveUI-Godot)
 
+> **STATUS UPDATE — 2026-07-10 (code-verified sweep).** Two G2 items below are STALE — both shipped:
+> - **Custom-draw escape hatch SHIPPED** — `draw_fn` + `redraw_key` reserved props in
+>   `host_config.gd` (register-once trampoline; "the Godot analogue of Unity's
+>   OnGenerateVisualContent + RedrawKey"). The Doom demo uses it. G2's "not ported" is outdated.
+> - **README refreshed** — now states 23 hooks / 17 router hooks / ~61 `V.*` factories + the
+>   custom-drawing hatch. G2's "badly stale README (claims MVP / 10 elements / 6 hooks)" is resolved.
+> Remaining G2 scope: the niche-adapter decision (SubViewport/GraphEdit/GraphNode) and the
+> Tests/Docs waves (Phases 10/9). The audit-findings backlog is essentially cleared — see
+> `FINAL_AUDIT_GODOT_FINDINGS.md`'s v6 banner (only G-09 + the perf items G-10/G-08 remain).
+
 > **STATUS UPDATE — 2026-07-04 (plans audit).** Corrections since 2026-06-30 that the body below
 > does not reflect:
 > - **HMR/Fast Refresh SHIPPED** (addon 0.8.0): running games hot-reload on save with hook state

@@ -34,7 +34,9 @@ func _run() -> void:
 	_test_screen_logic()
 	_test_player_movement()
 	_test_doors()
+	_test_combat()
 	await _test_integration_tick()
+	await _test_menu_and_switch()
 	print("\n[doom_game_test] %d passed, %d failed" % [_passes, _fails])
 	quit(1 if _fails > 0 else 0)
 
@@ -398,6 +400,120 @@ func _test_doors() -> void:
 	GameLogic.try_use(st)
 	_ok(red_door.door_timer == 1, "red door opens once the player holds the red key")
 
+# Phase 3b/c: combat, AI, pickups. Pure-logic (no reconciler): spawn mobjs into
+# the pool directly and drive the ported GameLogic combat functions.
+func _test_combat() -> void:
+	var st := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var p := st.player
+
+	# --- damage_mobj: non-lethal keeps the monster active; lethal -> DYING + kill ---
+	var imp := DoomTypes.Mobj.new()
+	imp.kind = DoomTypes.MobjKind.IMP
+	imp.state = DoomTypes.AIState.HUNTING
+	imp.health = DoomTypes.C.HP_IMP
+	imp.x = p.x + 3.0
+	imp.y = p.y
+	GameLogic.add_mobj(st, imp)
+	var imp_idx := -1
+	for i in range(1, st.mobj_count + 1):
+		if st.mobjs[i] == imp:
+			imp_idx = i
+			break
+	_ok(imp_idx > 0, "spawned imp is in the mobj pool")
+	var kills_before := st.kill_count
+	GameLogic.damage_mobj(st, imp_idx, 5, 0)
+	_ok(imp.health == DoomTypes.C.HP_IMP - 5, "non-lethal damage lowers monster health")
+	_ok(imp.state == DoomTypes.AIState.PAIN or imp.state == DoomTypes.AIState.HUNTING, "hurt monster stays active (pain/hunting)")
+	GameLogic.damage_mobj(st, imp_idx, 1000, 0)
+	_ok(imp.health <= 0, "lethal damage drops health to <= 0")
+	_ok(imp.state == DoomTypes.AIState.DYING, "lethal damage sets DYING")
+	_ok(st.kill_count == kills_before + 1, "a kill increments kill_count")
+
+	# --- try_give_pickup: health / keycard / weapon ---
+	p.health = 50
+	_ok(GameLogic.try_give_pickup(st, DoomTypes.MobjKind.PICKUP_HEALTH), "stimpack accepted when hurt")
+	_ok(p.health == 75, "stimpack heals +25")
+	p.health = 100
+	_ok(not GameLogic.try_give_pickup(st, DoomTypes.MobjKind.PICKUP_HEALTH), "stimpack refused at full health")
+	GameLogic.try_give_pickup(st, DoomTypes.MobjKind.KEY_BLUE)
+	_ok((p.keys & DoomTypes.KeyCard.BLUE) != 0, "blue keycard sets the BLUE flag")
+	GameLogic.try_give_pickup(st, DoomTypes.MobjKind.PICKUP_SHOTGUN)
+	_ok(p.owned_weapons[DoomTypes.WeaponType.SHOTGUN], "shotgun pickup grants the shotgun")
+
+	# --- update_pickup: a stimpack on the player's tile is auto-collected ---
+	p.health = 40
+	var med := DoomTypes.Mobj.new()
+	med.kind = DoomTypes.MobjKind.PICKUP_HEALTH
+	med.x = p.x
+	med.y = p.y
+	GameLogic.add_mobj(st, med)
+	var med_idx := -1
+	for i in range(1, st.mobj_count + 1):
+		if st.mobjs[i] == med:
+			med_idx = i
+			break
+	GameLogic.update_pickup(st, med_idx)
+	_ok(med.collected, "walking over a stimpack collects it")
+	_ok(p.health == 65, "collected stimpack heals the player")
+
+	# --- splash: damages a nearby monster and the nearby player ---
+	var st2 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var imp2 := DoomTypes.Mobj.new()
+	imp2.kind = DoomTypes.MobjKind.IMP
+	imp2.state = DoomTypes.AIState.HUNTING
+	imp2.health = DoomTypes.C.HP_IMP
+	imp2.x = st2.player.x + 1.0
+	imp2.y = st2.player.y
+	GameLogic.add_mobj(st2, imp2)
+	st2.player.health = 100
+	GameLogic.splash(st2, st2.player.x, st2.player.y, 3.0, 100, -1)
+	_ok(imp2.health < DoomTypes.C.HP_IMP, "rocket splash damages a nearby monster")
+	_ok(st2.player.health < 100, "rocket splash also hurts the nearby player")
+
+	# --- fire_weapon: pistol consumes a bullet, emits a tracer, sets cooldown ---
+	var st3 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	st3.player.weapon = DoomTypes.WeaponType.PISTOL
+	var bullets_before: int = st3.player.ammo[0]
+	GameLogic.fire_weapon(st3)
+	_ok(st3.player.ammo[0] == bullets_before - 1, "pistol fire consumes one bullet")
+	_ok(st3.tracer_count > 0, "pistol fire spawns a hitscan tracer")
+	_ok(st3.player.shoot_cooldown > 0.0, "firing sets a shoot cooldown")
+
+	# --- fire_weapon: rocket launcher spawns a live ROCKET_PROJ ---
+	st3.player.weapon = DoomTypes.WeaponType.ROCKET_LAUNCHER
+	st3.player.ammo[2] = 5
+	st3.player.shoot_cooldown = 0.0
+	GameLogic.fire_weapon(st3)
+	_ok(st3.player.ammo[2] == 4, "rocket fire consumes one rocket")
+	var has_rocket := false
+	for i in range(1, st3.mobj_count + 1):
+		var mm: DoomTypes.Mobj = st3.mobjs[i]
+		if mm != null and mm.id != 0 and mm.kind == DoomTypes.MobjKind.ROCKET_PROJ:
+			has_rocket = true
+	_ok(has_rocket, "rocket fire spawns a ROCKET_PROJ projectile")
+
+	# --- fire_weapon: an empty weapon falls back instead of firing it ---
+	st3.player.weapon = DoomTypes.WeaponType.PLASMA_RIFLE
+	st3.player.ammo[3] = 0
+	st3.player.shoot_cooldown = 0.0
+	GameLogic.fire_weapon(st3)
+	_ok(st3.player.weapon != DoomTypes.WeaponType.PLASMA_RIFLE, "empty plasma falls back to another weapon")
+
+	# --- update_monster: an idle imp in sight wakes to HUNTING via the tick loop ---
+	var st4 := GameLogic.new_game(1, DoomTypes.Difficulty.NORMAL)
+	var imp3 := DoomTypes.Mobj.new()
+	imp3.kind = DoomTypes.MobjKind.IMP
+	imp3.state = DoomTypes.AIState.IDLE
+	imp3.health = DoomTypes.C.HP_IMP
+	imp3.x = st4.player.x + 1.5
+	imp3.y = st4.player.y
+	imp3.sector_id = st4.player.sector_id
+	GameLogic.add_mobj(st4, imp3)
+	var cmd := DoomTypes.InputCmd.new()
+	GameLogic.tick(st4, 0.016, cmd)
+	_ok(imp3.state == DoomTypes.AIState.HUNTING or imp3.state == DoomTypes.AIState.PAIN, "an idle imp in sight range wakes when the tick loop runs")
+
+
 ## The one reconciler-based check in this file (see the header comment): mounts
 ## DoomGameScreen for real, drives DoomInputState + physics_frame directly, and
 ## confirms the full hook -> tick -> re-render pipeline survives without
@@ -434,6 +550,21 @@ func _test_integration_tick() -> void:
 		if before[i] != after[i]:
 			diffs += 1
 	_ok(n > 0 and diffs > 0, "held forward input actually moves rendered node positions (%d/%d changed)" % [diffs, n])
+	app.unmount()
+	c.queue_free()
+
+## Phase 5: mount the DoomGame root (screen switch). Starts at the main menu, so
+## this render-smokes DoomGame + DoomMainMenu + the mouse-mode effect + component
+## composition (DoomHUD/DoomFace/DoomMinimap are reached from the game branch) all
+## mounting without error -- the menu/screen-flow the pure-logic tests can't touch.
+func _test_menu_and_switch() -> void:
+	var c := Control.new()
+	root.add_child(c)
+	var app := ReactiveRoot.create(c, V.fc(DoomGame.render))
+	await process_frame
+	await process_frame
+	_ok(c.get_child_count() > 0, "DoomGame mounts at the main menu without error")
+	_ok(not DoomInputState.shared.allow_capture, "menu leaves the cursor free (allow_capture false)")
 	app.unmount()
 	c.queue_free()
 

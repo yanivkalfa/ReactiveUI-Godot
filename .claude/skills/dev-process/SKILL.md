@@ -28,8 +28,8 @@ description: The house development methodology for ReactiveUI projects (Godot + 
 | Artifact | Changelog | How |
 |---|---|---|
 | RG runtime addon (`addons/reactive_ui`) | `addons/reactive_ui/CHANGELOG.md` | Hand-write; it must stay a **byte-identical mirror** of root `CHANGELOG.md` (a test enforces it) |
-| RG editor addon (`addons/reactive_ui_editor`) | `addons/reactive_ui_editor/CHANGELOG.md` | Hand-write (release body is auto-extracted from the top section) |
-| VS Code + VS2022 extensions | `ide-extensions/changelog.json` (single source) | `node ide-extensions/scripts/changelog.mjs add --ide <vscode|vs2022|both> -m "..."` — generated `CHANGELOG.md`/`overview.md` are never hand-edited |
+| RG editor addon (`addons/reactive_ui_editor`) | `ide-extensions/changelog.json` (single source, since 0.6.3) | `changelog.mjs add --scope editor --editor X.Y.Z --message-file …` then `extract --ide editor --out addons/reactive_ui_editor/CHANGELOG.md` and **commit both** — pre-0.6.3 history is a frozen verbatim tail below the cutover marker |
+| VS Code + VS2022 extensions | `ide-extensions/changelog.json` (single source) | `changelog.mjs add --scope <shared\|vscode\|vs2022> --vscode X.Y.Z --vs2022 X.Y.Z --message-file …` then `extract` **each target and commit the regenerated files with the json** — the changelog-sync CI job (`changelog.mjs verify`) fails on drift; never hand-edit a generated `CHANGELOG.md`/`overview.md` |
 | gdscript-analyzer crates | per-crate `crates/*/CHANGELOG.md` | release-plz/git-cliff generates from Conventional Commit PR titles — the squash title IS the changelog line |
 | Unity ReactiveUIToolKit | root `CHANGELOG.md` (+ per-extension under `ide-extensions~`) | `scripts/changelog.mjs`-assisted, same single-source idea |
 | Community | `plans/DISCORD_CHANGELOG.md` | Notable releases get a Discord-formatted entry at the top (≤2000 chars) |

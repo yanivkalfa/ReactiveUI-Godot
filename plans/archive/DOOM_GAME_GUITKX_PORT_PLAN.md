@@ -3,9 +3,10 @@
 > **Goal:** port `ReactiveUIToolKit`'s Unity/C# `DoomGame` sample
 > (`C:\Yanivs\GameDev\UnityComponents\Assets\ReactiveUIToolKit\Samples\Components\DoomGame`) — a
 > full software-rendered, sector/portal-raycast Doom-style FPS with a HUD, minimap, menu, and
-> in-game overlays — into a new `.guitkx` example in this repo (`examples/demos/doom/`, working
-> name). **Status: research complete, nothing implemented yet.** This document is the plan; no
-> code has been written. It is the single largest single feature ever proposed for this repo (the
+> in-game overlays — into a new `.guitkx` example in this repo (`examples/demos/doom/`). **Status:
+> COMPLETE 2026-07-08 — all 6 phases done; audio/tween/gallery-entry consciously deferred as
+> out-of-scope optionals (see Phase 6). Ships as the standalone scene `examples/demos/doom/doom.tscn`;
+> `tests/doom_game_test.gd` green (179 checks).** It is the single largest single feature in this repo (the
 > Unity original's simulation/render core alone — `GameLogic` + `Raycast` + `DoomMaps` + `DoomTypes`
 > + `DoomTextures` — is ~4,700 lines, before any UI).
 >
@@ -226,11 +227,11 @@ was run (many commits, phases marked done incrementally, one PR at the end). Giv
 expect this to span multiple sessions; each phase below is independently demoable so progress is
 always visible and testable, not a big-bang integration at the end.
 
-- [ ] **Phase 0 — Data + textures, no rendering.** Port `doom_types.gd`, `doom_textures.gd`,
+- [x] **Phase 0 — Data + textures, no rendering.** Port `doom_types.gd`, `doom_textures.gd`,
   `doom_maps.gd` (§2). Verification: a headless GDScript test script that calls
   `DoomTextures.ensure_built()` and asserts every expected texture key exists and is non-null, and
   that `DoomMaps.build_level(n)` returns a sane map for all 6 levels. No UI yet.
-- [ ] **Phase 1 — Static frame, no game loop.** Port `raycast.gd` and enough of `game_logic.gd`
+- [x] **Phase 1 — Static frame, no game loop.** Port `raycast.gd` and enough of `game_logic.gd`
   (`new_game`, `cast_frame`/`build_column_sector`) to render one static frame from a fixed player
   position/angle. Build `doom_game_screen_logic.gd` and the real per-strip `@for`-emitted markup in
   `doom_game_screen.guitkx` (§1.1). Verification: **run it in the Godot editor and visually
@@ -239,29 +240,30 @@ always visible and testable, not a big-bang integration at the end.
   informally, in terms of how the editor feels running it) and should be de-risked before anything
   else is built on top of it. Also a first, informal read on reconciler cost under this element
   count — not yet at full tick rate/game-loop load (that's Phase 2), but worth noting.
-- [ ] **Phase 2 — Input + movement + the tick loop.** Port the input-capture split (§1.5), the
+- [x] **Phase 2 — Input + movement + the tick loop.** Port the input-capture split (§1.5), the
   `doom_game_screen.hooks.guitkx` tick loop (§1.2), and `game_logic.gd`'s player movement/physics
   (WASD, mouse-look, gravity/jump/crouch, step-up, collision). Verification: walk around a level
   in the editor; mouse-look and movement feel right; cursor captures/releases correctly.
-- [ ] **Phase 3 — Combat, AI, pickups, doors.** Port weapons (melee/hitscan/projectile), monster
+- [x] **Phase 3 — Combat, AI, pickups, doors.** Port weapons (melee/hitscan/projectile), monster
   AI (`UpdateMonster`, line-of-sight, chase/attack states), damage (`DamageMobj`/`Hurt`, splash,
   barrel chain reactions), pickups (`TryGivePickup`), and the door FSM. Verification: fight
   monsters, take/deal damage, pick up items, open doors, across at least 2 of the 6 levels.
-- [ ] **Phase 4 — HUD, face, minimap.** Port `doom_hud.guitkx`, `doom_face.guitkx`,
+- [x] **Phase 4 — HUD, face, minimap.** Port `doom_hud.guitkx`, `doom_face.guitkx`,
   `doom_minimap.guitkx` (real keyed elements per §1.1, same element count as the original).
   Verification: HUD numbers track real game state; face reacts to health/hurt/god-mode/death;
   minimap shows player position correctly.
-- [ ] **Phase 5 — Menu + screen flow + overlays.** Port `doom_main_menu.guitkx`, `doom_game.guitkx`
+- [x] **Phase 5 — Menu + screen flow + overlays.** Port `doom_main_menu.guitkx`, `doom_game.guitkx`
   (screen switch, restart/next-level session-version bump), game-over/victory overlays.
   Verification: full loop — menu → play → die/win → back to menu or next level — across all 6
   levels, no dead ends.
-- [ ] **Phase 6 — Polish / deviations from the reference.** Fix the RNG inconsistency (§1.6)
-  everywhere. Decide whether to add audio (the Unity original has **none** — see §9 — so this is
-  a genuinely new addition, not a port; `useSfx` exists and is documented but has zero existing
-  in-repo example to copy from, so budget real prototyping time if pursued, not just a mechanical
-  port). Decide whether to add `useTween`/`useAnimate` for flashes/bob instead of the original's
-  raw-math-into-style-every-frame approach (also a deviation, not a port — the original does no
-  tweening at all). Gallery-table discoverability entry, if wanted (§1.8).
+- [x] **Phase 6 — Polish / deviations from the reference.** RNG inconsistency (§1.6) fixed
+  everywhere — single deterministic LCG `frand()` (`game_logic.gd:1425-1428`), including the
+  intentional Unity face-timer-jitter deviation (`game_logic.gd:551-555`, `:582`). Audio and
+  `useTween`/`useAnimate` were **consciously deferred as out-of-scope optionals** — both are genuinely
+  new additions the Unity original does not have (see §9), not part of a faithful port; the demo keeps
+  the original's raw-math-into-style-per-frame approach. Gallery-table discoverability entry (§8 Q1)
+  **not added** — the demo ships as its dedicated standalone scene (`examples/demos/doom/doom.tscn`),
+  which the plan lists as the default; a launcher entry remains an optional nice-to-have.
 
 ## 4. Testing & verification plan
 

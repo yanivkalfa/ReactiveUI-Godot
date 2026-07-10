@@ -1,5 +1,11 @@
 # VS Code → VS2022 Extension Parity Plan
 
+> **STATUS UPDATE — 2026-07-10:** the campaign merged and released — `vs2022-v0.8.6` and
+> `vs2022-v0.8.7` are tagged, so the **"urgent pkgdef release" below SHIPPED** (published VSIXes
+> now bundle the TextMate grammar registration; the broken-highlighting 0.5.5 era is over). The
+> remaining honest gap from this plan is the **interactive verification checklist** (driving each
+> phase through a real VS2022 UI), which no session has recorded executing.
+
 > **Goal:** every user-visible capability of the guitkx VS Code extension (0.8.6) exists in the
 > VS2022 extension. **Status: all 5 phases implemented and building clean on `feat/vs2022-parity`
 > (2026-07-06) — zero interactive verification done yet.** Every phase compiles, and every VSIX

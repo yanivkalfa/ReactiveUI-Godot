@@ -6,12 +6,14 @@ hover, go-to-definition, find-references, rename, signature help, inlay hints, c
 symbols, formatting, and semantic highlighting — with **complete parity** to the IDE tooling of both
 ReactiveUIToolKit (Unity) and ReactiveUI-Godot.
 
-Status: **P1–P2 SHIPPED** (2026-07 plans audit) as `addons/reactive_ui_editor` 0.1.0/0.2.0 —
-main-screen editor, highlighter/tokenizer, live diagnostics, and the `lsp/` markup intelligence
-(schema/context/completion/hover/workspace modules + 39-check headless suite), all pure GDScript.
-**Remaining: P3 only** — deep embedded-GDScript intelligence via the native gdext analyzer
-binding; design of record is `GODOT_ANALYZER_INTEGRATION_PLAN.md`. The research below stays as
-the evidence base.
+Status: **ALL PHASES DONE** (2026-07-08 plans audit). P1–P2 shipped as `addons/reactive_ui_editor`
+0.1.0/0.2.0 (main-screen editor, highlighter/tokenizer, live diagnostics, `lsp/` markup intelligence).
+**P3 shipped as editor 0.6.0** (now 0.6.2) — deep embedded-GDScript intelligence via the native gdext
+analyzer binding: type-aware completion, hover, diagnostics, go-to-definition, find-references, rename,
+and signature help inside `{expr}`/setup/hook bodies, feature-detected on the `GdscriptAnalyzer` native
+class (`addons/reactive_ui_editor/lsp/guitkx_analyzer_bridge.gd`). Its two execution/design-of-record
+companions (`GODOT_ANALYZER_INTEGRATION_PLAN.md`, `NATIVE_EDITOR_PARITY_PLAN.md`) are already archived.
+The research below stays as the evidence base.
 
 **Execution plan of record for the remaining gaps: [`NATIVE_EDITOR_PARITY_PLAN.md`](NATIVE_EDITOR_PARITY_PLAN.md)**
 (2026-07-04) — full VS-Code↔addon inventory diff, milestone-ordered: M1 store-submittable →

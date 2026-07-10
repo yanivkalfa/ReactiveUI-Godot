@@ -1,8 +1,17 @@
 # Changelog
 
 All notable changes to the **Reactive UI Editor** Godot addon are documented here.
-The format is based on [Keep a Changelog](https://keepachangelog.com/); this addon versions independently
-of the `reactive_ui` runtime library and the VS Code / Visual Studio extensions.
+This addon versions independently of the `reactive_ui` runtime library. Entries from
+0.6.3 onward are generated from `ide-extensions/changelog.json` (the single source
+shared with the GUITKX IDE extensions) — add entries via `changelog.mjs add --scope
+editor`, then regenerate this file with `extract`; never edit it by hand. The history
+below the marker line predates the cutover and is preserved verbatim.
+
+## [0.6.3] - 2026-07-10
+- Syntax highlighting tokenizes ~17% faster. The per-line tokenizer (the per-keystroke path behind every visible line's colouring) now reads characters via `unicode_at` + integer comparisons instead of single-char-String indexing, classifies symbols through a constant int-keyed set instead of a per-char string scan, and keeps its char-code table local (cross-script constant access is a runtime lookup in GDScript). The emitted token stream is hash-identical to 0.6.2 across the whole example corpus -- purely faster, no visual change.
+- Live compiles and diagnostics inherit the runtime compiler's ~28% speed-up and its comment-desync fix (see `reactive_ui` 0.8.7's changelog) -- pairs best with `reactive_ui` 0.8.7+.
+
+<!-- changelog.mjs cutover: entries above are generated from ide-extensions/changelog.json; the history below is frozen and preserved verbatim. -->
 
 ## [0.6.2] — 2026-07-06
 

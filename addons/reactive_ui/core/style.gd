@@ -10,7 +10,8 @@ extends RefCounted
 ## 1. Friendly shorthands — the common 90% (see `_apply_key` / `_reset`):
 ##      min_width/min_height/min_size, grow_h/grow_v, expand_h/expand_v, h_align/v_align,
 ##      modulate/self_modulate, rotation, scale, pivot, visible, clip, mouse_filter,
-##      tooltip, z_index, color/font_color, font, font_size, separation, h_separation,
+##      tooltip, z_index, z_as_relative, material, texture_filter, texture_repeat,
+##      color/font_color, font, font_size, separation, h_separation,
 ##      v_separation, outline_size, outline_color.
 ##
 ## 2. StyleBox builder — bg_color, border_color, border_width, corner_radius, pad combine
@@ -204,6 +205,10 @@ static func _apply_key(node: Control, key: String, value) -> void:
 		"mouse_filter": node.mouse_filter = _mouse_filter(value)
 		"tooltip": node.tooltip_text = str(value)
 		"z_index": node.z_index = value
+		"z_as_relative": node.z_as_relative = value
+		"material": node.material = value
+		"texture_filter": node.texture_filter = value
+		"texture_repeat": node.texture_repeat = value
 		"color", "font_color": node.add_theme_color_override("font_color", value)
 		"font": node.add_theme_font_override("font", value)
 		"font_size": node.add_theme_font_size_override("font_size", value)
@@ -236,6 +241,10 @@ static func _reset(node: Control, key: String) -> void:
 		"mouse_filter": node.mouse_filter = Control.MOUSE_FILTER_STOP
 		"tooltip": node.tooltip_text = ""
 		"z_index": node.z_index = 0
+		"z_as_relative": node.z_as_relative = true
+		"material": node.material = null
+		"texture_filter": node.texture_filter = CanvasItem.TEXTURE_FILTER_PARENT_NODE
+		"texture_repeat": node.texture_repeat = CanvasItem.TEXTURE_REPEAT_PARENT_NODE
 		"color", "font_color": node.remove_theme_color_override("font_color")
 		"font": node.remove_theme_font_override("font")
 		"font_size": node.remove_theme_font_size_override("font_size")

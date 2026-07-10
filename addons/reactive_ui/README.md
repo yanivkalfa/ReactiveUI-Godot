@@ -13,12 +13,15 @@ preservation).
 
 ## Install
 
-1. Copy `addons/reactive_ui/` into your project's `res://addons/`.
+1. Get the addon, either way:
+   - **From the Asset Library:** open the **AssetLib** tab in the editor, search **"Reactive UI"**,
+     then **Download → Install** (keep the `addons/reactive_ui/` folder).
+   - **Manually:** copy `addons/reactive_ui/` into your project's `res://addons/`.
 2. Enable **Reactive UI** under *Project → Project Settings → Plugins*.
-3. Optional but recommended: the **Reactive UI Editor** addon (a separate asset) adds an
-   in-editor `.guitkx` authoring experience — highlighting, live diagnostics, completion, hover,
-   go-to-definition. VS Code users get the same (plus embedded-GDScript analysis) from the
-   **GUITKX** extension on the marketplace.
+3. Optional but recommended: the **Reactive UI Editor** addon (a separate Asset Library entry —
+   search **"Reactive UI Editor"**) adds an in-editor `.guitkx` authoring experience — highlighting,
+   live diagnostics, completion, hover, go-to-definition. VS Code users get the same (plus
+   embedded-GDScript analysis) from the **GUITKX** extension on the marketplace.
 
 Requires **Godot 4.4+** (tested on 4.7).
 

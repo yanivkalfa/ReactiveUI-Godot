@@ -61,6 +61,9 @@ class MarkupParser {
   private errCode = "";
   private errMsg = "";
   private errAt = -1;
+  // [G-08] Line-start offsets of src (entry k = index where line k begins; entry 0 = 0), built
+  // lazily on first lineOf() so lineOf is a binary search instead of an O(idx) scan per element.
+  private lineStarts: number[] | null = null;
   constructor(src: string) {
     this.src = src;
   }
@@ -441,9 +444,25 @@ class MarkupParser {
   }
 
   private lineOf(idx: number): number {
-    let n = 0;
-    for (let k = 0; k < idx; k++) if (this.src[k] === "\n") n++;
-    return n + 1;
+    // [G-08] Binary search over lazily-built line starts -- was an O(idx) scan per element.
+    if (this.lineStarts === null) {
+      const starts = [0];
+      let nl = this.src.indexOf("\n", 0);
+      while (nl !== -1) {
+        starts.push(nl + 1);
+        nl = this.src.indexOf("\n", nl + 1);
+      }
+      this.lineStarts = starts;
+    }
+    const ls = this.lineStarts;
+    let lo = 0;
+    let hi = ls.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ls[mid] <= idx) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
   }
 }
 

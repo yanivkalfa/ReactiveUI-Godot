@@ -127,8 +127,29 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 1. P1 — Scanner character access (the big one)
 
-### G-10 — All GDScript scanners use `src[i]` single-char-String indexing
-- **Anchors:** `guitkx_lexer.gd` (0 uses of `unicode_at`), `guitkx_markup.gd` (0), most of `guitkx.gd`, `guitkx_tokenizer.gd`/highlighter. In GDScript 4, `s[i]` allocates a fresh 1-char String per access and comparisons are string-compares. These loops run per keystroke (highlighter, live diagnostics), per save (compiler), and per poll tick (watch sweeps).
+### G-10 — All GDScript scanners use `src[i]` single-char-String indexing — **DONE, ALL 4 STAGES (2026-07-10)**
+- **STATUS:** fully converted to `unicode_at` + int consts across the compiler stack AND the editor
+  tokenizer: stage 1 `guitkx_lexer.gd` (hosts the shared `C_*` const table), stage 2
+  `guitkx_markup.gd` inner loops (+ G-08), stage 3 `guitkx.gd`'s ~25 scan sites across 26 functions
+  plus `guitkx_jsx_scan.gd`, stage 4 `guitkx_tokenizer.gd` (the per-keystroke highlight path; the
+  highlighter itself has no char reads — it delegates). Measured (`tests/guitkx_bench.gd`, permanent
+  harness, 12.4 KB doom component): full compile **71.96 → ~51-52 ms (-28%)**, `skip_noncode`
+  whole-file walk **4.58 → 2.65 ms (-42%)**, tokenizer whole-file tokenize **8.4 → 7.0 ms (-17%)**.
+  Verified behavior-preserving: all contract cases; guitkx/core/style/update/demos/doom suites
+  green; all 49 example `.guitkx` recompile **byte-identical**; the tokenizer's full token stream
+  over all 49 files × both modes is **hash-identical** to pre-conversion. Public String APIs kept
+  (`_is_ident(String)` delegates to `_is_ident_code(int)`).
+- **Lessons (measured, for future scanner work):** `unicode_at`+int is ~4x faster than
+  `s[i]`+String inline, BUT (a) a GDScript `match` with many patterns compiles to LINEAR
+  interpreted compares — a 22-arm match made the tokenizer 64% SLOWER than the old
+  `String.contains()`; the fix is a `const` int-keyed Dictionary set (`.has` = one C++ hash);
+  (b) flatten hot char-class helpers into a single body — nested helper calls cost more than the
+  int compares they save; (c) `const L = GlobalClassName` is not a constant expression in 4.7 —
+  use `preload()`. TS mirrors deliberately NOT ported (charCodeAt-style access is already cheap in
+  JS; the shared contract corpus pins behavior). Adjacent surface NOT in this pass: the editor
+  addon's `lsp/` layer (`guitkx_virtual_doc.gd` etc.) has its own `_src[i]` scanners — same recipe
+  applies if in-editor LSP latency ever measures hot.
+- **Anchors (historical):** `guitkx_lexer.gd` (0 uses of `unicode_at`), `guitkx_markup.gd` (0), most of `guitkx.gd`, `guitkx_tokenizer.gd`/highlighter. In GDScript 4, `s[i]` allocates a fresh 1-char String per access and comparisons are string-compares. These loops run per keystroke (highlighter, live diagnostics), per save (compiler), and per poll tick (watch sweeps).
 - **RECIPE:**
   1. Convert the LEXER first (`skip_noncode`, `_skip_string`, `find_matching`, `keyword_at`, `_is_ident`): `var c := src.unicode_at(i)` + int-constant comparisons (named `const` ints at the top: `const C_HASH := 35`, `C_QUOTE := 34`, …).
   2. Run the scanner contract tests after EACH function conversion.
@@ -138,9 +159,13 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 2. P2 — Parser/compiler algorithmic costs
 
-### G-08 — `_line_of` is O(n²)-with-allocation on element-heavy files
-- **Anchors:** `guitkx_markup.gd _line_of` (l.396): `_src.substr(0, idx).count("\n")` — a full prefix COPY per element node.
-- **RECIPE:** build `_line_starts: PackedInt32Array` once in `parse()` (single pass over `[start,end)`); `_line_of` = binary search. Mirror check: grep `markup.ts` for the equivalent (`slice(0, …).split("\n")`-style) and fix if present. Contract behavior unchanged (line numbers identical).
+### G-08 — `_line_of` is O(n²)-with-allocation on element-heavy files — **DONE (2026-07-10)**
+- **STATUS:** fixed in BOTH mirrors. `guitkx_markup.gd`: `_line_starts: PackedInt32Array` built once
+  per `parse()`, `_line_of` = binary search (substr-count fallback kept for pre-parse calls).
+  `markup.ts`: the equivalent per-call O(idx) scan in `lineOf` replaced with lazily-built
+  `lineStarts` + the same binary search (this one runs per keystroke in the LSP). Line numbers
+  identical (suites + 180 lsp tests + byte-identical corpus).
+- **Anchors (historical):** `guitkx_markup.gd _line_of` (l.396): `_src.substr(0, idx).count("\n")` — a full prefix COPY per element node.
 
 ### GO-01 — `guitkx.gd compile()` re-scans per tier
 - `_split_return`, `FindJsx`-style walks, `_validate_hooks`, `_validate_effect_deps`, and `_hook_signature` each walk setup/body text independently per compile. Compile cadence is per-save (not per keystroke), so this is acceptable today; if profiling after G-10 still shows compile > ~50 ms on large files, share one pass that produces (line starts, hook-call offsets, jsx spans) consumed by all tiers. Do NOT restructure preemptively.
@@ -156,9 +181,11 @@ permanent `tests/recon_bench.gd` harness.
 
 ## 4. P2 — LSP server startup
 
-### G-15 — Synchronous workspace scan + library load inside `onInitialize`
-- **Anchors:** `ide-extensions/lsp-server/src/server.ts:95-100` — `scanWorkspace` + `loadLibraries` + `syncAllGuitkxLibraries` run before the initialize response returns → cold-open LSP latency on big projects; **also the direct enabler of the VS2022 save-hang (findings G-18)** — a save issued during the scan window blocks on the busy server.
-- **RECIPE:** move the three calls into `connection.onInitialized(...)` behind a `workspaceReady` promise; handlers await it or degrade gracefully (they already tolerate empty indices). Measure: time-to-first-hover on a large project before/after. Do together with findings G-18 (its timeout is the belt, this is the suspenders).
+### G-15 — Synchronous workspace scan + library load inside `onInitialize` — **DONE (verified 2026-07-10)**
+- **STATUS:** fixed — the scan runs behind `connection.onInitialized` (verified in `server.ts`); the
+  companion findings G-18 timeout (2s CancellationTokenSource in VS2022 format-on-save) also shipped.
+- **Anchors (historical):** `ide-extensions/lsp-server/src/server.ts:95-100` — `scanWorkspace` + `loadLibraries` + `syncAllGuitkxLibraries` ran before the initialize response returned → cold-open LSP latency on big projects; **also the direct enabler of the VS2022 save-hang (findings G-18)** — a save issued during the scan window blocked on the busy server.
+- **RECIPE (as executed):** move the three calls into `connection.onInitialized(...)` behind a `workspaceReady` promise; handlers await it or degrade gracefully (they already tolerate empty indices).
 
 ## 5. Suggested order & measurement
 1. **G-10** lexer conversion (contract-pinned, mechanical, biggest win) — before/after ms/KB in the PR.
@@ -167,6 +194,16 @@ permanent `tests/recon_bench.gd` harness.
 4. **G-11 / GO-01** — only with measurements showing need.
 
 ## 6. Doom demo — runtime reconciler/game-loop profiling (2026-07-06)
+
+> **SUPERSEDED IN PART (2026-07-10):** the renderer described below (per-column portal ray-walker)
+> is no longer the default. A 2D BSP (`examples/demos/doom/doom_bsp.gd`, gated by
+> `GameLogic.USE_BSP`, built once per level, cached on `GameState.bsp`) now fills the same
+> `columns[]` front-to-back — distance-independent (no MAX_RAY_HOPS cap) and **1.46–2.53× faster
+> per frame across L1–L6** (`tests/doom_bsp_bench.gd`; columns match the ray-walker to <1px via
+> `tests/doom_bsp_cmp.gd`). The ray-walker remains as the fallback path, so the GO-03/GO-04 notes
+> below stay valid for it; GO-03's un-pooled `ColumnInfo` (160/frame) now applies to
+> `DoomBSP.render_frame` as well. The "still render-bound in dense views" conclusion (reconciler
+> ~11µs/node) is unchanged and remains the open core-library lever.
 
 Measured while diagnosing the interactive "feels jumpy/slow" report during Phase 2 of
 `plans/DOOM_GAME_GUITKX_PORT_PLAN.md`. Scope note: unlike sections 1-4 above (all

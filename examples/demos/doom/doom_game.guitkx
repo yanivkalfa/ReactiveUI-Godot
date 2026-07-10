@@ -1,0 +1,65 @@
+@class_name DoomGame
+
+## Faithful port of the Unity `DoomGame.uitkx` -- the root screen switch
+## (menu <-> game) plus level / difficulty / session-version state. A bumped
+## session_version re-runs DoomGameScreen's restart (replay same level), a
+## bumped level advances. Mouse capture is coordinated with the bootstrap's raw
+## input capture (doom_bootstrap.gd) via DoomInputState.shared.allow_capture.
+component DoomGame {
+  var screen = useState(DoomTypes.GameScreen.MAIN_MENU)
+  var level = useState(1)
+  var difficulty = useState(DoomTypes.Difficulty.NORMAL)
+  var session = useState(0)
+
+  var handle_start = func():
+    session[1].call(session[0] + 1)
+    screen[1].call(DoomTypes.GameScreen.GAME)
+
+  var handle_exit = func():
+    screen[1].call(DoomTypes.GameScreen.MAIN_MENU)
+
+  var handle_next = func():
+    if level[0] < 6:
+      level[1].call(level[0] + 1)
+      session[1].call(session[0] + 1)
+    else:
+      screen[1].call(DoomTypes.GameScreen.MAIN_MENU)
+      level[1].call(1)
+
+  # Mouse-mode + input-gate coordination. When the game screen is up the OS
+  # cursor is captured (relative mouse-look); the menu / overlays release it so
+  # buttons are clickable. allow_capture tells the bootstrap whether a click
+  # should (re)capture the cursor.
+  useEffect(func():
+    var in_game = screen[0] == DoomTypes.GameScreen.GAME
+    DoomInputState.shared.allow_capture = in_game
+    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if in_game else Input.MOUSE_MODE_VISIBLE
+  , [screen[0]])
+
+  return (
+    <Control style={ {"expand_h": true, "expand_v": true} }>
+      @if (screen[0] == DoomTypes.GameScreen.MAIN_MENU) {
+        return (
+          <DoomMainMenu
+            level={ level[0] }
+            difficulty={ difficulty[0] }
+            on_level_change={ func(l): level[1].call(l) }
+            on_difficulty_change={ func(d): difficulty[1].call(d) }
+            on_start={ handle_start }
+          />
+        )
+      }
+      @if (screen[0] == DoomTypes.GameScreen.GAME) {
+        return (
+          <DoomGameScreen
+            restart_version={ session[0] }
+            level={ level[0] }
+            difficulty={ difficulty[0] }
+            on_exit={ handle_exit }
+            on_next_level={ handle_next }
+          />
+        )
+      }
+    </Control>
+  )
+}
