@@ -605,7 +605,7 @@ func _test_wave2_completion() -> void:
 	names = items.map(func(it): return str((it as Dictionary).get("insert", "")))
 	_ok(names.has("bg_color") and names.has("font_color") and names.has("separation"),
 		"style dict offers the RUIStyle keys")
-	_ok(GuitkxSchema.style_keys().size() == 46, "schema carries all 46 style keys")
+	_ok(GuitkxSchema.style_keys().size() == 45, "schema carries all 45 style keys")
 
 	# G7: builtin members after `Color.` in embedded code.
 	var s4 := "component X() {\n\tvar c = Color." + "\n\treturn (\n\t\t<Label />" + END
@@ -1087,7 +1087,7 @@ func _test_tokenizer_corpus() -> void:
 		["\"text run\"", { 0: "string", 9: "string" }],
 		["'sq'", { 0: "string" }],
 		["<Label />", { 0: "symbol", 1: "tag", 5: "tag", 7: "symbol", 8: "symbol" }],
-		["</VBoxContainer>", { 0: "symbol", 1: "symbol", 2: "tag", 6: "symbol" }],
+		["</VBoxContainer>", { 0: "symbol", 1: "symbol", 2: "tag", 15: "symbol" }],
 		["< 5", { 0: "symbol", 2: "number" }],
 		["@if cond", { 0: "directive", 2: "directive", 4: "" }],
 		["@ x", { 0: "symbol" }],
@@ -1124,21 +1124,28 @@ func _test_tokenizer_corpus() -> void:
 
 # F3 — TS-twin parity pins: behaviors the VS Code server pins that the addon inherited untested.
 func _test_parity_pins() -> void:
-	# onChange polymorphism resolves by candidate ORDER against the live class.
-	_ok(GuitkxSchema.resolve_event_signal("onChange", "OptionButton") == "item_selected",
-		"onChange on OptionButton -> item_selected (order: before toggled)")
-	_ok(GuitkxSchema.resolve_event_signal("onChange", "SpinBox") == "value_changed",
-		"onChange on SpinBox -> value_changed")
-	_ok(GuitkxSchema.resolve_event_signal("onChange", "LineEdit") == "text_changed",
-		"onChange on LineEdit -> text_changed")
-	_ok(GuitkxSchema.resolve_event_signal("onChange", "CheckBox") == "toggled",
-		"onChange on CheckBox -> toggled")
+	# 0.9.0 loyal events: on<Pascal> lowers generically to the snake_case signal — no alias table.
+	_ok(GuitkxSchema.resolve_event_signal("onItemSelected", "OptionButton") == "item_selected",
+		"onItemSelected on OptionButton -> item_selected")
+	_ok(GuitkxSchema.resolve_event_signal("onValueChanged", "SpinBox") == "value_changed",
+		"onValueChanged on SpinBox -> value_changed")
+	_ok(GuitkxSchema.resolve_event_signal("onTextChanged", "LineEdit") == "text_changed",
+		"onTextChanged on LineEdit -> text_changed")
+	_ok(GuitkxSchema.resolve_event_signal("onToggled", "CheckBox") == "toggled",
+		"onToggled on CheckBox -> toggled")
+	# The removed React alias no longer resolves specially: onChange lowers to a literal `change`.
+	_ok(GuitkxSchema.resolve_event_signal("onChange", "OptionButton") == "change",
+		"removed alias onChange lowers generically (no polymorphic table)")
 	var evs: Array = GuitkxSchema.events_for_class("OptionButton")
-	var on_change_sig := ""
+	var item_sel := ""
+	var has_pressed := false
 	for e in evs:
-		if str((e as Dictionary).get("name", "")) == "onChange":
-			on_change_sig = str((e as Dictionary).get("signal", ""))
-	_ok(on_change_sig == "item_selected", "events_for_class carries the resolved onChange binding")
+		if str((e as Dictionary).get("name", "")) == "onItemSelected":
+			item_sel = str((e as Dictionary).get("signal", ""))
+		if str((e as Dictionary).get("name", "")) == "onPressed":
+			has_pressed = true
+	_ok(item_sel == "item_selected", "events_for_class derives onItemSelected from ClassDB")
+	_ok(has_pressed, "events_for_class includes INHERITED signals (onPressed from BaseButton)")
 
 	# @class_name override binds the generated class (compile + codegen surface).
 	var src := "@class_name Zed\ncomponent OvR() {\n\treturn (\n\t\t<Label />\n\t)\n}\n"

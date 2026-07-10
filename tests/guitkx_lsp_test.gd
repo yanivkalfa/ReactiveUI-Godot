@@ -57,9 +57,9 @@ func _test_context() -> void:
 func _test_schema() -> void:
 	var tags := GuitkxSchema.host_tags()
 	_ok(tags.size() >= 20, "host_tags loaded (%d)" % tags.size())
-	_ok(tags.has("Button") and tags.has("VBox"), "host tags include Button + VBox")
+	_ok(tags.has("Button") and tags.has("VBoxContainer"), "host tags include Button + VBoxContainer")
 	_ok(GuitkxSchema.godot_class_for("Button") == "Button", "Button -> Button")
-	_ok(GuitkxSchema.godot_class_for("VBox") == "VBoxContainer", "VBox -> VBoxContainer")
+	_ok(GuitkxSchema.godot_class_for("VBoxContainer") == "VBoxContainer", "VBoxContainer -> VBoxContainer")
 	var props := GuitkxSchema.godot_properties("Button")
 	_ok(_has_named(props, "text") and _has_named(props, "visible"), "Button properties include text + visible")
 	var evs := GuitkxSchema.events_for_class("Button")
@@ -120,7 +120,7 @@ func _test_hover() -> void:
 	var END := "\n\t)\n}\n"
 	_ok(_hov(RET + "<Butt|on />" + END).contains("host element"), "hover host tag Button")
 	_ok(_hov(RET + "<Demo|Box />" + END).contains("user component"), "hover user component DemoBox")
-	_ok(_hov(RET + "<Button on|Click={ f } />" + END).contains("pressed"), "hover onPressed -> pressed")
+	_ok(_hov(RET + "<Button on|Pressed={ f } />" + END).contains("pressed"), "hover onPressed -> pressed")
 	_ok(_hov(RET + "<Button te|xt=\"x\" />" + END).contains("property"), "hover text -> property")
 	_ok(_hov(RET + "@fo|r (i in xs) { <Label /> }" + END).contains("@for"), "hover @for directive")
 	_ok(_hov(RET + "<Button ke|y={ 1 } />" + END).contains("Reconciler"), "hover key -> structural")

@@ -133,12 +133,10 @@ static func signature_at(text: String, offset: int) -> Dictionary:
 		"active": mini(active, maxi(0, params.size() - 1)),
 	}
 
-# Event attribute shapes (mirrors events.ts isEventAttr): the on_<signal> escape hatch, a known
-# React alias, or a camelCase onXxx that lowers to xxx (resolve_event_signal validates it later).
+# Event attribute shapes (mirrors events.ts isEventAttr): the on_<signal> escape hatch or a
+# camelCase on<Pascal> that lowers to the snake_case signal (resolve_event_signal validates it later).
 static func _is_event_attr(name: String) -> bool:
 	if name.begins_with("on_") and name.length() > 3:
-		return true
-	if Schema.REACT_EVENTS.has(name):
 		return true
 	return name.length() > 2 and name.begins_with("on") and name.unicode_at(2) >= 65 and name.unicode_at(2) <= 90
 
