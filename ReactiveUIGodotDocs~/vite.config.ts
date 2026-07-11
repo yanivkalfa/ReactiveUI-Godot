@@ -19,7 +19,7 @@ import path from 'node:path'
 
 const repoRoot = path.resolve(process.cwd(), '..')
 const readJson = (rel: string) =>
-  JSON.parse(fs.readFileSync(path.join(repoRoot, rel), 'utf-8').replace(/^﻿/, ''))
+  JSON.parse(fs.readFileSync(path.join(repoRoot, rel), 'utf-8').replace(/^\uFEFF/, ''))
 
 // ── addon version (plugin.cfg: version="0.3.0") ──────────────────────────────
 function readAddonVersion(): string {

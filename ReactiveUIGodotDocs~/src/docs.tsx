@@ -7,6 +7,7 @@ import { RoadmapPage } from './pages/Roadmap/RoadmapPage'
 import { UitkxAPIPage } from './pages/UITKX/API/UitkxAPIPage'
 import { UitkxComponentsPage } from './pages/UITKX/Components/UitkxComponentsPage'
 import { CompanionFilesPage } from './pages/UITKX/CompanionFiles/CompanionFilesPage'
+import { UitkxImportsPage } from './pages/UITKX/Imports/UitkxImportsPage'
 import { UitkxConceptsPage } from './pages/UITKX/Concepts/UitkxConceptsPage'
 import { UitkxConfigPage } from './pages/UITKX/Config/UitkxConfigPage'
 import { UitkxDebuggingPage } from './pages/UITKX/Debugging/UitkxDebuggingPage'
@@ -82,6 +83,21 @@ export const sections: DocSection[] = [
         keywords: ['install', 'setup', 'component', 'addon'],
         searchContent: 'getting started reactive ui for godot function-style .guitkx components compiler produces sibling .gd class no boilerplate install copy addons/reactive_ui folder enable plugin project settings plugins create a guitkx component setup code returned markup codegen emits static render mount ReactiveRoot.create V.fc ReactiveRootNode setup _ready _exit_tree unmount one component per file filename must match component name @class_name HelloWorld component var s useState return VBoxContainer Label Hello reactive godot Button Increment onPressed s[1].call s[0] + 1 companion files optional hooks module styles utils res://addons/reactive_ui extends RefCounted render props children RUIVNode',
         element: () => <UitkxGettingStartedPage />,
+      },
+    ],
+  },
+  {
+    id: 'imports',
+    title: 'Imports & Exports',
+    pages: [
+      {
+        id: 'imports-page',
+        canonicalId: 'imports',
+        title: 'Imports & Exports',
+        path: '/imports',
+        keywords: ['import', 'export', 'specifier', 'strict', 'codemod', 'root', 'cycle', 'module-scoped'],
+        searchContent: 'imports exports import { Name } from specifier relative ./ ../ root ~/ extensionless .guitkx implied named imports only no default no import star export declaration reachable cross-file binding class_name first exported multiple declarations mixed component hook module file-private strict resolution error GUITKX2300 2301 2302 2303 2304 2305 2306 2307 2308 2309 unresolved not exported not declared duplicate unused defined but not imported value-import cycle chain used but unexported boundary module-scoped preamble migration codemod guitkx_migrate export-everything idempotent ~/ root guitkx.config.json root key res:// V.comp lazy component cycles legal eager preload value cycle error',
+        element: () => <UitkxImportsPage />,
       },
     ],
   },

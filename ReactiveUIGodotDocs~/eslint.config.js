@@ -19,5 +19,10 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // `_`-prefixed args/vars are the conventional "intentionally unused" marker (e.g. a param kept
+      // for a stable signature / future use). Honor it instead of forcing a rename or removal.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
   },
 ])
