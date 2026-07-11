@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.1.0] - 2026-07-11
+## [0.10.0] - 2026-07-11
 - 0.10.0 imports leg: the language server understands cross-file imports. `import`/`export` are first-class syntax (no red squiggles); imported names resolve in embedded GDScript analysis via synthesized const/member stubs; the declaration index and completion are export-aware; and the compiler's frozen GUITKX2300–2309 import diagnostics surface from the .guitkx.diags sidecar (schema v3). Imports are OPTIONAL syntax — projects without them stay green.
 
 ## [0.9.0] - 2026-07-11
