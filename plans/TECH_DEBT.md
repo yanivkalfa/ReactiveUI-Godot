@@ -130,5 +130,10 @@ follow-ups (none affect the migrated tree's correctness, the CI matrix, or shipp
 - **VS2022 `.vsix` rebuild**: version bumped (2.1.0) + changelog regenerated; the binary rebuild via
   `ide-extensions/visual-studio/build-local.ps1` happens at the release/Publish step.
 
-**Status:** open / accepted. Runtime, compiler, and both language-server cores are import-aware and
-green; the above are editor-navigation nicety + documentation content.
+**Status:** RESOLVED (2026-07-12). All three items shipped in the same leg: the docs-site
+"Imports & Exports" page (registered in the nav; docs `build` + `lint` green — the four pre-existing
+lint errors were fixed too); cross-file go-to-definition through import specifiers/names +
+outline `export` badges (`importNav.ts` + `server.ts`, node --test 182/182); and the VS2022 `.vsix`
+rebuild — verified by an actual `msbuild … -t:CreateVsixContainer -p:Configuration=Release` producing
+GuitkxVsix.vsix (36.8 MB), which also caught a version bug (the VSIX manifest SCHEMA version must stay
+2.0.0; the extension `Identity` version is the one that moves — now 0.10.0, tracking the lsp-server).
