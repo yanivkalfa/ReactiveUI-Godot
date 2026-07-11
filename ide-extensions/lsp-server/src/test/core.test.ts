@@ -469,6 +469,19 @@ test("buildVirtualDoc declares imported names so embedded analysis resolves them
   assert.ok(text.includes("DoomGameScreenHooks.use_x()"), "the qualified reference survives in the body");
 });
 
+test("importAt detects the specifier vs an imported name under the cursor (imports leg)", async () => {
+  const { importAt } = await import("../importNav");
+  const src = 'import { StatusChip, Hud } from "./widgets"\n\nexport component A() { return ( <StatusChip /> ) }\n';
+  const onName = src.indexOf("StatusChip");
+  const onSecond = src.indexOf("Hud");
+  const onSpec = src.indexOf("./widgets") + 2;
+  assert.deepEqual(importAt(src, onName), { kind: "name", spec: "./widgets", name: "StatusChip" });
+  assert.deepEqual(importAt(src, onSecond), { kind: "name", spec: "./widgets", name: "Hud" });
+  assert.deepEqual(importAt(src, onSpec), { kind: "spec", spec: "./widgets" });
+  // a position inside the component body is NOT an import hit.
+  assert.equal(importAt(src, src.indexOf("<StatusChip") + 1), null);
+});
+
 test("virtualDoc extracts @if/@for conditions", () => {
   const src = [
     "component L(items: Array = []) {",
