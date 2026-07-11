@@ -1,3 +1,17 @@
+## [0.10.0] - 2026-07-12
+
+**Imports arrive — `.guitkx` files now say what they depend on, and can hold more than one thing.** Reference another component/hook/module and you import it: `import { StatusChip } from "./status_chip"`. Specifiers are relative (`./`, `../`) or root-aliased (`~/`, pointed at your UI source root via a new `"root"` key in `guitkx.config.json`), always extensionless. Add `export` to make a declaration reachable across files — and a single file may now hold several declarations (components + hooks + modules), the first exported one binding the file. Cross-file resolution is **strict**: an implicit reference is an error that tells you the exact import to add.
+
+**One command migrates your whole project.** `godot --headless --path . --script res://tests/guitkx_migrate.gd` exports every declaration and writes the import lines for each file's references — idempotent, re-runnable, and it leaves your hand-written `class_name` scripts alone. The bundled demos (including the Doom port) ship migrated.
+
+**Under the hood:** component imports stay lazy (`V.comp`) so cross-file component **cycles are legal**; value imports (hooks/modules) are eager preloads and a value-import cycle is a clear error printing the chain. Ten new `GUITKX2300–2309` diagnostics cover every import mistake. The generated-script parse check is now a two-pass counted CI gate, and Fast Refresh re-renders only the importers of a changed hook/module.
+
+Update to **Reactive UI 0.10.0** — run the codemod right after.
+
+**Tooling:** GUITKX **0.10.0** (VS Code + VS 2022) and editor addon **0.8.0** are import-aware end to end — `import`/`export` highlight as syntax, imported names resolve in embedded analysis (no red squiggles), and the 23xx import diagnostics surface live from the compiler sidecar.
+
+---
+
 ## [0.9.0] - 2026-07-11
 
 **BREAKING: naming is now 1:1 loyal to Godot — you never learn a second vocabulary.** Tags are the official class names (`<VBoxContainer>`, not `<VBox>`; `<Panel>` is now Godot's actual `Panel`), `V.*` factories match tags verbatim (`V.Button`, `V.VBoxContainer`), events are the native signal with an `on` marker (`onPressed` → `pressed`, `onValueChanged` → `value_changed` — works for EVERY signal of EVERY node; the React aliases like `onClick`/polymorphic `onChange` are gone), and style keys are the exact Godot property/theme/StyleBoxFlat names (`tooltip_text`, `size_flags_horizontal`, `corner_radius_all`, radians `rotation`).

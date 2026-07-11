@@ -1,5 +1,8 @@
 # Changelog
 
+## [2.1.0] - 2026-07-11
+- 0.10.0 imports leg: the language server understands cross-file imports. `import`/`export` are first-class syntax (no red squiggles); imported names resolve in embedded GDScript analysis via synthesized const/member stubs; the declaration index and completion are export-aware; and the compiler's frozen GUITKX2300–2309 import diagnostics surface from the .guitkx.diags sidecar (schema v3). Imports are OPTIONAL syntax — projects without them stay green.
+
 ## [0.9.0] - 2026-07-11
 - 0.9.0 naming loyalty (BREAKING, rides the library 0.9.0 — see MIGRATION-0.9.md): the language vocabulary is now 1:1 the official Godot names. Tags = class names (shorthands like VBox/Panel removed; ANY instantiable ClassDB Node class is now a valid tag, validated against the bundled dump); factories = V.ClassName verbatim; events = on + PascalCase(signal) derived for EVERY signal from ClassDB (the React alias table is gone — completions, hover, signature help and semantic tokens all speak onPressed/onValueChanged); style-key completion = the exact Godot property/theme/StyleBoxFlat names. Removed pre-0.9 tags get a precise "renamed in 0.9.0: use <X>" diagnostic instead of a generic did-you-mean.
 

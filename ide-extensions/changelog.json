@@ -3,6 +3,25 @@
     {
       "date": "2026-07-11",
       "versions": {
+        "vscode": "0.10.0",
+        "vs2022": "2.1.0"
+      },
+      "shared": [
+        "0.10.0 imports leg: the language server understands cross-file imports. `import`/`export` are first-class syntax (no red squiggles); imported names resolve in embedded GDScript analysis via synthesized const/member stubs; the declaration index and completion are export-aware; and the compiler's frozen GUITKX2300–2309 import diagnostics surface from the .guitkx.diags sidecar (schema v3). Imports are OPTIONAL syntax — projects without them stay green."
+      ]
+    },
+    {
+      "date": "2026-07-11",
+      "versions": {
+        "editor": "0.8.0"
+      },
+      "editor": [
+        "0.10.0 imports leg (rides the library 0.10.0): the editor addon recognizes the new `import { … } from \"…\"` preamble and the `export` declaration prefix — highlighting, tokenizer, and the workspace/declaration index are import/export-aware, and multi-declaration `.guitkx` files index every declaration. The compiler-driven 23xx import diagnostics surface live from the sidecar. Recompile-on-save keeps resolving imports each sweep; HMR re-renders only the component importers of a changed hook/module."
+      ]
+    },
+    {
+      "date": "2026-07-11",
+      "versions": {
         "editor": "0.7.0"
       },
       "editor": [
