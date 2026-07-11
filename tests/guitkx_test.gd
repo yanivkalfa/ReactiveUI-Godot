@@ -58,6 +58,7 @@ func _run() -> void:
 	_test_spread()
 	_test_imports_m1()
 	_test_mixed_decl()
+	_test_imports_m3()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1046,6 +1047,89 @@ func _test_mixed_decl() -> void:
 	var ro := RUIGuitkx.compile(ov, "file")
 	_check_true(ro["ok"] and (ro["gd"] as String).contains("class_name First"), "mixed: @class_name overrides the first-exported binding")
 	_check_true((ro["gd"] as String).contains("static func render(") and (ro["gd"] as String).contains("static func Second("), "mixed: the @class_name'd component emits render, the other its name")
+
+func _imp_write(path: String, content: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(content)
+		f.close()
+
+## M3 (0.10.0): import RESOLUTION -- specifier->path, value/component lowering, frozen 2300-2308.
+## Uses a `.gdignore`'d temp dir so the build walker never sees the fixtures; the resolver reaches
+## them by direct FileAccess. Everything is cleaned up at the end.
+func _test_imports_m3() -> void:
+	const Resolve := preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+	var dir := "res://tests/__imp_tmp"
+	DirAccess.make_dir_recursive_absolute(dir)
+	_imp_write(dir + "/.gdignore", "")
+	_imp_write(dir + "/status_chip.guitkx", "export component StatusChip() {\n\treturn ( <Label /> )\n}\n")
+	_imp_write(dir + "/hud_hooks.guitkx", "export module HudHooks {\n\thook use_blink() -> int { return 1 }\n}\n")
+	_imp_write(dir + "/priv.guitkx", "component Secret() {\n\treturn ( <Label /> )\n}\n")
+	# Compile the value-import target to .gd so the importer's `preload(...)` has a real target to
+	# parse-check against (a missing preload = ERR_PARSE_ERROR -- the M4 two-pass ordering concern).
+	Codegen.compile_file(dir + "/hud_hooks.guitkx")
+
+	# component import -> V.comp(path); module import -> const preload; both usable in one file.
+	var imp := "import { StatusChip } from \"./status_chip\"\nimport { HudHooks } from \"./hud_hooks\"\n\nexport component Panel() {\n\tvar b = HudHooks.use_blink()\n\treturn ( <StatusChip /> )\n}\n"
+	var r := RUIGuitkx.compile(imp, "panel", [], {}, dir + "/panel.guitkx", "res://")
+	_check_true(r["ok"], "M3: importer compiles (%s)" % str(r.get("diagnostics", [])))
+	_check_true((r["gd"] as String).contains("V.comp(\"res://tests/__imp_tmp/status_chip.gd\")"), "M3: component import lowers to V.comp(path)")
+	_check_true((r["gd"] as String).contains("const HudHooks = preload(\"res://tests/__imp_tmp/hud_hooks.gd\")"), "M3: module import lowers to a const preload")
+	_check_true(_gd_parses(r["gd"]), "M3: importer .gd parses")
+
+	# 2302: name not declared in the target file.
+	var r2 := RUIGuitkx.compile("import { Nope } from \"./status_chip\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r2, "GUITKX2302"), "M3: importing an undeclared name -> 2302")
+
+	# 2301: name declared but not exported.
+	var r3 := RUIGuitkx.compile("import { Secret } from \"./priv\"\ncomponent A() { return ( <Secret /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r3, "GUITKX2301"), "M3: importing a non-exported decl -> 2301")
+
+	# 2300: unresolvable specifier.
+	var r4 := RUIGuitkx.compile("import { X } from \"./nope\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r4, "GUITKX2300"), "M3: unresolvable specifier -> 2300")
+
+	# engine-native specifier is forbidden in import position -> 2300.
+	var r4b := RUIGuitkx.compile("import { X } from \"res://x\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r4b, "GUITKX2300"), "M3: res:// specifier forbidden in import -> 2300")
+
+	# 2303: duplicate import of the same name.
+	var r5 := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\nimport { StatusChip } from \"./status_chip\"\ncomponent A() { return ( <StatusChip /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r5, "GUITKX2303"), "M3: duplicate import -> 2303")
+
+	# 2304 (warning): imported but never referenced.
+	var r6 := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r6, "GUITKX2304"), "M3: unused import -> 2304 (warning)")
+	_check_true(int(_diag(r6, "GUITKX2304").get("severity", -9)) == GDiag.WARNING, "M3: 2304 is a warning")
+
+	# resolve_specifier: ./ ../ ~/ forms + extensionless.
+	var sc := Resolve.resolve_specifier("./status_chip", dir + "/panel.guitkx", "res://")
+	_check_true(sc["ok"] and sc["gd"] == "res://tests/__imp_tmp/status_chip.gd", "M3: ./ resolves + .guitkx implied -> sibling .gd")
+	var tilde := Resolve.resolve_specifier("~/tests/__imp_tmp/status_chip", dir + "/panel.guitkx", "res://")
+	_check_true(tilde["ok"] and tilde["guitkx"] == "res://tests/__imp_tmp/status_chip.guitkx", "M3: ~/ resolves against the root")
+
+	# 2306: value-import cycle (hook/module preload edges), chain printed. a -> b -> a.
+	_imp_write(dir + "/cyc_a.guitkx", "export module CycA {\n\thook use_a() -> int { return 1 }\n}\n")
+	_imp_write(dir + "/cyc_b.guitkx", "export module CycB {\n\thook use_b() -> int { return 1 }\n}\n")
+	var edges := func(p: String) -> Array:
+		if p.ends_with("cyc_a.guitkx"): return [dir + "/cyc_b.guitkx"]
+		if p.ends_with("cyc_b.guitkx"): return [dir + "/cyc_a.guitkx"]
+		return []
+	var chain := Resolve.value_cycle(dir + "/cyc_a.guitkx", edges)
+	_check_true(chain.contains("cyc_a.guitkx") and chain.contains("cyc_b.guitkx") and chain.contains(" -> "), "M3: value_cycle prints the chain (%s)" % chain)
+	_check_true(Resolve.value_cycle(dir + "/status_chip.guitkx", func(_p): return []) == "", "M3: acyclic returns empty")
+
+	# M3.6: `~/`-rooted asset path rewrites to res:// before validation.
+	var ua := RUIGuitkx.compile("@uss \"~/tests/__imp_tmp/missing.tres\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_diag(ua, "GUITKX0120").get("message", "").contains("res://tests/__imp_tmp/missing.tres"), "M3.6: ~/ asset path rewritten to res:// (%s)" % str(ua.get("diagnostics", [])))
+
+	# cleanup (sources + any generated .gd/.uid/sidecars from the compile_file call above)
+	for f in ["status_chip", "hud_hooks", "priv", "cyc_a", "cyc_b"]:
+		for ext in [".guitkx", ".gd", ".gd.uid", ".guitkx.uid", ".guitkx.diags.json"]:
+			if FileAccess.file_exists(dir + "/" + f + ext):
+				DirAccess.remove_absolute(dir + "/" + f + ext)
+	DirAccess.remove_absolute(dir + "/.gdignore")
+	DirAccess.remove_absolute(dir)
 
 func _diag(r: Dictionary, code: String) -> Dictionary:
 	for d in r.get("diagnostics", []):

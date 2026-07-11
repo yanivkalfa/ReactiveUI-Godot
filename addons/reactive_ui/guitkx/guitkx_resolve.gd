@@ -1,0 +1,200 @@
+class_name RUIGuitkxResolve
+extends RefCounted
+## Import RESOLUTION for the .guitkx compiler (0.10.0 imports leg, §M3). Turns a file's parsed
+## preamble imports (from RUIGuitkx._parse_import_at) into: (a) the lowering plan the emitter needs
+## — component imports become `V.comp(path, func)` at their tag, value imports (hooks/modules) become
+## `const Name = preload(path)[.Member]` header lines — and (b) the frozen family diagnostics
+## GUITKX2300–2308 (§0.1). Pure/static + FileAccess-only, so it runs headlessly in the compiler and
+## the build sweep. Specifiers are extensionless (`.guitkx` implied), relative (`./ ../`) or `~/`-
+## rooted; engine-native `res:// uid://` are FORBIDDEN in import position (2300).
+##
+## The value-import graph (hook/module preload edges — NOT component edges, which stay lazy through
+## V.comp) is where a load-order cycle can bite; value_cycle() finds one and prints the chain (2306).
+
+const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
+const Config = preload("res://addons/reactive_ui/guitkx/guitkx_config.gd")
+const D = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
+
+## Resolve `spec` (an import specifier) relative to the importing `.guitkx` file `from_guitkx`, with
+## `~/` bound to `root`. Returns { ok, guitkx: <res://…​.guitkx>, gd: <res://…​.gd>, error? }.
+static func resolve_specifier(spec: String, from_guitkx: String, root: String) -> Dictionary:
+	if spec.begins_with("res://") or spec.begins_with("uid://"):
+		return { "ok": false, "error": "engine-native path (use ./ ../ or ~/)" }
+	var base := ""
+	if spec.begins_with("~/"):
+		base = root.path_join(spec.substr(2))
+	elif spec.begins_with("./") or spec.begins_with("../"):
+		base = from_guitkx.get_base_dir().path_join(spec)
+	else:
+		return { "ok": false, "error": "specifier must start with ./ ../ or ~/" }
+	base = base.simplify_path()
+	var guitkx_path := base if base.get_extension() == "guitkx" else base + ".guitkx"
+	if not FileAccess.file_exists(guitkx_path):
+		return { "ok": false, "error": "no file at %s" % guitkx_path }
+	return { "ok": true, "guitkx": guitkx_path, "gd": guitkx_path.get_basename() + ".gd" }
+
+## The declaration table of a target `.guitkx`: { binding, decls: { name -> { kind, export, func } } }.
+## `func` is the emitted static-func name a cross-file reference must call: `render` for the binding
+## component, the decl name for any other component/hook, and the module name for a module (its
+## preload member). Cached per source-hash so a sweep reads each target once.
+static var _table_cache := {}
+static func decl_table(guitkx_path: String) -> Dictionary:
+	var src := FileAccess.get_file_as_string(guitkx_path)
+	var key := guitkx_path + "#" + str(hash(src))
+	if _table_cache.has(key):
+		return _table_cache[key]
+	var binding := _binding_of(src)
+	var decls := {}
+	for dm in Compiler._enumerate_decls(src, 0):
+		var nm := str(dm["name"])
+		var kind := str(dm["kind"])
+		var fn := nm
+		if kind == "component" and nm == binding:
+			fn = "render"
+		decls[nm] = { "kind": kind, "export": bool(dm["export"]), "func": fn }
+	var out := { "binding": binding, "decls": decls }
+	_table_cache[key] = out
+	return out
+
+## The binding name of a source (mirrors codegen._binding_name without the FileAccess round-trip):
+## @class_name override, else first exported decl, else first decl, else "".
+static func _binding_of(src: String) -> String:
+	var override := _class_name_override(src)
+	if override != "":
+		return override
+	var decls := Compiler._enumerate_decls(src, 0)
+	if decls.is_empty():
+		return ""
+	for dm in decls:
+		if bool(dm["export"]):
+			return str(dm["name"])
+	return str(decls[0]["name"])
+
+static func _class_name_override(src: String) -> String:
+	var n := src.length()
+	var i := 0
+	while i < n:
+		i = Compiler._skip_ws_and_comments(src, i)
+		if i >= n:
+			break
+		if src.substr(i, 11) == "@class_name":
+			var le := src.find("\n", i)
+			if le == -1:
+				le = n
+			var raw := src.substr(i + 11, le - i - 11)
+			var h := raw.find("#")
+			if h != -1:
+				raw = raw.substr(0, h)
+			return raw.strip_edges()
+		if Compiler.L.keyword_at(src, i, "import"):
+			i = _skip_import(src, i)
+			continue
+		if src.substr(i, 4) == "@uss" or src.substr(i, 6) == "@theme":
+			var le2 := src.find("\n", i)
+			i = n if le2 == -1 else le2
+			continue
+		break
+	return ""
+
+static func _skip_import(src: String, i: int) -> int:
+	var n := src.length()
+	var le := src.find("\n", i)
+	if le == -1:
+		le = n
+	var j := Compiler._skip_ws_and_comments(src, i + 6)
+	if j >= n or src[j] != "{":
+		return le
+	var bc := Compiler.L.find_matching(src, j)
+	if bc == -1:
+		return le
+	var k := Compiler._skip_ws_only(src, bc + 1)
+	if Compiler.L.keyword_at(src, k, "from"):
+		k = Compiler._skip_ws_only(src, k + 4)
+		if k < n and (src[k] == "\"" or src[k] == "'"):
+			var qe := src.find(src[k], k + 1)
+			if qe != -1:
+				return maxi(le, qe + 1)
+	return maxi(le, bc + 1)
+
+## Resolve every import of one file into the emitter's lowering plan + the frozen import diagnostics.
+## `imports` = RUIGuitkx.compile()'s parsed list; `used(name)->bool` reports whether a name is
+## referenced in the body (drives 2304 unused). Returns:
+##   { comps: { local_name -> { gd, func } },          # component imports -> V.comp(gd, func)
+##     values: [ { name, gd, member, kind } ],          # hook/module imports -> const preloads
+##     diags: [ … 2300/2301/2302/2303/2304/2308 … ] }
+static func resolve_file_imports(imports: Array, from_guitkx: String, root: String, used: Callable = Callable()) -> Dictionary:
+	var comps := {}
+	var values: Array = []
+	var diags: Array = []
+	var seen := {}   # name -> spec (duplicate-import 2303, cross-line — the scan already caught same-line)
+	for imp in imports:
+		var spec := str(imp["spec"])
+		var res := resolve_specifier(spec, from_guitkx, root)
+		if not res["ok"]:
+			diags.append(D.make("GUITKX2300", D.ERROR, "unknown import specifier `%s` — no file at %s" % [spec, spec], int(imp["spec_at"]), spec.length() + 2))
+			continue
+		# 2308: the resolved target must stay inside the project root universe (res://). A `~/` that
+		# escapes, or a `../` climbing above res://, crosses the boundary.
+		if not str(res["guitkx"]).begins_with("res://"):
+			diags.append(D.make("GUITKX2308", D.ERROR, "import crosses a module/root boundary (%s -> %s) — imports are module-scoped in v1" % [from_guitkx, res["guitkx"]], int(imp["spec_at"]), spec.length() + 2))
+			continue
+		var table := decl_table(str(res["guitkx"]))
+		for nm_entry in (imp["names"] as Array):
+			var nm := str(nm_entry["name"])
+			var at := int(nm_entry["at"])
+			if seen.has(nm):
+				diags.append(D.make("GUITKX2303", D.ERROR, "duplicate import of `%s` (already imported from %s)" % [nm, seen[nm]], at, nm.length()))
+				continue
+			seen[nm] = spec
+			var decls: Dictionary = table["decls"]
+			if not decls.has(nm):
+				diags.append(D.make("GUITKX2302", D.ERROR, "`%s` is not declared in %s" % [nm, res["guitkx"]], at, nm.length()))
+				continue
+			var d: Dictionary = decls[nm]
+			if not bool(d["export"]):
+				diags.append(D.make("GUITKX2301", D.ERROR, "`%s` is not exported by %s — add `export` to its declaration" % [nm, res["guitkx"]], at, nm.length()))
+				continue
+			# 2304: imported but never referenced in the body.
+			if used.is_valid() and not bool(used.call(nm)):
+				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nm, at, nm.length()))
+			if str(d["kind"]) == "component":
+				comps[nm] = { "gd": res["gd"], "func": d["func"] }
+			else:
+				# hook or module -> a value preload. A binding member (the file's own name) is the
+				# whole script; a non-binding module member is an inner class on it.
+				var member := "" if nm == str(table["binding"]) else nm
+				values.append({ "name": nm, "gd": res["gd"], "member": member, "kind": d["kind"] })
+	return { "comps": comps, "values": values, "diags": diags }
+
+## Detect a VALUE-import cycle (hook/module preload edges only; component edges are lazy V.comp and
+## exempt). `edges(guitkx_path) -> Array[guitkx_path]` yields a file's value-import targets. Returns
+## the cycle chain as `a.guitkx -> b.guitkx -> a.guitkx` (files basenames), or "" if acyclic.
+static func value_cycle(start_guitkx: String, edges: Callable) -> String:
+	var stack: Array = []
+	var on_stack := {}
+	var visited := {}
+	var found := [""]
+	_dfs_cycle(start_guitkx, edges, stack, on_stack, visited, found)
+	return found[0]
+
+static func _dfs_cycle(node: String, edges: Callable, stack: Array, on_stack: Dictionary, visited: Dictionary, found: Array) -> void:
+	if found[0] != "":
+		return
+	stack.push_back(node)
+	on_stack[node] = true
+	for nxt in (edges.call(node) as Array):
+		if found[0] != "":
+			break
+		if on_stack.has(nxt):
+			var idx := stack.find(nxt)
+			var chain: Array = []
+			for k in range(idx, stack.size()):
+				chain.append(str(stack[k]).get_file())
+			chain.append(str(nxt).get_file())
+			found[0] = " -> ".join(chain)
+			break
+		if not visited.has(nxt):
+			_dfs_cycle(nxt, edges, stack, on_stack, visited, found)
+	stack.pop_back()
+	on_stack.erase(node)
+	visited[node] = true

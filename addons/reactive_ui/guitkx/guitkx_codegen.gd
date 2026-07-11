@@ -9,6 +9,7 @@ extends RefCounted
 
 const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
 const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
+const RGConfig = preload("res://addons/reactive_ui/guitkx/guitkx_config.gd")
 
 ## The sibling .gd path for a .guitkx path.
 static func gd_path_for(guitkx_path: String) -> String:
@@ -412,7 +413,10 @@ static func compile_file(guitkx_path: String, known_components: Array = [], comp
 			{ "code": "GUITKX2507", "severity": 0, "message": "source read came back empty (editor scan window) -- retrying", "offset": -1, "length": 0 },
 		] }
 	var basename := guitkx_path.get_file().get_basename()
-	var r: Dictionary = Compiler.compile(src, basename, known_components, component_paths)
+	# Pass the file's own path + `~/` root so the compiler RESOLVES the preamble imports (V.comp /
+	# const-preload lowering + GUITKX2300–2308). Config walk-up gives the source root (default res://).
+	var root := RGConfig.root_for(guitkx_path)
+	var r: Dictionary = Compiler.compile(src, basename, known_components, component_paths, guitkx_path, root)
 	if bool(r.get("env_error", false)):
 		# The compiler environment isn't ready (vocabulary unreadable — e.g. the editor's first
 		# filesystem scan). NOT a source regression: keep the existing sibling .gd AND the last

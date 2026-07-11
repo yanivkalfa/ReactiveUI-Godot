@@ -127,7 +127,15 @@ static func _load_vocabulary() -> Dictionary:
 ## .guitkx bindings + global script classes) -- the plugin/codegen supplies them so <UnknownComp/>
 ## errors (T1.5). Empty (headless/test callers) = the PascalCase check is skipped; lowercase tags
 ## are always checked against the vocabulary.
-static func compile(source: String, basename: String = "Component", known_components: Array = [], component_paths: Dictionary = {}) -> Dictionary:
+const Resolve = preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+const Config = preload("res://addons/reactive_ui/guitkx/guitkx_config.gd")
+
+## `self_path` (the .guitkx being compiled) + `root` (the `~/` source root) enable IMPORT RESOLUTION:
+## when present and the preamble declares imports, specifiers resolve to sibling `.gd` paths, component
+## imports lower through `V.comp(path, func)` and value imports (hooks/modules) become header const
+## preloads, and the frozen import diagnostics (GUITKX2300–2308) fire. Absent (headless string
+## callers), imports are parsed but not resolved — cross-file refs fall back to the global class map.
+static func compile(source: String, basename: String = "Component", known_components: Array = [], component_paths: Dictionary = {}, self_path: String = "", root: String = "") -> Dictionary:
 	if vocab().is_empty():
 		# The compiler ITSELF is not ready (vocabulary unreadable — e.g. the editor's first-scan
 		# environment). `env_error` distinguishes this from a source error: callers must keep any
@@ -208,6 +216,12 @@ static func compile(source: String, basename: String = "Component", known_compon
 				return { "ok": false, "gd": "", "diagnostics": diags }
 			uss_path = val.substr(1, val.length() - 2)
 			uss_at = i
+			# M3.6: `~/`-rooted asset paths rewrite to `res://<root-rel>` before validation (asset
+			# positions accept res:// / uid:// / ~/, unlike import specifiers). res:// and uid:// pass
+			# through untouched (the G-07 uid:// note below still holds).
+			if uss_path.begins_with("~/"):
+				var aroot := root if root != "" else (Config.root_for(self_path) if self_path != "" else "res://")
+				uss_path = aroot.path_join(uss_path.substr(2)).simplify_path()
 			# G-07: FileAccess.file_exists doesn't understand `uid://` (Godot 4.4+ uid-based resource
 			# references) -- it always returns false for one, false-flagging a valid uid-referenced
 			# Theme as "asset not found". Skip straight to ResourceLoader.exists, which resolves both
@@ -219,6 +233,19 @@ static func compile(source: String, basename: String = "Component", known_compon
 			i = le2
 			continue
 		break
+	# 1b. Resolve the declared imports (M3) when we know our own path: component imports merge into
+	# `known` as { gd, func } so their tags lower through V.comp(path, func); value imports (hooks/
+	# modules) collect for the header const-preload pass after emission; the frozen import diagnostics
+	# (GUITKX2300–2308) join `diags`. Absent a path (string callers), imports stay parsed-but-inert.
+	var import_values: Array = []
+	if self_path != "" and not imports.is_empty():
+		var eff_root := root if root != "" else Config.root_for(self_path)
+		var used_cb := func(nm: String) -> bool: return _name_referenced(source, nm)
+		var ir := Resolve.resolve_file_imports(imports, self_path, eff_root, used_cb)
+		for cn in (ir["comps"] as Dictionary):
+			known[cn] = ir["comps"][cn]   # { gd, func } -> V.comp lowering (Dictionary value)
+		import_values = ir["values"]
+		diags.append_array(ir["diags"])
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
 	var decl := _find_decl(source, i)
 	# T2.6: _find_decl SKIPS anything before the keyword -- real content there (a stray statement, a
@@ -259,6 +286,12 @@ static func compile(source: String, basename: String = "Component", known_compon
 				r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
 			"module":
 				r = _compile_module(source, decl["at"], class_name_override, basename, diags, known, refs)
+	# Value imports (hooks/modules) lower to `const Name = preload("res://…​.gd")[.Member]` header
+	# lines (§6.4), inserted right after the AUTO-GENERATED banner so the imported name is in scope
+	# for the body's `Name.member(...)` references. Components never come through here — they stay
+	# lazy via V.comp.
+	if r.get("ok", false) and not import_values.is_empty():
+		r["gd"] = _insert_value_imports(str(r["gd"]), import_values)
 	# The preamble's declared imports ride along on every result (ok or not) so the codegen sidecar
 	# (schema v3) and the resolver can read the graph truth straight from this compile.
 	r["imports"] = imports
@@ -356,6 +389,65 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		return fail.call("unterminated import specifier string", k, 1, line_end)
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
+
+## Insert value-import const preloads after the `## AUTO-GENERATED …​` banner. Each is
+## `const Name = preload("res://…​.gd")` (a binding hook/module — the whole script) or
+## `const Name = preload("res://…​.gd").Member` (a non-binding module member = inner class).
+static func _insert_value_imports(gd: String, values: Array) -> String:
+	if values.is_empty():
+		return gd
+	var lines: Array = []
+	for v in values:
+		var rhs := "preload(%s)" % _gd_str(str(v["gd"]))
+		if str(v["member"]) != "":
+			rhs += "." + str(v["member"])
+		lines.append("const %s = %s" % [str(v["name"]), rhs])
+	var block := "\n".join(lines) + "\n"
+	# after the banner comment line (`## AUTO-GENERATED … do not edit.`) and the blank line following it.
+	var marker := "## AUTO-GENERATED"
+	var mi := gd.find(marker)
+	if mi == -1:
+		return block + gd   # no banner (shouldn't happen) -- prepend defensively
+	var le := gd.find("\n", mi)
+	if le == -1:
+		return gd + "\n" + block
+	# keep the blank line after the banner, then the const block, then the rest.
+	var head := gd.substr(0, le + 1)
+	var rest := gd.substr(le + 1)
+	if rest.begins_with("\n"):
+		return head + "\n" + block + rest.substr(1)
+	return head + block + rest
+
+## True if identifier `nm` is referenced anywhere in `source` OUTSIDE its own import line — a crude
+## drive for the unused-import warning (GUITKX2304). Lexer-aware enough to skip strings/comments.
+static func _name_referenced(source: String, nm: String) -> bool:
+	var n := source.length()
+	var i := 0
+	while i < n:
+		var k := L.skip_noncode(source, i)
+		if k != i:
+			i = k
+			continue
+		if L.keyword_at(source, i, "import"):
+			i = _skip_ws_and_comments(source, i + 6)
+			var bc := L.find_matching(source, i) if (i < n and source[i] == "{") else -1
+			if bc != -1:
+				# jump past the whole `{ … } from "…"` so a name only in the import doesn't self-count.
+				var q := _skip_ws_only(source, bc + 1)
+				if L.keyword_at(source, q, "from"):
+					q = _skip_ws_only(source, q + 4)
+					if q < n and (source[q] == "\"" or source[q] == "'"):
+						var qe := source.find(source[q], q + 1)
+						i = (qe + 1) if qe != -1 else (bc + 1)
+					else:
+						i = bc + 1
+				else:
+					i = bc + 1
+				continue
+		if L.keyword_at(source, i, nm):
+			return true
+		i += 1
+	return false
 
 ## Enumerate EVERY top-level declaration from `from` (0.10.0 mixed-decl §6.1). Each entry mirrors
 ## `_find_decl` (kind, at, export, start) plus name/name_at and `next` (index just past the decl's
@@ -2256,7 +2348,15 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			fn = str(mv) if mv is String else tag
 		else:
 			var kv = (ctx.get("known_components", {}) as Dictionary).get(tag)
-			if kv is String:
+			if kv is Dictionary:
+				# Resolved IMPORT of a component (§6.4): V.comp(path, func) -- func is the target's
+				# emitted static func (`render` for its binding, else the decl name). `render` is
+				# omitted so a binding-component import stays byte-identical to a global V.comp.
+				var g := str((kv as Dictionary)["gd"])
+				var f := str((kv as Dictionary)["func"])
+				fn = "V.comp(%s)" % _gd_str(g) if f == "render" else "V.comp(%s, %s)" % [_gd_str(g), _gd_str(f)]
+				(ctx.get("refs", {}) as Dictionary)[tag] = g
+			elif kv is String:
 				fn = "V.comp(%s)" % _gd_str(str(kv))
 				# Recorded in the sidecar -> vanish detection (2107). Mutated through the shared
 				# ctx["refs"] reference — the same Dictionary compile() returns (D6: per-call).
