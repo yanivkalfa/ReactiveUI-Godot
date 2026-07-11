@@ -5,7 +5,10 @@
 ## session_version re-runs DoomGameScreen's restart (replay same level), a
 ## bumped level advances. Mouse capture is coordinated with the bootstrap's raw
 ## input capture (doom_bootstrap.gd) via DoomInputState.shared.allow_capture.
-component DoomGame {
+import { DoomGameScreen } from "./doom_game_screen"
+import { DoomMainMenu } from "./doom_main_menu"
+
+export component DoomGame {
   var screen = useState(DoomTypes.GameScreen.MAIN_MENU)
   var level = useState(1)
   var difficulty = useState(DoomTypes.Difficulty.NORMAL)

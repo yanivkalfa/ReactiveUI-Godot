@@ -246,6 +246,28 @@ static func compile(source: String, basename: String = "Component", known_compon
 			known[cn] = ir["comps"][cn]   # { gd, func } -> V.comp lowering (Dictionary value)
 		import_values = ir["values"]
 		diags.append_array(ir["diags"])
+	# 1c. STRICT (M6, post-migration): a cross-file reference to another .guitkx binding that was NOT
+	# imported is GUITKX2305 -- implicit cross-file resolution is an error; the reference must be an
+	# explicit import. Uses the SAME canonical scan the codemod uses, so a migrated tree never trips
+	# this. Only guitkx bindings (`component_paths`) are strict-scoped; hand-written `class_name`
+	# scripts + host/ClassDB elements are ambient (rule 7) and never appear in that map.
+	if self_path != "" and not component_paths.is_empty():
+		var own_names := {}
+		for dm in _enumerate_decls(source, 0):
+			own_names[str(dm["name"])] = true
+		var imported := {}
+		for imp in imports:
+			for nm in (imp["names"] as Array):
+				imported[str(nm["name"])] = true
+		var eff_root2 := root if root != "" else Config.root_for(self_path)
+		for name in Resolve.referenced_names(source, component_paths, own_names):
+			if imported.has(name):
+				continue
+			var tgt_gd := str(component_paths[name])
+			var tgt_guitkx := tgt_gd.get_basename() + ".guitkx"
+			var spec := _import_specifier(self_path, tgt_guitkx, eff_root2)
+			var ref_at := maxi(0, source.find(name))
+			diags.append(D.make("GUITKX2305", D.ERROR, "`%s` is defined in %s but not imported -- add: import { %s } from \"%s\"" % [name, tgt_guitkx, name, spec], ref_at, name.length()))
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
 	var decl := _find_decl(source, i)
 	# T2.6: _find_decl SKIPS anything before the keyword -- real content there (a stray statement, a
@@ -389,6 +411,19 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		return fail.call("unterminated import specifier string", k, 1, line_end)
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
+
+## The import specifier from `from_guitkx` to `target_guitkx`: `./name` when siblings, else `~/`-rooted
+## (root-relative, extensionless). Shared shape with the codemod's specifier choice.
+static func _import_specifier(from_guitkx: String, target_guitkx: String, root: String) -> String:
+	var base := target_guitkx.get_basename()
+	if from_guitkx.get_base_dir() == target_guitkx.get_base_dir():
+		return "./" + base.get_file()
+	if base.begins_with(root):
+		var rel := base.substr(root.length())
+		if rel.begins_with("/"):
+			rel = rel.substr(1)
+		return "~/" + rel
+	return "~/" + base.trim_prefix("res://")
 
 ## Standalone preamble IMPORT scan (the graph truth for reverse-edge staleness, rule 9): returns the
 ## parsed imports [{names,[…], spec, …}] without compiling. Skips `@`-directives, stops at the first

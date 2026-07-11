@@ -1,6 +1,8 @@
 @class_name DemoSlicing
 
-component DemoSlicing {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoSlicing {
   var sliced = useState(RUIConfig.time_slicing)
   var rev = useState(0)
   var toggle = func():

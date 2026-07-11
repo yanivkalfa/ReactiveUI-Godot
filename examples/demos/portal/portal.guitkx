@@ -1,6 +1,8 @@
 @class_name DemoPortal
 
-component DemoPortal {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoPortal {
   var show = useState(true)
   var mounted = useState(false)
   var target = useRef(null)

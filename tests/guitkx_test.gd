@@ -60,6 +60,7 @@ func _run() -> void:
 	_test_mixed_decl()
 	_test_imports_m3()
 	_test_m4()
+	_test_codemod()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1066,6 +1067,36 @@ func _test_m4() -> void:
 	_check_true(Codegen.gd_source_parses("class_name X\nextends RefCounted\nstatic func f() -> int:\n\treturn 1\n"), "M4: gd_source_parses accepts a valid script")
 	_check_true(not Codegen.gd_source_parses("class_name X\nextends RefCounted\nstatic func f( -> int:\n\treturn 1\n"), "M4: gd_source_parses rejects a broken script (counted-gate primitive)")
 
+## M6 (0.10.0): the migration CODEMOD -- export-everything + synthesized imports, idempotent, ambient
+## names left import-free. In-memory (no writes); the whole-tree run is a separate CI step.
+func _test_codemod() -> void:
+	const Migrate := preload("res://addons/reactive_ui/guitkx/guitkx_migrate.gd")
+	var ref := { "StatusChip": "res://ui/chip.guitkx", "HudHooks": "res://ui/hooks.guitkx", "Panel": "res://ui/panel.guitkx", "Far": "res://other/far.guitkx" }
+	# Panel uses <StatusChip/> (markup tag) + HudHooks.use_x() (qualified) + DoomTypes.X (ambient hand class).
+	var src := "component Panel() {\n\tvar d = HudHooks.use_x()\n\tvar t = DoomTypes.THING\n\treturn ( <StatusChip /> )\n}\n"
+	var r := Migrate.migrate_source("res://ui/panel.guitkx", src, ref)
+	_check_true(r["changed"], "codemod: file changed")
+	var out: String = r["source"]
+	_check_true(out.contains("export component Panel"), "codemod: export prefix added to the decl")
+	_check_true(out.contains("import { StatusChip } from \"./chip\""), "codemod: markup-tag ref imported (%s)" % out)
+	_check_true(out.contains("import { HudHooks } from \"./hooks\""), "codemod: qualified ref imported")
+	_check_true(not out.contains("import { DoomTypes"), "codemod: ambient hand-class ref NOT imported")
+	_check_true(out.contains("DoomTypes.THING"), "codemod: ambient ref left untouched in the body")
+	_check_true(not out.contains("import { Panel"), "codemod: own decl not self-imported")
+	# import block sits before the decl.
+	_check_true(out.find("import {") < out.find("export component Panel"), "codemod: imports precede the first decl")
+
+	# idempotent: a second run over the migrated output is a no-op.
+	_check_true(not Migrate.migrate_source("res://ui/panel.guitkx", out, ref)["changed"], "codemod: idempotent (second run no-op)")
+
+	# cross-directory references use a ~/-rooted specifier.
+	var r2 := Migrate.migrate_source("res://ui/p.guitkx", "component P() { return ( <Far /> ) }\n", ref)
+	_check_true((r2["source"] as String).contains("import { Far } from \"~/other/far\""), "codemod: cross-dir ref uses ~/ specifier (%s)" % r2["source"])
+
+	# an already-migrated file (export + import present) is stable.
+	var pre := "import { StatusChip } from \"./chip\"\n\nexport component Q() {\n\treturn ( <StatusChip /> )\n}\n"
+	_check_true(not Migrate.migrate_source("res://ui/q.guitkx", pre, ref)["changed"], "codemod: already-migrated file untouched")
+
 func _imp_write(path: String, content: String) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f != null:
@@ -1136,6 +1167,14 @@ func _test_imports_m3() -> void:
 	var chain := Resolve.value_cycle(dir + "/cyc_a.guitkx", edges)
 	_check_true(chain.contains("cyc_a.guitkx") and chain.contains("cyc_b.guitkx") and chain.contains(" -> "), "M3: value_cycle prints the chain (%s)" % chain)
 	_check_true(Resolve.value_cycle(dir + "/status_chip.guitkx", func(_p): return []) == "", "M3: acyclic returns empty")
+
+	# M6 STRICT: an un-imported cross-file reference to a guitkx binding (present in component_paths)
+	# is GUITKX2305; importing it clears the error. This is the "implicit resolution is an error" gate.
+	var cp := { "StatusChip": "res://tests/__imp_tmp/status_chip.gd" }
+	var strict_bad := RUIGuitkx.compile("component A() {\n\treturn ( <StatusChip /> )\n}\n", "a", [], cp, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(strict_bad, "GUITKX2305"), "M6 strict: un-imported cross-file ref -> 2305")
+	var strict_ok := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\ncomponent A() {\n\treturn ( <StatusChip /> )\n}\n", "a", [], cp, dir + "/a.guitkx", "res://")
+	_check_true(not _has_code(strict_ok, "GUITKX2305"), "M6 strict: importing the ref clears 2305")
 
 	# M3.6: `~/`-rooted asset path rewrites to res:// before validation.
 	var ua := RUIGuitkx.compile("@uss \"~/tests/__imp_tmp/missing.tres\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
@@ -1543,12 +1582,15 @@ func _test_codegen() -> void:
 		Codegen.compile_all(g_dir)   # settle the fingerprint marker; the 2107 path is non-force
 	var g_child := g_dir + "/child_probe.guitkx"
 	var g_parent := g_dir + "/parent_probe.guitkx"
-	var g_child_src := "@class_name ChildProbe\n\ncomponent ChildProbe {\n\treturn ( <Label text=\"c\" /> )\n}\n"
+	# 0.10.0: strict cross-file resolution -- the parent IMPORTS the child (an implicit reference is a
+	# GUITKX2305 error now). The import still lowers through V.comp, so the 2107 dangling-ref machinery
+	# (which keys on the recorded V.comp path) works exactly as before when the child is deleted.
+	var g_child_src := "@class_name ChildProbe\n\nexport component ChildProbe {\n\treturn ( <Label text=\"c\" /> )\n}\n"
 	var gf1 := FileAccess.open(g_child, FileAccess.WRITE)
 	gf1.store_string(g_child_src)
 	gf1.close()
 	var gf2 := FileAccess.open(g_parent, FileAccess.WRITE)
-	gf2.store_string("@class_name ParentProbe\n\ncomponent ParentProbe {\n\treturn ( <VBoxContainer><ChildProbe /></VBoxContainer> )\n}\n")
+	gf2.store_string("@class_name ParentProbe\n\nimport { ChildProbe } from \"./child_probe\"\n\nexport component ParentProbe {\n\treturn ( <VBoxContainer><ChildProbe /></VBoxContainer> )\n}\n")
 	gf2.close()
 	var g_sweep1 := Codegen.compile_all(g_dir)
 	_check_true((g_sweep1["errors"] as Array).is_empty() and (g_sweep1["compiled"] as Array).size() == 2,

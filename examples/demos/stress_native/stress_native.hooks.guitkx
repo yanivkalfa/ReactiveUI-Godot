@@ -1,4 +1,6 @@
-module DemoStressNativeHooks {
+import { DemoStressHooks } from "~/examples/demos/stress_test/stress_test.hooks"
+
+export module DemoStressNativeHooks {
   ## Native counterpart to DemoStressHooks. SAME bouncing-box stress test + physics, but the
   ## boxes are raw ColorRect nodes created and animated DIRECTLY (no V.color_rect, no vnodes,
   ## no reconciler) — the engine's native ceiling, for an in-game A/B against the library

@@ -2,7 +2,9 @@
 
 ## Faithful port of the Unity `DoomHUD.uitkx` -- the bottom status bar. All values
 ## are read off state.player / state at the call site and passed in as props.
-component DoomHUD(
+import { DoomFace } from "./doom_face"
+
+export component DoomHUD(
   health: int = 100,
   armor: int = 0,
   armor_class: int = 0,

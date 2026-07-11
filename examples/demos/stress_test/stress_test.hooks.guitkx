@@ -1,4 +1,4 @@
-module DemoStressHooks {
+export module DemoStressHooks {
   ## The stress-test simulation hook + physics — the .guitkx hook-file analogue of
   ## StressTest.hooks.uitkx (`useStressTestLoop`). Generates N bouncing boxes and, while
   ## `running`, ticks them every frame (re-rendering all of them) and measures avg FPS.

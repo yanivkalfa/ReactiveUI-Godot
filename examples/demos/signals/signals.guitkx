@@ -1,6 +1,9 @@
 @class_name DemoSignals
 
-component DemoSignals {
+import { DemoBox } from "~/examples/demos/demo_box"
+import { DemoSignalsDisplay } from "./signals_display"
+
+export component DemoSignals {
   return (
     <DemoBox title="Signals — shared state, no prop drilling">
       <Label

@@ -166,6 +166,37 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 				values.append({ "name": nm, "gd": res["gd"], "member": member, "kind": d["kind"] })
 	return { "comps": comps, "values": values, "diags": diags }
 
+## Names from `referenceable` (name -> anything) actually USED in `src` as a markup tag (`<Name`) or
+## a qualified reference (`Name.` / `Name(`), excluding this file's own decls. The CANONICAL cross-file
+## reference scan -- shared by the codemod (which imports what it finds) and strict resolution (which
+## errors on a found-but-unimported name), so the two can never disagree on the migrated tree.
+static func referenced_names(src: String, referenceable: Dictionary, own: Dictionary) -> Dictionary:
+	var out := {}
+	var i := 0
+	var n := src.length()
+	while i < n:
+		var k := Compiler.L.skip_noncode(src, i)
+		if k != i:
+			i = k
+			continue
+		var c := src.unicode_at(i)
+		if Compiler.L._is_ident_code(c) and (c < 48 or c > 57) and (i == 0 or not Compiler.L._is_ident_code(src.unicode_at(i - 1))):
+			var s := i
+			while i < n and Compiler.L._is_ident_code(src.unicode_at(i)):
+				i += 1
+			var word := src.substr(s, i - s)
+			if referenceable.has(word) and not own.has(word):
+				var prev_lt := s > 0 and src[s - 1] == "<"
+				var j := i
+				while j < n and (src[j] == " " or src[j] == "\t"):
+					j += 1
+				var nxt := src[j] if j < n else ""
+				if prev_lt or nxt == "." or nxt == "(":
+					out[word] = true
+			continue
+		i += 1
+	return out
+
 ## Detect a VALUE-import cycle (hook/module preload edges only; component edges are lazy V.comp and
 ## exempt). `edges(guitkx_path) -> Array[guitkx_path]` yields a file's value-import targets. Returns
 ## the cycle chain as `a.guitkx -> b.guitkx -> a.guitkx` (files basenames), or "" if acyclic.

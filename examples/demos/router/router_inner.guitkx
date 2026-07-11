@@ -1,6 +1,8 @@
 @class_name DemoRouterInner
 
-component DemoRouterInner {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoRouterInner {
   var loc = RUIRouter.useLocation()
   var ACTIVE := { "font_color": Color(1.0, 0.85, 0.3) }
   var IDLE := { "font_color": Color(0.7, 0.7, 0.8) }

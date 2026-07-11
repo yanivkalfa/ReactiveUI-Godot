@@ -2,7 +2,7 @@
 
 ## Faithful port of the Unity `DoomMainMenu.uitkx` -- fully controlled/presentational.
 ## Level select + difficulty select + start, all via the passed-in callbacks.
-component DoomMainMenu(
+export component DoomMainMenu(
   level: int = 1,
   difficulty: int = 1,
   on_level_change: Callable = Callable(),

@@ -1,6 +1,9 @@
 @class_name DemoEffectOrder
 
-component DemoEffectOrder {
+import { DemoBox } from "~/examples/demos/demo_box"
+import { DemoEffectOrderRow } from "./effect_order_row"
+
+export component DemoEffectOrder {
   var n = useState(3)
   var log = useState([])
   var append = func(msg): log[1].call(func(arr): return arr + [msg])
