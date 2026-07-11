@@ -59,6 +59,7 @@ func _run() -> void:
 	_test_imports_m1()
 	_test_mixed_decl()
 	_test_imports_m3()
+	_test_m4()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1047,6 +1048,23 @@ func _test_mixed_decl() -> void:
 	var ro := RUIGuitkx.compile(ov, "file")
 	_check_true(ro["ok"] and (ro["gd"] as String).contains("class_name First"), "mixed: @class_name overrides the first-exported binding")
 	_check_true((ro["gd"] as String).contains("static func render(") and (ro["gd"] as String).contains("static func Second("), "mixed: the @class_name'd component emits render, the other its name")
+
+## M4 (0.10.0): the reverse-edge-staleness + two-pass PRIMITIVES (the integration is exercised by
+## the green compile_all/guitkx_build two-pass; here we pin the building blocks).
+func _test_m4() -> void:
+	var eh1 := Codegen.export_hash(Codegen.exports_of("export component A() { return ( <Label /> ) }\n"))
+	var eh2 := Codegen.export_hash(Codegen.exports_of("export component A() { return ( <Label /> ) }\n"))
+	var eh3 := Codegen.export_hash(Codegen.exports_of("export component B() { return ( <Label /> ) }\n"))
+	_check_true(eh1 == eh2, "M4: export_hash is stable for an identical export table")
+	_check_true(eh1 != eh3, "M4: export_hash moves when the export table changes (drives reverse-edge staleness)")
+	# exports_of = exported decls only; the binding component's cross-file func is `render`.
+	var ex := Codegen.exports_of("export component Main() { return ( <Label /> ) }\ncomponent Priv() { return ( <Label /> ) }\n")
+	_check_true(ex.size() == 1 and str(ex[0]["name"]) == "Main" and str(ex[0]["func"]) == "render", "M4: exports_of drops private decls; binding func = render")
+	var ex2 := Codegen.exports_of("export hook use_x() -> int { return 1 }\n")
+	_check_true(ex2.size() == 1 and str(ex2[0]["kind"]) == "hook" and str(ex2[0]["func"]) == "use_x", "M4: exported hook carries its own func name")
+	# the counted-gate parse primitive.
+	_check_true(Codegen.gd_source_parses("class_name X\nextends RefCounted\nstatic func f() -> int:\n\treturn 1\n"), "M4: gd_source_parses accepts a valid script")
+	_check_true(not Codegen.gd_source_parses("class_name X\nextends RefCounted\nstatic func f( -> int:\n\treturn 1\n"), "M4: gd_source_parses rejects a broken script (counted-gate primitive)")
 
 func _imp_write(path: String, content: String) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)

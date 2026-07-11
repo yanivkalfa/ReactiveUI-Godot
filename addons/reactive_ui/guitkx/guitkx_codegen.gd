@@ -10,6 +10,7 @@ extends RefCounted
 const Compiler = preload("res://addons/reactive_ui/guitkx/guitkx.gd")
 const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 const RGConfig = preload("res://addons/reactive_ui/guitkx/guitkx_config.gd")
+const RGResolve = preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
 
 ## The sibling .gd path for a .guitkx path.
 static func gd_path_for(guitkx_path: String) -> String:
@@ -34,16 +35,26 @@ static func src_hash(s: String) -> int:
 ## { code, severity:int (0 err / 1 warn / 2 hint), message (no code prefix), off, len } — `off`/`len`
 ## are character offsets into the compiled source (off -1 = whole file), so the LSP ranges precisely
 ## via positionAt(). The reader (diagsSidecar.ts) keeps a v1 fallback for sidecars written pre-T0.2.
-static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: Array, refs: Dictionary = {}) -> void:
+static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: Array, refs: Dictionary = {}, imports: Array = []) -> void:
 	var entries: Array = []
 	for d in diagnostics:
 		entries.append({
 			"code": d.get("code", ""), "severity": int(d.get("severity", Diag.ERROR)),
 			"message": d.get("message", ""), "off": int(d.get("offset", -1)), "len": int(d.get("length", 0)),
 		})
-	# `refs` (component class -> generated .gd path this compile resolved through V.comp) lets
-	# the sweep flag DANGLING references when a component's file later vanishes (GUITKX2107).
-	var payload := JSON.stringify({ "v": 2, "src_hash": src_hash(src), "diagnostics": entries, "refs": refs })
+	# Schema v3 (M4): adds `exports` (this file's exported decl table -> {name,kind,func}),
+	# `export_hash` (FNV of the sorted table -- the reverse-edge staleness key), and `imports`
+	# ({names, spec} from the preamble; the graph is truth-in-SOURCE per rule 9, this is the cache).
+	# `refs` (component class -> V.comp .gd path) still drives the GUITKX2107 dangling check.
+	var exports := exports_of(src)
+	var imp_rows: Array = []
+	for im in imports:
+		var nm_list: Array = []
+		for nm in (im.get("names", []) as Array):
+			nm_list.append(str(nm["name"]) if nm is Dictionary else str(nm))
+		imp_rows.append({ "names": nm_list, "spec": str(im.get("spec", "")) })
+	var payload := JSON.stringify({ "v": 3, "src_hash": src_hash(src), "diagnostics": entries, "refs": refs,
+		"exports": exports, "export_hash": export_hash(exports), "imports": imp_rows })
 	var sc_path := diags_path_for(guitkx_path)
 	if FileAccess.file_exists(sc_path) and FileAccess.get_file_as_string(sc_path) == payload:
 		return   # identical verdict -- don't churn the file (the LSP watches sidecars for changes)
@@ -51,6 +62,31 @@ static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: A
 	if f != null:
 		f.store_string(payload)
 		f.close()
+
+## This file's EXPORTED top-level declaration table: [{name, kind, func}], func = the emitted static
+## func a cross-file reference calls (`render` for the binding component, else the decl name).
+static func exports_of(src: String) -> Array:
+	var binding := _binding_name(src)
+	var out: Array = []
+	for dm in Compiler._enumerate_decls(src, 0):
+		if not bool(dm["export"]):
+			continue
+		var nm := str(dm["name"])
+		var kind := str(dm["kind"])
+		var fn := nm
+		if kind == "component" and nm == binding:
+			fn = "render"
+		out.append({ "name": nm, "kind": kind, "func": fn })
+	return out
+
+## FNV-1a over the export table (sorted) -- the reverse-edge staleness key: when a file's exports
+## change, every importer must recompile so its resolver diagnostics + lowering stay current.
+static func export_hash(exports: Array) -> int:
+	var parts: Array = []
+	for e in exports:
+		parts.append("%s:%s:%s" % [e["name"], e["kind"], e["func"]])
+	parts.sort()
+	return src_hash("|".join(parts))
 
 ## True if the sibling .gd is missing or older than the .guitkx source. A zero mtime (the editor
 ## scan-window flake) counts as STALE -- erring toward a compile attempt is safe (the empty-read
@@ -396,7 +432,10 @@ static func project_bindings(paths: Array) -> Dictionary:
 ## Compile one .guitkx and write its sibling .gd. Returns { ok, path, gd_path?, diagnostics?/error? }.
 ## `component_paths` (class -> generated .gd) makes the emitter reference guitkx siblings by
 ## PATH (V.comp) -- pass project_bindings()["bindings"] for output identical to the watcher's.
-static func compile_file(guitkx_path: String, known_components: Array = [], component_paths: Dictionary = {}) -> Dictionary:
+## `parse_check` (M4): when false, SKIP the immediate throwaway-reload check -- the two-pass callers
+## (compile_all, guitkx_build) write EVERY .gd first, then re-check, so a value-import `preload(...)`
+## whose target is written later in the same sweep does not false-fail (ERR_PARSE_ERROR 43).
+static func compile_file(guitkx_path: String, known_components: Array = [], component_paths: Dictionary = {}, parse_check: bool = true) -> Dictionary:
 	if not FileAccess.file_exists(guitkx_path):
 		return { "ok": false, "path": guitkx_path, "error": "file not found" }
 	var src := FileAccess.get_file_as_string(guitkx_path)
@@ -429,7 +468,7 @@ static func compile_file(guitkx_path: String, known_components: Array = [], comp
 	if _env_hold:
 		_env_hold = false
 		print("[guitkx] compiler environment recovered -- compiles resume")
-	write_diags_sidecar(guitkx_path, src, r["diagnostics"], r.get("refs", {}))
+	write_diags_sidecar(guitkx_path, src, r["diagnostics"], r.get("refs", {}), r.get("imports", []))
 	# Surface boundary: derive 0-based line/col from each offset ONCE, here, where the source is at
 	# hand -- downstream consumers (plugin.gd dock lines, tests) read d.line/d.col without the source.
 	for d in r["diagnostics"]:
@@ -454,17 +493,31 @@ static func compile_file(guitkx_path: String, known_components: Array = [], comp
 	# 0.6.2: parse the generated script IMMEDIATELY on a throwaway GDScript -- Unity parity: uitkx's
 	# generated C# fails the Roslyn compile in the console at once, while a generated .gd otherwise
 	# parses only when something first loads it, so an unknown identifier in an expression stayed
-	# invisible until play. GDScript.new() (not ResourceLoader) keeps the resource cache clean; the
-	# class_name line is stripped so the throwaway cannot collide with the scanned global class.
-	var chk := GDScript.new()
-	var chk_src: String = r["gd"]
-	if chk_src.begins_with("class_name "):
-		chk_src = chk_src.substr(chk_src.find("\n") + 1)
-	chk.source_code = chk_src
-	var gd_parse_ok := chk.reload() == OK
+	# invisible until play. M4: two-pass callers defer this (parse_check=false) so a value-import
+	# preload target written later in the same sweep isn't mistaken for a broken script.
+	if not parse_check:
+		return { "ok": true, "path": guitkx_path, "gd_path": gd_path, "diagnostics": r["diagnostics"], "gd_parse_ok": true }
+	var gd_parse_ok := gd_source_parses(r["gd"])
 	if not gd_parse_ok:
 		push_error("[guitkx] %s: the generated %s has GDScript errors (see the parser messages above) -- likely an unknown identifier or type error in an expression; fix the .guitkx source" % [guitkx_path, gd_path.get_file()])
 	return { "ok": true, "path": guitkx_path, "gd_path": gd_path, "diagnostics": r["diagnostics"], "gd_parse_ok": gd_parse_ok }
+
+## True if generated GDScript source parses on a throwaway GDScript (resource-cache-clean). The
+## `class_name` line is stripped so the throwaway can't collide with the scanned global class. The
+## two-pass gate (M4) calls this per output AFTER every .gd is on disk, so cross-file preloads exist.
+static func gd_source_parses(gd: String) -> bool:
+	var chk := GDScript.new()
+	var chk_src := gd
+	if chk_src.begins_with("class_name "):
+		chk_src = chk_src.substr(chk_src.find("\n") + 1)
+	chk.source_code = chk_src
+	return chk.reload() == OK
+
+## Two-pass gate helper: does the .gd already on disk at `gd_path` parse? Reads + strips + reloads.
+static func gd_path_parses(gd_path: String) -> bool:
+	if not FileAccess.file_exists(gd_path):
+		return false
+	return gd_source_parses(FileAccess.get_file_as_string(gd_path))
 
 ## Compile every stale .guitkx under `root`. Returns { compiled:[...], errors:[...], held:[paths],
 ## total:int (all tracked .guitkx, for the plugin's sweep summary) }.
@@ -499,6 +552,11 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	var known: Array = pb["known"]
 	var dupe_losers: Dictionary = pb["losers"]
 	var bindings: Dictionary = pb["bindings"]   # class -> .gd path: V.comp emission + HMR link table
+	# M4 REVERSE-EDGE STALENESS: a file whose EXPORT table changed since its last sidecar invalidates
+	# every importer (their resolver diagnostics + V.comp/preload lowering depend on it). Build importer
+	# edges from SOURCE imports (rule 9), diff each file's export_hash against its sidecar, and force
+	# the affected importers stale THIS sweep. No-op on an import-free tree.
+	var force_stale := _reverse_edge_stale(all_paths, pb["sources"])
 	# Orphan cleanup FIRST -- generated outputs whose .guitkx was deleted or renamed. Without
 	# this, the stale .gd keeps its class_name registered and (after a rename) DUPLICATES the
 	# new file's class. Running BEFORE the compile loop means the dangling-reference check
@@ -578,27 +636,64 @@ static func compile_all(root: String = "res://") -> Dictionary:
 					continue
 				elif had_2107:
 					heal_2107 = true   # everything it references exists again -- recompile to clear
-		if not force and not heal_2107:
+		if not force and not heal_2107 and not force_stale.has(path):
 			# Known-broken content (sidecar hash-match + error): skip the recompile -- the verdict
 			# cannot change -- but keep SURFACING it, so a fresh session's first sweep re-reports.
+			# (An importer forced stale by a dep's export change recompiles below to refresh its verdict.)
 			var cached := sidecar_error_diags(path)
 			if not cached.is_empty():
 				errors.append({ "ok": false, "path": path, "diagnostics": cached })
 				continue
 			if not is_stale(path):
 				continue
-		var r := compile_file(path, known, bindings)
+		# M4 PASS 1: compile + write, parse check DEFERRED -- a value-import preload target may be
+		# written later this same sweep, so judging each output's parse in isolation is premature.
+		var r := compile_file(path, known, bindings, false)
 		if r["ok"]:
-			# gd_ok: the generated script also PARSES (the throwaway GDScript.new check). The
-			# HMR push filters on it -- never hot-load a script the engine would reject.
-			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"], "gd_ok": bool(r.get("gd_parse_ok", true)) })
+			compiled.append({ "path": path, "gd_path": r["gd_path"], "warnings": r["diagnostics"], "gd_ok": true })
 		elif bool(r.get("env_error", false)):
 			held.append(path)
 		else:
 			errors.append(r)
+	# M4 PASS 2: with every .gd on disk, re-check each output. A file that still doesn't parse has a
+	# real error (unknown identifier, or a preload target that genuinely never got written); one that
+	# only awaited a sibling now heals. gd_ok gates the HMR push -- never hot-load a rejected script.
+	for c in compiled:
+		c["gd_ok"] = gd_path_parses(str(c["gd_path"]))
 	if force and held.is_empty():
 		_write_fp_marker()
 	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size(), "removed": removed, "bindings": bindings }
+
+## M4 reverse-edge staleness: the set of importer paths to force-recompile because a file they import
+## changed its export table since its last sidecar. `sources` = path -> source text (from
+## project_bindings). Importer edges are scanned from SOURCE (rule 9). Returns { importer_path: true }.
+static func _reverse_edge_stale(all_paths: Array, sources: Dictionary) -> Dictionary:
+	# Which files' export tables moved since their sidecar?
+	var changed := {}
+	for p in all_paths:
+		var s := str(sources.get(p, ""))
+		if s == "":
+			continue
+		var raw := _read_sidecar_raw(str(p))
+		if raw.is_empty() or not raw.has("export_hash"):
+			continue   # no v3 sidecar yet -- is_stale already covers a first/expired compile
+		if int(raw["export_hash"]) != export_hash(exports_of(s)):
+			changed[str(p)] = true
+	if changed.is_empty():
+		return {}
+	# Reverse edges: importer -> its resolved import targets; invert to target -> importers.
+	var out := {}
+	for p in all_paths:
+		var s := str(sources.get(p, ""))
+		if s == "":
+			continue
+		var root := RGConfig.root_for(str(p))
+		for im in Compiler.scan_imports(s):
+			var res := RGResolve.resolve_specifier(str(im["spec"]), str(p), root)
+			if res["ok"] and changed.has(str(res["guitkx"])):
+				out[str(p)] = true
+				break
+	return out
 
 ## Recursively collect all .guitkx paths under `dir` (skips Godot's hidden cache dirs).
 static func find_all(dir: String = "res://") -> Array:

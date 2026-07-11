@@ -133,17 +133,17 @@ func _compile_all() -> void:
 	_busy = true
 	_busy_since = Time.get_ticks_msec()
 	var res: Dictionary = Codegen.compile_all("res://")
-	# Phase H: hot-push EVERYTHING this sweep produced into running play sessions -- including
-	# files whose post-write parse check failed (gd_ok false). That check fails transiently for
-	# the exact case hot-LINKING exists for: a parent referencing a component created seconds
-	# ago, before the EDITOR's own class registry caught up (field capture 2026-07-04: the
-	# gd_ok gate silently dropped the one file the game needed). The game is equipped for the
-	# risk: per-file isolation keeps old code on a failed reload, and the injection retry
-	# resolves fresh classes by path. The parse check keeps its dock-error role only.
+	# M4: hot-push only entries whose generated .gd PARSES (gd_ok). The old "push everything" rule
+	# existed for a transient case -- a parent referencing a class the editor's registry hadn't caught
+	# up to yet -- but post-M2 every guitkx-to-guitkx reference is PATH-based (V.comp / const preload),
+	# not class-name-based, and the M4 two-pass makes gd_ok reliable (checked only after every .gd is
+	# on disk). So a gd_ok=false entry genuinely doesn't parse and must NOT be hot-loaded; the in-game
+	# injection retry (hmr.gd) still covers any pre-migration cached script that references bare names.
 	if _hmr_dbg != null:
 		var hot: Array = []
 		for entry in res["compiled"]:
-			hot.append(entry["gd_path"])
+			if bool(entry.get("gd_ok", true)):
+				hot.append(entry["gd_path"])
 		_hmr_dbg.push_reload(hot, res.get("bindings", {}))
 	for orphan in res.get("removed", []):
 		print("[guitkx] removed orphaned output %s (its .guitkx is gone -- renamed or deleted)" % orphan)

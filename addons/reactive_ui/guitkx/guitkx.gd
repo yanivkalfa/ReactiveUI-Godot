@@ -390,6 +390,31 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
 
+## Standalone preamble IMPORT scan (the graph truth for reverse-edge staleness, rule 9): returns the
+## parsed imports [{names,[…], spec, …}] without compiling. Skips `@`-directives, stops at the first
+## declaration. Malformed imports are ignored here (compile() reports them).
+static func scan_imports(source: String) -> Array:
+	var out: Array = []
+	var i := 0
+	var n := source.length()
+	var throwaway: Array = []
+	while i < n:
+		i = _skip_ws_and_comments(source, i)
+		if i >= n:
+			break
+		if L.keyword_at(source, i, "import"):
+			var imp := _parse_import_at(source, i, throwaway)
+			i = int(imp["end"])
+			if imp["ok"]:
+				out.append(imp)
+			continue
+		if i < n and source[i] == "@":   # any @directive line -- skip to end of line
+			var le := source.find("\n", i)
+			i = n if le == -1 else le
+			continue
+		break
+	return out
+
 ## Insert value-import const preloads after the `## AUTO-GENERATED …​` banner. Each is
 ## `const Name = preload("res://…​.gd")` (a binding hook/module — the whole script) or
 ## `const Name = preload("res://…​.gd").Member` (a non-binding module member = inner class).
