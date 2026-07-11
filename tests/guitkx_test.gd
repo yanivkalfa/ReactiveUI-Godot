@@ -56,6 +56,7 @@ func _run() -> void:
 	_test_cold_open_recovery()
 	_test_phase_d_bodies()
 	_test_spread()
+	_test_imports_m1()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -908,6 +909,68 @@ func _test_deep_flatten() -> void:
 	_check_true(flat2.size() == 2, "deep _norm drops nested nulls (got %d)" % flat2.size())
 
 # First diagnostic with `code` from a compile() result, or {} — T0.2 structured-diag test helper.
+## M1 (0.10.0 imports leg): the import/export GRAMMAR + scan. Emission is unchanged this milestone
+## (single binding decl); these cover preamble parsing, the `export` prefix, malformed-import errors,
+## and the order-agnostic binding scan (`@class_name` after an import must still win).
+func _test_imports_m1() -> void:
+	# --- import parse forms accepted, stored on the result, and non-fatal to a normal compile ---
+	var one := "import { StatusChip } from \"./status_chip\"\n\ncomponent A() {\n\treturn ( <Label /> )\n}\n"
+	var r_one := RUIGuitkx.compile(one, "A")
+	_check_true(r_one["ok"], "M1: a single import line compiles (%s)" % str(r_one.get("diagnostics", [])))
+	_check_true((r_one.get("imports", []) as Array).size() == 1, "M1: one import parsed and threaded onto the result")
+	if (r_one.get("imports", []) as Array).size() == 1:
+		var imp0: Dictionary = r_one["imports"][0]
+		_check_true(str(imp0.get("spec", "")) == "./status_chip", "M1: import specifier captured verbatim")
+		_check_true((imp0.get("names", []) as Array).size() == 1 and str(imp0["names"][0]["name"]) == "StatusChip", "M1: import name captured")
+
+	# multi-name + `~/` root alias + `../` relative, in any preamble order relative to @class_name.
+	var multi := "import { A, B } from \"~/demos/x\"\nimport { C } from \"../y\"\n@class_name Widget\n\ncomponent Thing() {\n\treturn ( <Label /> )\n}\n"
+	var r_multi := RUIGuitkx.compile(multi, "Thing")
+	_check_true(r_multi["ok"], "M1: multi-name + ~/ + ../ imports before @class_name compile (%s)" % str(r_multi.get("diagnostics", [])))
+	_check_true((r_multi.get("imports", []) as Array).size() == 2, "M1: two import lines parsed")
+	_check_true((r_multi["imports"][0]["names"] as Array).size() == 2, "M1: `{ A, B }` yields two names")
+
+	# @class_name AFTER an import must still bind the file (order-agnostic scan, §6.2 latent-bug fix).
+	_check_true(Codegen._binding_name(multi) == "Widget", "M1: @class_name after imports wins the binding")
+	# @uss before @class_name likewise (the other order case).
+	var uss_first := "@uss \"res://theme.tres\"\n@class_name Themed\ncomponent T() { return ( <Label /> ) }\n"
+	_check_true(Codegen._binding_name(uss_first) == "Themed", "M1: @class_name after @uss wins the binding")
+
+	# --- the `export` prefix on each declaration kind is accepted; binding is unchanged ---
+	var ec := "export component Exp() {\n\treturn ( <Label /> )\n}\n"
+	var r_ec := RUIGuitkx.compile(ec, "Exp")
+	_check_true(r_ec["ok"], "M1: `export component` compiles (%s)" % str(r_ec.get("diagnostics", [])))
+	_check_true(bool(r_ec.get("binding_export", false)), "M1: exported binding flagged on the result")
+	_check_true(Codegen._binding_name(ec) == "Exp", "M1: `export component` binds to its name")
+	var eh := "export hook use_thing() -> int {\n\treturn 1\n}\n"
+	_check_true(RUIGuitkx.compile(eh, "use_thing")["ok"], "M1: `export hook` compiles")
+	var em := "export module Styles {\n\thook use_x() { return 1 }\n}\n"
+	_check_true(RUIGuitkx.compile(em, "Styles")["ok"], "M1: `export module` compiles")
+
+	# a private (unexported) decl is still a legal file this milestone (privacy semantics land in M2).
+	_check_true(RUIGuitkx.compile("component Priv() { return ( <Label /> ) }\n", "Priv")["ok"], "M1: unexported decl still compiles")
+
+	# --- malformed imports are GUITKX0300 errors and fail the compile ---
+	var no_from := "import { A } \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	var r_nf := RUIGuitkx.compile(no_from, "C")
+	_check_true(not r_nf["ok"], "M1: import without `from` fails")
+	_check_true(_has_code(r_nf, "GUITKX0300"), "M1: missing `from` -> GUITKX0300")
+
+	var no_brace := "import A from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(no_brace, "C"), "GUITKX0300"), "M1: missing `{ }` -> GUITKX0300")
+
+	var empty_braces := "import { } from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(empty_braces, "C"), "GUITKX0300"), "M1: empty `{ }` -> GUITKX0300")
+
+	var unterminated := "import { A } from \"./x\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(unterminated, "C"), "GUITKX0300"), "M1: unterminated specifier -> GUITKX0300")
+
+	var bad_name := "import { 9bad } from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(bad_name, "C"), "GUITKX0300"), "M1: non-identifier import name -> GUITKX0300")
+
+	# an import line must NOT be mistaken for stray content-before-decl (GUITKX2105).
+	_check_true(not _has_code(r_one, "GUITKX2105"), "M1: a valid import never trips the 2105 junk check")
+
 func _diag(r: Dictionary, code: String) -> Dictionary:
 	for d in r.get("diagnostics", []):
 		if d is Dictionary and (d as Dictionary).get("code", "") == code:

@@ -273,16 +273,22 @@ static func known_component_names(guitkx_paths: Array) -> Array:
 	names.erase("")
 	return names.keys()
 
-## The class name a .guitkx compiles to: the @class_name override, else the first declaration's name.
-## The override scan mirrors compile()'s preamble loop (ws/comment-skipped, file start only) -- a
-## naive whole-file find() would let a COMMENT mentioning @class_name shadow the real binding and
-## produce false unknown-component errors in sibling files.
+## The class name a .guitkx compiles to: the @class_name override, else the first EXPORTED
+## declaration's name, else the first declaration's name. The preamble scan is ORDER-AGNOSTIC — it
+## skips `import` lines and `@uss`/`@theme` as well as `@class_name`, mirroring compile()'s loop —
+## because 0.10.0 allows `@class_name` BEFORE or AFTER imports, and a scan that broke at the first
+## non-`@class_name` token would miss a `@class_name` sitting after an import and silently rebind the
+## file to its first decl (every identity table — V.comp paths, GUITKX2106 arbitration, the HMR link
+## table, the workspace index — keys on this, so the fix lands here first). A naive whole-file find()
+## would also let a COMMENT mentioning @class_name shadow the real binding.
 static func _binding_name(src: String) -> String:
 	var n := src.length()
 	var i := 0
 	var override := ""
 	while i < n:
 		i = Compiler._skip_ws_and_comments(src, i)
+		if i >= n:
+			break
 		if src.substr(i, 11) == "@class_name":
 			var le := src.find("\n", i)
 			if le == -1:
@@ -294,12 +300,23 @@ static func _binding_name(src: String) -> String:
 			override = raw.strip_edges()
 			i = le
 			continue
+		# Skip an `import { ... } from "spec"` — brace-matched so a multi-line import is skipped whole,
+		# with a line-end fallback if the form is malformed (compile() reports that separately).
+		if Compiler.L.keyword_at(src, i, "import"):
+			i = _skip_import_span(src, i)
+			continue
+		# Skip `@uss`/`@theme` directive lines.
+		if src.substr(i, 4) == "@uss" or src.substr(i, 6) == "@theme":
+			var le2 := src.find("\n", i)
+			i = n if le2 == -1 else le2
+			continue
 		break
 	if override != "":
 		return override
 	var d: Dictionary = Compiler._find_decl(src, 0)
 	if d["kind"] == "":
 		return ""
+	# `at` is the decl KEYWORD (past any `export` prefix); the name follows the keyword + whitespace.
 	i = int(d["at"])
 	while i < n and (src[i] >= "a" and src[i] <= "z"):
 		i += 1   # the decl keyword
@@ -309,6 +326,29 @@ static func _binding_name(src: String) -> String:
 	while i < n and (src[i] == "_" or (src[i] >= "a" and src[i] <= "z") or (src[i] >= "A" and src[i] <= "Z") or (src[i] >= "0" and src[i] <= "9")):
 		i += 1
 	return src.substr(s, i - s)
+
+## Advance past an `import` statement starting at `i` (the `import` keyword). Brace-matched so a
+## multi-line `import { ... }` is consumed whole; falls back to end-of-line if the form is malformed.
+static func _skip_import_span(src: String, i: int) -> int:
+	var n := src.length()
+	var line_end := src.find("\n", i)
+	if line_end == -1:
+		line_end = n
+	var j := Compiler._skip_ws_and_comments(src, i + 6)
+	if j >= n or src[j] != "{":
+		return line_end
+	var bclose := Compiler.L.find_matching(src, j)
+	if bclose == -1:
+		return line_end
+	# past `}` -> `from` -> the specifier string's closing quote
+	var k := Compiler._skip_ws_and_comments(src, bclose + 1)
+	if not Compiler.L.keyword_at(src, k, "from"):
+		return maxi(line_end, bclose + 1)
+	k = Compiler._skip_ws_only(src, k + 4)   # ws-only: skip_noncode would leap the specifier string
+	if k >= n or (src[k] != "\"" and src[k] != "'"):
+		return maxi(line_end, k)
+	var qe := src.find(src[k], k + 1)
+	return maxi(line_end, (bclose + 1) if qe == -1 else (qe + 1))
 
 ## B1 (0.6.0 field triage): one hold notice per environment-not-ready EPISODE, not one red line per
 ## file per sweep -- the per-file GUITKX2507 env_error result still records the hold for callers.

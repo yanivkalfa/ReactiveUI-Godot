@@ -18,7 +18,9 @@ static var _cn_re: RegEx = null
 static func _res() -> void:
 	if _decl_re == null:
 		_decl_re = RegEx.new()
-		_decl_re.compile("(?m)^[ \\t]*(component|hook|module)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
+		# `(?:export[ \t]+)?` — a top-level declaration may carry an `export` visibility prefix (0.10.0
+		# imports leg); the prefix is non-capturing so groups stay 1=kind, 2=name.
+		_decl_re.compile("(?m)^[ \\t]*(?:export[ \\t]+)?(component|hook|module)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
 	if _cn_re == null:
 		_cn_re = RegEx.new()
 		_cn_re.compile("(?m)^[ \\t]*@class_name[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")

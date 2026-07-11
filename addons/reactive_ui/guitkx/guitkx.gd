@@ -154,12 +154,24 @@ static func compile(source: String, basename: String = "Component", known_compon
 		known[str(cls)] = str(component_paths[cls])
 	var uss_path := ""
 	var uss_at := -1
-	# 1. Preamble: optional `@class_name X` (other directives skipped for the skeleton).
+	# 1. Preamble: `import { A, B } from "spec"` lines and optional `@class_name X`, `@uss`/`@theme`,
+	# in ANY order, before the first declaration. Imports are STORED here (structural parse only); the
+	# specifier is resolved and the names lowered/validated later (M3 resolver / M2 emitter). Parsing
+	# them here — inside this order-agnostic loop — is also what stops an `import` line from tripping
+	# the "invalid content before the declaration" junk check below (GUITKX2105).
+	var imports: Array = []
 	var class_name_override := ""
 	var i := 0
 	var n := source.length()
 	while i < n:
 		i = _skip_ws_and_comments(source, i)
+		# `import { Name, ... } from "specifier"` — preamble-only, static, string-literal.
+		if L.keyword_at(source, i, "import"):
+			var imp := _parse_import_at(source, i, diags)
+			i = int(imp["end"])
+			if imp["ok"]:
+				imports.append(imp)
+			continue
 		# T3.5: directive keywords require a token boundary (`@class_nameFoo` is not a directive).
 		if source.substr(i, 11) == "@class_name" and (i + 11 >= n or not L._is_ident_code(source.unicode_at(i + 11))):
 			var le := source.find("\n", i)
@@ -211,12 +223,15 @@ static func compile(source: String, basename: String = "Component", known_compon
 	var decl := _find_decl(source, i)
 	# T2.6: _find_decl SKIPS anything before the keyword -- real content there (a stray statement, a
 	# misspelled directive) used to vanish silently. Same 2105 family as trailing junk (T1.3).
+	# `start` is the decl's first char (the optional `export` prefix, else the keyword) — the junk
+	# window ends there so an `export` prefix is never itself mistaken for stray content.
 	if decl["kind"] != "":
-		var lead_junk := _first_real(source, i, int(decl["at"]))
+		var decl_start := int(decl.get("start", decl["at"]))
+		var lead_junk := _first_real(source, i, decl_start)
 		if lead_junk != -1:
 			var jle := source.find("\n", lead_junk)
-			if jle == -1 or jle > int(decl["at"]):
-				jle = int(decl["at"])
+			if jle == -1 or jle > decl_start:
+				jle = decl_start
 			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content before the `%s` declaration" % decl["kind"], lead_junk, maxi(1, jle - lead_junk)))
 	var r: Dictionary
 	# T2.3 (Unity UITKX2210): @uss applies to component files only.
@@ -236,6 +251,10 @@ static func compile(source: String, basename: String = "Component", known_compon
 			else:
 				diags.append(D.make("GUITKX2101", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
 			return { "ok": false, "gd": "", "diagnostics": diags }
+	# The preamble's declared imports ride along on every result (ok or not) so the codegen sidecar
+	# (schema v3) and the resolver can read the graph truth straight from this compile.
+	r["imports"] = imports
+	r["binding_export"] = bool(decl.get("export", false))
 	# Invariant (T1.1): an error-severity diagnostic can NEVER coexist with ok:true, no matter which
 	# code path appended it (validation, emit, or a future one) -- broken output must not ship.
 	if r.get("ok", false) and D.has_error(r.get("diagnostics", [])):
@@ -243,7 +262,10 @@ static func compile(source: String, basename: String = "Component", known_compon
 		r["gd"] = ""
 	return r
 
-## Find the first top-level declaration keyword (skipping strings/comments).
+## Find the first top-level declaration keyword (skipping strings/comments), honoring an optional
+## `export` prefix (`export component Foo`). Returns { kind, at, export, start } where `at` is the
+## KEYWORD position (so all downstream parsers are byte-unchanged), `start` is the first char of the
+## declaration (the `export` prefix when present, else the keyword), and `export` records visibility.
 static func _find_decl(source: String, from: int) -> Dictionary:
 	var n := source.length()
 	var i := from
@@ -252,14 +274,80 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 		if k != i:
 			i = k
 			continue
+		# `export` is a declaration prefix ONLY when a decl keyword follows it; otherwise it is an
+		# ordinary identifier and the scan walks on (e.g. a stray `export` alone is not a decl).
+		if L.keyword_at(source, i, "export"):
+			var e := _skip_ws_and_comments(source, i + 6)
+			var ek := ""
+			if L.keyword_at(source, e, "component"): ek = "component"
+			elif L.keyword_at(source, e, "hook"): ek = "hook"
+			elif L.keyword_at(source, e, "module"): ek = "module"
+			if ek != "":
+				return { "kind": ek, "at": e, "export": true, "start": i }
 		if L.keyword_at(source, i, "component"):
-			return { "kind": "component", "at": i }
+			return { "kind": "component", "at": i, "export": false, "start": i }
 		if L.keyword_at(source, i, "hook"):
-			return { "kind": "hook", "at": i }
+			return { "kind": "hook", "at": i, "export": false, "start": i }
 		if L.keyword_at(source, i, "module"):
-			return { "kind": "module", "at": i }
+			return { "kind": "module", "at": i, "export": false, "start": i }
 		i += 1
-	return { "kind": "", "at": -1 }
+	return { "kind": "", "at": -1, "export": false, "start": -1 }
+
+## Parse ONE `import { A, B } from "specifier"` at `imp_i` (the caller has boundary-checked the
+## `import` keyword). Returns { ok, names:[{name,at}], spec, spec_at, at, end } on success, or
+## { ok:false, end } with a GUITKX0300 malformed-import diagnostic appended. The specifier is a
+## STATIC single-quoted or double-quoted string literal (extensionless `.guitkx` implied); it is NOT
+## resolved here — that is the M3 resolver's job. `end` always advances past what was consumed so the
+## preamble loop makes progress even on a malformed line.
+static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictionary:
+	var n := source.length()
+	var line_end := source.find("\n", imp_i)
+	if line_end == -1:
+		line_end = n
+	var fail := func(msg: String, at: int, length: int, end: int) -> Dictionary:
+		diags.append(D.make("GUITKX0300", D.ERROR, msg, at, length))
+		return { "ok": false, "end": end }
+	var j := _skip_ws_and_comments(source, imp_i + 6)   # past "import"
+	if j >= n or source[j] != "{":
+		return fail.call("`import` expects `{ Name, ... } from \"specifier\"`", imp_i, maxi(1, line_end - imp_i), line_end)
+	var bclose := L.find_matching(source, j)
+	if bclose == -1:
+		return fail.call("unclosed `{` in import", j, 1, line_end)
+	# Names inside the braces (comma-separated identifiers; ws/comments skipped, offsets tracked).
+	var names: Array = []
+	var p := j + 1
+	while p < bclose:
+		p = _skip_ws_and_comments(source, p)
+		if p >= bclose:
+			break
+		if source[p] == ",":
+			p += 1
+			continue
+		if not L._is_ident_code(source.unicode_at(p)):
+			return fail.call("import names must be identifiers (got `%s`)" % source[p], p, 1, bclose + 1)
+		var s := p
+		while p < bclose and L._is_ident_code(source.unicode_at(p)):
+			p += 1
+		var nm := source.substr(s, p - s)
+		if not _is_valid_identifier(nm):
+			return fail.call("import names must be identifiers (got `%s`)" % nm, s, p - s, bclose + 1)
+		names.append({ "name": nm, "at": s })
+	if names.is_empty():
+		return fail.call("`import { }` names at least one exported declaration", j, bclose - j + 1, bclose + 1)
+	var k := _skip_ws_and_comments(source, bclose + 1)
+	if not L.keyword_at(source, k, "from"):
+		return fail.call("`import { ... }` must be followed by `from \"specifier\"`", imp_i, maxi(1, k - imp_i), line_end)
+	# ws-only, NOT skip_noncode: skip_noncode would leap the specifier STRING itself (it treats string
+	# literals as non-code), landing us past the closing quote.
+	k = _skip_ws_only(source, k + 4)   # past "from"
+	if k >= n or (source[k] != "\"" and source[k] != "'"):
+		return fail.call("import specifier must be a quoted string, e.g. from \"./thing\"", mini(k, n - 1), 1, line_end)
+	var quote := source[k]
+	var qe := source.find(quote, k + 1)
+	if qe == -1 or qe > line_end:
+		return fail.call("unterminated import specifier string", k, 1, line_end)
+	var spec := source.substr(k + 1, qe - k - 1)
+	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
 
 ## True if `s` is a single valid GDScript identifier ([A-Za-z_][A-Za-z0-9_]*), non-empty. [BUG-V2]
 static func _is_valid_identifier(s: String) -> bool:
