@@ -21,6 +21,21 @@ env:
   GODOT_VERSION: "4.7.0"
 
 jobs:
+  # Engine-free gates run without Godot so they stay green even when engine CI is unavailable.
+  gates:
+    name: engine-free gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: family-corpus hash gate (A4/TD-009 mirror tripwire)
+        # Verifies the mirrored family scanner corpus (familyCore tiers) still hashes to the
+        # value pinned in plans/family-corpus.hash — i.e. it has not drifted from the Unreal/Unity
+        # siblings. Re-pin with `node scripts/corpus-hash.mjs --write` after an intentional change.
+        run: node scripts/corpus-hash.mjs --check
+
   headless-tests:
     name: Headless GDScript tests
     runs-on: ubuntu-latest
