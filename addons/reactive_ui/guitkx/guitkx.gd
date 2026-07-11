@@ -234,23 +234,31 @@ static func compile(source: String, basename: String = "Component", known_compon
 				jle = decl_start
 			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content before the `%s` declaration" % decl["kind"], lead_junk, maxi(1, jle - lead_junk)))
 	var r: Dictionary
-	# T2.3 (Unity UITKX2210): @uss applies to component files only.
-	if uss_path != "" and decl["kind"] != "component" and decl["kind"] != "":
-		diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` applies to component files -- a %s has no root element to theme" % decl["kind"], uss_at, 4))
-	match decl["kind"]:
-		"component":
-			r = _compile_component(source, decl["at"], class_name_override, basename, diags, known, uss_path, refs)
-		"hook":
-			r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
-		"module":
-			r = _compile_module(source, decl["at"], class_name_override, basename, diags, known, refs)
-		_:
-			var near := _nearest_decl_keyword(source, i)
-			if near.has("word"):
-				diags.append(D.make("GUITKX2101", D.ERROR, "unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]], near["at"], (near["word"] as String).length()))
-			else:
-				diags.append(D.make("GUITKX2101", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
-			return { "ok": false, "gd": "", "diagnostics": diags }
+	# 0.10.0 MIXED-DECL v1 (§6): a file is a SEQUENCE of declarations. Enumerate them; ONE decl keeps
+	# the byte-identical single-decl paths below, several route to the mixed emitter (_compile_mixed).
+	# Existing corpus + doom are all single-decl (multiple top-level decls were a 2105 error until
+	# now), so those outputs never move; mixed emission is a new capability with its own fixtures.
+	if decl["kind"] == "":
+		var near := _nearest_decl_keyword(source, i)
+		if near.has("word"):
+			diags.append(D.make("GUITKX2101", D.ERROR, "unknown declaration '%s' -- did you mean '%s'?" % [near["word"], near["kw"]], near["at"], (near["word"] as String).length()))
+		else:
+			diags.append(D.make("GUITKX2101", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	var decls := _enumerate_decls(source, i)
+	if decls.size() > 1:
+		r = _compile_mixed(source, decls, class_name_override, basename, diags, known, uss_path, refs)
+	else:
+		# T2.3 (Unity UITKX2210): @uss applies to component files only.
+		if uss_path != "" and decl["kind"] != "component":
+			diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` applies to component files -- a %s has no root element to theme" % decl["kind"], uss_at, 4))
+		match decl["kind"]:
+			"component":
+				r = _compile_component(source, decl["at"], class_name_override, basename, diags, known, uss_path, refs)
+			"hook":
+				r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
+			"module":
+				r = _compile_module(source, decl["at"], class_name_override, basename, diags, known, refs)
 	# The preamble's declared imports ride along on every result (ok or not) so the codegen sidecar
 	# (schema v3) and the resolver can read the graph truth straight from this compile.
 	r["imports"] = imports
@@ -348,6 +356,56 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		return fail.call("unterminated import specifier string", k, 1, line_end)
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
+
+## Enumerate EVERY top-level declaration from `from` (0.10.0 mixed-decl §6.1). Each entry mirrors
+## `_find_decl` (kind, at, export, start) plus name/name_at and `next` (index just past the decl's
+## closing `}`). Extent is found by brace-matching (not a full parse), so a malformed/unterminated
+## body stops enumeration with `next = length` — the single/mixed compiler then reports it precisely.
+static func _enumerate_decls(source: String, from: int) -> Array:
+	var out: Array = []
+	var n := source.length()
+	var scan := from
+	var kw_len := { "component": 9, "hook": 4, "module": 6 }
+	while true:
+		var d := _find_decl(source, scan)
+		if d["kind"] == "":
+			break
+		var at := int(d["at"])
+		var j := _skip_ws_only(source, at + int(kw_len[d["kind"]]))
+		var ns := j
+		while j < n and L._is_ident_code(source.unicode_at(j)):
+			j += 1
+		var name := source.substr(ns, j - ns)
+		var end := _decl_body_end(source, j, str(d["kind"]))
+		out.append({ "kind": d["kind"], "at": at, "start": int(d["start"]), "export": bool(d["export"]),
+			"name": name, "name_at": ns, "next": (n if end == -1 else end) })
+		if end == -1:
+			break   # unterminated body -- let the parser diagnose; stop enumerating
+		scan = end
+	return out
+
+## Index just past a declaration's closing `}` given `name_end` (the char after the decl name), or
+## -1 if the body is missing/unterminated. Mirrors the parsers' shape: `[(params)] [-> Type(hook)] { … }`,
+## with `(…)`/`{…}` brace-matched so nested braces in params or the body never fool the scan.
+static func _decl_body_end(source: String, name_end: int, kind: String) -> int:
+	var n := source.length()
+	var j := _skip_ws_only(source, name_end)
+	if j < n and source[j] == "(":
+		var pc := L.find_matching(source, j)
+		if pc == -1:
+			return -1
+		j = _skip_ws_only(source, pc + 1)
+	if kind == "hook" and j + 1 < n and source[j] == "-" and source[j + 1] == ">":
+		j += 2
+		while j < n and source[j] != "{":
+			j += 1
+	j = _skip_ws_only(source, j)
+	if j >= n or source[j] != "{":
+		return -1
+	var bc := L.find_matching(source, j)
+	if bc == -1:
+		return -1
+	return bc + 1
 
 ## True if `s` is a single valid GDScript identifier ([A-Za-z_][A-Za-z0-9_]*), non-empty. [BUG-V2]
 static func _is_valid_identifier(s: String) -> bool:
@@ -1084,6 +1142,259 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 	if D.has_error(diags):
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	return { "ok": true, "gd": out, "diagnostics": diags, "refs": refs }
+
+## 0.10.0 MIXED-DECL v1 (§6.3): compile a file holding SEVERAL top-level declarations into one
+## script. The binding (`@class_name` override, else first EXPORTED decl, else "" for a fully-private
+## file) names the class AND its component emits as `render`; every other component emits a static
+## func named after the decl, top-level hooks emit as static funcs, and non-binding modules emit as
+## inner `class Name:` blocks. `__RUI_DECLS` records each decl's kind/sig/export for HMR (§6.3); the
+## legacy `__RUI_KIND`/`__RUI_HOOK_SIG` consts are kept for old HMR readers. Single-decl files never
+## reach here — they keep the byte-identical _compile_component/_compile_hook/_compile_module paths.
+static func _compile_mixed(source: String, decls: Array, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, uss_path: String = "", refs: Dictionary = {}) -> Dictionary:
+	var n := source.length()
+	# 1. Content BETWEEN declarations (and after the last) is GUITKX2105 -- a file is a pure sequence.
+	var cursor := int(decls[0]["next"])
+	for di in range(1, decls.size()):
+		var jk := _first_real(source, cursor, int(decls[di]["start"]))
+		if jk != -1:
+			var jke := source.find("\n", jk)
+			if jke == -1 or jke > int(decls[di]["start"]):
+				jke = int(decls[di]["start"])
+			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content between declarations", jk, maxi(1, jke - jk)))
+			return { "ok": false, "gd": "", "diagnostics": diags }
+		cursor = int(decls[di]["next"])
+	var tj := _first_real(source, cursor, n)
+	if tj != -1:
+		var tje := source.find("\n", tj)
+		if tje == -1:
+			tje = n
+		diags.append(D.make("GUITKX2105", D.ERROR, "invalid content between declarations", tj, maxi(1, tje - tj)))
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	# 2. Duplicate top-level names collide in one script -> GUITKX2505.
+	var seen := {}
+	for dm in decls:
+		var nm0 := str(dm["name"])
+		if seen.has(nm0):
+			diags.append(D.make("GUITKX2505", D.ERROR, "duplicate declaration `%s`" % nm0, int(dm["name_at"]), nm0.length()))
+			return { "ok": false, "gd": "", "diagnostics": diags }
+		seen[nm0] = true
+	# 3. Binding identity + the intra-file component/hook maps. Binding = `@class_name` override, else
+	#    the first EXPORTED decl, else the first decl. (Strict "first-exported-or-private-file" turns
+	#    on with the M3 resolver + M6 codemod, once every file has been migrated to explicit exports;
+	#    until then a zero-export file binds to its first decl, back-compatible with today.)
+	var binding := class_name_override
+	if binding == "":
+		for dm in decls:
+			if bool(dm["export"]):
+				binding = str(dm["name"])
+				break
+	if binding == "":
+		binding = str(decls[0]["name"])
+	var comp_parses := {}   # name -> parsed component
+	var comp_func := {}     # name -> emitted func name ("render" for the binding component, else name)
+	var top_hooks: Array = []
+	for dm in decls:
+		if str(dm["kind"]) == "component":
+			comp_parses[str(dm["name"])] = null
+			comp_func[str(dm["name"])] = "render" if str(dm["name"]) == binding else str(dm["name"])
+		elif str(dm["kind"]) == "hook":
+			top_hooks.append(str(dm["name"]))
+	# 4. Parse + validate every decl (parse errors / rules-of-hooks fail the whole file, like a module).
+	var parsed: Array = []   # per decl: { dm, pc? / ph? / mod? }
+	for dm in decls:
+		match str(dm["kind"]):
+			"component":
+				var pc := _parse_component_at(source, int(dm["at"]), diags)
+				if not pc["ok"]:
+					return { "ok": false, "gd": "", "diagnostics": diags }
+				# @uss themes the BINDING component's root (the file's single themed surface).
+				if uss_path != "" and str(dm["name"]) == binding:
+					if (pc["root"] as Dictionary).get("t", "") == "el" and not _has_attr(pc["root"], "theme"):
+						(pc["root"]["attrs"] as Array).append({ "name": "theme", "kind": "expr", "value": "__THEME", "at": -1, "vat": -1, "end": -1 })
+				comp_parses[str(dm["name"])] = pc
+				parsed.append({ "dm": dm, "pc": pc })
+			"hook":
+				var ph := _parse_hook_at(source, int(dm["at"]), diags)
+				if not ph["ok"]:
+					return { "ok": false, "gd": "", "diagnostics": diags }
+				parsed.append({ "dm": dm, "ph": ph })
+			"module":
+				var mod := _parse_module_at(source, int(dm["at"]), diags)
+				if not mod["ok"]:
+					return { "ok": false, "gd": "", "diagnostics": diags }
+				parsed.append({ "dm": dm, "mod": mod })
+	if uss_path != "" and not comp_parses.has(binding):
+		diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` needs the binding to be a component with a root element to theme", 0, 4))
+	# Validate all members before emitting anything (T1.1 parity with the module path).
+	for p in parsed:
+		if p.has("pc"):
+			_validate(str((p["pc"] as Dictionary).get("vsetup", p["pc"]["setup"])), p["pc"]["root"], diags, p["pc"]["body_at"])
+			_validate_unused_params(p["pc"]["params"], int((p["pc"] as Dictionary).get("params_at", -1)), source.substr(int(p["pc"]["body_at"]), int(p["pc"]["next"]) - 1 - int(p["pc"]["body_at"])), diags)
+		elif p.has("ph"):
+			_validate_hooks(p["ph"]["body"], diags, int(p["ph"]["body_at"]))
+			_validate_effect_deps(p["ph"]["body"], diags, int(p["ph"]["body_at"]))
+		elif p.has("mod"):
+			for c in (p["mod"]["comps"] as Array):
+				_validate(str(c.get("vsetup", c["setup"])), c["root"], diags, c["body_at"])
+				_validate_unused_params(c["params"], int(c.get("params_at", -1)), source.substr(int(c["body_at"]), int(c["next"]) - 1 - int(c["body_at"])), diags)
+			for h in (p["mod"]["hooks"] as Array):
+				_validate_hooks(h["body"], diags, int(h["body_at"]))
+				_validate_effect_deps(h["body"], diags, int(h["body_at"]))
+	if D.has_error(diags):
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	# 5. Emit. Header (class_name only when something is exported -- privacy), then __RUI_DECLS + the
+	#    legacy HMR consts, then each declaration.
+	var out := ""
+	if binding != "":
+		out += "class_name %s\n" % binding
+	out += "extends RefCounted\n"
+	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename
+	out += "const __RUI_DECLS := {\n"
+	for dm in decls:
+		var nm := str(dm["name"])
+		var kd := str(dm["kind"])
+		var row := "\t%s: { \"kind\": \"%s\"" % [_gd_str(nm), kd]
+		if kd == "component":
+			row += ", \"sig\": %s" % _gd_str(_hook_signature(_component_sig_src(comp_parses[nm])))
+		row += ", \"export\": %s }," % ("true" if bool(dm["export"]) else "false")
+		out += row + "\n"
+	out += "}\n\n"
+	out += "const __RUI_KIND := \"mixed\"\n\n"
+	var binding_sig := ""
+	if comp_parses.has(binding) and comp_parses[binding] != null:
+		binding_sig = _hook_signature(_component_sig_src(comp_parses[binding]))
+	out += "const __RUI_HOOK_SIG := %s\n\n" % _gd_str(binding_sig)
+	if uss_path != "":
+		out += "const __THEME := preload(%s)\n\n" % _gd_str(uss_path)
+	for p in parsed:
+		var dm: Dictionary = p["dm"]
+		var nm := str(dm["name"])
+		if p.has("pc"):
+			var pc: Dictionary = p["pc"]
+			out += "# component %s\n" % nm
+			out += _emit_func(str(comp_func[nm]), pc["params"], pc["setup"], pc["root"], comp_func, top_hooks, diags, pc["body_at"], known, { "body": pc.get("body", ""), "parts": pc.get("parts", []), "unit": int(pc.get("unit", 1)), "anchor": int(pc.get("anchor", 0)) }, refs)
+			out += "\n"
+		elif p.has("ph"):
+			var ph: Dictionary = p["ph"]
+			out += "# hook %s\n" % nm
+			out += "static func %s(%s)%s:\n" % [nm, ph["params"], _ret_suffix(ph.get("ret", ""))]
+			var hb := _reindent_setup(_apply_hook_aliases(ph["body"], top_hooks))
+			if hb != "":
+				out += hb + "\n"
+			if not _has_statement(hb):
+				out += "\tpass\n"
+			out += "\n"
+		elif p.has("mod"):
+			out += _emit_module_inner(str(nm), p["mod"], diags, known, refs) + "\n"
+	if D.has_error(diags):
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	return { "ok": true, "gd": out, "diagnostics": diags, "refs": refs }
+
+## The text a component's hook-signature is computed over -- setup, unless the Phase-C early-return
+## interleaving moved setup into the body (mirrors _emit's sig_src selection).
+static func _component_sig_src(pc) -> String:
+	if pc == null:
+		return ""
+	var sig_src := str((pc as Dictionary).get("setup", ""))
+	for part in (pc as Dictionary).get("parts", []):
+		if str(part["t"]) == "ret":
+			return str((pc as Dictionary).get("body", ""))
+	return sig_src
+
+## Parse (no emit) a `module Name { … }` at `mi` into its members -- the shared front half of
+## _compile_module, reused by the mixed emitter so a module inside a multi-decl file lowers to an
+## inner class. Returns { ok, name, comps, hooks, module_comps, module_hooks } or { ok:false }.
+static func _parse_module_at(source: String, mi: int, diags: Array) -> Dictionary:
+	var n := source.length()
+	var j := _skip_ws_only(source, mi + 6)
+	var ns := j
+	while j < n and L._is_ident_code(source.unicode_at(j)):
+		j += 1
+	var mod_name := source.substr(ns, j - ns)
+	if mod_name == "":
+		diags.append(D.make("GUITKX0300", D.ERROR, "`module` requires a name (module Name { ... })", j))
+		return { "ok": false }
+	j = _skip_ws_only(source, j)
+	if j >= n or source.unicode_at(j) != L.C_LBRACE:
+		diags.append(D.make("GUITKX0303", D.ERROR, "module body `{ ... }` expected", mini(j, n - 1)))
+		return { "ok": false }
+	var bclose := L.find_matching(source, j)
+	if bclose == -1:
+		diags.append(D.make("GUITKX0304", D.ERROR, "unclosed module body", j, 1))
+		return { "ok": false }
+	var comps: Array = []
+	var hooks: Array = []
+	var module_comps := {}
+	var module_hooks: Array = []
+	var i := j + 1
+	while i < bclose:
+		var d := _find_decl(source, i)
+		var scan_to: int = mini(int(d["at"]), bclose) if d["kind"] != "" else bclose
+		var junk := _first_real(source, i, scan_to)
+		if junk != -1:
+			var jle := source.find("\n", junk)
+			jle = bclose if (jle == -1 or jle > bclose) else jle
+			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content in module `%s` -- only `component` and `hook` declarations are allowed here" % mod_name, junk, maxi(1, jle - junk)))
+			return { "ok": false }
+		if d["kind"] == "" or int(d["at"]) >= bclose:
+			break
+		if d["kind"] == "component":
+			var c := _parse_component_at(source, int(d["at"]), diags)
+			if not c["ok"]:
+				return { "ok": false }
+			if module_comps.has(c["name"]) or c["name"] in module_hooks:
+				diags.append(D.make("GUITKX2505", D.ERROR, "duplicate declaration `%s` in module `%s`" % [c["name"], mod_name], c["name_at"], (c["name"] as String).length()))
+				return { "ok": false }
+			module_comps[c["name"]] = true
+			comps.append(c)
+			i = int(c["next"])
+		elif d["kind"] == "hook":
+			var h := _parse_hook_at(source, int(d["at"]), diags)
+			if not h["ok"]:
+				return { "ok": false }
+			if module_comps.has(h["name"]) or h["name"] in module_hooks:
+				diags.append(D.make("GUITKX2505", D.ERROR, "duplicate declaration `%s` in module `%s`" % [h["name"], mod_name], h["name_at"], (h["name"] as String).length()))
+				return { "ok": false }
+			module_hooks.append(h["name"])
+			hooks.append(h)
+			i = int(h["next"])
+		else:
+			diags.append(D.make("GUITKX2504", D.ERROR, "nested `module` is not allowed", int(d["at"]), 6))
+			return { "ok": false }
+	if comps.is_empty() and hooks.is_empty():
+		diags.append(D.make("GUITKX2504", D.ERROR, "module `%s` has no component or hook declarations" % mod_name, mi, 6))
+		return { "ok": false }
+	return { "ok": true, "name": mod_name, "comps": comps, "hooks": hooks, "module_comps": module_comps, "module_hooks": module_hooks }
+
+## Emit a parsed module (from _parse_module_at) as an inner `class Name:` block for the mixed emitter,
+## every member line shifted one tab deeper than the flat module-file layout.
+static func _emit_module_inner(mod_name: String, mod: Dictionary, diags: Array, known: Dictionary, refs: Dictionary) -> String:
+	var module_comps: Dictionary = mod["module_comps"]
+	var module_hooks: Array = mod["module_hooks"]
+	var body := ""
+	for c in (mod["comps"] as Array):
+		body += "# component %s\n" % c["name"]
+		body += _emit_func(str(c["name"]), c["params"], c["setup"], c["root"], module_comps, module_hooks, diags, c["body_at"], known, { "body": c.get("body", ""), "parts": c.get("parts", []), "unit": int(c.get("unit", 1)), "anchor": int(c.get("anchor", 0)) }, refs)
+		body += "\n"
+	for h in (mod["hooks"] as Array):
+		body += "# hook %s\n" % h["name"]
+		body += "static func %s(%s)%s:\n" % [h["name"], h["params"], _ret_suffix(h.get("ret", ""))]
+		var hb := _reindent_setup(_apply_hook_aliases(h["body"], module_hooks))
+		if hb != "":
+			body += hb + "\n"
+		if not _has_statement(hb):
+			body += "\tpass\n"
+		body += "\n"
+	return "class %s:\n%s" % [mod_name, _indent_block(body.rstrip("\n"), 1)]
+
+## Prefix every non-empty line of `s` with `depth` tabs (blank lines stay empty).
+static func _indent_block(s: String, depth: int) -> String:
+	var pad := "\t".repeat(depth)
+	var lines := s.split("\n")
+	var out: Array = []
+	for ln in lines:
+		out.append((pad + ln) if ln != "" else ln)
+	return "\n".join(out)
 
 # --- body splitter: choose the LAST top-level markup return (T1.4, Unity useLastReturn parity) ---
 # "Top-level" is the GDScript equivalent of Unity's brace-depth-0: the `return` is the FIRST token on
@@ -1937,8 +2248,12 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 		# the editor's own rescan lag) -- the load is lazy and cached in V, so cycles and
 		# self-recursion are fine too.
 		var fn: String
-		if (ctx.get("module_comps", {}) as Dictionary).has(tag):
-			fn = tag
+		var mc := ctx.get("module_comps", {}) as Dictionary
+		if mc.has(tag):
+			# module members map name->true (fn = name, byte-identical); the mixed emitter maps
+			# name->emitted-func (String), so the binding component addressed by name lowers to `render`.
+			var mv = mc[tag]
+			fn = str(mv) if mv is String else tag
 		else:
 			var kv = (ctx.get("known_components", {}) as Dictionary).get(tag)
 			if kv is String:

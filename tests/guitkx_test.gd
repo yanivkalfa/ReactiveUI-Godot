@@ -57,6 +57,7 @@ func _run() -> void:
 	_test_phase_d_bodies()
 	_test_spread()
 	_test_imports_m1()
+	_test_mixed_decl()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -578,12 +579,20 @@ func _test_t15_unknown_tags() -> void:
 	_check_true(names is Array, "T1.5: known_component_names runs headless (global classes only)")
 
 func _test_t13_single_decl() -> void:
-	# T1.3: content after the single top-level declaration errors (Unity UITKX2105 parity) --
-	# a second component used to be dropped silently while the LSP still indexed the ghost.
-	var src := "component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	# 0.10.0 MIXED-DECL v1: several top-level declarations in one file are now LEGAL (they were a
+	# GUITKX2105 error until this leg). The binding = first EXPORTED decl; it emits `render`, the rest
+	# emit static funcs named after the decl. Content that is NOT a declaration still errors.
+	var src := "export component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
 	var r := RUIGuitkx.compile(src, "A")
-	_check_true(not r["ok"], "T1.3: second top-level declaration fails the compile")
-	_check_diag_at(r, "GUITKX2105", src, "component B() {", "T1.3: 2105 lands on the second declaration")
+	_check_true(r["ok"], "mixed-decl: two top-level components compile (%s)" % str(r.get("diagnostics", [])))
+	_check_true((r["gd"] as String).contains("class_name A"), "mixed-decl: binding = first exported decl")
+	_check_true((r["gd"] as String).contains("static func render(") and (r["gd"] as String).contains("static func B("), "mixed-decl: binding -> render, non-binding -> its own name")
+
+	# genuinely non-declaration content BETWEEN declarations still errors (GUITKX2105).
+	var src_j := "component A() {\n\treturn ( <Label /> )\n}\nvar oops = 1\ncomponent B() { return ( <Label /> ) }\n"
+	var r_j := RUIGuitkx.compile(src_j, "A")
+	_check_true(not r_j["ok"], "mixed-decl: non-declaration content between decls errors")
+	_check_diag_at(r_j, "GUITKX2105", src_j, "var oops = 1", "mixed-decl: 2105 lands on the junk between decls")
 
 	# trailing comments after the declaration stay legal.
 	var src_c := "component A() {\n\treturn ( <Label /> )\n}\n# trailing note\n"
@@ -970,6 +979,73 @@ func _test_imports_m1() -> void:
 
 	# an import line must NOT be mistaken for stray content-before-decl (GUITKX2105).
 	_check_true(not _has_code(r_one, "GUITKX2105"), "M1: a valid import never trips the 2105 junk check")
+
+## Assert the emitted .gd actually PARSES as GDScript (the throwaway-reload check the codegen runs),
+## with the `class_name` line stripped so it can't collide with the scanned global class.
+func _gd_parses(gd: String) -> bool:
+	var chk := GDScript.new()
+	var src := gd
+	if src.begins_with("class_name "):
+		src = src.substr(src.find("\n") + 1)
+	chk.source_code = src
+	return chk.reload() == OK
+
+## M2 (0.10.0): MIXED-DECL v1 emission (§6.3) — several declarations in one file, privacy, __RUI_DECLS.
+func _test_mixed_decl() -> void:
+	# --- exported binding + private component: binding -> render, private -> its name, class_name set ---
+	var mc := "export component Hud() {\n\treturn ( <LocalRow /> )\n}\n\ncomponent LocalRow() {\n\treturn ( <Label text=\"r\" /> )\n}\n"
+	var r := RUIGuitkx.compile(mc, "hud")
+	_check_true(r["ok"], "mixed: exported binding + private component compiles (%s)" % str(r.get("diagnostics", [])))
+	var gd: String = r["gd"]
+	_check_true(gd.contains("class_name Hud"), "mixed: class_name = binding (first exported)")
+	_check_true(gd.contains("static func render(") and gd.contains("static func LocalRow("), "mixed: binding->render, private->name")
+	_check_true(gd.contains("const __RUI_KIND := \"mixed\""), "mixed: __RUI_KIND is 'mixed'")
+	_check_true(gd.contains("const __RUI_DECLS := {"), "mixed: __RUI_DECLS emitted")
+	_check_true(gd.contains("\"Hud\": { \"kind\": \"component\"") and gd.contains("\"export\": true"), "mixed: __RUI_DECLS records binding export")
+	_check_true(gd.contains("\"LocalRow\": { \"kind\": \"component\"") and gd.contains("\"export\": false"), "mixed: __RUI_DECLS records private decl")
+	# the binding's markup references LocalRow -> a bare sibling static-func call, not V.comp.
+	_check_true(gd.contains("V.fc(LocalRow"), "mixed: intra-file component ref lowers to the sibling static func")
+	_check_true(_gd_parses(gd), "mixed: emitted mixed .gd parses as GDScript")
+
+	# --- binding preference: the first EXPORTED decl wins over decl order (privacy: the non-exported
+	# decl becomes a private static func, never the file's public `render`). A fully-unexported file
+	# still binds to its first decl (back-compat until strict mode + the codemod land). ---
+	var mixp := "component Helper() {\n\treturn ( <Label /> )\n}\n\nexport component Main() {\n\treturn ( <Label /> )\n}\n"
+	var rmp := RUIGuitkx.compile(mixp, "file")
+	_check_true(rmp["ok"] and (rmp["gd"] as String).contains("class_name Main"), "mixed: first EXPORTED decl wins the binding over decl order")
+	_check_true((rmp["gd"] as String).contains("static func render(") and (rmp["gd"] as String).contains("static func Helper("), "mixed: exported binding -> render; non-exported -> a private named func")
+	_check_true(_gd_parses(rmp["gd"]), "mixed: emitted .gd parses")
+
+	var noexp := "component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	var rne := RUIGuitkx.compile(noexp, "ab")
+	_check_true(rne["ok"] and (rne["gd"] as String).contains("class_name A"), "mixed: a zero-export file binds to its first decl (back-compat)")
+	_check_true(_gd_parses(rne["gd"]), "mixed: zero-export file parses")
+
+	# --- component + top-level hook: hook emits a static func; a bare call to it stays un-prefixed ---
+	var ch := "export component Panel() {\n\tvar d = use_blink(0.5)\n\treturn ( <Label text={d} /> )\n}\n\nexport hook use_blink(interval: float) -> float {\n\treturn interval\n}\n"
+	var rc := RUIGuitkx.compile(ch, "panel")
+	_check_true(rc["ok"], "mixed-hook: component + top-level hook compiles (%s)" % str(rc.get("diagnostics", [])))
+	_check_true((rc["gd"] as String).contains("static func use_blink("), "mixed-hook: top-level hook emits a static func")
+	_check_true((rc["gd"] as String).contains("use_blink(0.5)") and not (rc["gd"] as String).contains("Hooks.use_blink("), "mixed-hook: sibling hook call stays un-prefixed (not Hooks.*)")
+	_check_true((rc["gd"] as String).contains("\"use_blink\": { \"kind\": \"hook\""), "mixed-hook: __RUI_DECLS records the hook")
+	_check_true(_gd_parses(rc["gd"]), "mixed-hook: emitted .gd parses")
+
+	# --- component + module: module lowers to an inner `class Name:` block ---
+	var cm := "export component Screen() {\n\treturn ( <Label /> )\n}\n\nexport module Styles {\n\thook use_tint() -> Color { return Color.RED }\n}\n"
+	var rm := RUIGuitkx.compile(cm, "screen")
+	_check_true(rm["ok"], "mixed-module: component + module compiles (%s)" % str(rm.get("diagnostics", [])))
+	_check_true((rm["gd"] as String).contains("class Styles:"), "mixed-module: non-binding module -> inner class")
+	_check_true((rm["gd"] as String).contains("\n\tstatic func use_tint("), "mixed-module: module member indented one level inside the inner class")
+	_check_true((rm["gd"] as String).contains("\"Styles\": { \"kind\": \"module\""), "mixed-module: __RUI_DECLS records the module")
+	_check_true(_gd_parses(rm["gd"]), "mixed-module: emitted .gd parses")
+
+	# --- @class_name override wins the binding over the first-exported rule ---
+	# It names First (an unexported decl), so First becomes the binding component and emits render,
+	# even though Second is the first EXPORTED decl.
+	var ov := "@class_name First\ncomponent First() {\n\treturn ( <Label /> )\n}\nexport component Second() {\n\treturn ( <Label /> )\n}\n"
+	var ro := RUIGuitkx.compile(ov, "file")
+	_check_true(ro["ok"] and (ro["gd"] as String).contains("class_name First"), "mixed: @class_name overrides the first-exported binding")
+	_check_true((ro["gd"] as String).contains("static func render(") and (ro["gd"] as String).contains("static func Second("), "mixed: the @class_name'd component emits render, the other its name")
 
 func _diag(r: Dictionary, code: String) -> Dictionary:
 	for d in r.get("diagnostics", []):

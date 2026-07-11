@@ -31,12 +31,19 @@ static func fc(render_fn: Callable, props := {}, children = null, key = null) ->
 ## resource's identity, so the cached Callable keeps dispatching the newest code and the
 ## reconciler's fiber matching is unaffected. Deferred loading also makes self-recursion and
 ## cross-file component cycles safe (nothing loads at parse time).
+##
+## `fn` (0.10.0 mixed-decl / imports leg) selects WHICH static func on the target script the
+## Callable binds — `render` for a file's binding component (back-compat default: old generated
+## code calls `V.comp("res://….gd")` with one arg), or a decl name for a non-binding exported
+## component addressed cross-file (`V.comp("res://….gd", "LocalRow")`). The cache is keyed on
+## `path::fn` so the two never collide.
 static var _comp_cache := {}
-static func comp(path: String) -> Callable:
-	var c = _comp_cache.get(path)
+static func comp(path: String, fn: String = "render") -> Callable:
+	var k := path + "::" + fn
+	var c = _comp_cache.get(k)
 	if c == null:
-		c = Callable(load(path), "render")
-		_comp_cache[path] = c
+		c = Callable(load(path), fn)
+		_comp_cache[k] = c
 	return c
 
 ## Merge an ordered list of prop dictionaries left-to-right (later keys win) into a NEW dict — the

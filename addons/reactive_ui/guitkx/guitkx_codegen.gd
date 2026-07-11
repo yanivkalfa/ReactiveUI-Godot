@@ -313,19 +313,16 @@ static func _binding_name(src: String) -> String:
 		break
 	if override != "":
 		return override
-	var d: Dictionary = Compiler._find_decl(src, 0)
-	if d["kind"] == "":
+	# Binding (no override) = first EXPORTED declaration, else the first declaration (mixed-decl §6.2;
+	# the export-first preference is what keeps a mixed file's public binding stable). Enumerating all
+	# decls also makes this correct for multi-decl files, not just the first one.
+	var decls: Array = Compiler._enumerate_decls(src, 0)
+	if decls.is_empty():
 		return ""
-	# `at` is the decl KEYWORD (past any `export` prefix); the name follows the keyword + whitespace.
-	i = int(d["at"])
-	while i < n and (src[i] >= "a" and src[i] <= "z"):
-		i += 1   # the decl keyword
-	while i < n and (src[i] == " " or src[i] == "\t"):
-		i += 1
-	var s := i
-	while i < n and (src[i] == "_" or (src[i] >= "a" and src[i] <= "z") or (src[i] >= "A" and src[i] <= "Z") or (src[i] >= "0" and src[i] <= "9")):
-		i += 1
-	return src.substr(s, i - s)
+	for dm in decls:
+		if bool(dm["export"]):
+			return str(dm["name"])
+	return str(decls[0]["name"])
 
 ## Advance past an `import` statement starting at `i` (the `import` keyword). Brace-matched so a
 ## multi-line `import { ... }` is consumed whole; falls back to end-of-line if the form is malformed.
