@@ -63,6 +63,7 @@ export function buildVirtualDoc(src: string): VirtualDoc {
   // analyzed instead of emitting an empty class — the whole-file-goes-dark bug. [declScan]
   const decl = findDecl(src, 0, true);
   if (decl.kind === "") return { text: ctx.gen, map: ctx.map };
+  declareImportStubs(ctx);
   declareHookStubs(ctx);
   if (decl.kind === "module") emitModuleMembers(ctx, decl.at);
   else emitDeclFunc(ctx, decl.kind, decl.at, "");
@@ -472,6 +473,26 @@ function indentDepth(l: string, unit: number): number {
 // diagnostic inside a stub line is dropped by the toSource() null-filter — stubs can never squiggle
 // user code. Void hooks get a bare-call body (a `-> void` func can't `return` a value); everything
 // else forwards with `return` so the annotated return type has a returning path.
+// 0.10.0 imports leg: declare every preamble-imported name as a permissive static member so embedded
+// GDScript analysis resolves `Name.member(...)` references (the compiler lowers value imports to
+// `const Name = preload(...)`; here the identifier only needs to EXIST + be Variant). These are
+// unmapped header inserts, so the length-preserving source map is unaffected -- imported names never
+// red-squiggle in a migrated file, and imports stay OPTIONAL syntax (no strict diagnostics here).
+function declareImportStubs(ctx: Ctx): void {
+  const importRe = /^[ \t]*import[ \t]*\{([^}]*)\}[ \t]*from/gm;
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(ctx.src)) !== null) {
+    for (const raw of m[1].split(",")) {
+      const nm = raw.trim();
+      if (/^[A-Za-z_]\w*$/.test(nm) && !seen.has(nm)) {
+        seen.add(nm);
+        ctx.gen += `static var ${nm}\n`;
+      }
+    }
+  }
+}
+
 function declareHookStubs(ctx: Ctx): void {
   for (const h of HOOK_STUBS) {
     if (h.tuple) ctx.gen += `## @return-tuple(${h.tuple})\n`;

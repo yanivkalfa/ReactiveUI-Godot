@@ -458,6 +458,17 @@ test("buildVirtualDoc emits a render body for a typo'd header (embedded analysis
   assert.ok(/static func render/.test(text) && text.includes("var s = useState(0)"), text);
 });
 
+test("buildVirtualDoc declares imported names so embedded analysis resolves them (imports leg)", () => {
+  const src =
+    'import { DoomGameScreenHooks } from "./doom_game_screen.hooks"\n' +
+    'import { StatusChip } from "./status_chip"\n' +
+    "\nexport component Panel() {\n\tvar d = DoomGameScreenHooks.use_x()\n\treturn ( <StatusChip /> )\n}\n";
+  const { text } = buildVirtualDoc(src);
+  assert.ok(/static var DoomGameScreenHooks\b/.test(text), "imported value name declared: " + text);
+  assert.ok(/static var StatusChip\b/.test(text), "imported component name declared");
+  assert.ok(text.includes("DoomGameScreenHooks.use_x()"), "the qualified reference survives in the body");
+});
+
 test("virtualDoc extracts @if/@for conditions", () => {
   const src = [
     "component L(items: Array = []) {",
