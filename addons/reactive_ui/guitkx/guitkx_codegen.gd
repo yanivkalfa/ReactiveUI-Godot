@@ -662,7 +662,35 @@ static func compile_all(root: String = "res://") -> Dictionary:
 		c["gd_ok"] = gd_path_parses(str(c["gd_path"]))
 	if force and held.is_empty():
 		_write_fp_marker()
-	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size(), "removed": removed, "bindings": bindings }
+	var refresh_roots := _compute_refresh_roots(compiled, all_paths, pb["sources"])
+	return { "compiled": compiled, "errors": errors, "held": held, "total": all_paths.size(), "removed": removed, "bindings": bindings, "refresh_roots": refresh_roots }
+
+## M5 HMR refresh roots: the generated .gd paths of the COMPONENT importers of any hooks/module file
+## RECOMPILED this sweep. The editor pushes these so the running game re-renders exactly those roots
+## instead of doing a global re-render when an eagerly-loaded hook/module changes. Empty on an
+## import-free tree. `compiled` = this sweep's compiled entries ({path,…}); edges from source imports.
+static func _compute_refresh_roots(compiled: Array, all_paths: Array, sources: Dictionary) -> Array:
+	var changed_value := {}   # guitkx_path -> true if recompiled AND it exports a hook/module
+	for c in compiled:
+		var p := str(c["path"])
+		for e in exports_of(str(sources.get(p, ""))):
+			if str(e["kind"]) == "hook" or str(e["kind"]) == "module":
+				changed_value[p] = true
+				break
+	if changed_value.is_empty():
+		return []
+	var roots := {}
+	for p in all_paths:
+		var s := str(sources.get(p, ""))
+		if s == "":
+			continue
+		var root := RGConfig.root_for(str(p))
+		for im in Compiler.scan_imports(s):
+			var res := RGResolve.resolve_specifier(str(im["spec"]), str(p), root)
+			if res["ok"] and changed_value.has(str(res["guitkx"])):
+				roots[gd_path_for(str(p))] = true
+				break
+	return roots.keys()
 
 ## M4 reverse-edge staleness: the set of importer paths to force-recompile because a file they import
 ## changed its export table since its last sidecar. `sources` = path -> source text (from

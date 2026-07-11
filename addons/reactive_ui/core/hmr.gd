@@ -40,10 +40,13 @@ static func _on_message(message: String, data: Array) -> bool:
 	var t0 := Time.get_ticks_msec()
 	var paths: Array = (data[0] as Array) if data.size() > 0 and data[0] is Array else []
 	var bindings: Dictionary = (data[1] as Dictionary) if data.size() > 1 and data[1] is Dictionary else {}
+	# M5: optional 3rd element = refresh_roots (component importers of changed hooks/modules). Older
+	# editors send a 2-element message -> refresh_roots empty -> global-rerender fallback (wire-compat).
+	var refresh_roots: Array = (data[2] as Array) if data.size() > 2 and data[2] is Array else []
 	# Ack BEFORE doing anything: its presence in the editor Output proves delivery + capture,
 	# so a crash inside apply() can never masquerade as "the message never arrived".
 	EngineDebugger.send_message("rui_hmr:ack", [paths.size()])
-	var res := apply(paths, bindings)
+	var res := apply(paths, bindings, refresh_roots)
 	res["ms"] = Time.get_ticks_msec() - t0
 	EngineDebugger.send_message("rui_hmr:status", [res])
 	return true
@@ -52,13 +55,18 @@ static func _on_message(message: String, data: Array) -> bool:
 ## project's class->generated-.gd map (from the sweep) used to hot-LINK brand-new components.
 ## Pure engine + reconciler work -- headless-testable without any debugger session.
 ## Returns { reloaded:int, reset:int, refreshed:int, linked:int, global:bool, errors:Array[String] }.
-static func apply(paths: Array, bindings: Dictionary = {}) -> Dictionary:
+static func apply(paths: Array, bindings: Dictionary = {}, refresh_roots: Array = []) -> Dictionary:
 	var changed: Array = []   # GDScript resources reloaded in place
 	var resets: Array = []    # subset whose hook signature changed -> deliberate state reset
 	var errors: Array = []
 	var outcomes := {}        # path -> what happened (the editor prints this when nothing reloads)
 	var linked := 0           # reloads that succeeded via new-component const injection
 	var global_rerender := false
+	# M5 / React Fast Refresh parity: when a changed hooks/module file has KNOWN component importers
+	# (refresh_roots, computed by the editor over reverse import edges), re-render exactly those roots
+	# instead of the whole world. An empty set (graph escaped, or a pre-import 2-element push) keeps
+	# the global fallback -- today's behavior. Loaded lazily; only value-decl changes consult it.
+	var targeted: Array = []
 	for p in paths:
 		var path := str(p)
 		if not ResourceLoader.has_cached(path):
@@ -100,15 +108,27 @@ static func apply(paths: Array, bindings: Dictionary = {}) -> Dictionary:
 			outcomes[path] = "reloaded"
 		changed.append(scr)
 		if _is_module(scr):
-			global_rerender = true
+			# A value-decl (hooks/module) change: prefer targeting its component importers; fall back
+			# to a global re-render only when none are known (graph escaped / pre-import push).
+			if refresh_roots.is_empty():
+				global_rerender = true
+			else:
+				for rr in refresh_roots:
+					if ResourceLoader.has_cached(str(rr)):
+						var rscr = load(str(rr))
+						if rscr is GDScript and not targeted.has(rscr):
+							targeted.append(rscr)
+				if targeted.is_empty():
+					global_rerender = true   # importers not loaded in this game -- safe fallback
 		elif _hook_sig(scr) != old_sig:
 			resets.append(scr)
 	var refreshed := 0
 	if not changed.is_empty():
-		refreshed = RUIReconciler.hmr_refresh_all(changed, resets, global_rerender)
+		# `targeted` roots re-render alongside the directly-changed component scripts.
+		refreshed = RUIReconciler.hmr_refresh_all(changed + targeted, resets, global_rerender)
 	return {
 		"reloaded": changed.size(), "reset": resets.size(), "refreshed": refreshed,
-		"linked": linked, "global": global_rerender, "errors": errors, "outcomes": outcomes,
+		"linked": linked, "global": global_rerender, "targeted": targeted.size(), "errors": errors, "outcomes": outcomes,
 	}
 
 ## `const X = preload("<path>")` lines for every pushed binding that (a) this game does NOT
@@ -124,7 +144,13 @@ static func _inject_unregistered_bindings(src: String, bindings: Dictionary) -> 
 	var consts := ""
 	for cls in bindings:
 		var cname := str(cls)
-		if globals.has(cname) or not src.contains(cname) or src.contains("class_name " + cname):
+		# Skip when: the game already knows the global class; the source never mentions it; it is the
+		# file's OWN class (self-preload cycles); OR (M5/A6c) the source ALREADY const-declares it.
+		# The last case is new in 0.10.0: mixed/import files emit their own `const Name = preload(...)`
+		# for value imports, so injecting a second `const Name` = duplicate declaration = reload
+		# ERR_PARSE_ERROR. `src.contains(cname)` above passes for that name, so a dedicated
+		# line-anchored check is required (a bare `contains` would also match the usage site).
+		if globals.has(cname) or not src.contains(cname) or src.contains("class_name " + cname) or _has_const_decl(src, cname):
 			continue
 		consts += "const %s = preload(\"%s\")\n" % [cname, str(bindings[cls])]
 	if consts == "":
@@ -159,6 +185,29 @@ static func _hook_sig(scr: GDScript) -> String:
 ## can no longer be mistaken for a module (or vice versa) at all.
 static func _is_module(scr: GDScript) -> bool:
 	var kind := str((scr as GDScript).get_script_constant_map().get("__RUI_KIND", ""))
+	if kind == "mixed":
+		# 0.10.0 MIXED-DECL: a file holding several decls forces a global re-render only when it
+		# declares a hook or module (an EAGER value that importers depend on); a component-only mixed
+		# file re-renders through the normal component/hook-sig path (targeted, not global).
+		return _has_value_decl(scr)
 	if kind != "":
 		return kind != "component"
 	return not (scr as GDScript).source_code.contains("static func render(")
+
+## True if a line-anchored `const <name>` declaration exists in `src` (M5/A6c injector dedupe).
+static func _has_const_decl(src: String, name: String) -> bool:
+	var re := RegEx.new()
+	re.compile("(?m)^const[ \\t]+" + name + "\\b")
+	return re.search(src) != null
+
+## True if this generated script's `__RUI_DECLS` table declares any hook or module (M5). Absent
+## table (single-decl component/hook/module file) -> false; those use the __RUI_KIND path above.
+static func _has_value_decl(scr: GDScript) -> bool:
+	var decls: Variant = (scr as GDScript).get_script_constant_map().get("__RUI_DECLS")
+	if not (decls is Dictionary):
+		return false
+	for nm in (decls as Dictionary):
+		var kind := str(((decls as Dictionary)[nm] as Dictionary).get("kind", ""))
+		if kind == "hook" or kind == "module":
+			return true
+	return false

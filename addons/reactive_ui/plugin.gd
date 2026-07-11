@@ -144,7 +144,7 @@ func _compile_all() -> void:
 		for entry in res["compiled"]:
 			if bool(entry.get("gd_ok", true)):
 				hot.append(entry["gd_path"])
-		_hmr_dbg.push_reload(hot, res.get("bindings", {}))
+		_hmr_dbg.push_reload(hot, res.get("bindings", {}), res.get("refresh_roots", []))
 	for orphan in res.get("removed", []):
 		print("[guitkx] removed orphaned output %s (its .guitkx is gone -- renamed or deleted)" % orphan)
 	# L9: forget the last-reported error body for sources that no longer exist. Without this, a
