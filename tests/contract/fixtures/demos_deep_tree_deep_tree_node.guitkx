@@ -9,14 +9,14 @@ component DemoDeepTreeNode(level: int = 0) {
         )
       } @else {
         return (
-          <Margin style={ {"margin": 5} }>
-            <Panel style={ {"bg_color": Color(0.15, 0.15, 0.18), "pad": 4} }>
-              <VBox style={ {"separation": 2} }>
+          <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+            <PanelContainer style={ {"bg_color": Color(0.15, 0.15, 0.18), "content_margin_all": 4} }>
+              <VBoxContainer style={ {"separation": 2} }>
                 <Label text={ "level %d" % level } style={ {"font_color": Color(0.6, 0.7, 0.9)} } />
                 <DemoDeepTreeNode level={ level - 1 } />
-              </VBox>
-            </Panel>
-          </Margin>
+              </VBoxContainer>
+            </PanelContainer>
+          </MarginContainer>
         )
       }
     </>

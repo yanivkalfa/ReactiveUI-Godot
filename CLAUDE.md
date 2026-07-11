@@ -69,8 +69,13 @@ The library exposes global `class_name`s — **no autoload or plugin-enable is r
 runtime**; the classes are available as soon as the files exist. Enabling the plugin only adds the
 `.guitkx` compile-on-save integration.
 
-- **`v.gd` (`V`) / `vnode.gd` (`RUIVNode`)** — the ~60 `V.*` factories and the immutable UI
-  description. `V.fc` is the function-component factory (GDScript reserves `func`, so it's not `V.func`).
+- **`v.gd` (`V`) / `vnode.gd` (`RUIVNode`)** — the ~71 `V.*` factories and the immutable UI
+  description. **Naming is 1:1 loyal to Godot (0.9.0, plans/NAMING_LOYALTY_PROPOSAL.md +
+  MIGRATION-0.9.md):** element factories are named exactly after the Godot class they create
+  (`V.Button`, `V.VBoxContainer`); tags = official class names (any instantiable ClassDB Node
+  class is a valid tag); events = `on` + PascalCase(signal) (`onPressed`); style keys = exact
+  Godot property/theme/StyleBoxFlat names. Only structural factories are lowercase — `V.fc` is
+  the function-component factory (GDScript reserves `func`, so it's not `V.func`).
 - **`hooks.gd` (`Hooks`)** — the 23 hooks. Call only at the top of a render, in a stable order.
 - **`reconciler.gd` (`RUIReconciler`)** — the fiber reconciler. Synchronous (non-time-sliced) work
   loop: **render phase** (`begin_work` reconciles children + runs components descending, `complete_work`
@@ -83,8 +88,9 @@ runtime**; the classes are available as soon as the files exist. Enabling the pl
   cycles are severed explicitly for GC.
 - **`host_config.gd` (`RUIHost`) + `style.gd`/`style_sheet.gd`** — **the only files that touch concrete
   Godot APIs.** This is the engine-boundary seam (the same one that lets React point a reconciler at
-  react-dom vs react-native). `RUIHost` maps props→node properties, React-style `onXxx`→Godot signals,
-  declarative `items`→item-model controls, and `draw_fn`→a register-once custom-draw trampoline.
+  react-dom vs react-native). `RUIHost` maps props→node properties, `on<Pascal>`/`on_<signal>`→Godot
+  signals (generic — no alias table), declarative `items`→item-model controls, and `draw_fn`→a
+  register-once custom-draw trampoline.
 - **Subsystems:** `router/` (React-Router-v6-style, +17 hooks on `RUIRouter`), `signal_store.gd` +
   `signal_registry.gd` (`RUISignal`/`RUISignals` cross-component state), `suspense.gd`, `media.gd`
   (`useSfx`/`useAnimate`/`V.audio`/`V.video`), `context.gd`, `diagnostics.gd`.

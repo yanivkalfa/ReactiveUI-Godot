@@ -28,10 +28,10 @@ component ScoreCard(title: String = "", max_score: int = 100) {
   return (
     <DemoBox title={ title }>
       <Label text={ "Score: %d / %d" % [s[0], max_score] } style={ {"font_size": 24} } />
-      <HBox style={ {"separation": 8} }>
-        <Button text="+10" onClick={ func(): s[1].call(s[0] + 10) } />
-        <Button text="Reset" onClick={ func(): s[1].call(0) } />
-      </HBox>
+      <HBoxContainer style={ {"separation": 8} }>
+        <Button text="+10" onPressed={ func(): s[1].call(s[0] + 10) } />
+        <Button text="Reset" onPressed={ func(): s[1].call(0) } />
+      </HBoxContainer>
       { children }
     </DemoBox>
   )
@@ -46,16 +46,20 @@ Rules that matter:
   Callable like `func(c): return c + 1` also works). Full set: useState, useReducer, useEffect,
   useMemo, useRef, useContext, useSignal, useTween. Rules of hooks apply (top level of the
   component, no hooks inside `@if`/loops — the editor diagnoses violations).
-- **Events**: React aliases (`onClick`, `onChange`, `onSubmit`, `onFocus`, `onBlur`,
-  `onPointer*`, `onResize`) or the escape hatch `on_<signal>` for any Godot signal; handlers are
-  GDScript lambdas: `onClick={ func(): do_thing() }`.
+- **Events** (0.9.0 — 1:1 loyal to Godot): the native signal name with an `on` marker —
+  `on` + PascalCase(signal) reaches ANY signal of ANY node (`onPressed` → `pressed`,
+  `onValueChanged` → `value_changed`, `onTextSubmitted` → `text_submitted`, `onGuiInput` →
+  `gui_input`); the verbatim `on_<signal>` spelling also works. Handlers are GDScript lambdas:
+  `onPressed={ func(): do_thing() }`. There are NO React aliases (no onClick/onChange).
 - **Embedded expressions** `{ expr }` are plain GDScript (typed intelligence in the editors);
   `{ children }` renders the children passed between your tags.
 - **Control flow directives**: `@if cond { … } @elif { … } @else { … }`, `@for x in xs { … }`,
   `@while`, `@match` with `@case`/`@default`.
-- **Styling**: `style={ {"font_size": 28, "separation": 8} }` dicts (Control properties + size
-  flags + theme overrides); host elements map to Godot Controls (`<VBox>`, `<HBox>`, `<Label>`,
-  `<Button>`, `<Margin>`, `<HSeparator>`, ~60 total).
+- **Styling**: `style={ {"font_size": 28, "separation": 8} }` dicts — every key is the EXACT
+  Godot property / theme-item / StyleBoxFlat name (`custom_minimum_size`, `size_flags_horizontal`,
+  `bg_color`, `corner_radius_all`, `margin_left`, …). Host element tags ARE the official Godot
+  class names (`<VBoxContainer>`, `<HBoxContainer>`, `<Label>`, `<Button>`, `<MarginContainer>`,
+  `<PanelContainer>`, …) — any instantiable Godot Node class is a valid tag (open vocabulary).
 - Keyed lists: give siblings from loops a `key` attribute for stable reconciliation.
 - Tabs, not spaces (GDScript requirement; the formatter enforces it).
 

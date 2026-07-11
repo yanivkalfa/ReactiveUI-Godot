@@ -19,10 +19,10 @@ component DemoDiagnostics {
       <Label
         text="captured after the last click's commit (displaying is itself a render)"
         style={ {"font_color": Color(0.55, 0.55, 0.55)} } />
-      <HBox style={ {"separation": 8} }>
-        <Button text="Trigger a render" onClick={ func(): tick[1].call(tick[0] + 1) } />
-        <Button text="Reset counters" onClick={ do_reset } />
-      </HBox>
+      <HBoxContainer style={ {"separation": 8} }>
+        <Button text="Trigger a render" onPressed={ func(): tick[1].call(tick[0] + 1) } />
+        <Button text="Reset counters" onPressed={ do_reset } />
+      </HBoxContainer>
     </DemoBox>
   )
 }

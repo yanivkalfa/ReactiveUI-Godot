@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":160,\"attrs\":[{\"at\":169,\"end\":199,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Prop spread — {...obj}\",\"vat\":176}],\"children\":[{\"at\":207,\"attrs\":[{\"at\":222,\"end\":296,\"kind\":\"str\",\"name\":\"text\",\"value\":\"A dict is spread into <Button>; props AFTER the spread override it:\",\"vat\":228},{\"at\":305,\"end\":351,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":313}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":361,\"attrs\":[{\"at\":367,\"end\":394,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":375}],\"children\":[{\"at\":404,\"attrs\":[{\"at\":412,\"end\":423,\"kind\":\"spread\",\"name\":\"\",\"value\":\"shared\",\"vat\":416}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":435,\"attrs\":[{\"at\":443,\"end\":454,\"kind\":\"spread\",\"name\":\"\",\"value\":\"shared\",\"vat\":447},{\"at\":455,\"end\":481,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"count %d\\\" % n[0]\",\"vat\":462},{\"at\":482,\"end\":521,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"func(): n[1].call(n[0] + 1)\",\"vat\":492}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":11,\"t\":\"el\",\"tag\":\"HBox\"}],\"line\":7,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":160,\"attrs\":[{\"at\":169,\"end\":199,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Prop spread — {...obj}\",\"vat\":176}],\"children\":[{\"at\":207,\"attrs\":[{\"at\":222,\"end\":296,\"kind\":\"str\",\"name\":\"text\",\"value\":\"A dict is spread into <Button>; props AFTER the spread override it:\",\"vat\":228},{\"at\":305,\"end\":351,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":313}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":361,\"attrs\":[{\"at\":376,\"end\":403,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":384}],\"children\":[{\"at\":413,\"attrs\":[{\"at\":421,\"end\":432,\"kind\":\"spread\",\"name\":\"\",\"value\":\"shared\",\"vat\":425}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":444,\"attrs\":[{\"at\":452,\"end\":463,\"kind\":\"spread\",\"name\":\"\",\"value\":\"shared\",\"vat\":456},{\"at\":464,\"end\":490,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"count %d\\\" % n[0]\",\"vat\":471},{\"at\":491,\"end\":532,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): n[1].call(n[0] + 1)\",\"vat\":503}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":11,\"t\":\"el\",\"tag\":\"HBoxContainer\"}],\"line\":7,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 556,
+			"end": 576,
 			"start": 155
 		}
 	]

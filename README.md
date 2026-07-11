@@ -15,13 +15,13 @@ saving a `.guitkx` while your game runs under F5 hot-reloads it in place (**Fast
 component Counter {
 	var s = useState(0)
 	return (
-		<VBox style={ {"separation": 8} }>
+		<VBoxContainer style={ {"separation": 8} }>
 			<Label text={ "Count: %d" % s[0] } style={ {"font_size": 28} } />
-			<HBox style={ {"separation": 8} }>
-				<Button text="−1" onClick={ func(): s[1].call(s[0] - 1) } />
-				<Button text="+1" onClick={ func(): s[1].call(func(c): return c + 1) } />
-			</HBox>
-		</VBox>
+			<HBoxContainer style={ {"separation": 8} }>
+				<Button text="−1" onPressed={ func(): s[1].call(s[0] - 1) } />
+				<Button text="+1" onPressed={ func(): s[1].call(func(c): return c + 1) } />
+			</HBoxContainer>
+		</VBoxContainer>
 	)
 }
 ```
@@ -30,7 +30,7 @@ component Counter {
 > A fiber reconciler with bailout + keyed reconciliation, **23 hooks** plus a full
 > React-Router-style **router** (with its own **17 hooks**), **signals**, **Suspense**, a
 > three-layer **style** system, declarative **item-model** controls, media/animation, a
-> custom-drawing hatch, and **~61 `V.*` factories**. `.guitkx` gets you React-parity markup — early
+> custom-drawing hatch, and **~71 `V.*` factories** (element factories named exactly after the Godot classes they create). `.guitkx` gets you React-parity markup — early
 > returns, prop spread, context handles, control-flow directives — plus **Fast Refresh** (hot
 > reload with hook state preserved) and editor tooling in three places: natively inside Godot, in
 > VS Code, and in Visual Studio 2022.
@@ -82,10 +82,10 @@ Requires **Godot 4.1+** (uses `static var`); verified on **4.7**. Standard build
 component Counter {
 	var s = useState(0)
 	return (
-		<VBox>
+		<VBoxContainer>
 			<Label text={ "Count: %d" % s[0] } />
-			<Button text="+1" onClick={ func(): s[1].call(func(c): return c + 1) } />
-		</VBox>
+			<Button text="+1" onPressed={ func(): s[1].call(func(c): return c + 1) } />
+		</VBoxContainer>
 	)
 }
 ```
@@ -123,6 +123,25 @@ A `.guitkx` file declares one `component` (or a `hook` / a `module` grouping sev
 [Companion files](#companion-files)), with GDScript **setup code** followed by exactly one markup
 `return (...)`. Canonical formatting is **2-space indentation** (Unity-exact); the compiler and
 formatter both enforce it.
+
+### Naming is 1:1 loyal to Godot (0.9.0)
+
+You never learn a second vocabulary (migrating from 0.8? — [MIGRATION-0.9.md](MIGRATION-0.9.md)):
+
+- **Tags are the official Godot class names** — `<VBoxContainer>`, `<PanelContainer>`,
+  `<RichTextLabel>` … In fact **any instantiable Godot `Node` class is a valid tag** (validated
+  against ClassDB at compile time), so the entire official Control set works from markup.
+  `<Panel>` is Godot's `Panel`. Engine names are reserved — a project component that shadows one
+  gets a compile warning.
+- **`V.*` factories match tags verbatim** — `V.Button(...)`, `V.VBoxContainer(...)`; only
+  structural, non-engine factories stay lowercase (`fc`, `h`, `text`, `fragment`, `portal`,
+  `suspense`, the router set). `V.h("AnyClassName", …)` remains the generic escape.
+- **Props are the exact Godot property names** — set verbatim on the node.
+- **Events are the native signal name with an `on` marker** — `on` + PascalCase(signal):
+  `onPressed` → `pressed`, `onValueChanged` → `value_changed`, `onGuiInput` → `gui_input` —
+  for **every** signal of **every** node; `on_<signal>` also binds verbatim.
+- **Style keys are the exact Godot property / theme-item / StyleBoxFlat names**; enum values are
+  Godot's own constants (`Control.SIZE_EXPAND_FILL` or the constant name as a string).
 
 ### Hooks
 
@@ -170,7 +189,7 @@ can also appear **early**, guarding on a condition, not just as the final statem
 component Panel(ready: bool = false) {
 	if not ready:
 		return ( <Label text="loading" /> )
-	return ( <VBox>…</VBox> )
+	return ( <VBoxContainer>…</VBoxContainer> )
 }
 ```
 
@@ -179,7 +198,7 @@ component Panel(ready: bool = false) {
 ```
 component Card {
 	var shared = { "custom_minimum_size": Vector2(140, 0), "text": "shared" }
-	return ( <Button {...shared} onClick={ handle } /> )
+	return ( <Button {...shared} onPressed={ handle } /> )
 }
 ```
 
@@ -203,9 +222,12 @@ Godot has no CSS/USS — styling is `Control` properties + `Theme` overrides, an
 **container-driven**. `.guitkx`'s `style={ {...} }` prop gives you three layers (see
 `core/style.gd` + `core/style_sheet.gd`):
 
-1. **Inline shorthands** — `min_width`/`min_height`, `grow_h`/`grow_v` (size flags),
-   `modulate`/`self_modulate`, `font_color`/`font_size`, `bg_color` (a `StyleBoxFlat`),
-   `separation`, `margin`, `tooltip`, rotation/scale, and more.
+1. **Flat keys — exact Godot names** — `custom_minimum_size`, `size_flags_horizontal`/`_vertical`
+   (Godot `SIZE_*` values), `anchors_preset` (`PRESET_*`), `modulate`/`self_modulate`,
+   `font_color`/`font_size`/`font_outline_color`, `separation`, `margin_left`/…, `tooltip_text`,
+   `rotation` (radians)/`scale`, and **any `StyleBoxFlat` property verbatim** (`bg_color`,
+   `border_width_left`, `shadow_size`, …) plus the `*_all` umbrellas named after Godot's own
+   setters (`corner_radius_all`, `content_margin_all`, …).
 2. **Theme channels** — full `Theme` coverage (colors / constants / fonts / font-sizes / icons /
    styleboxes) plus **per-state `StyleBox` slots** (hover / pressed / focus / disabled / read-only).
 3. **`classes={ [...] }`** — named style sets registered with `RUIStyleSheet` (merged left-to-right;
@@ -252,16 +274,16 @@ convention (one `component` per file, sub-components as sibling files, `module` 
 ### Where `V.*` still shows up
 
 A handful of structural primitives have no markup tag — **`Portal`, `Suspense`, `ErrorBoundary`,
-`Memo`, `Audio`/`Video`, and the router's `Router`/`Routes`/`Route`/`Outlet`/`Navigate`/`NavLink`**
-aren't in the tag vocabulary (`vocabulary.json`'s `host_tags`), so you reach them via `V.*` inside
-an embedded `{ expr }` — still inside your `.guitkx` file, just not as a `<Tag>`:
+`Memo`, and the router's `Router`/`Routes`/`Route`/`Outlet`/`Navigate`/`NavLink`** aren't Godot
+classes, so they're not tags; you reach them via `V.*` inside an embedded `{ expr }` — still
+inside your `.guitkx` file, just not as a `<Tag>`:
 
 ```
 component App {
 	return (
-		<VBox>
+		<VBoxContainer>
 			{ V.suspense({ "fallback": V.fc(Spinner.render), "ready_signal": ready }, [V.fc(Content.render)]) }
-		</VBox>
+		</VBoxContainer>
 	)
 }
 ```

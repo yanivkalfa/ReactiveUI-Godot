@@ -25,13 +25,13 @@ component DoomMinimap(state: DoomTypes.GameState = null) {
   var frame_x = DoomTypes.C.VIEWPORT_W - (inner_w + 6) - 8
 
   return (
-    <Panel
+    <PanelContainer
       mouse_filter={ Control.MOUSE_FILTER_IGNORE }
       position={ Vector2(frame_x, 8) }
       size={ Vector2(inner_w + 6, inner_h + 6) }
-      style={ {"bg_color": bg_clr, "border_color": border_clr, "border_width": 1, "corner_radius": 2} }
+      style={ {"bg_color": bg_clr, "border_color": border_clr, "border_width_all": 1, "corner_radius_all": 2} }
     >
-      <Control mouse_filter={ Control.MOUSE_FILTER_IGNORE } position={ Vector2(3, 3) } size={ Vector2(inner_w, inner_h) } style={ {"clip": true} }>
+      <Control mouse_filter={ Control.MOUSE_FILTER_IGNORE } position={ Vector2(3, 3) } size={ Vector2(inner_w, inner_h) } style={ {"clip_contents": true} }>
         @for (i in range(cells.size())) {
           var c = cells[i]
           return (
@@ -53,7 +53,7 @@ component DoomMinimap(state: DoomTypes.GameState = null) {
               position={ Vector2(d.x * scale - 2.0, (mh - d.y) * scale - 2.0) }
               size={ Vector2(4, 4) }
               color={ d.color }
-              style={ {"corner_radius": 2} }
+              style={ {"corner_radius_all": 2} }
             />
           )
         }
@@ -63,7 +63,7 @@ component DoomMinimap(state: DoomTypes.GameState = null) {
           position={ Vector2(px_x - 3.0, px_y - 3.0) }
           size={ Vector2(6, 6) }
           color={ player_clr }
-          style={ {"corner_radius": 3} }
+          style={ {"corner_radius_all": 3} }
         />
         <ColorRect
           key="heading"
@@ -73,6 +73,6 @@ component DoomMinimap(state: DoomTypes.GameState = null) {
           color={ player_clr }
         />
       </Control>
-    </Panel>
+    </PanelContainer>
   )
 }

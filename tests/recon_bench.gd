@@ -49,8 +49,8 @@ func _bench(label: String, mode: int) -> void:
 				props["color"] = col
 			if mode == 2 or mode == 3:
 				props["style"] = { "modulate": col }
-			nodes.append(V.color_rect(props))
-		return V.control({}, nodes)
+			nodes.append(V.ColorRect(props))
+		return V.Control({}, nodes)
 	var app := ReactiveRoot.create(c, V.fc(comp))
 	await process_frame
 	await process_frame

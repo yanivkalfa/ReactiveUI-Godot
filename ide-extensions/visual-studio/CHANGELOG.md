@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.9.0] - 2026-07-11
+- 0.9.0 naming loyalty (BREAKING, rides the library 0.9.0 — see MIGRATION-0.9.md): the language vocabulary is now 1:1 the official Godot names. Tags = class names (shorthands like VBox/Panel removed; ANY instantiable ClassDB Node class is now a valid tag, validated against the bundled dump); factories = V.ClassName verbatim; events = on + PascalCase(signal) derived for EVERY signal from ClassDB (the React alias table is gone — completions, hover, signature help and semantic tokens all speak onPressed/onValueChanged); style-key completion = the exact Godot property/theme/StyleBoxFlat names. Removed pre-0.9 tags get a precise "renamed in 0.9.0: use <X>" diagnostic instead of a generic did-you-mean.
+
 ## [0.8.8] - 2026-07-10
 - Picks up the runtime compiler's markup brace-matching fix (see its CHANGELOG.md for full detail): a parenthetical comment split across two `#`/`##` lines inside a component/directive body's setup code no longer desyncs delimiter matching -- previously it surfaced as a bogus GUITKX0304 "unclosed component body" anchored at the component's own `{`, far from the offending comment, in both editors' live diagnostics. Body content mode is now tracked per delimiter-stack level with per-line classification: setup statements (and their `#` comments) scan as GDScript, markup-shaped lines and `return ( ... )` windows keep markup lexis (a literal `#` in element text stays literal). The same fix covers keyword bait ("# early return (see docs") and `#` comments inside multi-line array literals. Also faster markup parsing on large files: the parser's per-element line lookup is now a binary search over a prebuilt line-start table instead of an O(n) scan per element -- this runs on every keystroke.
 

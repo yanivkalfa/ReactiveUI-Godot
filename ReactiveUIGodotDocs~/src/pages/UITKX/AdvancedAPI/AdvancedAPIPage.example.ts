@@ -15,13 +15,13 @@ component ExpensiveChild(data) {
 component Parent() {
   var rows = useState([])
   return (
-    <VBox>
+    <VBoxContainer>
       { V.fc(ExpensiveChild.render, {
           "data": rows[0],
           "__memo_eq": func(old_props, new_props):
             return old_props["data"].size() == new_props["data"].size(),
         }) }
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -47,10 +47,10 @@ component ScrollToBottom(lines) {
   useLayoutEffect(stick, [lines.size()])
 
   return (
-    <ScrollContainer ref={ scroll_ref } style={ {"min_size": Vector2(320, 200)} }>
-      <VBox>
+    <ScrollContainer ref={ scroll_ref } style={ {"custom_minimum_size": Vector2(320, 200)} }>
+      <VBoxContainer>
         @for (line in lines) { <Label text={ line } key={ line } /> }
-      </VBox>
+      </VBoxContainer>
     </ScrollContainer>
   )
 }`
@@ -86,12 +86,12 @@ component SearchForm() {
     results[1].call(r))
 
   return (
-    <VBox>
-      <LineEdit text={ query[0] } onChange={ func(t): query[1].call(t) }
-                onSubmit={ func(_t): on_search.call() } />
-      <Button text="Search" onClick={ on_search } />
+    <VBoxContainer>
+      <LineEdit text={ query[0] } onTextChanged={ func(t): query[1].call(t) }
+                onTextSubmitted={ func(_t): on_search.call() } />
+      <Button text="Search" onPressed={ on_search } />
       @for (row in results[0]) { <Label text={ row } key={ row } /> }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -103,7 +103,7 @@ export const ERROR_PATTERNS_EXAMPLE = `# NOTE: GDScript has no try/catch, so the
 # Pattern 1: fallback + on_error handler
 component SafeApp() {
   return V.error_boundary({
-    "fallback": V.label({ "text": "Something went wrong" }),
+    "fallback": V.Label({ "text": "Something went wrong" }),
     "on_error": func(err): push_error(err),
   }, [ V.fc(RiskyContent.render) ])
 }
@@ -112,14 +112,14 @@ component SafeApp() {
 component RecoverablePanel() {
   var reset_key = useState("v1")
   return (
-    <VBox>
+    <VBoxContainer>
       <Button text="Retry"
-              onClick={ func(): reset_key[1].call(str(Time.get_ticks_msec())) } />
+              onPressed={ func(): reset_key[1].call(str(Time.get_ticks_msec())) } />
       { V.error_boundary({
           "reset_key": reset_key[0],
-          "fallback": V.label({ "text": "Error — click Retry" }),
+          "fallback": V.Label({ "text": "Error — click Retry" }),
         }, [ V.fc(UnstableContent.render) ]) }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -155,10 +155,10 @@ component Gauge(value) {
     var r := 40.0
     ci.draw_arc(Vector2(50, 50), r, 0, TAU * value, 48, Color.SKY_BLUE, 6.0)
 
-  return V.color_rect({
+  return V.ColorRect({
     "draw_fn": draw,
     "redraw_key": value,          # bump to queue_redraw without re-subscribing
-    "style": { "min_size": Vector2(100, 100), "bg_color": Color(0, 0, 0, 0) },
+    "style": { "custom_minimum_size": Vector2(100, 100), "bg_color": Color(0, 0, 0, 0) },
   })
 }
 
@@ -175,7 +175,7 @@ component Picker() {
   return (
     <OptionButton items={ ["Small", "Medium", "Large"] }
                   selected={ choice[0] }
-                  onChange={ func(idx): choice[1].call(idx) } />
+                  onItemSelected={ func(idx): choice[1].call(idx) } />
   )
 }
 
@@ -195,14 +195,14 @@ export const VIRTUALNODE_EXAMPLE = `# RUIVNode is the immutable virtual node pro
 
 static func render(props: Dictionary, children: Array) -> RUIVNode:
   return V.fc(DemoBox.render, { "title": "Hand-built tree" }, [
-    V.label({ "text": "Built with the V factory, no .guitkx" }),
-    V.hbox({ "style": { "separation": 8 } }, [
-      V.button({ "text": "OK", "onClick": func(): print("ok") }),
-      V.button({ "text": "Cancel" }),
+    V.Label({ "text": "Built with the V factory, no .guitkx" }),
+    V.HBoxContainer({ "style": { "separation": 8 } }, [
+      V.Button({ "text": "OK", "onPressed": func(): print("ok") }),
+      V.Button({ "text": "Cancel" }),
     ]),
   ])
 
-# Node kinds: host elements (V.button/V.label/V.h), function components (V.fc/V.memo),
+# Node kinds: host elements (V.Button/V.Label/V.h), function components (V.fc/V.memo),
 # and structural nodes (V.fragment, V.portal, V.suspense, V.error_boundary).
 # A .guitkx <Tag/> compiles to the matching V.* call; children flatten and raw
 # Strings auto-wrap into Label text nodes.`

@@ -11,11 +11,11 @@ component DemoReducer {
   return (
     <DemoBox title="useReducer — actions instead of raw setters">
       <Label text={ "State: %d" % r[0] } style={ {"font_size": 28} } />
-      <HBox style={ {"separation": 8} }>
-        <Button text="dec" onClick={ func(): r[1].call("dec") } />
-        <Button text="inc" onClick={ func(): r[1].call("inc") } />
-        <Button text="reset" onClick={ func(): r[1].call("reset") } />
-      </HBox>
+      <HBoxContainer style={ {"separation": 8} }>
+        <Button text="dec" onPressed={ func(): r[1].call("dec") } />
+        <Button text="inc" onPressed={ func(): r[1].call("inc") } />
+        <Button text="reset" onPressed={ func(): r[1].call("reset") } />
+      </HBoxContainer>
     </DemoBox>
   )
 }

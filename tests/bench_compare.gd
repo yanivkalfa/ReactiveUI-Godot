@@ -66,8 +66,8 @@ func _lib(n: int) -> float:
 		setb["fn"] = s[1]
 		var nodes: Array = []
 		for b in s[0]:
-			nodes.append(V.color_rect({ "key": b["id"], "position": Vector2(b["x"], b["y"]), "size": sz, "color": b["color"] }))
-		return V.control({}, nodes)
+			nodes.append(V.ColorRect({ "key": b["id"], "position": Vector2(b["x"], b["y"]), "size": sz, "color": b["color"] }))
+		return V.Control({}, nodes)
 	var app := ReactiveRoot.create(c, V.fc(comp))
 	await process_frame; await process_frame
 	var t0 := 0

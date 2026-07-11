@@ -11,7 +11,7 @@ component DemoRef {
         placeholder_text="focus me with the button →"
         ref={ input_ref }
         style={ {"min_width": 280} } />
-      <Button text="Focus the field" onClick={ focus } />
+      <Button text="Focus the field" onPressed={ focus } />
     </DemoBox>
   )
 }

@@ -5,11 +5,11 @@ export const UITKX_HELLO_WORLD_COMPONENT = `@class_name HelloWorld
 component HelloWorld() {
   var s = useState(0)
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       <Label text="Hello, reactive Godot! 👋" />
       <Label text={ "Count: %d" % s[0] } />
-      <Button text="Increment" onClick={ func(): s[1].call(s[0] + 1) } />
-    </VBox>
+      <Button text="Increment" onPressed={ func(): s[1].call(s[0] + 1) } />
+    </VBoxContainer>
   )
 }`
 

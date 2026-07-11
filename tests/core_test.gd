@@ -50,35 +50,48 @@ func _run() -> void:
 	quit(1 if _fails > 0 else 0)
 
 func _test_react_events() -> void:
-	# React-parity event names (host_config._resolve_signal): canonical camelCase binds to the right
-	# Godot signal, onChange is polymorphic, and the native on_<signal> escape hatch still works.
+	# 0.9.0 loyal event names (host_config._resolve_signal): on<Pascal> binds the exact snake_case
+	# signal, the removed React aliases DON'T bind (they warn), and on_<signal> stays verbatim.
 	var hit := { "n": 0 }
 	var cb := func(): hit["n"] += 1
 	var btn := Button.new()
-	RUIHost.apply_props(btn, {}, { "onClick": cb })
-	_ok(btn.is_connected("pressed", cb), "onClick binds the `pressed` signal")
+	RUIHost.apply_props(btn, {}, { "onPressed": cb })
+	_ok(btn.is_connected("pressed", cb), "onPressed binds the `pressed` signal")
 	btn.emit_signal("pressed")
-	_ok(hit["n"] == 1, "onClick handler fires on `pressed`")
+	_ok(hit["n"] == 1, "onPressed handler fires on `pressed`")
 	var m: Dictionary = btn.get_meta("__rui_events", {})
-	_ok(m.has("onClick") and m["onClick"]["sig"] == "pressed", "meta records the RESOLVED signal `pressed`")
-	RUIHost.apply_props(btn, { "onClick": cb }, {})   # removing the prop disconnects + clears meta
-	_ok(not btn.is_connected("pressed", cb), "removing onClick disconnects `pressed`")
-	_ok(not btn.get_meta("__rui_events", {}).has("onClick"), "removing onClick clears its meta record")
+	_ok(m.has("onPressed") and m["onPressed"]["sig"] == "pressed", "meta records the RESOLVED signal `pressed`")
+	RUIHost.apply_props(btn, { "onPressed": cb }, {})   # removing the prop disconnects + clears meta
+	_ok(not btn.is_connected("pressed", cb), "removing onPressed disconnects `pressed`")
+	_ok(not btn.get_meta("__rui_events", {}).has("onPressed"), "removing onPressed clears its meta record")
+	# The 0.8 React aliases were REMOVED: the old click alias resolves to a nonexistent `click`
+	# signal and must NOT bind anything (a rename warning is pushed — asserted here as the no-op).
+	# NOTE for future codemod runs: the alias literal is built to stay out of regex reach.
+	var removed_click := "on" + "Click"
+	RUIHost.apply_props(btn, {}, { removed_click: cb })
+	_ok(not btn.is_connected("pressed", cb), "removed alias %s does NOT bind `pressed`" % removed_click)
+	_ok(not btn.get_meta("__rui_events", {}).has(removed_click), "removed alias %s records no event meta" % removed_click)
 	btn.free()
 
-	# onChange is polymorphic — it binds whichever value/selection signal the control actually has.
+	# The polymorphic onChange is gone — each control uses its real signal, loyal to Godot.
 	var le := LineEdit.new()
 	var lecb := func(_t): pass
-	RUIHost.apply_props(le, {}, { "onChange": lecb })
-	_ok(le.is_connected("text_changed", lecb), "onChange on LineEdit -> text_changed")
+	RUIHost.apply_props(le, {}, { "onTextChanged": lecb })
+	_ok(le.is_connected("text_changed", lecb), "onTextChanged on LineEdit -> text_changed")
+	RUIHost.apply_props(le, { "onTextChanged": lecb }, { "onChange": lecb })
+	_ok(not le.is_connected("text_changed", lecb), "removed alias onChange does NOT bind text_changed")
 	le.free()
-	# OptionButton is a Button (so it ALSO carries `toggled`) — ordering must still pick item_selected.
 	var ob := OptionButton.new()
 	var obcb := func(_i): pass
-	RUIHost.apply_props(ob, {}, { "onChange": obcb })
-	_ok(ob.is_connected("item_selected", obcb), "onChange on OptionButton -> item_selected (not toggled)")
-	_ok(not ob.is_connected("toggled", obcb), "onChange did NOT mis-bind `toggled` on OptionButton")
+	RUIHost.apply_props(ob, {}, { "onItemSelected": obcb })
+	_ok(ob.is_connected("item_selected", obcb), "onItemSelected on OptionButton -> item_selected")
+	_ok(not ob.is_connected("toggled", obcb), "onItemSelected did not touch `toggled`")
 	ob.free()
+	var sl := HSlider.new()
+	var slcb := func(_v): pass
+	RUIHost.apply_props(sl, {}, { "onValueChanged": slcb })
+	_ok(sl.is_connected("value_changed", slcb), "onValueChanged on HSlider -> value_changed")
+	sl.free()
 
 	# Native on_<signal> escape hatch: back-compat AND reaches arbitrary signals with no React alias.
 	var btn2 := Button.new()
@@ -132,8 +145,8 @@ func _test_reuse_by_slot() -> void:
 			var items: Array = []
 			for i in range(5):
 				# EVERY key changes every render -> the keyed path would delete+recreate all 5.
-				items.append(V.color_rect({ "key": "k%d_%d" % [i, f], "color": Color(float(i) / 5.0, float(f % 8) / 8.0, 0.5) }))
-			return V.control({ "reuse_by_slot": reuse }, items)
+				items.append(V.ColorRect({ "key": "k%d_%d" % [i, f], "color": Color(float(i) / 5.0, float(f % 8) / 8.0, 0.5) }))
+			return V.Control({ "reuse_by_slot": reuse }, items)
 
 	# With reuse_by_slot: capture the node instances, churn all keys, assert SAME instances + zero churn.
 	var m := _mount(make.call(true))
@@ -179,7 +192,7 @@ func _test_host_node_pool() -> void:
 	var cbZ := func(): hit["z"] += 1
 	var btn := Button.new()
 	root.add_child(btn)
-	var propsA := { "onClick": cbA, "disabled": true, "style": { "modulate": Color.RED } }
+	var propsA := { "onPressed": cbA, "disabled": true, "style": { "modulate": Color.RED } }
 	RUIHost.apply_props(btn, {}, propsA)
 	_ok(btn.disabled and btn.modulate == Color.RED and btn.is_connected("pressed", cbA), "element A applied (event+style+plain)")
 
@@ -190,7 +203,7 @@ func _test_host_node_pool() -> void:
 	_ok(btn.has_meta("__rui_pool_old"), "recycled node stashed its last props for the reuse diff")
 
 	# Reuse the pooled node for element Z: different handler, different style, and NO `disabled`.
-	var propsZ := { "onClick": cbZ, "style": { "modulate": Color.GREEN } }
+	var propsZ := { "onPressed": cbZ, "style": { "modulate": Color.GREEN } }
 	var stash: Dictionary = btn.get_meta("__rui_pool_old")
 	btn.remove_meta("__rui_pool_old")
 	RUIHost.reset_removed_plain(btn, stash, propsZ)
@@ -217,8 +230,8 @@ func _test_host_node_pool() -> void:
 		var items: Array = []
 		for i in range(6):
 			var key: String = ("t%d_%d" % [i, f]) if i % 2 == 0 else ("s%d" % i)
-			items.append(V.label({ "text": "%d" % (i + f), "key": key }))
-		return V.vbox({}, items)
+			items.append(V.Label({ "text": "%d" % (i + f), "key": key }))
+		return V.VBoxContainer({}, items)
 	var m := _mount(comp)
 	await process_frame
 	await process_frame
@@ -242,7 +255,7 @@ func _test_classes_lean_path() -> void:
 	var comp := func(_p, _c):
 		var s = Hooks.useState(["c_a"])
 		ctl["set"] = s[1]
-		return V.button({ "classes": s[0], "text": "x" })
+		return V.Button({ "classes": s[0], "text": "x" })
 	var m := _mount(comp)
 	await process_frame
 	var btn: Button = m[0].get_child(0)
@@ -263,7 +276,7 @@ func _test_reference_equality() -> void:
 		renders["n"] += 1
 		var s = Hooks.useState([1, 2, 3])
 		ctl["set"] = s[1]
-		return V.label({ "text": str(s[0].size()) })
+		return V.Label({ "text": str(s[0].size()) })
 	var m := _mount(comp)
 	await process_frame
 	var first: int = renders["n"]
@@ -285,7 +298,7 @@ func _test_signal_rebind() -> void:
 		var key: String = ks[0]
 		var v = Hooks.useSignal(sig, func(d): return d.get(key))
 		seen["v"] = v
-		return V.label({ "text": str(v) })
+		return V.Label({ "text": str(v) })
 	var m := _mount(comp)
 	await process_frame
 	_ok(seen["v"] == 10, "useSignal selects 'a' = 10, got %s" % str(seen["v"]))
@@ -318,7 +331,7 @@ func _test_suspense() -> void:
 	emitter.add_user_signal("ready")
 	var sig := Signal(emitter, "ready")
 	var comp := func(_p, _ch):
-		return V.suspense({ "fallback": V.label({ "text": "loading" }), "ready_signal": sig }, [V.label({ "text": "loaded" })])
+		return V.suspense({ "fallback": V.Label({ "text": "loading" }), "ready_signal": sig }, [V.Label({ "text": "loaded" })])
 	var m := _mount(comp)
 	await process_frame   # passive effect runs -> the signal driver is set up
 	_ok(m[0].get_child(0).text == "loading", "suspense shows fallback initially, got '%s'" % m[0].get_child(0).text)
@@ -334,7 +347,7 @@ func _test_memo_eq() -> void:
 	var ctrl := { "set": null }
 	var inner := func(_p, _ch):
 		renders["n"] += 1
-		return V.label({ "text": "x" })
+		return V.Label({ "text": "x" })
 	var parent := func(_p, _ch):
 		var s = Hooks.useState(0)
 		ctrl["set"] = s[1]
@@ -349,7 +362,7 @@ func _test_memo_eq() -> void:
 func _test_text_children() -> void:
 	# Phase 7.2: raw String children auto-wrap to a text Label instead of being silently dropped.
 	var comp := func(_p, _ch):
-		return V.vbox({}, ["hello", V.button({ "text": "b" }), "world"])
+		return V.VBoxContainer({}, ["hello", V.Button({ "text": "b" }), "world"])
 	var m := _mount(comp)
 	var vbox: Node = m[0].get_child(0)
 	_ok(vbox.get_child_count() == 3, "vbox has 3 children (2 text + 1 button), got %d" % vbox.get_child_count())
@@ -365,10 +378,10 @@ func _test_signal_key() -> void:
 	var renders := { "a": 0, "b": 0 }
 	var comp_a := func(_p, _ch):
 		renders["a"] += 1
-		return V.label({ "text": str(Hooks.useSignalKey("counter", 10)) })
+		return V.Label({ "text": str(Hooks.useSignalKey("counter", 10)) })
 	var comp_b := func(_p, _ch):
 		renders["b"] += 1
-		return V.label({ "text": str(Hooks.useSignalKey("counter", 10)) })
+		return V.Label({ "text": str(Hooks.useSignalKey("counter", 10)) })
 	_mount(comp_a)
 	_mount(comp_b)
 	_ok(renders["a"] == 1 and renders["b"] == 1, "both keyed components mounted once")
@@ -431,7 +444,7 @@ func _test_effects() -> void:
 			var cur = cs[0]
 			return func(): log.append("cleanup:%d" % cur)
 		Hooks.useEffect(eff, [cs[0]])
-		return V.label({ "text": "x" })
+		return V.Label({ "text": "x" })
 
 	var m := _mount(comp)
 	_ok(log == ["setup:0"], "effect runs on mount, got %s" % str(log))
@@ -455,13 +468,13 @@ func _test_bailout() -> void:
 	var ctrl := { "bump": null }
 	var child := func(props, _ch):
 		renders["child"] += 1
-		return V.label({ "text": str(props.get("label", "")) })
+		return V.Label({ "text": str(props.get("label", "")) })
 	var parent := func(_p, _ch):
 		renders["parent"] += 1
 		var s = Hooks.useState(0)
 		ctrl["bump"] = s[1]
-		return V.vbox({}, [
-			V.label({ "text": "count %d" % s[0] }),
+		return V.VBoxContainer({}, [
+			V.Label({ "text": "count %d" % s[0] }),
 			V.fc(child, { "label": "static" }),
 		])
 
@@ -484,7 +497,7 @@ func _test_context() -> void:
 		renders["consumer"] += 1
 		var v = Hooks.useContext("theme")
 		seen["val"] = v
-		return V.label({ "text": str(v) })
+		return V.Label({ "text": str(v) })
 	var provider := func(_p, _ch):
 		var s = Hooks.useState("dark")
 		ctrl["set"] = s[1]
@@ -510,7 +523,7 @@ func _test_context_handles() -> void:
 	var ctrl := { "set": null }
 	var consumer := func(_p, _ch):
 		seen["val"] = Hooks.useContext(theme_ctx)
-		return V.label({ "text": str(seen["val"]) })
+		return V.Label({ "text": str(seen["val"]) })
 	var provider := func(_p, _ch):
 		var s = Hooks.useState("dark")
 		ctrl["set"] = s[1]
@@ -529,7 +542,7 @@ func _test_context_handles() -> void:
 	var seen2 := { "val": "unset" }
 	var lone := func(_p, _ch):
 		seen2["val"] = Hooks.useContext(theme_ctx)
-		return V.label({ "text": str(seen2["val"]) })
+		return V.Label({ "text": str(seen2["val"]) })
 	var m2 := _mount(lone)
 	_ok(seen2["val"] == "fallback", "unprovided handle returns its default: %s" % str(seen2["val"]))
 	m2[1].unmount()
@@ -542,10 +555,10 @@ func _test_context_handles() -> void:
 
 func _test_fragment() -> void:
 	var comp := func(_p, _ch):
-		return V.vbox({}, [
-			V.label({ "text": "a" }),
-			V.fragment([V.label({ "text": "b" }), V.label({ "text": "c" })]),
-			V.label({ "text": "d" }),
+		return V.VBoxContainer({}, [
+			V.Label({ "text": "a" }),
+			V.fragment([V.Label({ "text": "b" }), V.Label({ "text": "c" })]),
+			V.Label({ "text": "d" }),
 		])
 	var m := _mount(comp)
 	var vbox: Node = m[0].get_child(0)
@@ -564,8 +577,8 @@ func _test_keyed_reorder() -> void:
 		ctrl["set"] = s[1]
 		var items: Array = []
 		for id in s[0]:
-			items.append(V.label({ "text": id, "key": id }))
-		return V.vbox({}, items)
+			items.append(V.Label({ "text": id, "key": id }))
+		return V.VBoxContainer({}, items)
 
 	var m := _mount(comp)
 	var vbox: Node = m[0].get_child(0)
@@ -603,7 +616,7 @@ func _test_reducer_and_memo() -> void:
 			memo_calls["n"] += 1
 			return r[0] * 2
 		var doubled = Hooks.useMemo(mfn, [r[0]])
-		return V.label({ "text": "%d/%d" % [r[0], doubled] })
+		return V.Label({ "text": "%d/%d" % [r[0], doubled] })
 
 	var m := _mount(comp)
 	var label: Node = m[0].get_child(0)
@@ -629,7 +642,7 @@ func _test_layout_effect() -> void:
 			return func(): pass
 		Hooks.useLayoutEffect(le, [])
 		Hooks.useEffect(pe, [])
-		return V.label({ "text": "x" })
+		return V.Label({ "text": "x" })
 	var m := _mount(comp)
 	_ok(order == ["layout", "passive"], "layout effect runs before passive: %s" % str(order))
 	m[1].unmount()
@@ -642,7 +655,7 @@ func _test_signal() -> void:
 	var comp := func(_p, _ch):
 		renders["n"] += 1
 		seen["v"] = Hooks.useSignal(sig)
-		return V.label({ "text": str(seen["v"]) })
+		return V.Label({ "text": str(seen["v"]) })
 
 	var m := _mount(comp)
 	_ok(seen["v"] == 0 and renders["n"] == 1, "initial signal value 0")
@@ -664,11 +677,11 @@ func _test_router() -> void:
 	var seen := { "id": null }
 	var nav := { "go": null }
 	var home := func(_p, _c):
-		return V.label({ "text": "home" })
+		return V.Label({ "text": "home" })
 	var user := func(_p, _c):
 		var params = RUIRouter.useParams()
 		seen["id"] = params.get("id")
-		return V.label({ "text": "user " + str(params.get("id")) })
+		return V.Label({ "text": "user " + str(params.get("id")) })
 	var app := func(_p, _c):
 		nav["go"] = RUIRouter.useNavigate()
 		return V.routes({ "routes": [
@@ -704,7 +717,7 @@ func _test_tween() -> void:
 			captured["last"] = v
 			captured["count"] += 1
 		Hooks.useTweenValue(0.0, 10.0, 0.05, on_update, [])
-		return V.label({ "text": "x" })
+		return V.Label({ "text": "x" })
 	var m := _mount(comp)
 	for i in 30:
 		await process_frame
@@ -720,7 +733,7 @@ func _test_diagnostics() -> void:
 	var comp := func(_p, _c):
 		var s = Hooks.useState(0)
 		ctrl["set"] = s[1]
-		return V.label({ "text": str(s[0]) })
+		return V.Label({ "text": str(s[0]) })
 	var m := _mount(comp)
 	_ok(RUIDiagnostics.renders >= 1, "counted initial render: %d" % RUIDiagnostics.renders)
 	_ok(RUIDiagnostics.placements >= 1, "counted placements: %d" % RUIDiagnostics.placements)
@@ -739,7 +752,7 @@ func _test_item_list() -> void:
 	var comp := func(_p, _c):
 		var s = Hooks.useState(["apple", "banana"])
 		ctrl["set"] = s[1]
-		return V.item_list({ "items": s[0] })
+		return V.ItemList({ "items": s[0] })
 	var m := _mount(comp)
 	var il: ItemList = m[0].get_child(0)
 	_ok(il.item_count == 2, "item_list built 2 items, got %d" % il.item_count)
@@ -755,7 +768,7 @@ func _test_item_list() -> void:
 
 func _test_root_node() -> void:
 	var rn := ReactiveRootNode.new()
-	rn.setup(func(_p, _c): return V.label({ "text": "rooted" }))
+	rn.setup(func(_p, _c): return V.Label({ "text": "rooted" }))
 	root.add_child(rn)   # _ready mounts
 	await process_frame
 	_ok(rn.get_child_count() >= 1, "ReactiveRootNode mounted on _ready: %d children" % rn.get_child_count())
@@ -776,7 +789,7 @@ func _test_tree() -> void:
 				{ "id": "banana", "text": "Banana" },
 			] },
 		]
-		return V.tree({ "hide_root": true, "items": items })
+		return V.Tree({ "hide_root": true, "items": items })
 	var m := _mount(comp)
 	var tree: Tree = m[0].get_child(0)
 	var fruits: TreeItem = tree.get_root().get_children()[0]
@@ -802,8 +815,8 @@ func _test_time_slicing() -> void:
 		ctrl["set"] = s[1]
 		var items: Array = []
 		for i in 8:
-			items.append(V.label({ "text": "item %d-%d" % [i, s[0]], "key": str(i) }))
-		return V.vbox({}, items)
+			items.append(V.Label({ "text": "item %d-%d" % [i, s[0]], "key": str(i) }))
+		return V.VBoxContainer({}, items)
 	var m := _mount(comp)
 	var vbox: Node = m[0].get_child(0)
 	_ok(vbox.get_child_count() == 8, "sliced: initial 8 items")
@@ -826,14 +839,14 @@ func _test_context_survives_bailout() -> void:
 		var s = Hooks.useState(0)
 		c_bump["fn"] = s[1]
 		seen["v"] = Hooks.useContext("k")
-		return V.label({ "text": str(seen["v"]) })
+		return V.Label({ "text": str(seen["v"]) })
 	var provider := func(_p, _c):
 		Hooks.provideContext("k", "hello")
 		return V.fc(consumer, {})
 	var grandparent := func(_p, _c):
 		var s = Hooks.useState(0)
 		gp_bump["fn"] = s[1]
-		return V.vbox({}, [V.label({ "text": "gp %d" % s[0] }), V.fc(provider, {})])
+		return V.VBoxContainer({}, [V.Label({ "text": "gp %d" % s[0] }), V.fc(provider, {})])
 
 	var m := _mount(grandparent)
 	_ok(seen["v"] == "hello", "consumer sees context initially")
@@ -855,7 +868,7 @@ func _test_ref_null_on_unmount() -> void:
 		ctrl["set"] = show[1]
 		var r = Hooks.useRef(null)
 		captured["ref"] = r
-		return V.line_edit({ "ref": r }) if show[0] else V.label({ "text": "gone" })
+		return V.LineEdit({ "ref": r }) if show[0] else V.Label({ "text": "gone" })
 
 	var m := _mount(comp)
 	_ok(captured["ref"]["current"] != null, "ref populated while mounted")
@@ -873,11 +886,11 @@ func _test_router_context_split() -> void:
 	var nav_only := func(_p, _c):
 		nav_renders["n"] += 1
 		nav["go"] = RUIRouter.useNavigate()
-		return V.button({ "text": "nav" })
+		return V.Button({ "text": "nav" })
 	var loc_view := func(_p, _c):
-		return V.label({ "text": RUIRouter.useLocation() })
+		return V.Label({ "text": RUIRouter.useLocation() })
 	var app := func(_p, _c):
-		return V.vbox({}, [V.fc(nav_only), V.fc(loc_view)])
+		return V.VBoxContainer({}, [V.fc(nav_only), V.fc(loc_view)])
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(app)])
 
@@ -901,7 +914,7 @@ func _test_deferred_value() -> void:
 		var d = Hooks.useDeferredValue(st[0])
 		seen["now"] = st[0]
 		seen["deferred"] = d
-		return V.label({ "text": "%d/%d" % [st[0], d] })
+		return V.Label({ "text": "%d/%d" % [st[0], d] })
 	var m := _mount(comp)
 	await process_frame
 	_ok(seen["now"] == 0 and seen["deferred"] == 0, "deferred initial == value (0/0), got %d/%d" % [seen["now"], seen["deferred"]])
@@ -923,9 +936,9 @@ func _test_item_model_adapters() -> void:
 		var os2 := Hooks.useState([{ "id": "a", "text": "Alpha" }, { "id": "b", "text": "Beta" }])
 		ctrl["tabs"] = ts[1]
 		ctrl["opts"] = os2[1]
-		return V.vbox({}, [
-			V.tab_bar({ "items": ts[0] }),
-			V.option_button({ "items": os2[0] }),
+		return V.VBoxContainer({}, [
+			V.TabBar({ "items": ts[0] }),
+			V.OptionButton({ "items": os2[0] }),
 		])
 	var m := _mount(comp)
 	await process_frame
@@ -947,10 +960,10 @@ func _test_item_model_adapters() -> void:
 
 func _test_classes_stylesheet() -> void:
 	# Phase 7.11: `classes` resolve against RUIStyleSheet and merge (inline wins).
-	RUIStyleSheet.register("card", { "bg_color": Color(0.1, 0.2, 0.3), "corner_radius": 8 })
+	RUIStyleSheet.register("card", { "bg_color": Color(0.1, 0.2, 0.3), "corner_radius_all": 8 })
 	RUIStyleSheet.register("danger", { "font_color": Color(1, 0, 0) })
 	var comp := func(_p, _c):
-		return V.button({ "classes": ["card", "danger"], "style": { "font_color": Color(0, 1, 0) }, "text": "x" })
+		return V.Button({ "classes": ["card", "danger"], "style": { "font_color": Color(0, 1, 0) }, "text": "x" })
 	var m := _mount(comp)
 	await process_frame
 	var btn: Button = m[0].get_child(0)
@@ -974,9 +987,9 @@ func _test_media_and_animate() -> void:
 			played["n"] += 1
 			return null
 		, [])
-		return V.vbox({}, [
-			V.color_rect({ "ref": ref, "custom_minimum_size": Vector2(8, 8) }),
-			V.audio({ "volume_db": -6.0 }),
+		return V.VBoxContainer({}, [
+			V.ColorRect({ "ref": ref, "custom_minimum_size": Vector2(8, 8) }),
+			V.AudioStreamPlayer({ "volume_db": -6.0 }),
 		])
 	var m := _mount(comp)
 	await process_frame

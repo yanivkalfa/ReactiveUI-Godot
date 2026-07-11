@@ -41,7 +41,7 @@ component DoomHUD(
         return "--"
 
   var panel_style = func(grow: bool) -> Dictionary:
-    return {"bg_color": panel_bg, "border_color": top_border, "border_width": 1, "corner_radius": 2, "expand_h": grow}
+    return {"bg_color": panel_bg, "border_color": top_border, "border_width_all": 1, "corner_radius_all": 2, "size_flags_horizontal": Control.SIZE_EXPAND_FILL if grow else Control.SIZE_FILL}
 
   var big_num = {"font_color": red_num, "font_size": 24}
   var cap = {"font_color": label_clr, "font_size": 10}
@@ -56,33 +56,33 @@ component DoomHUD(
     return Color(c.r * 0.15, c.g * 0.15, c.b * 0.15, 1.0)
 
   return (
-    <Panel style={ {"bg_color": bar_bg, "border_color": top_border, "border_width": 2, "min_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.HUD_HEIGHT)} }>
-      <Margin style={ {"margin": 6} }>
-        <HBox style={ {"separation": 4} }>
+    <PanelContainer style={ {"bg_color": bar_bg, "border_color": top_border, "border_width_all": 2, "custom_minimum_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.HUD_HEIGHT)} }>
+      <MarginContainer style={ {"margin_left": 6, "margin_top": 6, "margin_right": 6, "margin_bottom": 6} }>
+        <HBoxContainer style={ {"separation": 4} }>
           // AMMO (current weapon)
-          <Panel style={ panel_style.call(true) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 2} }>
+          <PanelContainer style={ panel_style.call(true) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 2} }>
                 <Label text="AMMO" horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ cap } />
                 <Label text={ current_ammo.call() } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ big_num } />
-              </VBox>
-            </Margin>
-          </Panel>
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
           // HEALTH
-          <Panel style={ panel_style.call(true) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 2} }>
+          <PanelContainer style={ panel_style.call(true) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 2} }>
                 <Label text="HEALTH" horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ cap } />
                 <Label text={ str(health) + "%" } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ big_num } />
-              </VBox>
-            </Margin>
-          </Panel>
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
           // ARMS
-          <Panel style={ panel_style.call(true) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 2} }>
+          <PanelContainer style={ panel_style.call(true) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 2} }>
                 <Label text="ARMS" horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ cap } />
-                <HBox style={ {"separation": 2} }>
+                <HBoxContainer style={ {"separation": 2} }>
                   @for (i in range(1, 7)) {
                     var owned = i < owned_weapons.size() and owned_weapons[i]
                     return (
@@ -90,62 +90,62 @@ component DoomHUD(
                         key={ "arm" + str(i) }
                         text={ str(i + 1) }
                         horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
-                        style={ {"min_size": Vector2(20, 14), "font_color": (red_num if owned else dim_clr), "font_size": 11} }
+                        style={ {"custom_minimum_size": Vector2(20, 14), "font_color": (red_num if owned else dim_clr), "font_size": 11} }
                       />
                     )
                   }
-                </HBox>
-              </VBox>
-            </Margin>
-          </Panel>
+                </HBoxContainer>
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
           // Face
           <DoomFace frame={ face_state } />
           // ARMOR
-          <Panel style={ panel_style.call(true) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 2} }>
+          <PanelContainer style={ panel_style.call(true) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 2} }>
                 <Label text={ "MEGA" if armor_class == 2 else "ARMOR" } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ cap } />
                 <Label text={ str(armor) + "%" } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ big_num } />
-              </VBox>
-            </Margin>
-          </Panel>
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
           // KEYS
-          <Panel style={ panel_style.call(false) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 3} }>
-                <Panel style={ {"bg_color": (blue if has_blue else key_off.call(blue)), "border_color": dot_border, "border_width": 1, "corner_radius": 3, "min_size": Vector2(14, 14)} } />
-                <Panel style={ {"bg_color": (yellow if has_yellow else key_off.call(yellow)), "border_color": dot_border, "border_width": 1, "corner_radius": 3, "min_size": Vector2(14, 14)} } />
-                <Panel style={ {"bg_color": (red if has_red else key_off.call(red)), "border_color": dot_border, "border_width": 1, "corner_radius": 3, "min_size": Vector2(14, 14)} } />
-              </VBox>
-            </Margin>
-          </Panel>
+          <PanelContainer style={ panel_style.call(false) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 3} }>
+                <PanelContainer style={ {"bg_color": (blue if has_blue else key_off.call(blue)), "border_color": dot_border, "border_width_all": 1, "corner_radius_all": 3, "custom_minimum_size": Vector2(14, 14)} } />
+                <PanelContainer style={ {"bg_color": (yellow if has_yellow else key_off.call(yellow)), "border_color": dot_border, "border_width_all": 1, "corner_radius_all": 3, "custom_minimum_size": Vector2(14, 14)} } />
+                <PanelContainer style={ {"bg_color": (red if has_red else key_off.call(red)), "border_color": dot_border, "border_width_all": 1, "corner_radius_all": 3, "custom_minimum_size": Vector2(14, 14)} } />
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
           // AMMO breakdown
-          <Panel style={ panel_style.call(true) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 1} }>
+          <PanelContainer style={ panel_style.call(true) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 1} }>
                 @for (i in range(0, 4)) {
                   return (
-                    <HBox key={ "a" + str(i) } style={ {"separation": 6} }>
-                      <Label text={ ammo_labels[i] } style={ {"font_color": label_clr, "font_size": 10, "expand_h": true} } />
+                    <HBoxContainer key={ "a" + str(i) } style={ {"separation": 6} }>
+                      <Label text={ ammo_labels[i] } style={ {"font_color": label_clr, "font_size": 10, "size_flags_horizontal": Control.SIZE_EXPAND_FILL} } />
                       <Label text={ str(ammo[i]) + " / " + str(ammo_max[i]) } style={ {"font_color": red_num, "font_size": 11} } />
-                    </HBox>
+                    </HBoxContainer>
                   )
                 }
-              </VBox>
-            </Margin>
-          </Panel>
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
           // INFO
-          <Panel style={ panel_style.call(true) }>
-            <Margin style={ {"margin": 5} }>
-              <VBox style={ {"separation": 2} }>
+          <PanelContainer style={ panel_style.call(true) }>
+            <MarginContainer style={ {"margin_left": 5, "margin_top": 5, "margin_right": 5, "margin_bottom": 5} }>
+              <VBoxContainer style={ {"separation": 2} }>
                 <Label text={ map_name } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ cap } />
                 <Label text={ "KILLS  " + str(kill_count) + " / " + str(kill_total) } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ {"font_color": red_num, "font_size": 12} } />
                 <Label text={ "SCORE  " + str(score) } horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ {"font_color": red_num, "font_size": 12} } />
-              </VBox>
-            </Margin>
-          </Panel>
-        </HBox>
-      </Margin>
-    </Panel>
+              </VBoxContainer>
+            </MarginContainer>
+          </PanelContainer>
+        </HBoxContainer>
+      </MarginContainer>
+    </PanelContainer>
   )
 }

@@ -20,7 +20,7 @@ component DoomMainMenu(
   var hint_clr = Color(0.60, 0.50, 0.30, 1.0)
 
   var btn_style = func(sel: bool) -> Dictionary:
-    return {"font_size": 13, "min_size": Vector2(0, 32), "font_color": btn_text, "bg_color": (btn_selected if sel else btn_face), "border_color": btn_border, "border_width": 2, "corner_radius": 2, "pad": 8}
+    return {"font_size": 13, "custom_minimum_size": Vector2(0, 32), "font_color": btn_text, "bg_color": (btn_selected if sel else btn_face), "border_color": btn_border, "border_width_all": 2, "corner_radius_all": 2, "content_margin_all": 8}
 
   var levels = [
     {"n": 1, "t": "E1M1: Hangar"},
@@ -37,61 +37,61 @@ component DoomMainMenu(
   ]
 
   return (
-    <Panel style={ {"bg_color": bg, "min_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H + DoomTypes.C.HUD_HEIGHT)} }>
-      <Center>
-        <VBox style={ {"separation": 10} }>
+    <PanelContainer style={ {"bg_color": bg, "custom_minimum_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H + DoomTypes.C.HUD_HEIGHT)} }>
+      <CenterContainer>
+        <VBoxContainer style={ {"separation": 10} }>
           <Label text="DOOM" horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ {"font_size": 96, "font_color": title_clr} } />
           <Label text="(in GUITKX)" horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER } style={ {"font_size": 18, "font_color": subtitle_clr} } />
-          <HBox style={ {"separation": 6} }>
+          <HBoxContainer style={ {"separation": 6} }>
             <Label text="EPISODE 1   —" style={ {"font_color": label_clr, "font_size": 16} } />
             @for (lv in levels.slice(0, 3)) {
               return (
                 <Button
                   key={ "lv" + str(lv["n"]) }
                   text={ lv["t"] }
-                  onClick={ func(): on_level_change.call(lv["n"]) }
+                  onPressed={ func(): on_level_change.call(lv["n"]) }
                   style={ btn_style.call(level == lv["n"]) }
                 />
               )
             }
-          </HBox>
-          <HBox style={ {"separation": 6} }>
+          </HBoxContainer>
+          <HBoxContainer style={ {"separation": 6} }>
             @for (lv in levels.slice(3, 6)) {
               return (
                 <Button
                   key={ "lv" + str(lv["n"]) }
                   text={ lv["t"] }
-                  onClick={ func(): on_level_change.call(lv["n"]) }
+                  onPressed={ func(): on_level_change.call(lv["n"]) }
                   style={ btn_style.call(level == lv["n"]) }
                 />
               )
             }
-          </HBox>
-          <HBox style={ {"separation": 6} }>
+          </HBoxContainer>
+          <HBoxContainer style={ {"separation": 6} }>
             <Label text="DIFFICULTY  —" style={ {"font_color": label_clr, "font_size": 16} } />
             @for (df in diffs) {
               return (
                 <Button
                   key={ "df" + str(df["d"]) }
                   text={ df["t"] }
-                  onClick={ func(): on_difficulty_change.call(df["d"]) }
+                  onPressed={ func(): on_difficulty_change.call(df["d"]) }
                   style={ btn_style.call(difficulty == df["d"]) }
                 />
               )
             }
-          </HBox>
+          </HBoxContainer>
           <Button
             text="▶  START GAME"
-            onClick={ func(): on_start.call() }
-            style={ {"font_size": 22, "min_size": Vector2(280, 60), "font_color": btn_text, "bg_color": Color(0.5, 0.1, 0.05, 1.0), "border_color": btn_border, "border_width": 3, "corner_radius": 4} }
+            onPressed={ func(): on_start.call() }
+            style={ {"font_size": 22, "custom_minimum_size": Vector2(280, 60), "font_color": btn_text, "bg_color": Color(0.5, 0.1, 0.05, 1.0), "border_color": btn_border, "border_width_all": 3, "corner_radius_all": 4} }
           />
           <Label
             text="WASD = move    |    Mouse = look    |    Click = shoot    |    1-7 = weapons    |    E = use door    |    Shift = run"
             horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
             style={ {"font_color": hint_clr, "font_size": 12} }
           />
-        </VBox>
-      </Center>
-    </Panel>
+        </VBoxContainer>
+      </CenterContainer>
+    </PanelContainer>
   )
 }

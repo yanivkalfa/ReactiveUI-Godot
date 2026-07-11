@@ -1,3 +1,17 @@
+## [0.9.0] - 2026-07-11
+
+**BREAKING: naming is now 1:1 loyal to Godot — you never learn a second vocabulary.** Tags are the official class names (`<VBoxContainer>`, not `<VBox>`; `<Panel>` is now Godot's actual `Panel`), `V.*` factories match tags verbatim (`V.Button`, `V.VBoxContainer`), events are the native signal with an `on` marker (`onPressed` → `pressed`, `onValueChanged` → `value_changed` — works for EVERY signal of EVERY node; the React aliases like `onClick`/polymorphic `onChange` are gone), and style keys are the exact Godot property/theme/StyleBoxFlat names (`tooltip_text`, `size_flags_horizontal`, `corner_radius_all`, radians `rotation`).
+
+**Migration is one command.** A codemod ships in the addon (`dev/migrate_0_9_0.gd`, dry-run mode included) that rewrites your `.guitkx` and `.gd` in place; everything it won't guess at, it lists for you. Every removed name fails loudly with its exact replacement — nothing breaks silently. Full guide: `MIGRATION-0.9.md` in the repo.
+
+**And the vocabulary is now open.** Any instantiable Godot `Node` class is a valid tag, validated against ClassDB — `<GraphEdit />` just works. Plus 9 new curated elements (`Panel`, `ReferenceRect`, `HScrollBar`/`VScrollBar`, `SubViewportContainer`, `BoxContainer`/`FlowContainer`/`SplitContainer`, `VirtualJoystick`), full `StyleBoxFlat` coverage in style dicts (any property verbatim + the `*_all` umbrellas), and a fixed diff crash when a prop/style value changes type between renders.
+
+Update to **Reactive UI 0.9.0** (AssetLib "Reactive UI", or copy `addons/reactive_ui/` into your project) — run the codemod right after.
+
+**Tooling:** GUITKX **0.9.0** (VS Code + VS 2022) speaks the new vocabulary end to end — event completions are derived from ClassDB for every signal, removed tags get "renamed: use X" diagnostics. Editor addon **0.7.0** ditto (live ClassDB events, open-vocabulary highlighting) — pairs with `reactive_ui` 0.9.0+.
+
+---
+
 ## [0.8.7] - 2026-07-10
 
 **Four new `style` keys, a compiler miscompile fix, and a ~28% faster `.guitkx` compiler.** `style={ {...} }` now understands `material`, `texture_filter`, `texture_repeat`, and `z_as_relative` — all with reset-on-removal semantics, completing their natural pairs (`z_index` ↔ `z_as_relative`, filter ↔ repeat). `material` lets a pooled `ShaderMaterial` ride the style dict with stable identity, so per-frame uniform changes never force a reconcile.

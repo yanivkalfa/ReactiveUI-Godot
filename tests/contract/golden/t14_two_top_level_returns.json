@@ -18,13 +18,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":34,\"attrs\":[{\"at\":41,\"end\":53,\"kind\":\"str\",\"name\":\"text\",\"value\":\"first\",\"vat\":47}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":34,\"attrs\":[{\"at\":41,\"end\":53,\"kind\":\"str\",\"name\":\"text\",\"value\":\"first\",\"vat\":47}],\"children\":[],\"line\":2,\"t\":\"el\",\"tag\":\"Label\"}]"
 		},
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":86,\"attrs\":[{\"at\":93,\"end\":109,\"kind\":\"str\",\"name\":\"text\",\"value\":\"last wins\",\"vat\":99}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"label\"}]"
+			"tree": "[{\"at\":86,\"attrs\":[{\"at\":93,\"end\":109,\"kind\":\"str\",\"name\":\"text\",\"value\":\"last wins\",\"vat\":99}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"}]"
 		}
 	],
 	"ok": true,

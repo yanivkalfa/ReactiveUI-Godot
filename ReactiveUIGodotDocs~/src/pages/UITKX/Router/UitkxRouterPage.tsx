@@ -26,7 +26,7 @@ export const UitkxRouterPage: FC = () => (
       <code>{'<NavLink>'}</code>, or <code>{'<Navigate>'}</code> element. Build the router tree with
       the <code>V.*</code> factories above and mount it from an embedded{' '}
       <code>{'{ expr }'}</code> inside a normal <code>.guitkx</code> component, e.g.{' '}
-      <code>{'<VBox>{ V.router({...}, [...]) }</VBox>'}</code>.
+      <code>{'<VBoxContainer>{ V.router({...}, [...]) }</VBoxContainer>'}</code>.
     </Alert>
 
     <Box sx={Styles.section}>

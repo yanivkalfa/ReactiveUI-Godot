@@ -2,6 +2,10 @@ class_name DemoTodo
 extends RefCounted
 ## AUTO-GENERATED from demos_todo_todo.guitkx -- do not edit.
 
+const __RUI_HOOK_SIG := "useState|useState|useRef"
+
+const __RUI_KIND := "component"
+
 static func render(props: Dictionary, children: Array) -> RUIVNode:
 	var items = Hooks.useState([])
 	var text = Hooks.useState("")
@@ -23,4 +27,5 @@ static func render(props: Dictionary, children: Array) -> RUIVNode:
 	var __cf0: Array = []
 	for it in items[0]:
 		__cf0.append(V.fc(DemoTodoRow.render, { "item": it, "onRemove": remove }, [], it["id"]))
-	return V.fc(DemoBox.render, { "title": "Todo — keyed list + events" }, [V.hbox({ "style": {"separation": 8} }, [V.line_edit({ "text": text[0], "placeholder_text": "New todo…", "onChange": func(t): text[1].call(t), "onSubmit": func(_t): add.call(), "style": {"expand_h": true} }), V.button({ "text": "Add", "onClick": func(): add.call() })]), V.label({ "text": "%d item(s) — keys preserve row identity on add/remove" % items[0].size(), "style": {"font_color": Color(0.7, 0.7, 0.7)} }), V.vbox({ "style": {"separation": 4} }, [__cf0])])
+		continue
+	return V.fc(DemoBox.render, { "title": "Todo — keyed list + events" }, [V.HBoxContainer({ "style": {"separation": 8} }, [V.LineEdit({ "text": text[0], "placeholder_text": "New todo…", "onTextChanged": func(t): text[1].call(t), "onTextSubmitted": func(_t): add.call(), "style": {"size_flags_horizontal": Control.SIZE_EXPAND_FILL} }), V.Button({ "text": "Add", "onPressed": func(): add.call() })]), V.Label({ "text": "%d item(s) — keys preserve row identity on add/remove" % items[0].size(), "style": {"font_color": Color(0.7, 0.7, 0.7)} }), V.VBoxContainer({ "style": {"separation": 4} }, [__cf0])])

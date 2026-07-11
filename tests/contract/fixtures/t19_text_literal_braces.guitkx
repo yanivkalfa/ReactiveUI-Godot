@@ -1,13 +1,13 @@
 component LiteralBraces(n: int = 3) {
   return (
-    <vbox>
-      <label>
+    <VBoxContainer>
+      <Label>
         Count: {n} items
-      </label>
-      <label>
+      </Label>
+      <Label>
         { n }
         at node start
-      </label>
-    </vbox>
+      </Label>
+    </VBoxContainer>
   )
 }

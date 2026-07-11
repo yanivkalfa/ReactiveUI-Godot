@@ -11,25 +11,25 @@ component DemoPortal {
   var content = null
   if show[0] and mounted[0] and target["current"] != null:
     content = V.portal(target["current"], [
-      V.vbox({ "style": { "separation": 4 } }, [
-        V.label({ "text": "🎯 Portaled content" }),
-        V.label({ "text": "declared on the left, mounted on the right", "style": { "font_color": Color(0.7, 0.7, 0.7) } }),
+      V.VBoxContainer({ "style": { "separation": 4 } }, [
+        V.Label({ "text": "🎯 Portaled content" }),
+        V.Label({ "text": "declared on the left, mounted on the right", "style": { "font_color": Color(0.7, 0.7, 0.7) } }),
       ]),
     ])
   return (
     <DemoBox title="Portal — render into a different subtree">
       <Button
         text={ "Toggle portal (%s)" % show[0] }
-        onClick={ func(): show[1].call(not show[0]) } />
-      <HBox style={ {"separation": 16} }>
-        <VBox style={ {"expand_h": true} }>
+        onPressed={ func(): show[1].call(not show[0]) } />
+      <HBoxContainer style={ {"separation": 16} }>
+        <VBoxContainer style={ {"size_flags_horizontal": Control.SIZE_EXPAND_FILL} }>
           <Label text="Logical parent (left column):" />
           { content if content != null else <Label text="(portal hidden)" /> }
-        </VBox>
-        <Panel
+        </VBoxContainer>
+        <PanelContainer
           ref={ target }
-          style={ {"bg_color": Color(0.13, 0.22, 0.13), "pad": 8, "min_size": Vector2(280, 110)} } />
-      </HBox>
+          style={ {"bg_color": Color(0.13, 0.22, 0.13), "content_margin_all": 8, "custom_minimum_size": Vector2(280, 110)} } />
+      </HBoxContainer>
     </DemoBox>
   )
 }

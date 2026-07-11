@@ -37,6 +37,12 @@ export function hasDump(): boolean {
   return Object.keys(load()).length > 0;
 }
 
+/** Whether the dump knows `godotClass` — the LSP's stand-in for the compiler's live ClassDB check
+ *  (0.9.0 open tag vocabulary: any dumped Control/Node class is a valid host tag). */
+export function hasClass(godotClass: string): boolean {
+  return Object.prototype.hasOwnProperty.call(load(), godotClass);
+}
+
 /** Settable properties of `godotClass`, flattened over its base chain (own members win on shadow). */
 export function classProperties(godotClass: string): ClassProp[] {
   const db = load();

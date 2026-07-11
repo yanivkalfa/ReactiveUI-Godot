@@ -57,19 +57,19 @@ func _test_context() -> void:
 func _test_schema() -> void:
 	var tags := GuitkxSchema.host_tags()
 	_ok(tags.size() >= 20, "host_tags loaded (%d)" % tags.size())
-	_ok(tags.has("Button") and tags.has("VBox"), "host tags include Button + VBox")
+	_ok(tags.has("Button") and tags.has("VBoxContainer"), "host tags include Button + VBoxContainer")
 	_ok(GuitkxSchema.godot_class_for("Button") == "Button", "Button -> Button")
-	_ok(GuitkxSchema.godot_class_for("VBox") == "VBoxContainer", "VBox -> VBoxContainer")
+	_ok(GuitkxSchema.godot_class_for("VBoxContainer") == "VBoxContainer", "VBoxContainer -> VBoxContainer")
 	var props := GuitkxSchema.godot_properties("Button")
 	_ok(_has_named(props, "text") and _has_named(props, "visible"), "Button properties include text + visible")
 	var evs := GuitkxSchema.events_for_class("Button")
-	_ok(_has_named(evs, "onClick"), "Button events include onClick")
-	_ok(not _has_named(GuitkxSchema.events_for_class("Label"), "onClick"), "Label has no onClick (no `pressed`)")
-	_ok(GuitkxSchema.resolve_event_signal("onClick", "Button") == "pressed", "onClick -> pressed")
+	_ok(_has_named(evs, "onPressed"), "Button events include onPressed")
+	_ok(not _has_named(GuitkxSchema.events_for_class("Label"), "onPressed"), "Label has no onPressed (no `pressed`)")
+	_ok(GuitkxSchema.resolve_event_signal("onPressed", "Button") == "pressed", "onPressed -> pressed")
 	_ok(GuitkxSchema.resolve_event_signal("on_gui_input", "Button") == "gui_input", "on_gui_input -> gui_input")
 	_ok(GuitkxSchema.hover_for_tag("Button").contains("Button"), "hover_for_tag(Button) mentions Button")
 	_ok(GuitkxSchema.hover_for_directive("@for").contains("@for"), "hover_for_directive(@for)")
-	_ok(GuitkxSchema.hover_for_attribute("Button", "onClick").contains("pressed"), "hover onClick -> pressed")
+	_ok(GuitkxSchema.hover_for_attribute("Button", "onPressed").contains("pressed"), "hover onPressed -> pressed")
 	_ok(GuitkxSchema.hover_for_attribute("Button", "text").contains("property"), "hover text -> property")
 
 func _test_workspace() -> void:
@@ -93,9 +93,9 @@ func _test_completion() -> void:
 	var at := _cmp(RET + "<Button |" + END)
 	# G20: attribute inserts are snippet-shaped — `=` plus an empty value pair the editor's
 	# confirm steps the caret into (`=""` for String properties, `={}` for events/expressions).
-	_ok(_has_insert(at, "onClick={}") and _has_insert(at, "text=\"\"") and _has_insert(at, "style={}"),
-		"Button attrs offer snippet-shaped onClick + text + style")
-	_ok(not _has_insert(_cmp(RET + "<Label |" + END), "onClick={}"), "Label attrs exclude onClick")
+	_ok(_has_insert(at, "onPressed={}") and _has_insert(at, "text=\"\"") and _has_insert(at, "style={}"),
+		"Button attrs offer snippet-shaped onPressed + text + style")
+	_ok(not _has_insert(_cmp(RET + "<Label |" + END), "onPressed={}"), "Label attrs exclude onPressed")
 	var dr := _cmp(RET + "@|" + END)
 	_ok(_has_insert(dr, "if ()") and _has_display(dr, "@if"), "directive '@' offers insert 'if ()' / display '@if'")
 	_ok(_cmp(RET + "<Button text={ |" + END).is_empty(), "embedded {expr} offers nothing")
@@ -120,7 +120,7 @@ func _test_hover() -> void:
 	var END := "\n\t)\n}\n"
 	_ok(_hov(RET + "<Butt|on />" + END).contains("host element"), "hover host tag Button")
 	_ok(_hov(RET + "<Demo|Box />" + END).contains("user component"), "hover user component DemoBox")
-	_ok(_hov(RET + "<Button on|Click={ f } />" + END).contains("pressed"), "hover onClick -> pressed")
+	_ok(_hov(RET + "<Button on|Pressed={ f } />" + END).contains("pressed"), "hover onPressed -> pressed")
 	_ok(_hov(RET + "<Button te|xt=\"x\" />" + END).contains("property"), "hover text -> property")
 	_ok(_hov(RET + "@fo|r (i in xs) { <Label /> }" + END).contains("@for"), "hover @for directive")
 	_ok(_hov(RET + "<Button ke|y={ 1 } />" + END).contains("Reconciler"), "hover key -> structural")

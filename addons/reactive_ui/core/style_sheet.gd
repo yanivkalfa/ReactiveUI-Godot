@@ -9,9 +9,9 @@ extends RefCounted
 ## inheritance — just an ordered dictionary merge. For real theming, use Godot's Theme/StyleBox
 ## (via `style`) or `theme_type_variation`; this is sugar for sharing named style bundles.
 ##
-##   RUIStyleSheet.register("card", { "bg_color": Color(0.15,0.15,0.18), "corner_radius": 8, "pad": 12 })
+##   RUIStyleSheet.register("card", { "bg_color": Color(0.15,0.15,0.18), "corner_radius_all": 8, "content_margin_all": 12 })
 ##   RUIStyleSheet.merge({ "danger": { "font_color": Color.RED }, "muted": { "font_color": Color.GRAY } })
-##   V.panel({ "classes": ["card", "danger"], "style": { "pad": 16 } }, [...])   # pad:16 overrides card's 12
+##   V.PanelContainer({ "classes": ["card", "danger"], "style": { "content_margin_all": 16 } }, [...])   # overrides card
 
 static var _sheets: Dictionary = {}
 

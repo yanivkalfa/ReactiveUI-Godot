@@ -17,12 +17,12 @@ component DemoMemo {
       <Label
         text={ "factory ran %d time(s) — only recomputes when n changes" % calc_count["current"] }
         style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
-      <HBox style={ {"separation": 8} }>
-        <Button text="n + 1 (recomputes)" onClick={ func(): n[1].call(n[0] + 1) } />
+      <HBoxContainer style={ {"separation": 8} }>
+        <Button text="n + 1 (recomputes)" onPressed={ func(): n[1].call(n[0] + 1) } />
         <Button
           text={ "unrelated re-render: %d" % other[0] }
-          onClick={ func(): other[1].call(other[0] + 1) } />
-      </HBox>
+          onPressed={ func(): other[1].call(other[0] + 1) } />
+      </HBoxContainer>
     </DemoBox>
   )
 }

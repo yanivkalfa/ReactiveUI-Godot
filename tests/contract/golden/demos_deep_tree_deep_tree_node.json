@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":90,\"children\":[{\"at\":99,\"branches\":[{\"body_at\":117,\"body_markup\":\"\\n        return (\\n          <Label text=\\\"🌳 leaf\\\" style={ {\\\"font_color\\\": Color(0.5, 0.9, 0.5)} } />\\n        )\\n      \",\"cond\":\"level <= 0\"}],\"else_body\":\"\\n        return (\\n          <Margin style={ {\\\"margin\\\": 5} }>\\n            <Panel style={ {\\\"bg_color\\\": Color(0.15, 0.15, 0.18), \\\"pad\\\": 4} }>\\n              <VBox style={ {\\\"separation\\\": 2} }>\\n                <Label text={ \\\"level %d\\\" % level } style={ {\\\"font_color\\\": Color(0.6, 0.7, 0.9)} } />\\n                <DemoDeepTreeNode level={ level - 1 } />\\n              </VBox>\\n            </Panel>\\n          </Margin>\\n        )\\n      \",\"else_body_at\":241,\"t\":\"if\"}],\"t\":\"frag\"}]"
+			"tree": "[{\"at\":90,\"children\":[{\"at\":99,\"branches\":[{\"body_at\":117,\"body_markup\":\"\\n        return (\\n          <Label text=\\\"🌳 leaf\\\" style={ {\\\"font_color\\\": Color(0.5, 0.9, 0.5)} } />\\n        )\\n      \",\"cond\":\"level <= 0\"}],\"else_body\":\"\\n        return (\\n          <MarginContainer style={ {\\\"margin_left\\\": 5, \\\"margin_top\\\": 5, \\\"margin_right\\\": 5, \\\"margin_bottom\\\": 5} }>\\n            <PanelContainer style={ {\\\"bg_color\\\": Color(0.15, 0.15, 0.18), \\\"content_margin_all\\\": 4} }>\\n              <VBoxContainer style={ {\\\"separation\\\": 2} }>\\n                <Label text={ \\\"level %d\\\" % level } style={ {\\\"font_color\\\": Color(0.6, 0.7, 0.9)} } />\\n                <DemoDeepTreeNode level={ level - 1 } />\\n              </VBoxContainer>\\n            </PanelContainer>\\n          </MarginContainer>\\n        )\\n      \",\"else_body_at\":241,\"t\":\"if\"}],\"t\":\"frag\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 678,
+			"end": 808,
 			"start": 85
 		}
 	]

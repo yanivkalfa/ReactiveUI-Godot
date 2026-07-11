@@ -6,7 +6,7 @@
  * *human* layer: a short blurb, a realistic `.guitkx` usage snippet, an optional
  * GDScript snippet, a nav group, and search keywords.
  *
- * Snippets use React-parity event names (onClick / onChange / onSubmit / …).
+ * Snippets use loyal-to-Godot event names — on + PascalCase(signal): onPressed / onToggled / onValueChanged / onTextSubmitted / ….
  * Where a bundled demo under examples/demos exercises the control, the snippet is
  * adapted from that real demo so the docs stay honest.
  */
@@ -16,7 +16,7 @@ export type HostGroup = 'basic' | 'advanced'
 export interface HostContent {
   /** 1–3 sentence description of the control. */
   blurb: string
-  /** A realistic `.guitkx` usage snippet using React-parity event names. */
+  /** A realistic `.guitkx` usage snippet using on + PascalCase(signal) event names. */
   guitkx: string
   /** Optional GDScript (factory-call) equivalent. */
   gd?: string
@@ -31,95 +31,95 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   Control: {
     blurb:
       'The base Control host — a bare, unstyled node you position and size yourself. Use it as an escape hatch when you need a raw Control (for a ref target, custom drawing, or manual layout) rather than a specialised container.',
-    guitkx: `<Control ref={ area_ref } clip_contents style={ {"expand_h": true, "expand_v": true, "min_height": 320} } />`,
+    guitkx: `<Control ref={ area_ref } clip_contents style={ {"size_flags_horizontal": Control.SIZE_EXPAND_FILL, "size_flags_vertical": Control.SIZE_EXPAND_FILL, "min_height": 320} } />`,
     group: 'basic',
     keywords: ['control', 'base', 'container', 'raw', 'ref'],
   },
-  VBox: {
+  VBoxContainer: {
     blurb:
       'A vertical box container (Godot VBoxContainer). Lays its children out top-to-bottom, honouring their size flags. The `separation` style controls the gap between children.',
-    guitkx: `<VBox style={ {"separation": 8} }>
+    guitkx: `<VBoxContainer style={ {"separation": 8} }>
   <Label text="First" />
   <Label text="Second" />
-</VBox>`,
+</VBoxContainer>`,
     group: 'basic',
     keywords: ['vbox', 'vertical', 'container', 'layout', 'stack', 'column'],
   },
-  HBox: {
+  HBoxContainer: {
     blurb:
-      'A horizontal box container (Godot HBoxContainer). Lays its children out left-to-right. Give a child `{"expand_h": true}` to make it grow into the remaining space.',
-    guitkx: `<HBox style={ {"separation": 8} }>
-  <Button text="  −1  " onClick={ func(): s[1].call(s[0] - 1) } />
-  <Button text="  +1  " onClick={ func(): s[1].call(func(c): return c + 1) } />
-</HBox>`,
+      'A horizontal box container (Godot HBoxContainer). Lays its children out left-to-right. Give a child `{"size_flags_horizontal": Control.SIZE_EXPAND_FILL}` to make it grow into the remaining space.',
+    guitkx: `<HBoxContainer style={ {"separation": 8} }>
+  <Button text="  −1  " onPressed={ func(): s[1].call(s[0] - 1) } />
+  <Button text="  +1  " onPressed={ func(): s[1].call(func(c): return c + 1) } />
+</HBoxContainer>`,
     group: 'basic',
     keywords: ['hbox', 'horizontal', 'container', 'layout', 'row'],
   },
-  Grid: {
+  GridContainer: {
     blurb:
       'A grid container (Godot GridContainer). Arranges children into a fixed number of columns, wrapping to a new row automatically. Set the column count via the `columns` property.',
-    guitkx: `<Grid columns={ 3 } style={ {"h_separation": 6, "v_separation": 6} }>
+    guitkx: `<GridContainer columns={ 3 } style={ {"h_separation": 6, "v_separation": 6} }>
   <Button text="1" />
   <Button text="2" />
   <Button text="3" />
   <Button text="4" />
-</Grid>`,
+</GridContainer>`,
     group: 'basic',
     keywords: ['grid', 'columns', 'container', 'layout'],
   },
-  Margin: {
+  MarginContainer: {
     blurb:
-      'A margin container (Godot MarginContainer). Insets its single child by the configured margins. The `margin` style sets all four sides at once.',
-    guitkx: `<Margin style={ {"margin": 20} }>
-  <VBox style={ {"separation": 12} }>
+      'A margin container (Godot MarginContainer). Insets its single child by the configured margins — set the `margin_left` / `margin_top` / `margin_right` / `margin_bottom` style keys (Godot theme constants), one per side.',
+    guitkx: `<MarginContainer style={ {"margin_left": 20, "margin_top": 20, "margin_right": 20, "margin_bottom": 20} }>
+  <VBoxContainer style={ {"separation": 12} }>
     { children }
-  </VBox>
-</Margin>`,
+  </VBoxContainer>
+</MarginContainer>`,
     group: 'basic',
     keywords: ['margin', 'padding', 'inset', 'container', 'spacing'],
   },
-  Panel: {
+  PanelContainer: {
     blurb:
-      'A panel container (Godot PanelContainer). Draws a themed background/border behind its child and clips to it — the go-to surface for cards, sidebars, and content areas.',
-    guitkx: `<Panel style={ {"bg_color": Color(0.1, 0.1, 0.12), "min_width": 210} }>
-  <Margin style={ {"margin": 8} }>
+      'A panel container (Godot PanelContainer). Draws a themed background/border behind its child and clips to it — the go-to surface for cards, sidebars, and content areas. (For a plain themed rectangle with no layout, use <Panel>.)',
+    guitkx: `<PanelContainer style={ {"bg_color": Color(0.1, 0.1, 0.12), "min_width": 210} }>
+  <MarginContainer style={ {"margin_left": 8, "margin_top": 8, "margin_right": 8, "margin_bottom": 8} }>
     { children }
-  </Margin>
-</Panel>`,
+  </MarginContainer>
+</PanelContainer>`,
     group: 'basic',
     keywords: ['panel', 'card', 'surface', 'background', 'container'],
   },
-  Center: {
+  CenterContainer: {
     blurb:
       'A center container (Godot CenterContainer). Centres its single child both horizontally and vertically within the space it is given.',
-    guitkx: `<Center style={ {"expand_h": true, "expand_v": true} }>
+    guitkx: `<CenterContainer style={ {"size_flags_horizontal": Control.SIZE_EXPAND_FILL, "size_flags_vertical": Control.SIZE_EXPAND_FILL} }>
   <Label text="Centered content" />
-</Center>`,
+</CenterContainer>`,
     group: 'basic',
     keywords: ['center', 'centre', 'container', 'align', 'middle'],
   },
-  Scroll: {
+  ScrollContainer: {
     blurb:
       'A scroll container (Godot ScrollContainer). Adds scrollbars when its child overflows. Control each axis with `horizontal_scroll_mode` / `vertical_scroll_mode`.',
-    guitkx: `<Scroll horizontal_scroll_mode={ ScrollContainer.SCROLL_MODE_DISABLED } style={ {"expand_v": true} }>
-  <VBox style={ {"separation": 4} }>
+    guitkx: `<ScrollContainer horizontal_scroll_mode={ ScrollContainer.SCROLL_MODE_DISABLED } style={ {"size_flags_vertical": Control.SIZE_EXPAND_FILL} }>
+  <VBoxContainer style={ {"separation": 4} }>
     { buttons }
-  </VBox>
-</Scroll>`,
+  </VBoxContainer>
+</ScrollContainer>`,
     group: 'basic',
     keywords: ['scroll', 'scrollview', 'overflow', 'scrollbar', 'container'],
   },
-  Tabs: {
+  TabContainer: {
     blurb:
       'A tab container (Godot TabContainer). Shows one child at a time behind a strip of tabs, one tab per direct child. Use it for settings panes and multi-page layouts.',
-    guitkx: `<Tabs>
-  <VBox name="General">
+    guitkx: `<TabContainer>
+  <VBoxContainer name="General">
     <Label text="General settings" />
-  </VBox>
-  <VBox name="Audio">
+  </VBoxContainer>
+  <VBoxContainer name="Audio">
     <Label text="Audio settings" />
-  </VBox>
-</Tabs>`,
+  </VBoxContainer>
+</TabContainer>`,
     group: 'basic',
     keywords: ['tabs', 'tabcontainer', 'pages', 'sections', 'container'],
   },
@@ -132,13 +132,13 @@ export const HOST_CONTENT: Record<string, HostContent> = {
     group: 'basic',
     keywords: ['label', 'text', 'caption', 'display'],
   },
-  RichText: {
+  RichTextLabel: {
     blurb:
       'A rich-text label (Godot RichTextLabel). Renders BBCode markup — bold, colour, links, images, and more — when `bbcode_enabled` is true. Use it for formatted or multi-style text.',
-    guitkx: `<RichText
+    guitkx: `<RichTextLabel
   bbcode_enabled
   text="[b]Bold[/b] and [color=orange]coloured[/color] text"
-  style={ {"expand_h": true} }
+  style={ {"size_flags_horizontal": Control.SIZE_EXPAND_FILL} }
 />`,
     group: 'basic',
     keywords: ['richtext', 'bbcode', 'formatted', 'markup', 'text'],
@@ -164,22 +164,22 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   HSeparator: {
     blurb:
       'A horizontal separator line (Godot HSeparator). A thin themed divider used to break up vertical stacks of content.',
-    guitkx: `<VBox>
+    guitkx: `<VBoxContainer>
   <Label text="Section title" />
   <HSeparator />
   <Label text="Body content" />
-</VBox>`,
+</VBoxContainer>`,
     group: 'advanced',
     keywords: ['hseparator', 'divider', 'line', 'rule', 'separator'],
   },
   VSeparator: {
     blurb:
       'A vertical separator line (Godot VSeparator). A thin themed divider used between items laid out in a row.',
-    guitkx: `<HBox style={ {"separation": 8} }>
+    guitkx: `<HBoxContainer style={ {"separation": 8} }>
   <Label text="Left" />
   <VSeparator />
   <Label text="Right" />
-</HBox>`,
+</HBoxContainer>`,
     group: 'advanced',
     keywords: ['vseparator', 'divider', 'line', 'rule', 'separator'],
   },
@@ -187,39 +187,39 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   // ── Buttons ───────────────────────────────────────────────────────────────
   Button: {
     blurb:
-      'A clickable button (Godot Button). Fires `onClick` when pressed. Combine it with `useState` to build controlled, interactive UI. This is the workhorse of the counter demo.',
-    guitkx: `<Button text="  +1  " onClick={ func(): s[1].call(func(c): return c + 1) } />`,
-    gd: `V.button({
+      'A clickable button (Godot Button). Fires `onPressed` when pressed. Combine it with `useState` to build controlled, interactive UI. This is the workhorse of the counter demo.',
+    guitkx: `<Button text="  +1  " onPressed={ func(): s[1].call(func(c): return c + 1) } />`,
+    gd: `V.Button({
   "text": "  +1  ",
-  "onClick": func(): s[1].call(func(c): return c + 1),
+  "onPressed": func(): s[1].call(func(c): return c + 1),
 })`,
     group: 'basic',
-    keywords: ['button', 'click', 'press', 'action', 'onClick'],
+    keywords: ['button', 'click', 'press', 'action', 'onPressed'],
   },
   CheckBox: {
     blurb:
-      'A checkbox (Godot CheckBox). A toggleable button styled as a checkmark. Read its state from `button_pressed` and react to changes via `onChange`.',
-    guitkx: `<CheckBox text="CheckBox" button_pressed={ on } onChange={ func(pressed): set_on.call(pressed) } />`,
+      'A checkbox (Godot CheckBox). A toggleable button styled as a checkmark. Read its state from `button_pressed` and react to changes via `onToggled`.',
+    guitkx: `<CheckBox text="CheckBox" button_pressed={ on } onToggled={ func(pressed): set_on.call(pressed) } />`,
     group: 'basic',
-    keywords: ['checkbox', 'check', 'toggle', 'boolean', 'onChange'],
+    keywords: ['checkbox', 'check', 'toggle', 'boolean', 'onToggled'],
   },
   CheckButton: {
     blurb:
       'A check button (Godot CheckButton). Functionally a toggle rendered as an on/off switch. Same toggle semantics as CheckBox with a different visual affordance.',
-    guitkx: `<CheckButton text="CheckButton" button_pressed={ on } onChange={ func(pressed): set_on.call(pressed) } />`,
+    guitkx: `<CheckButton text="CheckButton" button_pressed={ on } onToggled={ func(pressed): set_on.call(pressed) } />`,
     group: 'basic',
-    keywords: ['checkbutton', 'switch', 'toggle', 'boolean', 'onChange'],
+    keywords: ['checkbutton', 'switch', 'toggle', 'boolean', 'onToggled'],
   },
   OptionButton: {
     blurb:
-      'A dropdown selector (Godot OptionButton). Presents a popup list of items and reports the chosen index through `onChange`. Populate it with `items` and track the selection in state.',
+      'A dropdown selector (Godot OptionButton). Presents a popup list of items and reports the chosen index through `onItemSelected`. Populate it with `items` and track the selection in state.',
     guitkx: `<OptionButton
   items={ ["Red", "Green", "Blue"] }
   selected={ index }
-  onChange={ func(i): set_index.call(i) }
+  onItemSelected={ func(i): set_index.call(i) }
 />`,
     group: 'basic',
-    keywords: ['optionbutton', 'dropdown', 'select', 'combobox', 'choices', 'onChange'],
+    keywords: ['optionbutton', 'dropdown', 'select', 'combobox', 'choices', 'onItemSelected'],
   },
   MenuButton: {
     blurb:
@@ -230,50 +230,50 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   },
   LinkButton: {
     blurb:
-      'A hyperlink-style button (Godot LinkButton). Renders as underlined text and fires `onClick` like a link. Good for inline navigation and secondary actions.',
-    guitkx: `<LinkButton text="Learn more" onClick={ func(): open_docs.call() } />`,
+      'A hyperlink-style button (Godot LinkButton). Renders as underlined text and fires `onPressed` like a link. Good for inline navigation and secondary actions.',
+    guitkx: `<LinkButton text="Learn more" onPressed={ func(): open_docs.call() } />`,
     group: 'advanced',
-    keywords: ['linkbutton', 'link', 'hyperlink', 'text button', 'onClick'],
+    keywords: ['linkbutton', 'link', 'hyperlink', 'text button', 'onPressed'],
   },
   TextureButton: {
     blurb:
-      'An image button (Godot TextureButton). A button whose faces are textures rather than themed styles — set `texture_normal`, `texture_pressed`, `texture_hover`, and handle `onClick`.',
+      'An image button (Godot TextureButton). A button whose faces are textures rather than themed styles — set `texture_normal`, `texture_pressed`, `texture_hover`, and handle `onPressed`.',
     guitkx: `<TextureButton
   texture_normal={ icon_normal }
   texture_hover={ icon_hover }
-  onClick={ func(): activate.call() }
+  onPressed={ func(): activate.call() }
 />`,
     group: 'advanced',
-    keywords: ['texturebutton', 'icon button', 'image button', 'onClick'],
+    keywords: ['texturebutton', 'icon button', 'image button', 'onPressed'],
   },
 
   // ── Text input ────────────────────────────────────────────────────────────
   LineEdit: {
     blurb:
-      'A single-line text input (Godot LineEdit). Drive it as a controlled input: bind `text` to state and push edits back through `onChange`; `onSubmit` fires when the user presses Enter.',
+      'A single-line text input (Godot LineEdit). Drive it as a controlled input: bind `text` to state and push edits back through `onTextChanged`; `onTextSubmitted` fires when the user presses Enter.',
     guitkx: `<LineEdit
   text={ s[0] }
   placeholder_text="Type something…"
-  onChange={ func(t): s[1].call(t) }
+  onTextChanged={ func(t): s[1].call(t) }
 />`,
-    gd: `V.line_edit({
+    gd: `V.LineEdit({
   "text": s[0],
   "placeholder_text": "Type something…",
-  "onChange": func(t): s[1].call(t),
+  "onTextChanged": func(t): s[1].call(t),
 })`,
     group: 'basic',
-    keywords: ['lineedit', 'input', 'text field', 'textbox', 'onChange', 'onSubmit'],
+    keywords: ['lineedit', 'input', 'text field', 'textbox', 'onTextChanged', 'onTextSubmitted'],
   },
   TextEdit: {
     blurb:
-      'A multi-line text editor (Godot TextEdit). Use it for paragraphs, notes, and free-form text. Bind `text` to state and listen for edits via `onChange`.',
+      'A multi-line text editor (Godot TextEdit). Use it for paragraphs, notes, and free-form text. Bind `text` to state and listen for edits via `onTextChanged`.',
     guitkx: `<TextEdit
   text={ s[0] }
-  onChange={ func(): s[1].call(edit_ref["current"].text) }
+  onTextChanged={ func(): s[1].call(edit_ref["current"].text) }
   style={ {"min_height": 120} }
 />`,
     group: 'basic',
-    keywords: ['textedit', 'multiline', 'textarea', 'editor', 'onChange'],
+    keywords: ['textedit', 'multiline', 'textarea', 'editor', 'onTextChanged'],
   },
   CodeEdit: {
     blurb:
@@ -281,54 +281,54 @@ export const HOST_CONTENT: Record<string, HostContent> = {
     guitkx: `<CodeEdit
   text={ source }
   gutters_draw_line_numbers
-  onChange={ func(): set_source.call(code_ref["current"].text) }
+  onTextChanged={ func(): set_source.call(code_ref["current"].text) }
   style={ {"min_height": 200} }
 />`,
     group: 'advanced',
-    keywords: ['codeedit', 'code', 'editor', 'syntax', 'highlighting', 'onChange'],
+    keywords: ['codeedit', 'code', 'editor', 'syntax', 'highlighting', 'onTextChanged'],
   },
   SpinBox: {
     blurb:
-      'A numeric stepper (Godot SpinBox). Combines a value field with up/down arrows. Bind `value` to state and read the new number from `onChange`; constrain it with `min_value` / `max_value` / `step`.',
+      'A numeric stepper (Godot SpinBox). Combines a value field with up/down arrows. Bind `value` to state and read the new number from `onValueChanged`; constrain it with `min_value` / `max_value` / `step`.',
     guitkx: `<SpinBox
   min_value={ 0 } max_value={ 100 } step={ 1 }
   value={ n }
-  onChange={ func(v): set_n.call(v) }
+  onValueChanged={ func(v): set_n.call(v) }
 />`,
     group: 'basic',
-    keywords: ['spinbox', 'number', 'numeric', 'stepper', 'increment', 'onChange'],
+    keywords: ['spinbox', 'number', 'numeric', 'stepper', 'increment', 'onValueChanged'],
   },
 
   // ── Range controls ────────────────────────────────────────────────────────
   HSlider: {
     blurb:
-      'A horizontal slider (Godot HSlider). Lets the user pick a value in a range by dragging. Bind `value` to state and read the new value from `onChange`; set the range with `min_value` / `max_value`.',
+      'A horizontal slider (Godot HSlider). Lets the user pick a value in a range by dragging. Bind `value` to state and read the new value from `onValueChanged`; set the range with `min_value` / `max_value`.',
     guitkx: `<HSlider
   min_value={ 0 } max_value={ 100 }
   value={ v[0] }
-  onChange={ func(x): v[1].call(x) }
+  onValueChanged={ func(x): v[1].call(x) }
   style={ {"min_width": 220} }
 />`,
-    gd: `V.hslider({
+    gd: `V.HSlider({
   "min_value": 0, "max_value": 100,
   "value": v[0],
-  "onChange": func(x): v[1].call(x),
+  "onValueChanged": func(x): v[1].call(x),
   "style": {"min_width": 220},
 })`,
     group: 'basic',
-    keywords: ['hslider', 'slider', 'range', 'drag', 'value', 'onChange'],
+    keywords: ['hslider', 'slider', 'range', 'drag', 'value', 'onValueChanged'],
   },
   VSlider: {
     blurb:
-      'A vertical slider (Godot VSlider). The vertical counterpart to HSlider — same range/value semantics, laid out top-to-bottom. Bind `value` to state and read edits from `onChange`.',
+      'A vertical slider (Godot VSlider). The vertical counterpart to HSlider — same range/value semantics, laid out top-to-bottom. Bind `value` to state and read edits from `onValueChanged`.',
     guitkx: `<VSlider
   min_value={ 0 } max_value={ 100 }
   value={ v[0] }
-  onChange={ func(x): v[1].call(x) }
+  onValueChanged={ func(x): v[1].call(x) }
   style={ {"min_height": 220} }
 />`,
     group: 'basic',
-    keywords: ['vslider', 'slider', 'range', 'vertical', 'value', 'onChange'],
+    keywords: ['vslider', 'slider', 'range', 'vertical', 'value', 'onValueChanged'],
   },
   ProgressBar: {
     blurb:
@@ -341,18 +341,18 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   // ── Collections ───────────────────────────────────────────────────────────
   ItemList: {
     blurb:
-      'A selectable list (Godot ItemList). Renders a flat, scrollable list of items; declare rows declaratively via `items` and react to selection with `onChange`.',
+      'A selectable list (Godot ItemList). Renders a flat, scrollable list of items; declare rows declaratively via `items` and react to selection with `onItemSelected`.',
     guitkx: `<ItemList
   items={ ["Apple", "Banana", "Cherry", "Date"] }
-  onChange={ func(index): set_selected.call(index) }
+  onItemSelected={ func(index): set_selected.call(index) }
   style={ {"min_height": 90} }
 />`,
     group: 'basic',
-    keywords: ['itemlist', 'list', 'selection', 'listview', 'onChange'],
+    keywords: ['itemlist', 'list', 'selection', 'listview', 'onItemSelected'],
   },
   Tree: {
     blurb:
-      'A hierarchical tree (Godot Tree). Renders nested, expandable rows. Pass a declarative `items` model of nodes with `children`; expansion state is preserved across re-renders. React to selection with `onChange`.',
+      'A hierarchical tree (Godot Tree). Renders nested, expandable rows. Pass a declarative `items` model of nodes with `children`; expansion state is preserved across re-renders. React to selection with `onItemSelected`.',
     guitkx: `<Tree hide_root items={ [
   { "id": "fruit", "text": "🍎 Fruit", "children": [
     { "id": "apple", "text": "Apple" },
@@ -363,17 +363,17 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   ] },
 ] } style={ {"min_height": 150} } />`,
     group: 'basic',
-    keywords: ['tree', 'treeview', 'hierarchy', 'nested', 'expand', 'onChange'],
+    keywords: ['tree', 'treeview', 'hierarchy', 'nested', 'expand', 'onItemSelected'],
   },
   TabBar: {
     blurb:
-      'A tab strip (Godot TabBar). Renders a row of tabs without managing page content itself — you drive which pane is visible from the `onChange` (tab index) callback. For automatic page switching, prefer the Tabs container.',
+      'A tab strip (Godot TabBar). Renders a row of tabs without managing page content itself — you drive which pane is visible from the `onTabChanged` (tab index) callback. For automatic page switching, prefer the Tabs container.',
     guitkx: `<TabBar
   tabs={ ["General", "Audio", "Video"] }
   current_tab={ tab }
-  onChange={ func(index): set_tab.call(index) }
+  onTabChanged={ func(index): set_tab.call(index) }
 />`,
     group: 'basic',
-    keywords: ['tabbar', 'tabs', 'strip', 'navigation', 'onChange'],
+    keywords: ['tabbar', 'tabs', 'strip', 'navigation', 'onTabChanged'],
   },
 }

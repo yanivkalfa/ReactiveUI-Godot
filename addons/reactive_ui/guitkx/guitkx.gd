@@ -1642,7 +1642,7 @@ static func _emit_expr(nd: Dictionary, ctx: Dictionary) -> String:
 			_swap_base(ctx, prev)
 			return spliced
 		"text":
-			return "V.label({ \"text\": %s })" % _gd_str(nd["value"])
+			return "V.Label({ \"text\": %s })" % _gd_str(nd["value"])
 		"if":
 			return _emit_if(nd, ctx)
 		"for":
@@ -1657,9 +1657,11 @@ static func _emit_expr(nd: Dictionary, ctx: Dictionary) -> String:
 
 # Text-bearing host factories: a `<Label>text</Label>` / `<Button>Click {x}</Button>` whose children
 # are all text/expr folds them into the `.text` prop instead of nesting child Labels (Phase 7.2).
+# Keys are the 0.9.0 factory names (= Godot class names; open-vocabulary V.h tags also fold when
+# their class name is listed here).
 const TEXT_FACTORIES := {
-	"label": true, "button": true, "check_box": true, "check_button": true,
-	"link_button": true, "menu_button": true, "option_button": true, "rich_text": true,
+	"Label": true, "Button": true, "CheckBox": true, "CheckButton": true,
+	"LinkButton": true, "MenuButton": true, "OptionButton": true, "RichTextLabel": true,
 }
 
 ## T2.2: a fragment node -- `<>...</>` or the named `<Fragment ...>` alias. The named form may carry
@@ -1697,7 +1699,8 @@ static func _all_text_children(children: Array) -> bool:
 			return false
 	return true
 
-## T1.5: report an unknown tag (GUITKX0105) at the tag name, with a did-you-mean when a factory,
+## T1.5: report an unknown tag (GUITKX0105) at the tag name. A pre-0.9 shorthand gets the exact
+## rename (from the vocabulary's `renamed_tags` table); otherwise a did-you-mean when a factory,
 ## host alias, module member, or known component is within edit distance 2 (Unity parity).
 static func _unknown_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
 	if not (ctx.has("diags") and ctx["diags"] is Array):
@@ -1705,6 +1708,10 @@ static func _unknown_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
 	var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
 	if at >= 0:
 		at += 1   # nd.at is the `<`; anchor the squiggle on the name
+	var renamed: Dictionary = vocab().get("renamed_tags", {})
+	if renamed.has(tag):
+		(ctx["diags"] as Array).append(D.make("GUITKX0105", D.ERROR, "<%s> was renamed in 0.9.0 -- tags are the official Godot class names; use <%s> (see MIGRATION-0.9.md)" % [tag, renamed[tag]], at, tag.length()))
+		return
 	var candidates: Array = v_factories().duplicate()
 	candidates.append_array(host_tags().keys())
 	candidates.append_array((ctx.get("module_comps", {}) as Dictionary).keys())
@@ -1720,6 +1727,18 @@ static func _unknown_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
 	if best != "":
 		msg += " -- did you mean <%s>?" % best
 	(ctx["diags"] as Array).append(D.make("GUITKX0105", D.ERROR, msg, at, tag.length()))
+
+## 0.9.0 naming loyalty: a project component (module member, sibling .guitkx binding, or global
+## class_name) shares its name with an engine class — the ENGINE element wins (engine names are
+## reserved), so the component is unreachable from markup under this name. Warn, don't error:
+## the emitted code is valid; the collision is the project's to resolve by renaming its component.
+static func _shadowed_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
+	if not (ctx.has("diags") and ctx["diags"] is Array):
+		return
+	var at := _cbase(int(ctx.get("base", -1)), int(nd.get("at", -1)))
+	if at >= 0:
+		at += 1
+	(ctx["diags"] as Array).append(D.make("GUITKX0151", D.WARNING, "<%s> resolves to the Godot %s class -- a project component with the same name is shadowed (engine names are reserved); rename the component to reach it from markup" % [tag, tag], at, tag.length()))
 
 ## Swap ctx["base"] (the absolute offset of the current offset-domain's index 0), returning the old
 ## value so callers restore it after a nested re-parse. See the T0.2 note at the top of the file.
@@ -1756,6 +1775,17 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 	elif host_tags().has(tag):
 		is_host = true
 		factory = host_tags()[tag]
+		if (ctx.get("module_comps", {}) as Dictionary).has(tag) or (ctx.get("known_components", {}) as Dictionary).has(tag):
+			_shadowed_tag(ctx, nd, tag)   # engine names are reserved — curated tags included
+	elif ClassDB.class_exists(tag) and ClassDB.can_instantiate(tag) and ClassDB.is_parent_class(tag, "Node"):
+		# Open vocabulary (0.9.0 naming loyalty): any instantiable ClassDB Node class IS a host
+		# tag — emitted through the generic V.h, so the full official Control set works from
+		# markup without a curated factory. Engine names are RESERVED: a project component that
+		# shadows one is a foot-gun (the engine element wins) — warn with GUITKX0151.
+		is_host = true
+		factory = ""   # no named factory — emit V.h("<Tag>", ...)
+		if (ctx.get("module_comps", {}) as Dictionary).has(tag) or (ctx.get("known_components", {}) as Dictionary).has(tag):
+			_shadowed_tag(ctx, nd, tag)
 	else:
 		# PascalCase component reference: resolvable only with project knowledge -- the plugin passes
 		# the known component classes (sibling .guitkx bindings + global script classes) into
@@ -1806,6 +1836,8 @@ static func _emit_element(nd: Dictionary, ctx: Dictionary) -> String:
 			args += ", " + children_src
 		if key_expr != "":
 			args += (", []" if children_src == "[]" else "") + ", " + key_expr
+		if factory == "":
+			return "V.h(\"%s\", %s)" % [tag, args]   # open-vocabulary ClassDB tag
 		return "V.%s(%s)" % [factory, args]
 	else:
 		# child component reference, by precedence:

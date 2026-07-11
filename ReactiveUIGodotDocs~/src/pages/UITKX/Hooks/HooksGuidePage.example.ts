@@ -8,11 +8,11 @@ component CounterDemo() {
   # Functional updater:      count[1].call(func(c): return c + 1)   # reads latest state
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "Count: %d" % count[0] } />
-      <Button text="Increment" onClick={ func(): count[1].call(count[0] + 1) } />
-      <Button text="Double" onClick={ func(): count[1].call(func(c): return c * 2) } />
-    </VBox>
+      <Button text="Increment" onPressed={ func(): count[1].call(count[0] + 1) } />
+      <Button text="Double" onPressed={ func(): count[1].call(func(c): return c * 2) } />
+    </VBoxContainer>
   )
 }`
 
@@ -31,12 +31,12 @@ component ReducerDemo() {
   var r = useReducer(reducer, 0)
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "Count: %d" % r[0] } />
-      <Button text="+" onClick={ func(): r[1].call("inc") } />
-      <Button text="-" onClick={ func(): r[1].call("dec") } />
-      <Button text="Reset" onClick={ func(): r[1].call("reset") } />
-    </VBox>
+      <Button text="+" onPressed={ func(): r[1].call("inc") } />
+      <Button text="-" onPressed={ func(): r[1].call("dec") } />
+      <Button text="Reset" onPressed={ func(): r[1].call("reset") } />
+    </VBoxContainer>
   )
 }`
 
@@ -76,9 +76,9 @@ component LayoutMeasure() {
   useLayoutEffect(measure, [])
 
   return (
-    <VBox ref={ el_ref }>
+    <VBoxContainer ref={ el_ref }>
       <Label text={ "Width: %dpx" % width[0] } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -94,12 +94,12 @@ component ExpensiveList() {
     [filter[0], items[0]])
 
   return (
-    <VBox>
-      <LineEdit text={ filter[0] } onChange={ func(t): filter[1].call(t) } />
+    <VBoxContainer>
+      <LineEdit text={ filter[0] } onTextChanged={ func(t): filter[1].call(t) } />
       @for (item in filtered) {
         <Label text={ item } key={ item } />
       }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -112,10 +112,10 @@ component StableCallback() {
   var get_count = useCallback(func(): return count[0], [count[0]])
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "Count: %d" % get_count.call() } />
-      <Button text="Increment" onClick={ func(): count[1].call(count[0] + 1) } />
-    </VBox>
+      <Button text="Increment" onPressed={ func(): count[1].call(count[0] + 1) } />
+    </VBoxContainer>
   )
 }`
 
@@ -136,10 +136,10 @@ component RefDemo() {
   useEffect(log_name, [])
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label ref={ label_ref }
              text={ "This component rendered %d time(s)" % render_count["current"] } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -151,9 +151,9 @@ component ThemeProvider() {
   Hooks.provideContext("theme", "dark")
 
   return (
-    <VBox>
+    <VBoxContainer>
       <ThemedCard />
-    </VBox>
+    </VBoxContainer>
   )
 }
 
@@ -165,12 +165,12 @@ component ThemedCard() {
   var theme = useContext("theme")   # "dark"
 
   return (
-    <Panel style={ {
+    <PanelContainer style={ {
       "bg_color": Color.BLACK if theme == "dark" else Color.WHITE,
-      "pad": 12,
+      "content_margin_all": 12,
     } }>
       <Label text={ "Theme: %s" % theme } />
-    </Panel>
+    </PanelContainer>
   )
 }`
 
@@ -187,10 +187,10 @@ component EventOptimization() {
   var on_reset = useStableCallback(func(): name[1].call(""))
 
   return (
-    <VBox>
-      <LineEdit text={ name[0] } onChange={ on_name_changed } />
-      <Button text="Reset" onClick={ on_reset } />
-    </VBox>
+    <VBoxContainer>
+      <LineEdit text={ name[0] } onTextChanged={ on_name_changed } />
+      <Button text="Reset" onPressed={ on_reset } />
+    </VBoxContainer>
   )
 }`
 
@@ -204,10 +204,10 @@ component SearchResults() {
   var deferred_query = useDeferredValue(query[0])
 
   return (
-    <VBox>
-      <LineEdit text={ query[0] } onChange={ func(t): query[1].call(t) } />
+    <VBoxContainer>
+      <LineEdit text={ query[0] } onTextChanged={ func(t): query[1].call(t) } />
       <ResultsList filter={ deferred_query } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -232,7 +232,7 @@ component FancyInput(handle_ref) {
   useLayoutEffect(publish, [handle])
 
   return (<LineEdit ref={ input_ref } text={ val[0] }
-                    onChange={ func(t): val[1].call(t) } />)
+                    onTextChanged={ func(t): val[1].call(t) } />)
 }`
 
 export const HOOKS_DEPENDENCY_RULES = `# deps == null  ->  runs cleanup + effect EVERY commit

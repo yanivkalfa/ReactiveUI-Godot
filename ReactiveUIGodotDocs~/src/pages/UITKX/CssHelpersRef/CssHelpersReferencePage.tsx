@@ -30,9 +30,10 @@ type StyleRow = { name: string; mapsTo: string; notes: string }
 const styleBoxKeys: StyleRow[] = [
   { name: 'bg_color', mapsTo: 'StyleBoxFlat.bg_color', notes: 'Background fill (Color)' },
   { name: 'border_color', mapsTo: 'StyleBoxFlat.border_color', notes: 'Border color (Color)' },
-  { name: 'border_width', mapsTo: 'border_width_* (all sides)', notes: 'int, all four sides' },
-  { name: 'corner_radius', mapsTo: 'corner_radius_* (all corners)', notes: 'int, all four corners' },
-  { name: 'pad', mapsTo: 'content_margin_* (all sides)', notes: 'float, inner padding' },
+  { name: 'border_width_all', mapsTo: 'border_width_* (all sides)', notes: 'int — mirrors set_border_width_all' },
+  { name: 'corner_radius_all', mapsTo: 'corner_radius_* (all corners)', notes: 'int — mirrors set_corner_radius_all' },
+  { name: 'content_margin_all', mapsTo: 'content_margin_* (all sides)', notes: 'float — mirrors set_content_margin_all' },
+  { name: '<any StyleBoxFlat property>', mapsTo: 'that property, verbatim', notes: 'shadow_color, shadow_size, expand_margin_left, skew, border_width_top, …' },
 ]
 
 const stateSlots: StyleRow[] = [
@@ -53,37 +54,35 @@ const themeChannels: StyleRow[] = [
 ]
 
 const sizing: StyleRow[] = [
-  { name: 'min_width', mapsTo: 'custom_minimum_size.x', notes: 'float' },
-  { name: 'min_height', mapsTo: 'custom_minimum_size.y', notes: 'float' },
-  { name: 'min_size', mapsTo: 'custom_minimum_size', notes: 'Vector2' },
-  { name: 'fill', mapsTo: 'PRESET_FULL_RECT anchors', notes: 'bool — fill parent (top-level mount)' },
-  { name: 'expand_h', mapsTo: 'size_flags_horizontal', notes: 'bool → SIZE_EXPAND_FILL' },
-  { name: 'expand_v', mapsTo: 'size_flags_vertical', notes: 'bool → SIZE_EXPAND_FILL' },
-  { name: 'grow_h / h_align', mapsTo: 'size_flags_horizontal', notes: 'int or "fill"/"expand"/"center"/"begin"/"end"' },
-  { name: 'grow_v / v_align', mapsTo: 'size_flags_vertical', notes: 'int or "fill"/"expand"/"center"/"begin"/"end"' },
+  { name: 'min_width', mapsTo: 'custom_minimum_size.x', notes: 'float — documented extension (one axis)' },
+  { name: 'min_height', mapsTo: 'custom_minimum_size.y', notes: 'float — documented extension (one axis)' },
+  { name: 'custom_minimum_size', mapsTo: 'Control.custom_minimum_size', notes: 'Vector2 — the literal Godot property' },
+  { name: 'anchors_preset', mapsTo: 'set_anchors_and_offsets_preset', notes: 'Control.PRESET_FULL_RECT fills the parent (top-level mount)' },
+  { name: 'size_flags_horizontal', mapsTo: 'Control.size_flags_horizontal', notes: 'Control.SIZE_* constant, e.g. Control.SIZE_EXPAND_FILL' },
+  { name: 'size_flags_vertical', mapsTo: 'Control.size_flags_vertical', notes: 'Control.SIZE_* constant, e.g. Control.SIZE_SHRINK_CENTER' },
 ]
 
 const transform: StyleRow[] = [
   { name: 'modulate', mapsTo: 'Control.modulate', notes: 'Color (tints children too)' },
   { name: 'self_modulate', mapsTo: 'Control.self_modulate', notes: 'Color (self only)' },
-  { name: 'rotation', mapsTo: 'Control.rotation', notes: 'float degrees (converted to radians)' },
+  { name: 'rotation', mapsTo: 'Control.rotation', notes: 'float RADIANS (Godot semantics) — use deg_to_rad()' },
   { name: 'scale', mapsTo: 'Control.scale', notes: 'Vector2' },
-  { name: 'pivot', mapsTo: 'pivot_offset', notes: 'Vector2' },
+  { name: 'pivot_offset', mapsTo: 'Control.pivot_offset', notes: 'Vector2' },
   { name: 'z_index', mapsTo: 'Control.z_index', notes: 'int' },
 ]
 
 const visibility: StyleRow[] = [
   { name: 'visible', mapsTo: 'Control.visible', notes: 'bool' },
-  { name: 'clip', mapsTo: 'clip_contents', notes: 'bool' },
-  { name: 'mouse_filter', mapsTo: 'mouse_filter', notes: 'int or "stop"/"pass"/"ignore"' },
-  { name: 'tooltip', mapsTo: 'tooltip_text', notes: 'String' },
+  { name: 'clip_contents', mapsTo: 'Control.clip_contents', notes: 'bool' },
+  { name: 'mouse_filter', mapsTo: 'Control.mouse_filter', notes: 'Control.MOUSE_FILTER_STOP / _PASS / _IGNORE (or the exact constant name as a String)' },
+  { name: 'tooltip_text', mapsTo: 'Control.tooltip_text', notes: 'String' },
 ]
 
 const text: StyleRow[] = [
-  { name: 'color / font_color', mapsTo: 'font_color theme override', notes: 'Color' },
+  { name: 'font_color', mapsTo: 'font_color theme override', notes: 'Color' },
   { name: 'font', mapsTo: 'font theme override', notes: 'Font' },
   { name: 'font_size', mapsTo: 'font_size theme override', notes: 'int' },
-  { name: 'outline_color', mapsTo: 'font_outline_color override', notes: 'Color' },
+  { name: 'font_outline_color', mapsTo: 'font_outline_color override', notes: 'Color' },
   { name: 'outline_size', mapsTo: 'outline_size theme constant', notes: 'int' },
 ]
 
@@ -91,7 +90,7 @@ const spacing: StyleRow[] = [
   { name: 'separation', mapsTo: 'separation theme constant', notes: 'int (box containers)' },
   { name: 'h_separation', mapsTo: 'h_separation theme constant', notes: 'int (grid/flow)' },
   { name: 'v_separation', mapsTo: 'v_separation theme constant', notes: 'int (grid/flow)' },
-  { name: 'margin', mapsTo: 'margin_* theme constants', notes: 'int (MarginContainer, all sides)' },
+  { name: 'margin_left / margin_top / margin_right / margin_bottom', mapsTo: 'margin_* theme constants', notes: 'int (MarginContainer, one key per side)' },
 ]
 
 const allGroups: { label: string; rows: StyleRow[] }[] = [
@@ -143,30 +142,33 @@ export const CssHelpersReferencePage: FC = () => (
       <strong>Dictionary</strong>, and <code>RUIStyle</code>{' '}
       (<code>core/style.gd</code>) maps its keys onto Godot Control properties,
       size flags, Theme overrides, and StyleBox. This page is the vocabulary of
-      that dictionary.
+      that dictionary. From 0.9.0 every key is the <strong>literal Godot name</strong> of
+      the property, theme item, or <code>StyleBoxFlat</code> property it sets
+      (see <code>MIGRATION-0.9.md</code> at the repository root for the 0.8
+      shorthand → 0.9 name mapping).
     </Typography>
     <CodeBlock language="jsx" code={`# Apply an inline style dict on any host element:
-<Panel style={ {
+<PanelContainer style={ {
   "bg_color": Color("#1e1e1e"),
-  "corner_radius": 8,
-  "border_width": 1,
+  "corner_radius_all": 8,
+  "border_width_all": 1,
   "border_color": Color(0.3, 0.3, 0.35),
-  "pad": 12,
-  "min_size": Vector2(240, 120),
+  "content_margin_all": 12,
+  "custom_minimum_size": Vector2(240, 120),
 } } />
 
 # Per-state slots use nested dicts; theme channels reach any item by name:
 <Button text="OK" style={ {
   "bg_color": Color(0.2, 0.4, 0.9),
-  "corner_radius": 6,
+  "corner_radius_all": 6,
   "hover": { "bg_color": Color(0.3, 0.5, 1.0) },
   "pressed": { "bg_color": Color(0.15, 0.3, 0.7) },
   "colors": { "font_color": Color.WHITE },
 } } />`} />
 
     <Alert severity="info" sx={{ mt: 1 }}>
-      Anything not listed here (anchors, offsets, <code>custom_minimum_size</code>,
-      etc.) is a plain Control property — set it as a normal prop on the element,
+      Anything not listed here (anchors, offsets, etc.) is a plain Control
+      property — set it as a normal prop on the element,
       not inside <code>style</code>. Reusable named style sets live in an{' '}
       <code>RUIStyleSheet</code> and are attached via the <code>classes</code>{' '}
       prop (inline <code>style</code> wins over classes).
@@ -187,14 +189,16 @@ export const CssHelpersReferencePage: FC = () => (
 
     <Alert severity="info" sx={{ mt: 2 }}>
       The StyleBox keys (<code>bg_color</code>, <code>border_*</code>,{' '}
-      <code>corner_radius</code>, <code>pad</code>) are combined into a single{' '}
-      <code>StyleBoxFlat</code> applied to the control&apos;s primary slot
-      (Panel: <code>panel</code>, Button: <code>normal</code>, LineEdit:{' '}
-      <code>normal</code>, ProgressBar: <code>background</code>). Requesting them
-      on a control with no stylebox slot (e.g. a bare <code>Label</code>) warns
-      once. When a shorthand and a theme channel don&apos;t cover what you need,
-      the generic <code>styleboxes</code> channel reaches any theme StyleBox by
-      name for 100% coverage.
+      <code>corner_radius_all</code>, <code>content_margin_all</code>, and any
+      other <code>StyleBoxFlat</code> property, verbatim) are combined into a
+      single <code>StyleBoxFlat</code> applied to the control&apos;s primary slot
+      (PanelContainer: <code>panel</code>, Button: <code>normal</code>, LineEdit:{' '}
+      <code>normal</code>, ProgressBar: <code>background</code>). The{' '}
+      <code>*_all</code> keys mirror Godot&apos;s own <code>set_*_all</code>{' '}
+      setters. Requesting box keys on a control with no stylebox slot (e.g. a
+      bare <code>Label</code>) warns once. When a key and a theme channel
+      don&apos;t cover what you need, the generic <code>styleboxes</code> channel
+      reaches any theme StyleBox by name for 100% coverage.
     </Alert>
   </Box>
 )

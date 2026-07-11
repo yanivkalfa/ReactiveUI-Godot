@@ -7,14 +7,14 @@ component GuitkxCounter(start: int = 0) {
   var count = s[0]
   var set_count = s[1]
   return (
-    <VBox style={ {"separation": 8} }>
+    <VBoxContainer style={ {"separation": 8} }>
       <Label text={ "Count: %d" % count } />
-      <Button text="+1" onClick={ func(): set_count.call(count + 1) } />
+      <Button text="+1" onPressed={ func(): set_count.call(count + 1) } />
       @if (count > 5) {
         return (
           <Label text="High five!" />
         )
       }
-    </VBox>
+    </VBoxContainer>
   )
 }

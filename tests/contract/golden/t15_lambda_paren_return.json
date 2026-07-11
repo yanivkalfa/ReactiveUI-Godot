@@ -18,13 +18,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":115,\"attrs\":[],\"children\":[{\"at\":128,\"attrs\":[{\"at\":135,\"end\":161,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"str(pick.call(3))\",\"vat\":142}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"vbox\"}]"
+			"tree": "[{\"at\":115,\"attrs\":[],\"children\":[{\"at\":137,\"attrs\":[{\"at\":144,\"end\":170,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"str(pick.call(3))\",\"vat\":151}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 179,
+			"end": 197,
 			"start": 110
 		}
 	]

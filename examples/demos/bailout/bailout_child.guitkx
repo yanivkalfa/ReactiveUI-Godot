@@ -4,8 +4,8 @@ component DemoBailoutChild {
   var renders = useRef(0)
   renders["current"] += 1
   return (
-    <Panel style={ {"bg_color": Color(0.2, 0.2, 0.26), "corner_radius": 6, "pad": 10} }>
+    <PanelContainer style={ {"bg_color": Color(0.2, 0.2, 0.26), "corner_radius_all": 6, "content_margin_all": 10} }>
       <Label text={ "child render count: %d  (bailed out)" % renders["current"] } />
-    </Panel>
+    </PanelContainer>
   )
 }

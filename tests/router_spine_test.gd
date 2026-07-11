@@ -53,14 +53,14 @@ func _test_outlet_fallback() -> void:
 	# [audit #4] When a layout keeps matching but its nested route STOPS matching, the outlet must
 	# fall back to its own children (the stale OUTLET_ELEMENT must be cleared, not linger).
 	var history := RUIHistory.new("/u/edit")
-	var layout := V.vbox({}, [
-		V.label({ "text": "LAYOUT" }),
-		V.outlet({}, [V.label({ "text": "FALLBACK" })]),
+	var layout := V.VBoxContainer({}, [
+		V.Label({ "text": "LAYOUT" }),
+		V.outlet({}, [V.Label({ "text": "FALLBACK" })]),
 	])
 	var app := func(_p, _c):
 		return V.routes({}, [
 			V.route({ "path": "/u", "element": layout }, [
-				V.route({ "path": "edit", "element": V.label({ "text": "EDIT" }) }),
+				V.route({ "path": "edit", "element": V.Label({ "text": "EDIT" }) }),
 			]),
 		])
 	var root_comp := func(_p, _c):
@@ -85,7 +85,7 @@ func _test_can_go_reactive() -> void:
 	var page := func(_p, _c):
 		nav["go"] = RUIRouter.useNavigate()
 		seen["back"] = RUIRouter.useCanGo(-1)
-		return V.label({ "text": "x" })
+		return V.Label({ "text": "x" })
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(page)])
 	var m := _mount(root_comp)
@@ -103,9 +103,9 @@ func _test_direct_route_toggle() -> void:
 	# All its hooks must run every render regardless of match (stable hook count) — no hook-order error.
 	var history := RUIHistory.new("/")
 	var app := func(_p, _c):
-		return V.vbox({}, [
-			V.route({ "path": "/", "element": V.label({ "text": "at-root" }) }),
-			V.route({ "path": "/other", "element": V.label({ "text": "at-other" }) }),
+		return V.VBoxContainer({}, [
+			V.route({ "path": "/", "element": V.Label({ "text": "at-root" }) }),
+			V.route({ "path": "/other", "element": V.Label({ "text": "at-other" }) }),
 		])
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(app)])
@@ -131,12 +131,12 @@ func _test_children_switch_and_params() -> void:
 	var seen := { "id": null }
 	var user := func(m):
 		seen["id"] = m.params.get("id")
-		return V.label({ "text": "user " + str(m.params.get("id")) })
+		return V.Label({ "text": "user " + str(m.params.get("id")) })
 	var app := func(_p, _c):
 		return V.routes({}, [
-			V.route({ "path": "/", "element": V.label({ "text": "home" }) }),
+			V.route({ "path": "/", "element": V.Label({ "text": "home" }) }),
 			V.route({ "path": "/users/:id", "render": user }),
-			V.route({ "path": "*", "element": V.label({ "text": "notfound" }) }),
+			V.route({ "path": "*", "element": V.Label({ "text": "notfound" }) }),
 		])
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(app)])
@@ -161,16 +161,16 @@ func _test_nested_outlet_depth3() -> void:
 	# Router -> layout <Route path="/users"> (renders an Outlet) -> nested index + :id routes.
 	var history := RUIHistory.new("/")
 	var user := func(mm):
-		return V.label({ "text": "user " + str(mm.params.get("id")) })
-	var layout := V.vbox({}, [
-		V.label({ "text": "users-layout" }),
+		return V.Label({ "text": "user " + str(mm.params.get("id")) })
+	var layout := V.VBoxContainer({}, [
+		V.Label({ "text": "users-layout" }),
 		V.outlet(),
 	])
 	var app := func(_p, _c):
 		return V.routes({}, [
-			V.route({ "path": "/", "element": V.label({ "text": "home" }) }),
+			V.route({ "path": "/", "element": V.Label({ "text": "home" }) }),
 			V.route({ "path": "/users", "element": layout }, [
-				V.route({ "index": true, "element": V.label({ "text": "users-index" }) }),
+				V.route({ "index": true, "element": V.Label({ "text": "users-index" }) }),
 				V.route({ "path": ":id", "render": user }),
 			]),
 		])
@@ -205,9 +205,9 @@ func _test_index_route() -> void:
 	var history := RUIHistory.new("/dash")
 	var app := func(_p, _c):
 		return V.routes({}, [
-			V.route({ "path": "/dash", "element": V.vbox({}, [V.label({ "text": "dash" }), V.outlet()]) }, [
-				V.route({ "index": true, "element": V.label({ "text": "overview" }) }),
-				V.route({ "path": "settings", "element": V.label({ "text": "settings" }) }),
+			V.route({ "path": "/dash", "element": V.VBoxContainer({}, [V.Label({ "text": "dash" }), V.outlet()]) }, [
+				V.route({ "index": true, "element": V.Label({ "text": "overview" }) }),
+				V.route({ "path": "settings", "element": V.Label({ "text": "settings" }) }),
 			]),
 		])
 	var root_comp := func(_p, _c):
@@ -227,7 +227,7 @@ func _test_declarative_redirect() -> void:
 	var app := func(_p, _c):
 		return V.routes({}, [
 			V.route({ "path": "/old", "element": V.navigate({ "to": "/new" }) }),
-			V.route({ "path": "/new", "element": V.label({ "text": "arrived" }) }),
+			V.route({ "path": "/new", "element": V.Label({ "text": "arrived" }) }),
 		])
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(app)])
@@ -247,7 +247,7 @@ func _test_blocker_vetoes() -> void:
 	var page := func(_p, _c):
 		nav["go"] = RUIRouter.useNavigate()
 		RUIRouter.useBlocker(func(_from, _to): return gate["block"], true)
-		return V.label({ "text": "loc " + RUIRouter.useLocation() })
+		return V.Label({ "text": "loc " + RUIRouter.useLocation() })
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history }, [V.fc(page)])
 	var m := _mount(root_comp)
@@ -272,7 +272,7 @@ func _test_query_and_basename() -> void:
 		nav["go"] = RUIRouter.useNavigate()
 		seen["q"] = RUIRouter.useQuery()
 		seen["loc"] = RUIRouter.useLocation()
-		return V.label({ "text": "x" })
+		return V.Label({ "text": "x" })
 	var root_comp := func(_p, _c):
 		return V.router({ "history": history, "basename": "/app" }, [V.fc(page)])
 	var m := _mount(root_comp)

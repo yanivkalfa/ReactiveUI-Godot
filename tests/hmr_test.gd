@@ -77,9 +77,9 @@ func _counter_src(prefix: String, sig: String, hooks: int = 1) -> String:
 		+ "const __RUI_HOOK_SIG := \"" + sig + "\"\n" \
 		+ "static func render(props: Dictionary, children: Array) -> RUIVNode:\n" \
 		+ "\tvar n = Hooks.useState(0)\n" + pad \
-		+ "\treturn V.vbox({}, [\n" \
-		+ "\t\tV.label({ \"text\": \"" + prefix + "-\" + str(n[0]) }),\n" \
-		+ "\t\tV.button({ \"text\": \"+\", \"onClick\": func(): n[1].call(n[0] + 1) }),\n" \
+		+ "\treturn V.VBoxContainer({}, [\n" \
+		+ "\t\tV.Label({ \"text\": \"" + prefix + "-\" + str(n[0]) }),\n" \
+		+ "\t\tV.Button({ \"text\": \"+\", \"onPressed\": func(): n[1].call(n[0] + 1) }),\n" \
 		+ "\t])\n"
 
 func _sibling_src(prefix: String) -> String:
@@ -87,12 +87,12 @@ func _sibling_src(prefix: String) -> String:
 		+ "static var renders := 0\n" \
 		+ "static func render(props: Dictionary, children: Array) -> RUIVNode:\n" \
 		+ "\trenders += 1\n" \
-		+ "\treturn V.label({ \"text\": \"" + prefix + "\" })\n"
+		+ "\treturn V.Label({ \"text\": \"" + prefix + "\" })\n"
 
 func _parent_src() -> String:
 	return "extends RefCounted\n" \
 		+ "static func render(props: Dictionary, children: Array) -> RUIVNode:\n" \
-		+ "\treturn V.vbox({}, [V.fc(props[\"a\"], {}), V.fc(props[\"b\"], {})])\n"
+		+ "\treturn V.VBoxContainer({}, [V.fc(props[\"a\"], {}), V.fc(props[\"b\"], {})])\n"
 
 ## Mount parent(a, b) under a fresh Control; returns { app, root, rec }.
 func _mount(a: GDScript, b: GDScript) -> Dictionary:
@@ -139,7 +139,7 @@ func _test_fast_refresh_preserves_state() -> void:
 		"NEW code + OLD state: v2-2 (got %s)" % str(_labels_text(m["root"])))
 	_check_true(int(b.renders) == sib_renders_before,
 		"untouched sibling did not re-render (bailout intact): %d == %d" % [int(b.renders), sib_renders_before])
-	# state must keep working AFTER the swap: the new render's fresh onClick increments from 2
+	# state must keep working AFTER the swap: the new render's fresh onPressed increments from 2
 	_click_plus(m["root"], m["rec"])
 	_check_true("v2-3" in _labels_text(m["root"]), "post-swap click -> v2-3 (got %s)" % str(_labels_text(m["root"])))
 	_teardown(m)
@@ -292,10 +292,10 @@ func _e2e_guitkx(prefix: String, extra_hook: bool) -> String:
 	return "component E2E() {\n" \
 		+ "\tvar n = useState(0)\n" + pad \
 		+ "\treturn (\n" \
-		+ "\t\t<VBox>\n" \
+		+ "\t\t<VBoxContainer>\n" \
 		+ "\t\t\t<Label text={ \"" + prefix + "-\" + str(n[0]) } />\n" \
-		+ "\t\t\t<Button text=\"+\" onClick={ func(): n[1].call(n[0] + 1) } />\n" \
-		+ "\t\t</VBox>\n" \
+		+ "\t\t\t<Button text=\"+\" onPressed={ func(): n[1].call(n[0] + 1) } />\n" \
+		+ "\t\t</VBoxContainer>\n" \
 		+ "\t)\n}\n"
 
 ## Generated files start with `class_name E2E`; strip it so scratch scripts stay anonymous
@@ -373,9 +373,9 @@ func _test_new_component_hot_link() -> void:
 	var m := _mount(a, a)
 	_click_plus(m["root"], m["rec"])
 	var np := DIR + "/new_comp.gd"
-	_write(np, "class_name HmrNewComp\nextends RefCounted\n## AUTO-GENERATED from new_comp.guitkx -- do not edit.\n\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\treturn V.label({ \"text\": \"fresh!\" })\n")
+	_write(np, "class_name HmrNewComp\nextends RefCounted\n## AUTO-GENERATED from new_comp.guitkx -- do not edit.\n\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\treturn V.Label({ \"text\": \"fresh!\" })\n")
 	# the edited parent references the new component by GLOBAL NAME, exactly like generated code
-	_write(ap, "extends RefCounted\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\tvar n = Hooks.useState(0)\n\treturn V.vbox({}, [\n\t\tV.label({ \"text\": \"n2-\" + str(n[0]) }),\n\t\tV.button({ \"text\": \"+\", \"onClick\": func(): n[1].call(n[0] + 1) }),\n\t\tV.fc(HmrNewComp.render, {}),\n\t])\n")
+	_write(ap, "extends RefCounted\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\tvar n = Hooks.useState(0)\n\treturn V.VBoxContainer({}, [\n\t\tV.Label({ \"text\": \"n2-\" + str(n[0]) }),\n\t\tV.Button({ \"text\": \"+\", \"onPressed\": func(): n[1].call(n[0] + 1) }),\n\t\tV.fc(HmrNewComp.render, {}),\n\t])\n")
 	var res: Dictionary = RUIHmr_.apply([ap], { "HmrNewComp": np })
 	_check_true(int(res.get("linked", 0)) == 1 and (res["errors"] as Array).is_empty(),
 		"parent hot-LINKED the unregistered new component (got %s)" % str(res))
@@ -383,7 +383,7 @@ func _test_new_component_hot_link() -> void:
 	_check_true("n2-1" in texts, "parent swapped with state intact: n2-1 (got %s)" % str(texts))
 	_check_true("fresh!" in texts, "the NEW component rendered live (got %s)" % str(texts))
 	# and the linked parent keeps hot-reloading normally afterwards
-	_write(ap, "extends RefCounted\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\tvar n = Hooks.useState(0)\n\treturn V.vbox({}, [\n\t\tV.label({ \"text\": \"n3-\" + str(n[0]) }),\n\t\tV.button({ \"text\": \"+\", \"onClick\": func(): n[1].call(n[0] + 1) }),\n\t\tV.fc(HmrNewComp.render, {}),\n\t])\n")
+	_write(ap, "extends RefCounted\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(props: Dictionary, children: Array) -> RUIVNode:\n\tvar n = Hooks.useState(0)\n\treturn V.VBoxContainer({}, [\n\t\tV.Label({ \"text\": \"n3-\" + str(n[0]) }),\n\t\tV.Button({ \"text\": \"+\", \"onPressed\": func(): n[1].call(n[0] + 1) }),\n\t\tV.fc(HmrNewComp.render, {}),\n\t])\n")
 	var res2: Dictionary = RUIHmr_.apply([ap], { "HmrNewComp": np })
 	_check_true(int(res2.get("linked", 0)) == 1 and "n3-1" in _labels_text(m["root"]),
 		"subsequent edits keep hot-linking (n3-1, got %s / %s)" % [str(res2), str(_labels_text(m["root"]))])

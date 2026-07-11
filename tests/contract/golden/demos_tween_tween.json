@@ -5,13 +5,13 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":312,\"attrs\":[{\"at\":321,\"end\":372,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useTween — animate a node via Godot's Tween\",\"vat\":328}],\"children\":[{\"at\":380,\"attrs\":[{\"at\":388,\"end\":410,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Pulse (fade in)\",\"vat\":394},{\"at\":411,\"end\":428,\"kind\":\"expr\",\"name\":\"onClick\",\"value\":\"pulse\",\"vat\":421}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":438,\"attrs\":[{\"at\":453,\"end\":468,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"box_ref\",\"vat\":459},{\"at\":477,\"end\":582,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.3, 0.6, 0.9), \\\"corner_radius\\\": 8, \\\"min_size\\\": Vector2(220, 90), \\\"pad\\\": 12}\",\"vat\":485}],\"children\":[{\"at\":599,\"attrs\":[{\"at\":606,\"end\":637,\"kind\":\"str\",\"name\":\"text\",\"value\":\"I fade in on every pulse\",\"vat\":612},{\"at\":638,\"end\":675,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color.WHITE}\",\"vat\":646}],\"children\":[],\"line\":18,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":14,\"t\":\"el\",\"tag\":\"Panel\"}],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":312,\"attrs\":[{\"at\":321,\"end\":372,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useTween — animate a node via Godot's Tween\",\"vat\":328}],\"children\":[{\"at\":380,\"attrs\":[{\"at\":388,\"end\":410,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Pulse (fade in)\",\"vat\":394},{\"at\":411,\"end\":430,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"pulse\",\"vat\":423}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":440,\"attrs\":[{\"at\":464,\"end\":479,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"box_ref\",\"vat\":470},{\"at\":488,\"end\":623,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"bg_color\\\": Color(0.3, 0.6, 0.9), \\\"corner_radius_all\\\": 8, \\\"custom_minimum_size\\\": Vector2(220, 90), \\\"content_margin_all\\\": 12}\",\"vat\":496}],\"children\":[{\"at\":640,\"attrs\":[{\"at\":647,\"end\":678,\"kind\":\"str\",\"name\":\"text\",\"value\":\"I fade in on every pulse\",\"vat\":653},{\"at\":679,\"end\":716,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color.WHITE}\",\"vat\":687}],\"children\":[],\"line\":18,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":14,\"t\":\"el\",\"tag\":\"PanelContainer\"}],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 711,
+			"end": 761,
 			"start": 307
 		}
 	]

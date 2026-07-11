@@ -1,6 +1,6 @@
 component X(c: bool = true) {
   return (
-    <VBox>
+    <VBoxContainer>
       @if (c) {
         return (
           <Label text="a" />
@@ -9,6 +9,6 @@ component X(c: bool = true) {
       #elif (false) {
       <Label text="b" />
       }
-    </VBox>
+    </VBoxContainer>
   )
 }

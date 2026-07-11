@@ -44,7 +44,7 @@ test("scanDeclarations enumerates module members with enclosing module", () => {
 test("componentTagAt resolves PascalCase tags and ignores lowercase host factories", () => {
   const a = "return (<Card />)";
   assert.equal(componentTagAt(a, a.indexOf("Card") + 1), "Card");
-  const b = "return (<vbox />)";
+  const b = "return (<VBoxContainer />)";
   assert.equal(componentTagAt(b, b.indexOf("vbox") + 1), null);
 });
 
@@ -359,15 +359,15 @@ test("T1.5: window parse errors surface live (<s></a> -> GUITKX0302)", () => {
 });
 
 test("T1.5: unknown lowercase tag fires live with a did-you-mean", () => {
-  const src = 'component T() {\n\treturn ( <vbox><lable text="x" /></vbox> )\n}\n';
+  const src = 'component T() {\n\treturn ( <VBoxContainer><lable text="x" /></VBoxContainer> )\n}\n';
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0105");
-  assert.ok(hit && /did you mean <label>/.test(hit.message), `got ${JSON.stringify(d)}`);
+  assert.ok(hit && /did you mean <Label>/.test(hit.message), `got ${JSON.stringify(d)}`);
   assert.equal(src.slice(hit!.start, hit!.end), "lable");
 });
 
 test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed offsets)", () => {
-  const src = "component B() {\n\treturn ( <vbox>@if (true) { return ( <lable /> ) }</vbox> )\n}\n";
+  const src = "component B() {\n\treturn ( <VBoxContainer>@if (true) { return ( <lable /> ) }</VBoxContainer> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0105");
   assert.ok(hit, `got ${JSON.stringify(d)}`);
@@ -375,7 +375,7 @@ test("T1.5: unknown tag inside an @if body fires (bodies re-parse with composed 
 });
 
 test("T1.5: a broken @if body's parse error surfaces live (bodies are opaque to the window parse)", () => {
-  const src = "component B() {\n\treturn ( <vbox>@if (true) { return ( <Broken> ) }</vbox> )\n}\n";
+  const src = "component B() {\n\treturn ( <VBoxContainer>@if (true) { return ( <Broken> ) }</VBoxContainer> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0301");
   assert.ok(hit, `got ${JSON.stringify(d)}`);
@@ -383,13 +383,13 @@ test("T1.5: a broken @if body's parse error surfaces live (bodies are opaque to 
 });
 
 test("T1.5: PascalCase tags and known factories stay clean in the vocabulary check", () => {
-  const src = "component P() {\n\treturn ( <vbox><Card /><label text=\"ok\" /></vbox> )\n}\n";
+  const src = "component P() {\n\treturn ( <VBoxContainer><Card /><Label text=\"ok\" /></VBoxContainer> )\n}\n";
   assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
 });
 
 // T2.4: mid-text braces are literal under the Unity text model -- warn live so migrating authors notice.
 test("T2.4: literal braces in text fire the GUITKX0150 migration warning live", () => {
-  const src = "component T(n: int = 3) {\n\treturn ( <vbox><label>Count: {n} items</label></vbox> )\n}\n";
+  const src = "component T(n: int = 3) {\n\treturn ( <VBoxContainer><Label>Count: {n} items</Label></VBoxContainer> )\n}\n";
   const d = windowStructureDiags(src, markupWindows(src));
   const hit = d.find((x) => x.code === "GUITKX0150");
   assert.ok(hit && hit.severity === "warning", `got ${JSON.stringify(d)}`);
@@ -412,7 +412,7 @@ test("T2.6: junk before the first declaration is 2105 live (comments/directives 
 // T2.5: the live routine is the compiler's _validate_hooks ported line-for-line -- same fixtures
 // as guitkx_test.gd _test_t25_hook_contexts so the two implementations cannot drift unnoticed.
 test("T2.5: hook context codes 0013/0014/0015/0016 fire live over setup spans", () => {
-  const mk = (setup: string): string => `component H(c: bool = true, xs: Array = []) {\n${setup}\treturn ( <label text="x" /> )\n}\n`;
+  const mk = (setup: string): string => `component H(c: bool = true, xs: Array = []) {\n${setup}\treturn ( <Label text="x" /> )\n}\n`;
   const codes = (src: string): string[] => hookContextDiags(src, setupSpans(src)).map((d) => d.code);
   assert.deepEqual(codes(mk("\tfor x in xs:\n\t\tvar s = useState(0)\n")), ["GUITKX0014"]);
   assert.deepEqual(codes(mk("\tmatch c:\n\t\ttrue:\n\t\t\tvar s = useState(0)\n")), ["GUITKX0015"]);
@@ -424,14 +424,14 @@ test("T2.5: hook context codes 0013/0014/0015/0016 fire live over setup spans", 
 });
 
 test("T2.5: hook CALL in a markup expression is 0016 live; a hook RESULT is not", () => {
-  const bad = 'component A() {\n\treturn ( <label text={ str(useState(0)[0]) } /> )\n}\n';
+  const bad = 'component A() {\n\treturn ( <Label text={ str(useState(0)[0]) } /> )\n}\n';
   assert.ok(windowStructureDiags(bad, markupWindows(bad)).some((d) => d.code === "GUITKX0016"));
-  const ok = 'component OK() {\n\tvar s = useState(0)\n\treturn ( <label text={ str(s[0]) } on_pressed={ s[1] } /> )\n}\n';
+  const ok = 'component OK() {\n\tvar s = useState(0)\n\treturn ( <Label text={ str(s[0]) } on_pressed={ s[1] } /> )\n}\n';
   assert.equal(windowStructureDiags(ok, markupWindows(ok)).filter((d) => d.code === "GUITKX0016").length, 0);
 });
 
 test("T2.1/T2.2: comments and <Fragment> stay clean live", () => {
-  const src = "component C() {\n\treturn (\n\t\t// note\n\t\t<Fragment>\n\t\t\t<label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</Fragment>\n\t)\n}\n";
+  const src = "component C() {\n\treturn (\n\t\t// note\n\t\t<Fragment>\n\t\t\t<Label {/* why */} text=\"a\" />\n\t\t\t<!-- html -->\n\t\t</Fragment>\n\t)\n}\n";
   assert.equal(windowStructureDiags(src, markupWindows(src)).length, 0);
 });
 
@@ -718,7 +718,7 @@ test("guitkxVirtualLibText mirrors a .guitkx's compiled bindings (T4.5 — repla
 
   // A component's library exposes the compiled render entry too; @class_name overrides win.
   const wc = new WorkspaceIndex();
-  wc.reindex("file:///proj/card.guitkx", "@class_name FancyCard\ncomponent Card {\n\treturn ( <label text=\"x\" /> )\n}\n");
+  wc.reindex("file:///proj/card.guitkx", "@class_name FancyCard\ncomponent Card {\n\treturn ( <Label text=\"x\" /> )\n}\n");
   const clib = guitkxVirtualLibText(wc.entriesFor("file:///proj/card.guitkx"));
   assert.ok(clib!.includes("class_name FancyCard"), `override binding wins: ${clib}`);
   assert.ok(clib!.includes("static func render(...args): return null"), `component exposes render: ${clib}`);
@@ -856,7 +856,7 @@ test("BUG-3: componentTagAt resolves when the cursor sits on the tag opener '<' 
   assert.equal(componentTagAt(a, a.indexOf("<")), "Card"); // cursor ON the '<'
   assert.equal(componentTagAt(a, a.indexOf("Card") + 2), "Card"); // inside the name (regression: still works)
   assert.equal(componentTagAt("</Card>", 0), "Card"); // on the '<' of a closing tag
-  assert.equal(componentTagAt("\t<vbox />", "\t<vbox />".indexOf("<")), null); // lowercase host factory ignored
+  assert.equal(componentTagAt("\t<zbox />", "\t<zbox />".indexOf("<")), null); // lowercase tag ignored
 });
 
 test("BUG-4: scanDeclarations + the index carry the @class_name override offsets for an atomic rename", () => {
@@ -911,63 +911,65 @@ test("BUG-4 (review): a bare `@class_name` grabs no override (not the following 
   assert.equal(d.classNameStart, undefined, "no override token, so a rename can't rewrite the keyword");
 });
 
-// ── React-parity event names (events.ts, mirroring host_config.gd) ──────────────────────────────
+// ── 0.9.0 loyal event names (events.ts, mirroring host_config.gd) ────────────────────────────────
 
-test("isEventAttr recognizes React camelCase + native on_<signal>, rejects non-events", () => {
-  for (const yes of ["onClick", "onChange", "onPointerEnter", "on_pressed", "on_gui_input"])
+test("isEventAttr recognizes on<Pascal> + native on_<signal>, rejects non-events", () => {
+  for (const yes of ["onPressed", "onValueChanged", "onMouseEntered", "on_pressed", "on_gui_input"])
     assert.ok(isEventAttr(yes), `${yes} is an event handler`);
   for (const no of ["onclick", "on", "onward", "text", "disabled", "one_line"])
     assert.ok(!isEventAttr(no), `${no} is NOT an event handler`);
 });
 
-test("resolveSignalName: onClick->pressed, native escape hatch verbatim, generic camel->snake", () => {
+test("resolveSignalName: on<Pascal> lowers to snake_case, native escape hatch verbatim", () => {
   const btn = classSignals("Button");
   const has = (list: { name: string }[]) => (s: string) => list.some((x) => x.name === s);
-  assert.equal(resolveSignalName("onClick", has(btn)), "pressed");
+  assert.equal(resolveSignalName("onPressed", has(btn)), "pressed");
   assert.equal(resolveSignalName("on_gui_input", has(btn)), "gui_input"); // native: verbatim
   assert.equal(resolveSignalName("onValueChanged", has(btn)), "value_changed"); // generic camel->snake
-  assert.equal(resolveSignalName("onFocus", has(btn)), "focus_entered");
-  assert.equal(resolveSignalName("onBlur", has(btn)), "focus_exited");
+  assert.equal(resolveSignalName("onFocusEntered", has(btn)), "focus_entered");
+  assert.equal(resolveSignalName("onTextSubmitted", has(btn)), "text_submitted");
 });
 
-test("onChange is polymorphic — binds to the value/selection signal each control actually has", () => {
+test("the removed React aliases lower generically — no polymorphic table (0.9.0)", () => {
   const has = (cls: string) => (s: string) => classSignals(cls).some((x) => x.name === s);
-  assert.equal(resolveSignalName("onChange", has("LineEdit")), "text_changed");
-  assert.equal(resolveSignalName("onChange", has("HSlider")), "value_changed");
-  assert.equal(resolveSignalName("onChange", has("SpinBox")), "value_changed");
-  assert.equal(resolveSignalName("onChange", has("CheckBox")), "toggled");
-  assert.equal(resolveSignalName("onChange", has("TabBar")), "tab_changed");
-  // OptionButton is a Button (so it ALSO carries `toggled`) — ordering must still pick item_selected.
-  assert.equal(resolveSignalName("onChange", has("OptionButton")), "item_selected");
-  assert.equal(resolveSignalName("onSubmit", has("LineEdit")), "text_submitted");
+  // onChange no longer resolves per control: it lowers to a literal (nonexistent) `change`.
+  assert.equal(resolveSignalName("onChange", has("LineEdit")), "change");
+  assert.equal(resolveSignalName("onChange", has("OptionButton")), "change");
+  assert.equal(resolveSignalName("onClick", has("Button")), "click");
+  // The loyal spellings reach each control's real signal.
+  assert.equal(resolveSignalName("onTextChanged", has("LineEdit")), "text_changed");
+  assert.equal(resolveSignalName("onItemSelected", has("OptionButton")), "item_selected");
+  assert.equal(resolveSignalName("onTabChanged", has("TabBar")), "tab_changed");
 });
 
-test("eventCompletionsFor(Button) offers React aliases mapped to the right signals; no private signals", () => {
+test("eventCompletionsFor(Button) derives on<Pascal> for every signal; no private signals", () => {
   const evs = eventCompletionsFor(classSignals("Button"));
   const byLabel = new Map(evs.map((e) => [e.label, e.signal]));
-  assert.equal(byLabel.get("onClick"), "pressed");
-  assert.equal(byLabel.get("onChange"), "toggled");
-  assert.equal(byLabel.get("onPointerDown"), "button_down");
-  assert.equal(byLabel.get("onPointerEnter"), "mouse_entered");
-  assert.equal(byLabel.get("onFocus"), "focus_entered");
-  assert.equal(byLabel.get("onResize"), "resized");
-  assert.ok(!evs.some((e) => e.label.startsWith("on_")), "completions are React canonical, not native");
+  assert.equal(byLabel.get("onPressed"), "pressed");
+  assert.equal(byLabel.get("onToggled"), "toggled");
+  assert.equal(byLabel.get("onButtonDown"), "button_down");
+  assert.equal(byLabel.get("onMouseEntered"), "mouse_entered");
+  assert.equal(byLabel.get("onFocusEntered"), "focus_entered");
+  assert.equal(byLabel.get("onResized"), "resized");
+  assert.ok(!byLabel.has("onClick"), "removed React aliases are NOT offered");
+  assert.ok(!evs.some((e) => e.label.startsWith("on_")), "completions are canonical on<Pascal>, not native");
   assert.ok(!evs.some((e) => e.signal.startsWith("_")), "private `_`-prefixed signals are filtered out");
 });
 
-test("validEventAttrs accepts BOTH the React name and the native on_<signal> for did-you-mean", () => {
+test("validEventAttrs accepts BOTH the canonical on<Pascal> and the native on_<signal> for did-you-mean", () => {
   const valid = new Set(validEventAttrs(classSignals("Button")));
-  assert.ok(valid.has("onClick"), "React canonical accepted");
+  assert.ok(valid.has("onPressed"), "canonical on<Pascal> accepted");
   assert.ok(valid.has("on_pressed"), "native escape hatch still accepted (non-breaking)");
+  assert.ok(!valid.has("onClick"), "removed React alias is NOT valid");
 });
 
-test("semantic tokens tag a React event attribute (onClick) as an `event`, not a property", () => {
-  const src = 'component X() {\n\treturn (\n\t\t<Button text="hi" onClick={_f} />\n\t)\n}\n';
+test("semantic tokens tag an event attribute (onPressed) as an `event`, not a property", () => {
+  const src = 'component X() {\n\treturn (\n\t\t<Button text="hi" onPressed={_f} />\n\t)\n}\n';
   const data = buildSemanticTokens(src, () => false);
   // decode [dLine,dChar,len,type,mods] quintuples and collect the token TYPES emitted
   const types: number[] = [];
   for (let i = 0; i < data.length; i += 5) types.push(data[i + 3]);
-  assert.ok(types.includes(TOKEN_TYPES.indexOf("event")), "onClick emitted with the `event` token type");
+  assert.ok(types.includes(TOKEN_TYPES.indexOf("event")), "onPressed emitted with the `event` token type");
 });
 
 // ── prop spread `{...obj}` (parser + formatter mirror of the GDScript compiler) ──────────────────
@@ -1025,49 +1027,49 @@ test("live PascalCase 0105 fires only against a known-components universe (T4.5 
 
 test("A5: directive-header grammar fires GUITKX2508 live (field: `@for (i in 2: int5)` passed silently)", () => {
   const fires = (src: string): boolean => windowStructureDiags(src, markupWindows(src)).some((x) => x.code === "GUITKX2508");
-  const bad = 'component H {\n\treturn ( <vbox>@for (i in 2: int5) { <label key={ str(i) } text="x" /> }</vbox> )\n}\n';
+  const bad = 'component H {\n\treturn ( <VBoxContainer>@for (i in 2: int5) { <Label key={ str(i) } text="x" /> }</VBoxContainer> )\n}\n';
   assert.ok(fires(bad), "statement garbage after `in` flags");
-  const good = 'component H {\n\treturn ( <vbox>@for (i in 25) { <label key={ str(i) } text="x" /> }</vbox> )\n}\n';
+  const good = 'component H {\n\treturn ( <VBoxContainer>@for (i in 25) { <Label key={ str(i) } text="x" /> }</VBoxContainer> )\n}\n';
   assert.ok(!fires(good), "a range loop over an int is legal");
-  const dict = 'component H {\n\treturn ( <vbox>@for (kv in {"a": 1}) { <label key={ str(kv) } text="x" /> }</vbox> )\n}\n';
+  const dict = 'component H {\n\treturn ( <VBoxContainer>@for (kv in {"a": 1}) { <Label key={ str(kv) } text="x" /> }</VBoxContainer> )\n}\n';
   assert.ok(!fires(dict), "dict colons are bracketed, not top-level");
-  const noIn = 'component H {\n\treturn ( <vbox>@for (garbage) { <label key={ str(1) } text="x" /> }</vbox> )\n}\n';
+  const noIn = 'component H {\n\treturn ( <VBoxContainer>@for (garbage) { <Label key={ str(1) } text="x" /> }</VBoxContainer> )\n}\n';
   assert.ok(fires(noIn), "a header without ` in ` flags");
-  const emptyIf = 'component H {\n\treturn ( <vbox>@if () { <label text="x" /> }</vbox> )\n}\n';
+  const emptyIf = 'component H {\n\treturn ( <VBoxContainer>@if () { <Label text="x" /> }</VBoxContainer> )\n}\n';
   assert.ok(fires(emptyIf), "an empty @if condition flags");
-  const okIf = 'component H {\n\treturn ( <vbox>@if (a and b) { <label text="x" /> }</vbox> )\n}\n';
+  const okIf = 'component H {\n\treturn ( <VBoxContainer>@if (a and b) { <Label text="x" /> }</VBoxContainer> )\n}\n';
   assert.ok(!fires(okIf), "a real condition stays clean");
 });
 
 test("Phase C: early markup returns are live WINDOWS (legal + full markup intelligence), not errors", () => {
   // A conditional early markup return yields a second window, in source order before the final one.
-  const nested = "component D {\n\tvar ready = useState(false)\n\tif not ready[0]:\n\t\treturn ( <label text=\"w\" /> )\n\treturn ( <vbox /> )\n}\n";
+  const nested = "component D {\n\tvar ready = useState(false)\n\tif not ready[0]:\n\t\treturn ( <Label text=\"w\" /> )\n\treturn ( <VBoxContainer /> )\n}\n";
   const wins = markupWindows(nested);
   assert.equal(wins.length, 2, JSON.stringify(wins));
-  assert.ok(nested.slice(wins[0].start, wins[0].end).includes("<label"), "the early window is the guard's markup");
-  assert.ok(nested.slice(wins[1].start, wins[1].end).includes("<vbox"), "the final window follows");
+  assert.ok(nested.slice(wins[0].start, wins[0].end).includes("<Label"), "the early window is the guard's markup");
+  assert.ok(nested.slice(wins[1].start, wins[1].end).includes("<VBoxContainer"), "the final window follows");
   // ...which means a typo INSIDE the early return now squiggles live.
-  const typo = "component D {\n\tif true:\n\t\treturn ( <lable text=\"w\" /> )\n\treturn ( <vbox /> )\n}\n";
+  const typo = "component D {\n\tif true:\n\t\treturn ( <lable text=\"w\" /> )\n\treturn ( <VBoxContainer /> )\n}\n";
   const d = windowStructureDiags(typo, markupWindows(typo));
   assert.ok(d.some((x) => x.code === "GUITKX0105" && x.message.includes("lable")), JSON.stringify(d));
   // The sanctioned guard and plain value returns still produce nothing.
-  const guard = "component E {\n\tif true:\n\t\treturn null\n\tvar f = func(x):\n\t\treturn (x + 1)\n\treturn ( <vbox /> )\n}\n";
+  const guard = "component E {\n\tif true:\n\t\treturn null\n\tvar f = func(x):\n\t\treturn (x + 1)\n\treturn ( <VBoxContainer /> )\n}\n";
   assert.equal(markupWindows(guard).length, 1, "null guards and value returns are not windows");
   // Nested-only markup returns (no FINAL markup return) still report missing-return -- some
   // render() paths would return nothing, so 2101 stands on both sides.
-  const nestedOnly = "component G {\n\tif true:\n\t\treturn ( <label /> )\n}\n";
+  const nestedOnly = "component G {\n\tif true:\n\t\treturn ( <Label /> )\n}\n";
   assert.equal(missingReturnComponents(nestedOnly).length, 1);
 });
 
 test("Phase C: an unconditional early markup return dims everything after it (Unity Site-B parity)", () => {
-  const src = "component U {\n\treturn ( <label /> )\n\tvar x = 1\n\treturn ( <vbox /> )\n}\n";
+  const src = "component U {\n\treturn ( <Label /> )\n\tvar x = 1\n\treturn ( <VBoxContainer /> )\n}\n";
   const r = unreachableRegions(src);
   assert.equal(r.length, 1, JSON.stringify(r));
   const dimmed = src.slice(r[0].start, r[0].end);
   assert.ok(dimmed.includes("var x = 1"), `setup after the early return dims: ${dimmed}`);
-  assert.ok(dimmed.includes("<vbox />"), `the (dead) final return dims too: ${dimmed}`);
+  assert.ok(dimmed.includes("<VBoxContainer />"), `the (dead) final return dims too: ${dimmed}`);
   // A CONDITIONAL early return dims nothing extra -- only the legacy after-final-return region.
-  const cond = "component V {\n\tif true:\n\t\treturn ( <label /> )\n\treturn ( <vbox /> )\n\tvar tail = 1\n}\n";
+  const cond = "component V {\n\tif true:\n\t\treturn ( <Label /> )\n\treturn ( <VBoxContainer /> )\n\tvar tail = 1\n}\n";
   const rc = unreachableRegions(cond);
   assert.equal(rc.length, 1, JSON.stringify(rc));
   assert.ok(cond.slice(rc[0].start, rc[0].end).includes("var tail = 1"), "only the after-final tail dims");
@@ -1077,15 +1079,15 @@ test("live 0105 exempts vocabulary host tags from the component-universe check (
   // Host tags are PascalCase too -- with an armed universe that (correctly) does not contain
   // them, <HBox>/<Button>/<Label> and vocabulary aliases like <VBoxContainer> must stay clean;
   // the 0.6.0 storm was this branch checking only `known` and never findTag().
-  const src = 'component C {\n\treturn ( <HBox><Button text="b" /><Label text="l" /><VBoxContainer /></HBox> )\n}\n';
+  const src = 'component C {\n\treturn ( <HBoxContainer><Button text="b" /><Label text="l" /><VBoxContainer /></HBoxContainer> )\n}\n';
   const known = new Set(["SomeComp"]);
   const d = windowStructureDiags(src, markupWindows(src), known);
   assert.ok(!d.some((x) => x.code === "GUITKX0105"), `host tags stay clean against an armed universe: ${JSON.stringify(d)}`);
   // A typo'd host tag still flags -- and the suggestion pool now includes host tags themselves.
-  const typo = "component C {\n\treturn ( <HBoxx /> )\n}\n";
+  const typo = "component C {\n\treturn ( <HBoxContainerr /> )\n}\n";
   const hit = windowStructureDiags(typo, markupWindows(typo), known).find((x) => x.code === "GUITKX0105");
   assert.ok(hit, "a typo'd host tag still flags against the universe");
-  assert.ok(hit!.message.includes("did you mean <HBox>"), `host-tag suggestion expected: ${hit!.message}`);
+  assert.ok(hit!.message.includes("did you mean <HBoxContainer>"), `host-tag suggestion expected: ${hit!.message}`);
 });
 
 test("T4.5 e2e: a fed virtual library resolves the binding; a typo still flags", () => {

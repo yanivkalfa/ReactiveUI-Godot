@@ -12,22 +12,9 @@ extends RefCounted
 const _BUNDLED_SCHEMA := "res://addons/reactive_ui_editor/data/guitkx-schema.json"
 const _DEV_SCHEMA := "res://ide-extensions/grammar/guitkx-schema.json"
 
-# React-style event name -> candidate Godot signals. Mirrors `_EVENT_ALIASES` in
-# addons/reactive_ui/core/host_config.gd (the runtime source of truth) and events.ts on the TS side
-# [three-surface parity]. `onChange` is polymorphic: the first candidate the class actually has wins.
-const REACT_EVENTS := {
-	"onClick": ["pressed"],
-	"onChange": ["item_selected", "value_changed", "text_changed", "tab_changed", "toggled"],
-	"onInput": ["text_changed"],
-	"onSubmit": ["text_submitted"],
-	"onFocus": ["focus_entered"],
-	"onBlur": ["focus_exited"],
-	"onPointerDown": ["button_down"],
-	"onPointerUp": ["button_up"],
-	"onPointerEnter": ["mouse_entered"],
-	"onPointerLeave": ["mouse_exited"],
-	"onResize": ["resized"],
-}
+# 0.9.0 naming loyalty: events are derived LIVE from ClassDB — `on` + PascalCase(signal) for
+# every signal of the class (onPressed -> pressed). No alias table; mirrors host_config.gd's
+# generic resolution and events.ts on the TS side [three-surface parity].
 
 static var _schema: Dictionary = {}
 static var _tags: Dictionary = {}   # tag name -> host element entry
@@ -61,16 +48,23 @@ static func host_tags() -> Array:
 	_ensure_loaded()
 	return _tags.keys()
 
+## A tag is a host element if it's in the curated schema OR names any instantiable ClassDB Node
+## class (0.9.0 open vocabulary — mirrors the compiler's tag resolution in guitkx.gd).
 static func is_host_tag(tag: String) -> bool:
 	_ensure_loaded()
-	return _tags.has(tag)
+	if _tags.has(tag):
+		return true
+	return ClassDB.class_exists(tag) and ClassDB.can_instantiate(tag) and ClassDB.is_parent_class(tag, "Node")
 
 static func host_element(tag: String) -> Dictionary:
 	_ensure_loaded()
 	return _tags.get(tag, {})
 
 static func godot_class_for(tag: String) -> String:
-	return str(host_element(tag).get("godotClass", ""))
+	var cls := str(host_element(tag).get("godotClass", ""))
+	if cls == "" and ClassDB.class_exists(tag) and ClassDB.can_instantiate(tag) and ClassDB.is_parent_class(tag, "Node"):
+		return tag   # open-vocabulary tag: the tag IS the class name
+	return cls
 
 static func control_flow() -> Array:
 	_ensure_loaded()
@@ -133,18 +127,19 @@ static func style_keys() -> Array:
 	_ensure_loaded()
 	return _schema.get("styleKeys", [])
 
-## React-style events applicable to a host class + the Godot signal each binds to, as
-## [{name, signal}] -- computed live: an alias is offered only if the class actually has one of its
-## candidate signals (so `onClick` shows on buttons, not on a Label).
+## Loyal event names applicable to a host class + the Godot signal each binds to, as
+## [{name, signal}] -- computed live from ClassDB: `on` + PascalCase(signal) for EVERY signal the
+## class has (inherited included), so onPressed shows on buttons and onValueChanged on Ranges.
+## Internal (`_`-prefixed) signals are skipped.
 static func events_for_class(godot_class: String) -> Array:
 	var out: Array = []
 	if godot_class == "" or not ClassDB.class_exists(godot_class):
 		return out
-	for ev in REACT_EVENTS:
-		for sig in REACT_EVENTS[ev]:
-			if ClassDB.class_has_signal(godot_class, sig):
-				out.append({ "name": ev, "signal": sig })
-				break
+	for s in ClassDB.class_get_signal_list(godot_class, false):
+		var sig := str(s.get("name", ""))
+		if sig == "" or sig.begins_with("_"):
+			continue
+		out.append({ "name": "on" + sig.to_pascal_case(), "signal": sig })
 	return out
 
 ## All signals of a class (the `on_<signal>` verbatim escape hatch), as [{name, args}].
@@ -157,16 +152,10 @@ static func godot_signals(godot_class: String) -> Array:
 	return out
 
 ## The Godot signal an event attribute binds to on `godot_class`, or "" if it is not an event.
-## Mirrors host_config.gd: `on_<signal>` is verbatim; a React alias resolves polymorphically; an
-## unknown `onXxxYyy` lowers to `xxx_yyy`.
-static func resolve_event_signal(name: String, godot_class: String) -> String:
+## Mirrors host_config.gd (0.9.0): `on_<signal>` is verbatim; `on<Pascal>` lowers to snake_case.
+static func resolve_event_signal(name: String, _godot_class: String) -> String:
 	if name.begins_with("on_"):
 		return name.substr(3)
-	if REACT_EVENTS.has(name):
-		for sig in REACT_EVENTS[name]:
-			if godot_class == "" or ClassDB.class_has_signal(godot_class, sig):
-				return sig
-		return REACT_EVENTS[name][0]
 	if name.length() > 2 and name.begins_with("on") and _is_upper(name.unicode_at(2)):
 		return _camel_to_snake(name.substr(2))
 	return ""

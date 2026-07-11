@@ -16,6 +16,7 @@
 
 import { parseMarkup, MarkupNode } from "./markup";
 import { VOCABULARY, HOST_TAGS, findTag } from "./schema";
+import { hasClass } from "./classdb";
 import { editDistance } from "./declScan";
 import { skipNoncode, keywordAt, isIdent } from "./scanner";
 import { indentUnit, indentDepth, splitBody } from "./formatGuitkx";
@@ -65,11 +66,13 @@ function walkTags(nodes: (MarkupNode | null)[], base: number, out: LiveMarkupDia
             code: "GUITKX0105",
             message: `GUITKX0105: unknown element <${nd.tag}>${suggestTag(nd.tag)}`,
           });
-        } else if (known !== null && /^[A-Z]/.test(nd.tag) && !findTag(nd.tag) && !known.has(nd.tag)) {
+        } else if (known !== null && /^[A-Z]/.test(nd.tag) && !findTag(nd.tag) && !hasClass(nd.tag) && !known.has(nd.tag)) {
           // A PascalCase tag that is neither a vocabulary host tag (findTag — the same predicate
           // hover and the scan tier use, so the three tiers can never disagree on what a host
-          // element is) nor an indexed .guitkx binding nor a project `class_name` — the compile
-          // would fail its known_components check the same way.
+          // element is) nor a ClassDB class from the bundled dump (0.9.0 open vocabulary — the
+          // compiler accepts any instantiable Node class via V.h) nor an indexed .guitkx binding
+          // nor a project `class_name` — the compile would fail its known_components check the
+          // same way.
           const at = base + nd.at + 1;
           out.push({
             start: at,
@@ -397,8 +400,11 @@ function suggestTag(tag: string): string {
 
 // Nearest known component/class OR host tag for a PascalCase miss (same distance profile as
 // suggestTag) — a typo'd host element (`<Buttonn>`) is the common case, so host tags belong in
-// the candidate pool even though findTag already exempts exact matches.
+// the candidate pool even though findTag already exempts exact matches. A pre-0.9 shorthand
+// (`<VBox>`) gets the exact rename from the vocabulary's renamed_tags table instead of a guess.
 function suggestComponent(tag: string, known: Set<string>): string {
+  const renamed = VOCABULARY.renamed_tags?.[tag];
+  if (renamed) return ` -- renamed in 0.9.0: use <${renamed}> (see MIGRATION-0.9.md)`;
   let best = "";
   let bestD = 3;
   for (const c of [...known, ...HOST_TAGS.map((t) => t.tag)]) {

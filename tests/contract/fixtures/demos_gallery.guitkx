@@ -9,39 +9,39 @@ component DemoGallery {
   for i in demos.size():
     var idx := i
     var is_sel: bool = sel[0] == i
-    buttons.append(V.button({
+    buttons.append(V.Button({
       "text": demos[i]["title"],
-      "onClick": func(): sel[1].call(idx),
+      "onPressed": func(): sel[1].call(idx),
       "style": {
-        "expand_h": true,
+        "size_flags_horizontal": Control.SIZE_EXPAND_FILL,
         "bg_color": Color(0.2, 0.4, 0.7) if is_sel else Color(0.18, 0.18, 0.22),
-        "corner_radius": 4, "pad": 6,
+        "corner_radius_all": 4, "content_margin_all": 6,
       },
     }))
   return (
-    <HBox style={ {"fill": true} }>
-      <Panel style={ {"bg_color": Color(0.1, 0.1, 0.12), "min_width": 210} }>
-        <Margin style={ {"margin": 8} }>
-          <VBox style={ {"separation": 4, "expand_v": true} }>
+    <HBoxContainer style={ {"anchors_preset": Control.PRESET_FULL_RECT} }>
+      <PanelContainer style={ {"bg_color": Color(0.1, 0.1, 0.12), "min_width": 210} }>
+        <MarginContainer style={ {"margin_left": 8, "margin_top": 8, "margin_right": 8, "margin_bottom": 8} }>
+          <VBoxContainer style={ {"separation": 4, "size_flags_vertical": Control.SIZE_EXPAND_FILL} }>
             <Label
               text="Reactive UI"
               style={ {"font_size": 22, "font_color": Color(0.0, 0.9, 0.75)} } />
             <Label text="Godot demo gallery" style={ {"font_color": Color(0.6, 0.6, 0.6)} } />
             <HSeparator />
-            <Scroll
+            <ScrollContainer
               horizontal_scroll_mode={ ScrollContainer.SCROLL_MODE_DISABLED }
-              style={ {"expand_v": true} }
+              style={ {"size_flags_vertical": Control.SIZE_EXPAND_FILL} }
             >
-              <VBox style={ {"separation": 4} }>
+              <VBoxContainer style={ {"separation": 4} }>
                 { buttons }
-              </VBox>
-            </Scroll>
-          </VBox>
-        </Margin>
-      </Panel>
-      <Panel style={ {"bg_color": Color(0.13, 0.13, 0.16), "expand_h": true, "expand_v": true} }>
+              </VBoxContainer>
+            </ScrollContainer>
+          </VBoxContainer>
+        </MarginContainer>
+      </PanelContainer>
+      <PanelContainer style={ {"bg_color": Color(0.13, 0.13, 0.16), "size_flags_horizontal": Control.SIZE_EXPAND_FILL, "size_flags_vertical": Control.SIZE_EXPAND_FILL} }>
         { V.fc(demos[sel[0]]["fn"]) }
-      </Panel>
-    </HBox>
+      </PanelContainer>
+    </HBoxContainer>
   )
 }

@@ -12,10 +12,10 @@ component MeasureDemo() {
   useLayoutEffect(measure, [])
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label ref={ label_ref } text="Measure me" />
       <Label text={ "Width: %dpx" % width[0] } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -29,11 +29,11 @@ component RenderCounter() {
   var tick = useState(0)
 
   return (
-    <VBox>
+    <VBoxContainer>
       <Label text={ "Rendered %d time(s)" % render_count["current"] } />
       <Button text="Force re-render"
-              onClick={ func(): tick[1].call(func(n): return n + 1) } />
-    </VBox>
+              onPressed={ func(): tick[1].call(func(n): return n + 1) } />
+    </VBoxContainer>
   )
 }`
 
@@ -70,7 +70,7 @@ component FancyInput() {
 
   return (
     <LineEdit ref={ input_ref } text={ val[0] }
-              onChange={ func(t): val[1].call(t) } />
+              onTextChanged={ func(t): val[1].call(t) } />
   )
 }
 
@@ -80,12 +80,12 @@ component FancyInput() {
 component FormHost() {
   var child = useRef(null)   # will hold FancyInput's handle
   return (
-    <VBox>
+    <VBoxContainer>
       <FancyInput handle_ref={ child } />
       <Button text="Focus child"
-              onClick={ func():
+              onPressed={ func():
                 if child["current"] != null: child["current"]["focus"].call() } />
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -95,12 +95,12 @@ component TodoList() {
   var items = useState(["Buy milk", "Walk dog"])
 
   return (
-    <VBox>
+    <VBoxContainer>
       @for (item in items[0]) {
         # key preserves element identity across re-renders
         <Label text={ item } key={ item } />
       }
-    </VBox>
+    </VBoxContainer>
   )
 }`
 
@@ -125,16 +125,16 @@ component ReorderDemo() {
     items[1].call(arr)
 
   return (
-    <VBox>
-      <Button text="Shuffle" onClick={ shuffle } />
-      <HBox style={ {"separation": 6} }>
+    <VBoxContainer>
+      <Button text="Shuffle" onPressed={ shuffle } />
+      <HBoxContainer style={ {"separation": 6} }>
         @for (id in items[0]) {
           # Stable key => the reconciler MOVES the node (and its per-node
           # state, like a random color from useRef) instead of recreating it.
           <KeyedTile key={ id } id={ id } />
         }
-      </HBox>
-    </VBox>
+      </HBoxContainer>
+    </VBoxContainer>
   )
 }`
 
@@ -159,12 +159,12 @@ component ProfileContent(user_id) {
   useEffect(load, [user_id])
 
   return (
-    <VBox>
+    <VBoxContainer>
       @if (data[0] != null) {
         <Label text={ "Name: %s" % data[0].name } />
       } @else {
         <Label text="Loading..." />
       }
-    </VBox>
+    </VBoxContainer>
   )
 }`
