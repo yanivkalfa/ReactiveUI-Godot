@@ -4,6 +4,19 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] — 2026-07-14
+
+**Godot version floor made explicit and gated.** The supported minimum is **Godot 4.4**
+(evidence-based: the compiler core uses 4.3+ engine APIs, and the editor addon's bundled
+native analyzer is a GDExtension with `compatibility_minimum = "4.4"`; `FoldableContainer`
+needs 4.5 but is guarded and degrades gracefully). Verified on 4.7.
+
+- Both plugins now **refuse politely on an unsupported engine** instead of failing on a
+  missing API mid-sweep: the runtime addon disables its `.guitkx` watcher with a clear
+  `push_error` (the runtime's global classes still load — that needs no plugin), and the
+  editor addon surfaces the reason in its dependency dialog.
+- Every documented claim aligned to the 4.4 floor (README, docs site version dropdown, FAQ).
+
 ## [0.10.0] — 2026-07-12
 
 **Imports & mixed declarations.** `.guitkx` files now declare cross-file dependencies

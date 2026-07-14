@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "date": "2026-07-14",
+      "versions": {
+        "editor": "0.8.1"
+      },
+      "editor": [
+        "Godot version floor gated: the editor addon now checks the running Godot FIRST in its dependency handshake and refuses politely below 4.4 (the bundled native analyzer is a GDExtension with compatibility_minimum = \"4.4\", so it cannot load on older engines). Pairs with reactive_ui 0.10.1, which gates its .guitkx watcher the same way."
+      ]
+    },
+    {
       "date": "2026-07-11",
       "versions": {
         "vscode": "0.10.0",

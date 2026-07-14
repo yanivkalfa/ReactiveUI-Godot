@@ -7,6 +7,9 @@ shared with the GUITKX IDE extensions) — add entries via `changelog.mjs add --
 editor`, then regenerate this file with `extract`; never edit it by hand. The history
 below the marker line predates the cutover and is preserved verbatim.
 
+## [0.8.1] - 2026-07-14
+- Godot version floor gated: the editor addon now checks the running Godot FIRST in its dependency handshake and refuses politely below 4.4 (the bundled native analyzer is a GDExtension with compatibility_minimum = "4.4", so it cannot load on older engines). Pairs with reactive_ui 0.10.1, which gates its .guitkx watcher the same way.
+
 ## [0.8.0] - 2026-07-11
 - 0.10.0 imports leg (rides the library 0.10.0): the editor addon recognizes the new `import { … } from "…"` preamble and the `export` declaration prefix — highlighting, tokenizer, and the workspace/declaration index are import/export-aware, and multi-declaration `.guitkx` files index every declaration. The compiler-driven 23xx import diagnostics surface live from the sidecar. Recompile-on-save keeps resolving imports each sweep; HMR re-renders only the component importers of a changed hook/module.
 
