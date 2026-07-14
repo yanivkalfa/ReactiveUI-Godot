@@ -1417,7 +1417,7 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 			var jke := source.find("\n", jk)
 			if jke == -1 or jke > int(decls[di]["start"]):
 				jke = int(decls[di]["start"])
-			diags.append(D.make("GUITKX2105", D.ERROR, "invalid content between declarations", jk, maxi(1, jke - jk)))
+			diags.append(_content_diag(source, jk, maxi(1, jke - jk), "invalid content between declarations"))
 			return { "ok": false, "gd": "", "diagnostics": diags }
 		cursor = int(decls[di]["next"])
 	var tj := _first_real(source, cursor, n)
@@ -1425,7 +1425,7 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 		var tje := source.find("\n", tj)
 		if tje == -1:
 			tje = n
-		diags.append(D.make("GUITKX2105", D.ERROR, "invalid content between declarations", tj, maxi(1, tje - tj)))
+		diags.append(_content_diag(source, tj, maxi(1, tje - tj), "invalid content between declarations"))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	# 2. Duplicate top-level names collide in one script -> GUITKX2505.
 	var seen := {}
@@ -2015,7 +2015,14 @@ static func _error_on_trailing(source: String, from: int, kind: String, diags: A
 	var le := source.find("\n", first)
 	if le == -1:
 		le = source.length()
-	diags.append(D.make("GUITKX2105", D.ERROR, "invalid top-level content after the `%s` declaration -- one declaration per file (wrap several in `module Name { ... }`)" % kind, first, maxi(1, le - first)))
+	diags.append(_content_diag(source, first, maxi(1, le - first), "invalid top-level content after the `%s` declaration -- one declaration per file (wrap several in `module Name { ... }`)" % kind))
+
+## The diagnostic for stray top-level content found at `at`: a misplaced `import` keyword there is
+## GUITKX2309 (imports are preamble-only, before the first declaration); anything else is GUITKX2105.
+static func _content_diag(source: String, at: int, length: int, msg_2105: String) -> Dictionary:
+	if L.keyword_at(source, at, "import"):
+		return D.make("GUITKX2309", D.ERROR, "import must appear in the preamble, before the first declaration", at, 6)
+	return D.make("GUITKX2105", D.ERROR, msg_2105, at, length)
 
 ## First real char in [from, to) skipping whitespace AND MARKUP comments (`//`, `/* */`, `<!-- -->`)
 ## -- for checks over markup windows (Unity's LooksLikeMarkupRoot skips comments the same way).
@@ -2383,6 +2390,14 @@ static func _unknown_tag(ctx: Dictionary, nd: Dictionary, tag: String) -> void:
 		if d < best_d:
 			best_d = d
 			best = str(c)
+	# GUITKX2307 (frozen family code): a PascalCase (component-like) tag with NO near-miss is "used
+	# like a guitkx component/hook but no file exports it" -- the cross-file miss, distinct from a
+	# markup-vocab miss. A lowercase (host-factory) miss OR a near-miss typo stays GUITKX0105 with the
+	# did-you-mean (the existing markup-vocab path the plan preserves).
+	var component_like := tag.length() > 0 and tag[0] >= "A" and tag[0] <= "Z"
+	if component_like and best == "":
+		(ctx["diags"] as Array).append(D.make("GUITKX2307", D.ERROR, "`%s` is used like a guitkx component/hook but no file exports it" % tag, at, tag.length()))
+		return
 	var msg := "unknown element <%s>" % tag
 	if best != "":
 		msg += " -- did you mean <%s>?" % best

@@ -123,8 +123,8 @@ func _test_jsx_value() -> void:
 	_check_true(not ("<Label" in gd), "no raw <Label markup left in expression")
 	# 0.7.2 anchor regression (field capture 2026-07-04): diagnostics from setup-VALUE markup must
 	# anchor in the ORIGINAL source. Aliasing used to run BEFORE the splice, so every inserted
-	# `Hooks.` prefix (6 chars) shifted every later diagnostic -- two useState calls pushed a 0105
-	# onto the CLOSING tag (the dock said 8:33 instead of 8:21). Splice first, alias second.
+	# `Hooks.` prefix (6 chars) shifted every later diagnostic onto the CLOSING tag (8:33 vs 8:21).
+	# Splice first, alias second. (A no-suggestion PascalCase miss is GUITKX2307 since the imports leg.)
 	var a_src := "component AnchorProbe() {\n" + \
 		"\tvar n = useState(0)\n" + \
 		"\tvar m = useState(1)\n" + \
@@ -134,11 +134,11 @@ func _test_jsx_value() -> void:
 	_check_true(not ra["ok"], "unknown component in a setup value fails the compile")
 	var a_found := false
 	for da in (ra["diagnostics"] as Array):
-		if str((da as Dictionary).get("code", "")) == "GUITKX0105":
+		if str((da as Dictionary).get("code", "")) == "GUITKX2307":
 			a_found = true
 			_check_true(int((da as Dictionary).get("offset", -1)) == a_src.find("<Nope>") + 1,
-				"0105 anchors on the OPENING tag name in the original source (got %d, want %d)" % [int((da as Dictionary).get("offset", -1)), a_src.find("<Nope>") + 1])
-	_check_true(a_found, "0105 reported for the unknown setup-value component")
+				"2307 anchors on the OPENING tag name in the original source (got %d, want %d)" % [int((da as Dictionary).get("offset", -1)), a_src.find("<Nope>") + 1])
+	_check_true(a_found, "2307 reported for the unknown setup-value component (no file exports it)")
 	_check(gd, "if (cond) else null", "short-circuit `and` desugared to ternary")
 	_check(gd, "V.Label({ \"text\": it })", "map-lambda markup lowered")
 	# runtime: cond=true -> Label x + (map a,b) = 3 Labels, + 1 Button (short-circuit)
@@ -1179,6 +1179,40 @@ func _test_bughunt_fixes() -> void:
 	# BH-09: mixed-decl @uss with a non-single-element render-component root emits GUITKX2210.
 	var bh09 := "@uss \"res://theme.tres\"\nexport component A() {\n\treturn ( <><Label /><Label /></> )\n}\n\nexport component B() {\n\treturn ( <Label /> )\n}\n"
 	_check_true(_has_code(RUIGuitkx.compile(bh09, "file"), "GUITKX2210"), "BH-09: mixed @uss non-element root -> 2210 (not a silent drop)")
+
+	# BH-11: a `../` (or ~/) specifier that climbs above res:// crosses the boundary -> GUITKX2308.
+	var bh11 := RUIGuitkx.compile("import { X } from \"../../../../outside\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, "res://tests/__bh_tmp/a.guitkx", "res://")
+	_check_true(_has_code(bh11, "GUITKX2308"), "BH-11: root-escaping specifier -> 2308 (%s)" % str(bh11.get("diagnostics", [])))
+
+	# BH-12: an import AFTER the first declaration -> GUITKX2309 (not a generic 2105).
+	var bh12s := RUIGuitkx.compile("component A() { return ( <Label /> ) }\nimport { X } from \"./x\"\n", "a")
+	_check_true(_has_code(bh12s, "GUITKX2309") and not _has_code(bh12s, "GUITKX2105"), "BH-12: trailing import -> 2309 (single-decl)")
+	var bh12m := RUIGuitkx.compile("component A() { return ( <Label /> ) }\nimport { X } from \"./x\"\ncomponent B() { return ( <Label /> ) }\n", "a")
+	_check_true(_has_code(bh12m, "GUITKX2309"), "BH-12: import between decls -> 2309 (mixed)")
+
+	# BH-10: a value-import cycle (two modules importing each other) -> GUITKX2306 with the chain.
+	var cdir := "res://tests/__bh_cyc"
+	DirAccess.make_dir_recursive_absolute(cdir)
+	_imp_write(cdir + "/va.guitkx", "import { VB } from \"./vb\"\n\nexport module VA {\n\thook use_a() -> int { return VB.use_b() }\n}\n")
+	_imp_write(cdir + "/vb.guitkx", "import { VA } from \"./va\"\n\nexport module VB {\n\thook use_b() -> int { return VA.use_a() }\n}\n")
+	var swept := Codegen.compile_all(cdir)
+	var got2306 := false
+	var chain2306 := ""
+	for e in swept.get("errors", []):
+		for d in e.get("diagnostics", []):
+			if str(d.get("code", "")) == "GUITKX2306":
+				got2306 = true
+				chain2306 = str(d.get("message", ""))
+	_check_true(got2306, "BH-10: value-import cycle emits 2306 (errors=%s)" % str(swept.get("errors", []).size()))
+	_check_true(chain2306.contains("va.guitkx") and chain2306.contains("vb.guitkx"), "BH-10: 2306 prints the cycle chain (%s)" % chain2306)
+	_bh_rm_tree(cdir)
+
+	# BH-16: a PascalCase tag that no file exports (and has no near-miss) -> GUITKX2307; a lowercase
+	# host-vocab miss or a near-miss typo stays GUITKX0105 (unchanged markup-vocab path).
+	var bh16 := RUIGuitkx.compile("component T() {\n\treturn ( <VBoxContainer><Zzyzx /></VBoxContainer> )\n}\n", "T", ["DemoBox"])
+	_check_true(_has_code(bh16, "GUITKX2307") and not _has_code(bh16, "GUITKX0105"), "BH-16: unexported component-like tag -> 2307 (%s)" % str(bh16.get("diagnostics", [])))
+	var bh16b := RUIGuitkx.compile("component T() {\n\treturn ( <VBoxContainer><lable /></VBoxContainer> )\n}\n", "T", ["DemoBox"])
+	_check_true(_has_code(bh16b, "GUITKX0105") and not _has_code(bh16b, "GUITKX2307"), "BH-16: lowercase host-vocab miss stays 0105")
 
 	# cleanup: remove the whole __bh_tmp tree (and the __bh02 file under __bh_tmp)
 	_bh_rm_tree("res://tests/__bh_tmp")

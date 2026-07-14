@@ -557,6 +557,9 @@ static func compile_all(root: String = "res://") -> Dictionary:
 	# edges from SOURCE imports (rule 9), diff each file's export_hash against its sidecar, and force
 	# the affected importers stale THIS sweep. No-op on an import-free tree.
 	var force_stale := _reverse_edge_stale(all_paths, pb["sources"])
+	# GUITKX2306: value-import cycles (hook/module preload edges). Detected once per sweep at the driver
+	# level; a file in a cycle is a hard error (no output) with the chain printed.
+	var value_cycles := _detect_value_cycles(all_paths, pb["sources"])
 	# Orphan cleanup FIRST -- generated outputs whose .guitkx was deleted or renamed. Without
 	# this, the stale .gd keeps its class_name registered and (after a rename) DUPLICATES the
 	# new file's class. Running BEFORE the compile loop means the dangling-reference check
@@ -578,6 +581,23 @@ static func compile_all(root: String = "res://") -> Dictionary:
 			DirAccess.remove_absolute(str(sc))
 			removed.append(str(sc))
 	for path in all_paths:
+		# GUITKX2306: a file caught in a value-import cycle is a hard error -- eager hook/module
+		# preloads cannot form a load-order cycle. Emit the chain, drop any stale .gd, skip the compile.
+		if value_cycles.has(path):
+			var csrc := str((pb["sources"] as Dictionary).get(path, ""))
+			if csrc.is_empty():
+				csrc = FileAccess.get_file_as_string(path)
+			var cat := maxi(0, csrc.find("import"))
+			var clc := Diag.line_col(csrc, cat)
+			var cdiag := { "code": "GUITKX2306", "severity": 0, "offset": cat, "length": 6, "line": clc["line"], "col": clc["col"],
+				"message": "value-import cycle: %s (hooks/modules load eagerly — break the chain or move to component refs)" % str(value_cycles[path]) }
+			write_diags_sidecar(path, csrc, [cdiag], {}, [])
+			var cyc_gd := gd_path_for(path)
+			if FileAccess.file_exists(cyc_gd):
+				DirAccess.remove_absolute(cyc_gd)
+				push_error("[guitkx] %s: value-import cycle (%s) -- removed its %s" % [path, str(value_cycles[path]), cyc_gd.get_file()])
+			errors.append({ "ok": false, "path": path, "diagnostics": [cdiag] })
+			continue
 		if dupe_losers.has(path):
 			var dl: Dictionary = dupe_losers[path]
 			var dsrc := FileAccess.get_file_as_string(path)
@@ -721,6 +741,48 @@ static func _reverse_edge_stale(all_paths: Array, sources: Dictionary) -> Dictio
 			if res["ok"] and changed.has(str(res["guitkx"])):
 				out[str(p)] = true
 				break
+	return out
+
+## The VALUE-import target files of `guitkx_path` (files it imports a HOOK or MODULE from) -- the
+## edges of the value-import graph. Component imports are lazy `V.comp` and EXEMPT (they may cycle).
+static func _value_import_edges(guitkx_path: String, sources: Dictionary) -> Array:
+	var src := str(sources.get(guitkx_path, ""))
+	if src == "":
+		src = FileAccess.get_file_as_string(guitkx_path)
+	var root := RGConfig.root_for(guitkx_path)
+	var out := {}
+	for im in Compiler.scan_imports(src):
+		var res := RGResolve.resolve_specifier(str(im["spec"]), guitkx_path, root)
+		if not bool(res.get("ok", false)):
+			continue
+		var tbl := RGResolve.decl_table(str(res["guitkx"]))
+		for nm in (im["names"] as Array):
+			var d = (tbl["decls"] as Dictionary).get(str(nm["name"]))
+			if d is Dictionary and (str(d["kind"]) == "hook" or str(d["kind"]) == "module"):
+				out[str(res["guitkx"])] = true
+				break
+	return out.keys()
+
+## GUITKX2306: detect value-import cycles across the swept files. Returns { guitkx_path -> chain },
+## one entry per file that participates in a cycle (the chain is printed in the diagnostic). Component
+## edges are excluded (lazy V.comp -> legal cycles).
+static func _detect_value_cycles(all_paths: Array, sources: Dictionary) -> Dictionary:
+	var edges_cb := func(p: String) -> Array: return _value_import_edges(p, sources)
+	var by_base := {}
+	for p in all_paths:
+		by_base[str(p).get_file()] = str(p)
+	var out := {}     # full guitkx path -> chain
+	var handled := {} # basename -> true (already assigned to a reported cycle)
+	for p in all_paths:
+		if handled.has(str(p).get_file()):
+			continue
+		var chain := RGResolve.value_cycle(str(p), edges_cb)
+		if chain == "":
+			continue
+		for fname in chain.split(" -> "):
+			handled[fname] = true
+			if by_base.has(fname):
+				out[by_base[fname]] = chain
 	return out
 
 ## Recursively collect all .guitkx paths under `dir` (skips Godot's hidden cache dirs).

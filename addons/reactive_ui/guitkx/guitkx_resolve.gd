@@ -28,6 +28,12 @@ static func resolve_specifier(spec: String, from_guitkx: String, root: String) -
 	else:
 		return { "ok": false, "error": "specifier must start with ./ ../ or ~/" }
 	base = base.simplify_path()
+	# A `../` chain (or a `~/` root) that climbs ABOVE res:// leaves a leading `res://../…` after
+	# simplify_path -- the import crosses the project/module boundary (GUITKX2308). A legal path never
+	# keeps a `..` segment. This is a distinct verdict from "no file" (2300): the target is out of
+	# bounds regardless of whether a file happens to exist there.
+	if base.begins_with("res://../") or base.begins_with("res://.."):
+		return { "ok": false, "boundary": true, "guitkx": base, "error": "crosses the project boundary" }
 	var guitkx_path := base if base.get_extension() == "guitkx" else base + ".guitkx"
 	if not FileAccess.file_exists(guitkx_path):
 		return { "ok": false, "error": "no file at %s" % guitkx_path }
@@ -139,13 +145,13 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 	for imp in imports:
 		var spec := str(imp["spec"])
 		var res := resolve_specifier(spec, from_guitkx, root)
+		# 2308: a `~/` or `../` that climbs above res:// crosses the project/module boundary (checked
+		# BEFORE the not-found 2300, since an out-of-bounds specifier is a boundary error regardless).
+		if bool(res.get("boundary", false)):
+			diags.append(D.make("GUITKX2308", D.ERROR, "import crosses a module/root boundary (%s -> %s) — imports are module-scoped in v1" % [from_guitkx, res["guitkx"]], int(imp["spec_at"]), spec.length() + 2))
+			continue
 		if not res["ok"]:
 			diags.append(D.make("GUITKX2300", D.ERROR, "unknown import specifier `%s` — no file at %s" % [spec, spec], int(imp["spec_at"]), spec.length() + 2))
-			continue
-		# 2308: the resolved target must stay inside the project root universe (res://). A `~/` that
-		# escapes, or a `../` climbing above res://, crosses the boundary.
-		if not str(res["guitkx"]).begins_with("res://"):
-			diags.append(D.make("GUITKX2308", D.ERROR, "import crosses a module/root boundary (%s -> %s) — imports are module-scoped in v1" % [from_guitkx, res["guitkx"]], int(imp["spec_at"]), spec.length() + 2))
 			continue
 		var table := decl_table(str(res["guitkx"]))
 		for nm_entry in (imp["names"] as Array):
