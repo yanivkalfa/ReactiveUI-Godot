@@ -13,6 +13,7 @@ VS2022 extension for `.guitkx` (ReactiveUI for Godot): TextMate colouring via `.
 - **Publishing**: automated by `.github/workflows/publish.yml` (`publish-vs2022` job),
   version-gated on the `vs2022-v<version>` tag.
 
-**Status**: published at 0.5.5; behind the VS Code extension (0.8.x). The feature-parity
-gap and the plan to close it live in
-[`plans/VSCODE_VS2022_PARITY_PLAN.md`](../../plans/VSCODE_VS2022_PARITY_PLAN.md).
+**Status**: **0.10.0**, at feature parity with the VS Code extension (same bundled
+`lsp-server`, released in the same window). The parity campaign's record lives in
+[`plans/archive/VSCODE_VS2022_PARITY_PLAN.md`](../../plans/archive/VSCODE_VS2022_PARITY_PLAN.md);
+the outstanding interactive UI verification pass is tracked in `plans/MASTER_PLAN.md` §1.2.

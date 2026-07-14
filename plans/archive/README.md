@@ -22,11 +22,17 @@ as the design/root-cause record, not as work to do. The live plans stay in `plan
 | `NATIVE_EDITOR_PARITY_PLAN.md` | Native-editor parity M1–M3 — **ALL MILESTONES DONE** (2026-07-05), editor 0.4.0–0.6.0 (E17 + P3 incremental remap consciously skipped). Archived 2026-07-08. |
 | `GODOT_EDITOR_EXTENSION_PLAN.md` | Full `.guitkx` tooling in the Godot editor — P1–P2 + **P3 shipped as editor 0.6.0** (now 0.6.2): embedded-GDScript intelligence via the native gdext analyzer bridge. Last of its trio; archived 2026-07-08. Kept as mechanism/constraint reference. |
 | `DOOM_GAME_GUITKX_PORT_PLAN.md` | Software-rendered Doom FPS `.guitkx` sample — **all 6 phases done** (2026-07-08), `tests/doom_game_test.gd` green (179 checks). Audio/tween/gallery-entry consciously deferred as out-of-scope optionals. |
+| `NAMING_LOYALTY_PROPOSAL.md` | 0.9.0 naming loyalty — **APPROVED & EXECUTED 2026-07-11**, shipped as 0.9.0 (PR #70). Decision record; coverage ledger lives on in `plans/WIDGET_INVENTORY.md`. |
+| `IMPORT_EXPORT_PLAN.md` | The 0.10.0 imports leg (leg 2 of the family campaign) — **ALL MILESTONES M0–M8 EXECUTED** (2026-07-12), incl. the codemod migration of the whole tree, strict resolution, and the frozen `GUITKX2300–2309` family block. Archived 2026-07-14. |
+| `IMPORTS_LEG_BUGHUNT.md` | Adversarial bug hunt over the imports leg (71-agent workflow + independent verification) — 18 verified bugs, **ALL FIXED** (2026-07-14, 7 commits, each with a regression test). Kept as the repro/method record. |
+| `FINAL_AUDIT_GODOT_FINDINGS.md` | Correctness audit G-01…G-23 — v6 verification pass: **everything fixed except G-09** (hooks deps deep-compare: documented in README; optional `same_ref` escape hatch carried to `MASTER_PLAN.md`). Record, not work-list. |
+| `FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` | Perf audit + measurements — reconciler batch (GO-05/06/08) shipped 0.8.6, scanners G-10/G-08/G-15 shipped 0.8.7, doom GO-03/04 done. Open leftovers (GO-01, G-11, reconciler ~11µs/node lever, ColumnInfo tail) carried to `MASTER_PLAN.md`. |
+| `VSCODE_VS2022_PARITY_PLAN.md` | VS Code → VS2022 parity — all 5 phases shipped (`vs2022-v0.8.6`/`0.8.7` tagged; 0.10.0 vsix builds clean). Sole leftover — the **interactive VS2022 verification checklist** — carried to `MASTER_PLAN.md`. |
+| `PARITY_PLAN.md` | The living Unity→Godot parity status doc, 2026-06 era — core/compiler/formatter/LSP/publishing all at parity; superseded as a status surface by `MASTER_PLAN.md` (which carries its two leftovers: the niche-adapter decision and native-editor analyzer depth). |
+| `ASSET_STORE_PLAN.md` | Asset Store / AssetLib research + repo prep — prep staged, CI auto-post jobs armed. The actionable remainder (owner accounts/listing, first submission) is tracked in `MASTER_PLAN.md`. |
+| `imports-m1-parked.patch` | Safety copy of the imports-leg M1 WIP taken when the leg was parked for the Unreal contract freeze (2026-07-13). The same work is in git history (`ecf2915`); kept only as the park-protocol artifact. |
 
-Still live in `plans/`: `ASSET_STORE_PLAN.md` (published, but docs/screenshots pass + new-store API automation open),
-`PARITY_PLAN.md` (living status; G2 docs phases 9/10 open),
-`VSCODE_VS2022_PARITY_PLAN.md` (code done, interactive verification outstanding),
-`FINAL_AUDIT_GODOT_FINDINGS.md` (G-01…G-22 fixed; **only G-23 open**),
-`FINAL_AUDIT_GODOT_OPTIMIZATIONS.md` (reconciler batch shipped 0.8.6; tooling-perf items G-08/G-10/G-15/GO-10/ColumnInfo open),
-`TECH_DEBT.md` (TD-01 open/accepted),
-`DISCORD_CHANGELOG.md` (release log; needs 0.8.3/0.8.4/0.8.6 backfill).
+Still live in `plans/`: **`MASTER_PLAN.md` — the single consolidated plan (all remaining work + status)**, plus the
+living ledgers it references: `TECH_DEBT.md` (TD-01/TD-02 open-accepted), `WIDGET_INVENTORY.md` (Control coverage,
+re-diffed per engine version — see `AUTOMATION.md`), `DISCORD_CHANGELOG.md` (community release log), and
+`family-corpus.hash` (CI drift-gate data).

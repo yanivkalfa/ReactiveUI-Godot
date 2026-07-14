@@ -74,7 +74,7 @@ runtime**; the classes are available as soon as the files exist. Enabling the pl
 `.guitkx` compile-on-save integration.
 
 - **`v.gd` (`V`) / `vnode.gd` (`RUIVNode`)** — the ~71 `V.*` factories and the immutable UI
-  description. **Naming is 1:1 loyal to Godot (0.9.0, plans/NAMING_LOYALTY_PROPOSAL.md +
+  description. **Naming is 1:1 loyal to Godot (0.9.0, plans/archive/NAMING_LOYALTY_PROPOSAL.md +
   MIGRATION-0.9.md):** element factories are named exactly after the Godot class they create
   (`V.Button`, `V.VBoxContainer`); tags = official class names (any instantiable ClassDB Node
   class is a valid tag); events = `on` + PascalCase(signal) (`onPressed`); style keys = exact
