@@ -115,7 +115,11 @@ jobs:
 
       - name: Verify tests pass
         if: steps.check.outputs.exists == 'false'
+        # Scan BEFORE the build: guitkx_build's two-pass parse gate needs the global class cache
+        # on a fresh clone (same fix as test.yml -- Publish #48 failed here with 49x "Identifier
+        # V not declared"). The second scan registers the generated .gd for the suites.
         run: |
+          godot --headless --path . --editor --quit || true
           godot --headless --path . --script res://tests/guitkx_build.gd
           godot --headless --path . --editor --quit || true
           godot --headless --path . --script res://tests/core_test.gd
@@ -261,7 +265,9 @@ jobs:
 
       - name: Verify editor-addon tests pass (against the bundle — analyzer loads on linux)
         if: steps.check.outputs.exists == 'false'
+        # Same scan-before-build order as test.yml / the addon job above (Publish #48 capture).
         run: |
+          godot --headless --path . --editor --quit || true
           godot --headless --path . --script res://tests/guitkx_build.gd
           godot --headless --path . --editor --quit || true
           godot --headless --path . --script res://tests/guitkx_lsp_test.gd
