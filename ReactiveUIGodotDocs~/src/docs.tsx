@@ -8,6 +8,7 @@ import { UitkxAPIPage } from './pages/UITKX/API/UitkxAPIPage'
 import { UitkxComponentsPage } from './pages/UITKX/Components/UitkxComponentsPage'
 import { CompanionFilesPage } from './pages/UITKX/CompanionFiles/CompanionFilesPage'
 import { UitkxImportsPage } from './pages/UITKX/Imports/UitkxImportsPage'
+import { MigrationsPage } from './pages/Migrations/MigrationsPage'
 import { UitkxConceptsPage } from './pages/UITKX/Concepts/UitkxConceptsPage'
 import { UitkxConfigPage } from './pages/UITKX/Config/UitkxConfigPage'
 import { UitkxDebuggingPage } from './pages/UITKX/Debugging/UitkxDebuggingPage'
@@ -98,6 +99,21 @@ export const sections: DocSection[] = [
         keywords: ['import', 'export', 'specifier', 'strict', 'codemod', 'root', 'cycle', 'module-scoped'],
         searchContent: 'imports exports import { Name } from specifier relative ./ ../ root ~/ extensionless .guitkx implied named imports only no default no import star export declaration reachable cross-file binding class_name first exported multiple declarations mixed component hook module file-private strict resolution error GUITKX2300 2301 2302 2303 2304 2305 2306 2307 2308 2309 unresolved not exported not declared duplicate unused defined but not imported value-import cycle chain used but unexported boundary module-scoped preamble migration codemod guitkx_migrate export-everything idempotent ~/ root guitkx.config.json root key res:// V.comp lazy component cycles legal eager preload value cycle error',
         element: () => <UitkxImportsPage />,
+      },
+    ],
+  },
+  {
+    id: 'migrations',
+    title: 'Migrations',
+    pages: [
+      {
+        id: 'migrations-page',
+        canonicalId: 'migrations',
+        title: 'Migrations',
+        path: '/migrations',
+        keywords: ['migration', 'migrate', 'upgrade', 'codemod', 'breaking', '0.9', '0.10'],
+        searchContent: 'migrations migrate upgrade breaking release codemod dry-run idempotent 0.8 to 0.9 naming loyalty renames VBox VBoxContainer RichText RichTextLabel onClick onPressed onChange onValueChanged fill anchors_preset migrate_0_9_0.gd MIGRATION-0.9.md 0.9 to 0.10 imports exports strict cross-file resolution export declaration import lines migrate_0_10_0.gd MIGRATION-0.10.md ambient class_name hand-written scripts run in order',
+        element: () => <MigrationsPage />,
       },
     ],
   },
