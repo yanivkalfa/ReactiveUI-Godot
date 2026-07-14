@@ -27,17 +27,23 @@ project, not Godot content).
 ### Runtime tests (headless GDScript — the primary test loop)
 
 Godot has no compile step; "tests" are `tests/*.gd` scripts run under `--headless`, each `quit()`ing
-non-zero on failure. Run them exactly like CI (`.github/workflows/test.yml`), **in this order** — the
-guitkx compile and the class-cache scan must happen before the suites:
+non-zero on failure. Run them exactly like CI (`.github/workflows/test.yml`), **in this order**:
 
 ```bash
-# 1. Compile every examples/**/*.guitkx to its sibling .gd (the generated .gd is git-ignored)
-godot --headless --path . --script res://tests/guitkx_build.gd
-# 2. Build the class-name cache so global class_names resolve headlessly
+# 1. Build the class-name cache FIRST on a fresh clone: guitkx_build's two-pass parse gate
+#    reload()s every generated .gd, whose global class_name references (V, Hooks, RUIVNode, ...)
+#    only resolve once .godot/global_script_class_cache.cfg exists (49/49 false parse fails without).
 godot --headless --path . --editor --quit || true
-# 3. Run a suite (this is also how you run a SINGLE test file)
+# 2. Compile every examples/**/*.guitkx to its sibling .gd (the generated .gd is git-ignored)
+godot --headless --path . --script res://tests/guitkx_build.gd
+# 3. Re-scan so the just-generated .gd class_names register for the suites
+godot --headless --path . --editor --quit || true
+# 4. Run a suite (this is also how you run a SINGLE test file)
 godot --headless --path . --script res://tests/core_test.gd
 ```
+
+(On a working tree that already has a `.godot` cache, step 1 is a no-op and the old
+build-then-scan habit still works — the strict order only matters on a fresh clone / CI.)
 
 The suites: `core_test.gd` (reconciler/hooks/effects/bailout/context/keyed), `style_test.gd`,
 `router_match_test.gd` + `router_spine_test.gd`, `update_test.gd` (diff), `demos_test.gd` (renders
