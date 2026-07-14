@@ -13,6 +13,11 @@ extends RefCounted
 ## reports are not worth debugging — the two assets release together.
 const MIN_REACTIVE_UI := "0.8.4"
 
+## Oldest Godot this editor addon supports: the bundled native analyzer is a GDExtension with
+## `compatibility_minimum = "4.4"` (it will not even load below), and the runtime sibling's
+## compiler core needs 4.3+ APIs — so the pair claims 4.4. Verified on 4.7.
+const MIN_GODOT := "4.4"
+
 const _DEP_DIR := "res://addons/reactive_ui"
 const _DEP_CFG := _DEP_DIR + "/plugin.cfg"
 const _COMPILER := _DEP_DIR + "/guitkx/guitkx.gd"
@@ -20,6 +25,14 @@ const _FORMATTER := _DEP_DIR + "/guitkx/guitkx_formatter.gd"
 
 ## { ok: bool, reason: String, version: String } — reason is user-facing when not ok.
 static func satisfied() -> Dictionary:
+	# Godot-version gate FIRST: below MIN_GODOT the bundled analyzer GDExtension cannot load and
+	# the runtime sibling's compiler core is missing engine APIs -- fail with the reason, not a
+	# cascade of script errors.
+	if not godot_version_ok():
+		return {
+			"ok": false, "version": "",
+			"reason": "Godot %s is not supported -- Reactive UI Editor needs Godot %s or newer (verified on 4.7)." % [str(Engine.get_version_info()["string"]), MIN_GODOT],
+		}
 	if not FileAccess.file_exists(_DEP_CFG):
 		return {
 			"ok": false, "version": "",
@@ -39,6 +52,14 @@ static func satisfied() -> Dictionary:
 				"reason": "The 'Reactive UI' addon looks incomplete (missing %s). Reinstall it." % p,
 			}
 	return { "ok": true, "reason": "", "version": ver }
+
+## True when the running (or given, for tests) Godot version satisfies MIN_GODOT.
+static func godot_version_ok(version_string: String = "") -> bool:
+	var v := version_string
+	if v == "":
+		var info := Engine.get_version_info()
+		v = "%d.%d.%d" % [int(info["major"]), int(info["minor"]), int(info["patch"])]
+	return not _version_lt(v, MIN_GODOT)
 
 static func installed_version() -> String:
 	var cfg := ConfigFile.new()

@@ -40,7 +40,7 @@ export const FAQPage: FC = () => (
       Which Godot versions are supported?
     </Typography>
     <Typography variant="body2" paragraph>
-      Godot <strong>4.2</strong> and above (the 4.x <code>Control</code> / <code>Theme</code> /{' '}
+      Godot <strong>4.4</strong> and above (the 4.x <code>Control</code> / <code>Theme</code> /{' '}
       <code>StyleBox</code> APIs the framework builds on). The runtime is pure GDScript with no
       GDExtension dependency, so it runs anywhere the Godot editor and its export templates run.
     </Typography>

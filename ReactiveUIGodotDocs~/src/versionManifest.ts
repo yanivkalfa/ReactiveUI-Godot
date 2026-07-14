@@ -25,8 +25,9 @@ export interface VersionInfo {
  * The first entry is the floor version (minimum supported).
  */
 export const SUPPORTED_VERSIONS: VersionInfo[] = [
-  { version: '4.2', label: '4.2' },
-  { version: '4.3', label: '4.3' },
+  // Floor = 4.4 (evidence-based, 2026-07): the compiler core uses ProjectSettings.
+  // get_global_class_list (4.3+), and the editor addon's bundled analyzer GDExtension has
+  // compatibility_minimum = "4.4". Both plugins gate on MIN_GODOT = "4.4". Verified on 4.7.
   { version: '4.4', label: '4.4' },
   { version: '4.5', label: '4.5' },
   { version: '4.6', label: '4.6' },
@@ -56,9 +57,9 @@ export interface FeatureVersion {
  * If an element is NOT listed here, it is assumed to be available since floor.
  */
 export const ELEMENT_VERSIONS: Record<string, FeatureVersion> = {
-  // All 32 host elements are available since the floor (Godot 4.2).
-  // When a new host element requires a newer engine version, add it here:
-  // NewControl: { sinceGodot: '4.5' },
+  // Elements above the 4.4 floor. (FoldableContainer is is_class()/string-guarded in the
+  // runtime, so referencing it below 4.5 degrades gracefully instead of crashing.)
+  FoldableContainer: { sinceGodot: '4.5' },
 }
 
 /**

@@ -67,7 +67,7 @@ support for the language itself (pick one, or use both):
   intelligence inside `{expr}`/setup code (completion, hover, go-to-definition, find-references,
   rename), fully offline. See [IDE tooling](#ide-tooling).
 
-Requires **Godot 4.1+** (uses `static var`); verified on **4.7**. Standard build — no C# or `.NET`.
+Requires **Godot 4.4+** (the compiler core uses 4.3+ engine APIs and the editor tooling's bundled native analyzer sets a hard 4.4 floor; `FoldableContainer` needs 4.5 but degrades gracefully); verified on **4.7**. Standard build — no C# or `.NET`.
 
 ---
 

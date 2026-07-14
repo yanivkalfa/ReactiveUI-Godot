@@ -15,9 +15,11 @@ permissions:
   contents: read
 
 env:
-  # CI targets the version the project is verified on (matches local dev). The library still parses on
-  # 4.1+ (FoldableContainer is is_class()/string-guarded, so it degrades gracefully below 4.5), but we
-  # test on the current stable.
+  # CI targets the version the project is verified on (matches local dev). The supported floor is
+  # 4.4 (MIN_GODOT in both plugins: the compiler core uses 4.3+ APIs like
+  # ProjectSettings.get_global_class_list, and the editor addon's bundled analyzer GDExtension has
+  # compatibility_minimum = "4.4"; FoldableContainer is is_class()/string-guarded so it degrades
+  # gracefully below 4.5), but we test on the current stable.
   GODOT_VERSION: "4.7.0"
 
 jobs:
