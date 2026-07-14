@@ -407,7 +407,11 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		return fail.call("import specifier must be a quoted string, e.g. from \"./thing\"", mini(k, n - 1), 1, line_end)
 	var quote := source[k]
 	var qe := source.find(quote, k + 1)
-	if qe == -1 or qe > line_end:
+	# The `{ … }` list and `from` may span multiple lines (find_matching / ws-skip handle that), so the
+	# specifier's closing quote is NOT bounded by the `import` keyword's line. A string LITERAL still
+	# cannot span a newline, so the only real constraint is that no newline precede the closing quote.
+	var nl := source.find("\n", k + 1)
+	if qe == -1 or (nl != -1 and nl < qe):
 		return fail.call("unterminated import specifier string", k, 1, line_end)
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
@@ -554,7 +558,13 @@ static func _decl_body_end(source: String, name_end: int, kind: String) -> int:
 	j = _skip_ws_only(source, j)
 	if j >= n or source[j] != "{":
 		return -1
-	var bc := L.find_matching(source, j)
+	# A component body is MARKUP lexis (setup + a markup return), so its braces must be matched with
+	# find_matching_markup -- exactly as _parse_component_at does (G-01). Matching a component body
+	# with plain find_matching (GDScript lexis) would let a `}` inside a markup comment (`//`, `/* */`,
+	# `<!-- -->`) close the body early, so _enumerate_decls' extent would disagree with the real parser
+	# and a valid mixed file would trip a spurious GUITKX2105 or drop a declaration. Hooks and modules
+	# use GDScript-lexis matching, matching _parse_hook_at / _compile_module.
+	var bc := L.find_matching_markup(source, j) if kind == "component" else L.find_matching(source, j)
 	if bc == -1:
 		return -1
 	return bc + 1

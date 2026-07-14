@@ -61,6 +61,7 @@ func _run() -> void:
 	_test_imports_m3()
 	_test_m4()
 	_test_codemod()
+	_test_bughunt_fixes()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1096,6 +1097,27 @@ func _test_codemod() -> void:
 	# an already-migrated file (export + import present) is stable.
 	var pre := "import { StatusChip } from \"./chip\"\n\nexport component Q() {\n\treturn ( <StatusChip /> )\n}\n"
 	_check_true(not Migrate.migrate_source("res://ui/q.guitkx", pre, ref)["changed"], "codemod: already-migrated file untouched")
+
+## Regression tests for the adversarial bug hunt (plans/IMPORTS_LEG_BUGHUNT.md). Each asserts the
+## FIXED behavior on the exact repro that failed before.
+func _test_bughunt_fixes() -> void:
+	# BH-01: a component body's markup comment (`//`) with a brace must NOT desync decl enumeration.
+	var bh01 := "component A() {\n\treturn (\n\t\t<Label /> // close } here\n\t)\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	var r01 := RUIGuitkx.compile(bh01, "file")
+	_check_true(r01["ok"], "BH-01: mixed file with a markup comment containing `}` compiles (%s)" % str(r01.get("diagnostics", [])))
+	_check_true((r01["gd"] as String).contains("static func render(") and (r01["gd"] as String).contains("static func B("), "BH-01: both components emitted")
+	# `/* */` and `<!-- -->` markup comments too.
+	var bh01b := "component A() {\n\treturn ( <Label /> /* brace } */ )\n}\ncomponent B() { return ( <Label /> ) }\n"
+	_check_true(RUIGuitkx.compile(bh01b, "file")["ok"], "BH-01: block markup comment `/* } */` doesn't desync")
+
+	# BH-08: a multi-line import (names / `from` on later lines) is legal, no false GUITKX0300.
+	var bh08 := "import {\n\tFoo,\n\tBar\n} from \"./x\"\n\ncomponent A() { return ( <Label /> ) }\n"
+	var r08 := RUIGuitkx.compile(bh08, "file")
+	_check_true(r08["ok"], "BH-08: multi-line import compiles (%s)" % str(r08.get("diagnostics", [])))
+	_check_true(not _has_code(r08, "GUITKX0300"), "BH-08: no false 0300 on a multi-line import")
+	_check_true((r08.get("imports", []) as Array).size() == 1 and (r08["imports"][0]["names"] as Array).size() == 2, "BH-08: both names + specifier parsed across lines")
+	# a specifier string that actually spans a newline is still unterminated -> 0300.
+	_check_true(_has_code(RUIGuitkx.compile("import { A } from \"./x\ncomponent B() { return ( <Label /> ) }\n", "b"), "GUITKX0300"), "BH-08: a newline inside the specifier string is still 0300")
 
 func _imp_write(path: String, content: String) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
