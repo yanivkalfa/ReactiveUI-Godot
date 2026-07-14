@@ -67,15 +67,15 @@ static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: A
 ## func a cross-file reference calls (`render` for the binding component, else the decl name).
 static func exports_of(src: String) -> Array:
 	var binding := _binding_name(src)
+	var decls := Compiler._enumerate_decls(src, 0)
+	var render_comp := Compiler.render_component(decls, binding)   # the component that emits `render`
 	var out: Array = []
-	for dm in Compiler._enumerate_decls(src, 0):
+	for dm in decls:
 		if not bool(dm["export"]):
 			continue
 		var nm := str(dm["name"])
 		var kind := str(dm["kind"])
-		var fn := nm
-		if kind == "component" and nm == binding:
-			fn = "render"
+		var fn := "render" if (kind == "component" and nm == render_comp) else nm
 		out.append({ "name": nm, "kind": kind, "func": fn })
 	return out
 

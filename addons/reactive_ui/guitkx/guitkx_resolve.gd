@@ -44,13 +44,13 @@ static func decl_table(guitkx_path: String) -> Dictionary:
 	if _table_cache.has(key):
 		return _table_cache[key]
 	var binding := _binding_of(src)
+	var decl_list := Compiler._enumerate_decls(src, 0)
+	var render_comp := Compiler.render_component(decl_list, binding)   # the component that emits `render`
 	var decls := {}
-	for dm in Compiler._enumerate_decls(src, 0):
+	for dm in decl_list:
 		var nm := str(dm["name"])
 		var kind := str(dm["kind"])
-		var fn := nm
-		if kind == "component" and nm == binding:
-			fn = "render"
+		var fn := "render" if (kind == "component" and nm == render_comp) else nm
 		decls[nm] = { "kind": kind, "export": bool(dm["export"]), "func": fn }
 	var out := { "binding": binding, "decls": decls }
 	_table_cache[key] = out
@@ -73,6 +73,10 @@ static func _binding_of(src: String) -> String:
 static func _class_name_override(src: String) -> String:
 	var n := src.length()
 	var i := 0
+	# LAST `@class_name` wins, matching compile()'s preamble loop (which overwrites class_name_override
+	# each time) and codegen._binding_name -- a scan that returned the FIRST would disagree with the
+	# emitter on a (malformed) two-@class_name file (BH-17), mis-addressing every cross-file func.
+	var override := ""
 	while i < n:
 		i = Compiler._skip_ws_and_comments(src, i)
 		if i >= n:
@@ -85,7 +89,9 @@ static func _class_name_override(src: String) -> String:
 			var h := raw.find("#")
 			if h != -1:
 				raw = raw.substr(0, h)
-			return raw.strip_edges()
+			override = raw.strip_edges()
+			i = le
+			continue
 		if Compiler.L.keyword_at(src, i, "import"):
 			i = _skip_import(src, i)
 			continue
@@ -94,7 +100,7 @@ static func _class_name_override(src: String) -> String:
 			i = n if le2 == -1 else le2
 			continue
 		break
-	return ""
+	return override
 
 static func _skip_import(src: String, i: int) -> int:
 	var n := src.length()

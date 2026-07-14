@@ -1305,6 +1305,29 @@ static func _compile_module(source: String, mi: int, class_name_override: String
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	return { "ok": true, "gd": out, "diagnostics": diags, "refs": refs }
 
+## The component declaration that emits `render` in a file — every cross-file `V.comp` reference to
+## the file's primary component addresses `render`. Rule: the component the binding names, else the
+## first EXPORTED component, else the first component, else "" (no component). This is the SINGLE
+## source of truth shared by the emitter (`_compile_mixed` here; `_compile_component` always emits
+## `render` for a single-component file, which is that file's sole = render component) AND the export
+## tables (`RUIGuitkxCodegen.exports_of` / `RUIGuitkxResolve.decl_table`), so cross-file func
+## addressing can never disagree with the emitted code — even when `@class_name` overrides the binding
+## to a name that is not any component's decl name (the BH-02 case).
+static func render_component(decls: Array, binding: String) -> String:
+	var first_comp := ""
+	var first_exported := ""
+	for dm in decls:
+		if str(dm["kind"]) != "component":
+			continue
+		var nm := str(dm["name"])
+		if first_comp == "":
+			first_comp = nm
+		if first_exported == "" and bool(dm["export"]):
+			first_exported = nm
+		if nm == binding:
+			return nm
+	return first_exported if first_exported != "" else first_comp
+
 ## 0.10.0 MIXED-DECL v1 (§6.3): compile a file holding SEVERAL top-level declarations into one
 ## script. The binding (`@class_name` override, else first EXPORTED decl, else "" for a fully-private
 ## file) names the class AND its component emits as `render`; every other component emits a static
@@ -1352,13 +1375,14 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 				break
 	if binding == "":
 		binding = str(decls[0]["name"])
+	var render_comp := render_component(decls, binding)
 	var comp_parses := {}   # name -> parsed component
-	var comp_func := {}     # name -> emitted func name ("render" for the binding component, else name)
+	var comp_func := {}     # name -> emitted func name ("render" for the render component, else name)
 	var top_hooks: Array = []
 	for dm in decls:
 		if str(dm["kind"]) == "component":
 			comp_parses[str(dm["name"])] = null
-			comp_func[str(dm["name"])] = "render" if str(dm["name"]) == binding else str(dm["name"])
+			comp_func[str(dm["name"])] = "render" if str(dm["name"]) == render_comp else str(dm["name"])
 		elif str(dm["kind"]) == "hook":
 			top_hooks.append(str(dm["name"]))
 	# 4. Parse + validate every decl (parse errors / rules-of-hooks fail the whole file, like a module).

@@ -1119,6 +1119,45 @@ func _test_bughunt_fixes() -> void:
 	# a specifier string that actually spans a newline is still unterminated -> 0300.
 	_check_true(_has_code(RUIGuitkx.compile("import { A } from \"./x\ncomponent B() { return ( <Label /> ) }\n", "b"), "GUITKX0300"), "BH-08: a newline inside the specifier string is still 0300")
 
+	# BH-02: when @class_name != the decl name, the sole component still emits `render`, and the export
+	# tables must ADDRESS it as `render` (not the decl name) -- else a cross-file import mis-targets it.
+	const Resolve := preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+	var bh02 := "@class_name Custom\nexport component Widget() {\n\treturn ( <Label /> )\n}\n"
+	_check_true((RUIGuitkx.compile(bh02, "file")["gd"] as String).contains("static func render("), "BH-02: sole component emits render under @class_name override")
+	_check_true(str(Codegen.exports_of(bh02)[0]["func"]) == "render", "BH-02: exports_of addresses the sole component as render (%s)" % str(Codegen.exports_of(bh02)))
+	_check_true(str(Resolve.decl_table(_bh_writefile("__bh02", bh02))["decls"]["Widget"]["func"]) == "render", "BH-02: decl_table addresses Widget as render")
+	# mixed @class_name-mismatch: the first EXPORTED component becomes the render component.
+	var bh02m := "@class_name Zzz\nexport component A() {\n\treturn ( <Label /> )\n}\nexport component B() {\n\treturn ( <Label /> )\n}\n"
+	var r02m := RUIGuitkx.compile(bh02m, "file")
+	_check_true((r02m["gd"] as String).contains("static func render(") and (r02m["gd"] as String).contains("static func B("), "BH-02: mixed @class_name-mismatch -> first exported component renders")
+	_check_true(str(Codegen.exports_of(bh02m)[0]["func"]) == "render", "BH-02: exports_of first-exported = render in mixed mismatch")
+
+	# BH-17: resolver and codegen agree on the binding for a two-@class_name file (both take the LAST).
+	var bh17 := "@class_name First\n@class_name Second\ncomponent A() { return ( <Label /> ) }\n"
+	_check_true(Codegen._binding_name(bh17) == Resolve._binding_of(bh17), "BH-17: resolver/codegen agree on binding with two @class_name (%s vs %s)" % [Codegen._binding_name(bh17), Resolve._binding_of(bh17)])
+	_check_true(Codegen._binding_name(bh17) == "Second", "BH-17: last @class_name wins (matches the emitter)")
+
+	# cleanup any temp files the file-backed checks created
+	for p in _bh_tmp_files:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(p)
+	if DirAccess.dir_exists_absolute("res://tests/__bh_tmp"):
+		if FileAccess.file_exists("res://tests/__bh_tmp/.gdignore"):
+			DirAccess.remove_absolute("res://tests/__bh_tmp/.gdignore")
+		DirAccess.remove_absolute("res://tests/__bh_tmp")
+	_bh_tmp_files.clear()
+
+func _bh_writefile(name: String, content: String) -> String:
+	var dir := "res://tests/__bh_tmp"
+	DirAccess.make_dir_recursive_absolute(dir)
+	_imp_write(dir + "/.gdignore", "")
+	var p := dir + "/" + name + ".guitkx"
+	_imp_write(p, content)
+	_bh_tmp_files.append(p)
+	return p
+
+var _bh_tmp_files: Array = []
+
 func _imp_write(path: String, content: String) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f != null:
