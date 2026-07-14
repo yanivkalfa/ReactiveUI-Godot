@@ -1162,6 +1162,24 @@ func _test_bughunt_fixes() -> void:
 	_check_true(spec14 == "~/sub/card", "BH-14: under-root target uses ~/root-relative (got %s)" % spec14)
 	_check_true(str(Resolve.resolve_specifier(spec14, from13, uiroot).get("guitkx", "")) == t14, "BH-14: ~/ round-trips")
 
+	# BH-06: a bare top-level hook import must lower to an aliased const + rewritten call -- the emitted
+	# .gd must PARSE (a plain `const use_x = preload(...)` would call a resource).
+	var hpath := _bh_writefile_at("res://tests/__bh_tmp/h", "export hook use_thing() -> int {\n\treturn 42\n}\n")
+	Codegen.compile_file(hpath)   # produce h.gd so the preload target exists
+	var bh06 := "import { use_thing } from \"./h\"\n\nexport component A() {\n\tvar v = use_thing()\n\treturn ( <Label text={str(v)} /> )\n}\n"
+	var r06 := RUIGuitkx.compile(bh06, "a", [], {}, "res://tests/__bh_tmp/a.guitkx", "res://")
+	_check_true(r06["ok"], "BH-06: bare-hook importer compiles")
+	_check_true((r06["gd"] as String).contains("__RUI_IMP_") and (r06["gd"] as String).contains(".use_thing("), "BH-06: bare call rewritten to <const>.use_thing(")
+	_check_true(not (r06["gd"] as String).contains("const use_thing = preload"), "BH-06: no uncallable `const use_thing = preload`")
+	_check_true(Codegen.gd_source_parses(r06["gd"]), "BH-06: emitted .gd PARSES")
+	if FileAccess.file_exists("res://tests/__bh_tmp/h.gd"): DirAccess.remove_absolute("res://tests/__bh_tmp/h.gd")
+	for ext in [".gd.uid", ".guitkx.diags.json", ".guitkx.uid"]:
+		if FileAccess.file_exists("res://tests/__bh_tmp/h" + ext): DirAccess.remove_absolute("res://tests/__bh_tmp/h" + ext)
+
+	# BH-09: mixed-decl @uss with a non-single-element render-component root emits GUITKX2210.
+	var bh09 := "@uss \"res://theme.tres\"\nexport component A() {\n\treturn ( <><Label /><Label /></> )\n}\n\nexport component B() {\n\treturn ( <Label /> )\n}\n"
+	_check_true(_has_code(RUIGuitkx.compile(bh09, "file"), "GUITKX2210"), "BH-09: mixed @uss non-element root -> 2210 (not a silent drop)")
+
 	# cleanup: remove the whole __bh_tmp tree (and the __bh02 file under __bh_tmp)
 	_bh_rm_tree("res://tests/__bh_tmp")
 	_bh_tmp_files.clear()

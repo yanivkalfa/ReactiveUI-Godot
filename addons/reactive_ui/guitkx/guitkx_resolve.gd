@@ -131,6 +131,9 @@ static func _skip_import(src: String, i: int) -> int:
 static func resolve_file_imports(imports: Array, from_guitkx: String, root: String, used: Callable = Callable()) -> Dictionary:
 	var comps := {}
 	var values: Array = []
+	var hooks: Array = []   # imported TOP-LEVEL hooks -> {name, gd}; called bare, so lowered via an
+	                        # aliased const preload + call-site rewrite (NOT a plain `const use_x = ...`,
+	                        # which would call a script resource -- BH-06).
 	var diags: Array = []
 	var seen := {}   # name -> spec (duplicate-import 2303, cross-line — the scan already caught same-line)
 	for imp in imports:
@@ -165,12 +168,15 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nm, at, nm.length()))
 			if str(d["kind"]) == "component":
 				comps[nm] = { "gd": res["gd"], "func": d["func"] }
+			elif str(d["kind"]) == "hook":
+				# a top-level hook is a static func, called bare -- lower to an aliased const + rewrite.
+				hooks.append({ "name": nm, "gd": res["gd"] })
 			else:
-				# hook or module -> a value preload. A binding member (the file's own name) is the
-				# whole script; a non-binding module member is an inner class on it.
+				# module -> a value preload used as `Name.member(...)`. A binding member (the file's own
+				# name) is the whole script; a non-binding module member is an inner class on it.
 				var member := "" if nm == str(table["binding"]) else nm
 				values.append({ "name": nm, "gd": res["gd"], "member": member, "kind": d["kind"] })
-	return { "comps": comps, "values": values, "diags": diags }
+	return { "comps": comps, "values": values, "hooks": hooks, "diags": diags }
 
 ## Names from `referenceable` (name -> anything) actually USED in `src` as a markup tag (`<Name`) or
 ## a qualified reference (`Name.` / `Name(`), excluding this file's own decls. The CANONICAL cross-file

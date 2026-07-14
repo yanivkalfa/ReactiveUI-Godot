@@ -238,6 +238,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 	# modules) collect for the header const-preload pass after emission; the frozen import diagnostics
 	# (GUITKX2300–2308) join `diags`. Absent a path (string callers), imports stay parsed-but-inert.
 	var import_values: Array = []
+	var import_hooks: Array = []
 	if self_path != "" and not imports.is_empty():
 		var eff_root := root if root != "" else Config.root_for(self_path)
 		var used_cb := func(nm: String) -> bool: return _name_referenced(source, nm)
@@ -245,6 +246,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 		for cn in (ir["comps"] as Dictionary):
 			known[cn] = ir["comps"][cn]   # { gd, func } -> V.comp lowering (Dictionary value)
 		import_values = ir["values"]
+		import_hooks = ir.get("hooks", [])
 		diags.append_array(ir["diags"])
 	# 1c. STRICT (M6, post-migration): a cross-file reference to another .guitkx binding that was NOT
 	# imported is GUITKX2305 -- implicit cross-file resolution is an error; the reference must be an
@@ -314,6 +316,11 @@ static func compile(source: String, basename: String = "Component", known_compon
 	# lazy via V.comp.
 	if r.get("ok", false) and not import_values.is_empty():
 		r["gd"] = _insert_value_imports(str(r["gd"]), import_values)
+	# Bare top-level hook imports: one deduped `const __RUI_IMP_<file> = preload(path)` per target +
+	# a lexer-aware call-site rewrite `use_x(` -> `__RUI_IMP_<file>.use_x(` (§6.4). A plain
+	# `const use_x = preload(...)` would make `use_x()` call a script resource -- BH-06.
+	if r.get("ok", false) and not import_hooks.is_empty():
+		r["gd"] = _lower_hook_imports(str(r["gd"]), import_hooks)
 	# The preamble's declared imports ride along on every result (ok or not) so the codegen sidecar
 	# (schema v3) and the resolver can read the graph truth straight from this compile.
 	r["imports"] = imports
@@ -485,21 +492,67 @@ static func _insert_value_imports(gd: String, values: Array) -> String:
 		if str(v["member"]) != "":
 			rhs += "." + str(v["member"])
 		lines.append("const %s = %s" % [str(v["name"]), rhs])
-	var block := "\n".join(lines) + "\n"
-	# after the banner comment line (`## AUTO-GENERATED … do not edit.`) and the blank line following it.
-	var marker := "## AUTO-GENERATED"
-	var mi := gd.find(marker)
+	return _insert_after_banner(gd, "\n".join(lines) + "\n")
+
+## Insert `block` (const lines, trailing newline) right after the `## AUTO-GENERATED … do not edit.`
+## banner + its blank line -- the shared header-insert used by value imports AND hook-import consts.
+static func _insert_after_banner(gd: String, block: String) -> String:
+	var mi := gd.find("## AUTO-GENERATED")
 	if mi == -1:
 		return block + gd   # no banner (shouldn't happen) -- prepend defensively
 	var le := gd.find("\n", mi)
 	if le == -1:
 		return gd + "\n" + block
-	# keep the blank line after the banner, then the const block, then the rest.
 	var head := gd.substr(0, le + 1)
 	var rest := gd.substr(le + 1)
 	if rest.begins_with("\n"):
-		return head + "\n" + block + rest.substr(1)
+		return head + "\n" + block + rest.substr(1)   # keep the one blank line after the banner
 	return head + block + rest
+
+## Lower bare top-level hook imports (§6.4): one deduped `const __RUI_IMP_<hash> = preload(<gd>)` per
+## target file, then rewrite each imported hook's bare call site `use_x(` -> `__RUI_IMP_<hash>.use_x(`.
+## The rewrite runs on the EMITTED gd (GDScript lexis) so it skips strings/comments and never touches
+## the `__RUI_HOOK_SIG` string literal (fingerprints stay on the bare name -- family key stability).
+static func _lower_hook_imports(gd: String, hooks: Array) -> String:
+	var consts := {}    # gd path -> const identifier
+	var aliases := {}   # hook name -> const identifier
+	for h in hooks:
+		var g := str(h["gd"])
+		if not consts.has(g):
+			consts[g] = "__RUI_IMP_%08x" % (hash(g) & 0xFFFFFFFF)
+		aliases[str(h["name"])] = consts[g]
+	var rewritten := _rewrite_bare_calls(gd, aliases)
+	var lines: Array = []
+	for g in consts:
+		lines.append("const %s = preload(%s)" % [str(consts[g]), _gd_str(g)])
+	return _insert_after_banner(rewritten, "\n".join(lines) + "\n")
+
+## Rewrite a bare call `name(` -> `<alias>.name(` for every `name` in `aliases`, lexer-aware (GDScript
+## lexis): strings/comments copied verbatim, and a `.`- or identifier-prefixed occurrence (a member
+## call `x.name(` or a longer identifier) is left alone. Mirrors _apply_hook_aliases' guards exactly.
+static func _rewrite_bare_calls(src: String, aliases: Dictionary) -> String:
+	var out := ""
+	var i := 0
+	var n := src.length()
+	while i < n:
+		var j := L.skip_noncode(src, i)
+		if j != i:
+			out += src.substr(i, j - i)
+			i = j
+			continue
+		if i == 0 or (not L._is_ident_code(src.unicode_at(i - 1)) and src.unicode_at(i - 1) != L.C_DOT):
+			var matched := ""
+			for name in aliases:
+				if L.keyword_at(src, i, str(name)) and _is_call_at(src, i + str(name).length()):
+					matched = str(name)
+					break
+			if matched != "":
+				out += str(aliases[matched]) + "." + matched
+				i += matched.length()
+				continue
+		out += src[i]
+		i += 1
+	return out
 
 ## True if identifier `nm` is referenced anywhere in `source` OUTSIDE its own import line — a crude
 ## drive for the unused-import warning (GUITKX2304). Lexer-aware enough to skip strings/comments.
@@ -1412,9 +1465,12 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 				var pc := _parse_component_at(source, int(dm["at"]), diags)
 				if not pc["ok"]:
 					return { "ok": false, "gd": "", "diagnostics": diags }
-				# @uss themes the BINDING component's root (the file's single themed surface).
-				if uss_path != "" and str(dm["name"]) == binding:
-					if (pc["root"] as Dictionary).get("t", "") == "el" and not _has_attr(pc["root"], "theme"):
+				# @uss themes the file's RENDER component (its single themed surface) -- and, exactly like
+				# the single-decl path, a non-single-element root is GUITKX2210, not a silent drop (BH-09).
+				if uss_path != "" and str(dm["name"]) == render_comp:
+					if (pc["root"] as Dictionary).get("t", "") != "el":
+						diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` needs a single root ELEMENT to receive the theme -- this component's root is a %s" % str((pc["root"] as Dictionary).get("t", "?")), int((pc["root"] as Dictionary).get("at", -1)) + int(pc["body_at"]), 1))
+					elif not _has_attr(pc["root"], "theme"):
 						(pc["root"]["attrs"] as Array).append({ "name": "theme", "kind": "expr", "value": "__THEME", "at": -1, "vat": -1, "end": -1 })
 				comp_parses[str(dm["name"])] = pc
 				parsed.append({ "dm": dm, "pc": pc })
@@ -1428,8 +1484,8 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 				if not mod["ok"]:
 					return { "ok": false, "gd": "", "diagnostics": diags }
 				parsed.append({ "dm": dm, "mod": mod })
-	if uss_path != "" and not comp_parses.has(binding):
-		diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` needs the binding to be a component with a root element to theme", 0, 4))
+	if uss_path != "" and render_comp == "":
+		diags.append(D.make("GUITKX2210", D.ERROR, "`@uss` applies to a file with a component to theme -- this file declares none", 0, 4))
 	# Validate all members before emitting anything (T1.1 parity with the module path).
 	for p in parsed:
 		if p.has("pc"):
