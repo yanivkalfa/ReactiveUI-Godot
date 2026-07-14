@@ -34,6 +34,10 @@ Requires **Godot 4.4+**.
   the engine-vs-user class colour split, and **embedded `{expr}` GDScript sub-highlights** for real
   (keywords/strings/numbers) — plus line numbers, code folding, minimap, bookmarks,
   current-line/occurrence/bracket highlights, and a ruler at the formatter's print width.
+- **Import-aware (0.10.0)**: `import { … } from "…"` and `export` are first-class syntax;
+  multi-declaration files index every declaration; and the import diagnostics
+  (`GUITKX2300`–`GUITKX2309` — unresolved specifier, not exported, value-import cycle, …) surface
+  exactly like the build's.
 - **Live diagnostics**: on each (debounced) edit the file is compiled with `RUIGuitkx.compile` — with
   the full project's component universe, so an unknown `<Component />` errors (with a did-you-mean)
   exactly like the build. Errors/warnings show as **gutter icons + line tints** and in a bottom

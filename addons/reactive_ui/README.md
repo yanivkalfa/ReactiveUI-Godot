@@ -2,9 +2,10 @@
 
 React-style reactive UI for Godot 4, in plain GDScript: function components, hooks
 (`useState` / `useEffect` / `useMemo` / …), a fiber reconciler with keyed reconciliation and
-bailouts, a router, typed styling — and the **`.guitkx`** JSX-like markup language that compiles
-to plain `.gd` at save time and hot-reloads running games (Fast Refresh with hook-state
-preservation).
+bailouts, a router, typed styling — and the **`.guitkx`** JSX-like markup language with
+**ES-module-style imports** (`import { StatusChip } from "./status_chip"` / `export component …`)
+that compiles to plain `.gd` at save time and hot-reloads running games (Fast Refresh with
+hook-state preservation).
 
 - **Repository / full documentation:** https://github.com/yanivkalfa/ReactiveUI-Godot
 - **Issues:** https://github.com/yanivkalfa/ReactiveUI-Godot/issues
@@ -51,11 +52,29 @@ root.render(V.fc(V.comp("res://hello.gd"), {}))
 
 With a game running (F5), edits to `.guitkx` hot-reload in place — state included.
 
+Split the UI across files with imports (`export` marks what other files may use; resolution is
+strict, and the error tells you the exact import to add):
+
+```
+import { Hello } from "./hello"
+
+export component Screen {
+  return ( <PanelContainer><Hello /></PanelContainer> )
+}
+```
+
+Migrating a pre-0.10 project is one idempotent command (ships with the addon):
+
+```
+godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_10_0.gd
+```
+
 ## What's in the box
 
 - `core/` — the reactive engine: V factories, virtual nodes, hooks, fiber reconciler, signals,
   router, Fast Refresh runtime.
-- `guitkx/` — the `.guitkx` compiler, formatter, lexer, and diagnostics (GUITKX#### codes).
+- `guitkx/` — the `.guitkx` compiler, import resolver, migration codemod, formatter, lexer, and
+  diagnostics (GUITKX#### codes).
 - `plugin.gd` — the editor watcher: compiles `.guitkx` on save, sweeps orphaned outputs, pushes
   hot reloads to running games.
 

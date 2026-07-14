@@ -117,8 +117,11 @@ export const UitkxReferencePage: FC = () => (
       Declarations
     </Typography>
     <Typography variant="body2" paragraph>
-      A <code>.guitkx</code> file declares exactly one of three kinds. Each becomes a static function
-      (or set of functions) on the generated class.
+      A <code>.guitkx</code> file is a sequence of declarations of three kinds (one per file is the
+      recommended convention; several may share a file since 0.10). Each becomes a static function
+      (or set of functions) on the generated class. Prefix a declaration with <code>export</code> to
+      make it importable from other files — without it the declaration is file-private (see the
+      Imports &amp; Exports page).
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
@@ -138,7 +141,7 @@ export const UitkxReferencePage: FC = () => (
           <TableRow>
             <TableCell><code>hook</code></TableCell>
             <TableCell><code>hook use_thing(args) -&gt; Type {'{ … }'}</code></TableCell>
-            <TableCell>A reusable custom hook (inside a <code>module</code> block).</TableCell>
+            <TableCell>A reusable custom hook — top-level in its own file, or grouped inside a <code>module</code> block.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>module</code></TableCell>
@@ -154,8 +157,8 @@ export const UitkxReferencePage: FC = () => (
       Preamble Directives
     </Typography>
     <Typography variant="body2" paragraph>
-      Preamble directives appear at the top of a <code>.guitkx</code> file, before any declaration.
-      They configure the generated GDScript class.
+      The preamble is everything before the first declaration: <code>import</code> lines and the{' '}
+      <code>@</code>-directives, in any order. Directives configure the generated GDScript class.
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
@@ -168,14 +171,19 @@ export const UitkxReferencePage: FC = () => (
         </TableHead>
         <TableBody>
           <TableRow>
+            <TableCell><code>import</code></TableCell>
+            <TableCell><code>import {'{ Name, … }'} from &quot;./file&quot;</code></TableCell>
+            <TableCell>Bring another file&apos;s <code>export</code>ed declarations into scope (0.10.0). Specifiers are extensionless: <code>./</code> / <code>../</code> relative, or <code>~/</code> from the config <code>root</code>. Named imports only. See the Imports &amp; Exports page.</TableCell>
+          </TableRow>
+          <TableRow>
             <TableCell><code>@class_name</code></TableCell>
             <TableCell><code>@class_name MyButton</code></TableCell>
-            <TableCell>Override the generated GDScript <code>class_name</code> (defaults to the declaration name).</TableCell>
+            <TableCell>Override the generated GDScript <code>class_name</code> (defaults to the first exported declaration&apos;s name).</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>@uss</code></TableCell>
             <TableCell><code>@uss "res://ui/theme.tres"</code></TableCell>
-            <TableCell>Preload a <code>Theme</code> and apply it to the component's root element (unless it sets <code>theme</code> itself). One per file; component files only. <code>@theme</code> is an alias.</TableCell>
+            <TableCell>Preload a <code>Theme</code> and apply it to the component's root element (unless it sets <code>theme</code> itself). One per file; component files only. Accepts <code>res://</code>, <code>uid://</code>, and <code>~/</code> paths. <code>@theme</code> is an alias.</TableCell>
           </TableRow>
         </TableBody>
       </Table>

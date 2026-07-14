@@ -20,6 +20,14 @@ visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient
   and VS2022 (VS never drives coloring over LSP, so the grammar is required there too).
 - **Markup intelligence** (tag / attribute / directive completion + hover) — answered locally by the
   language server from the schema (`grammar/guitkx-schema.json`, embedded in `lsp-server/src/schema.ts`).
+- **Import intelligence (0.10.0)** — `import { … } from "…"` / `export` are first-class syntax;
+  go-to-definition works **through** an import (F12 on a specifier opens the target file, on an
+  imported name jumps to its declaration — `./ ../ ~/` resolved exactly like the compiler,
+  including the `guitkx.config.json` `"root"` key); imported names resolve during embedded analysis
+  (no false "undefined identifier" squiggles); the workspace index covers every declaration of a
+  multi-declaration file; the outline badges `export`ed declarations; and the compiler's
+  `GUITKX2300`–`GUITKX2309` import diagnostics surface from the `.diags` sidecar. Imports are
+  optional syntax — pre-0.10 projects stay green.
 - **Embedded-GDScript intelligence** (completion/hover/go-to-definition inside `{expr}`/setup/conditions)
   — the server builds a synthetic `.gd` **virtual document** with a length-preserving **source map**
   (Volar's technique, hand-rolled), then analyzes it **in-process** with

@@ -36,4 +36,4 @@ export const EXAMPLE_CONFIG = `{
   "formatter": { "indentStyle": "tab" }
 }`
 
-export const EXAMPLE_MIGRATE = `godot --headless --path . --script res://tests/guitkx_migrate.gd`
+export const EXAMPLE_MIGRATE = `godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_10_0.gd`

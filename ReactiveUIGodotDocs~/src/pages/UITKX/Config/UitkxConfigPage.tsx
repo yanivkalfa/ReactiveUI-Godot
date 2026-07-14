@@ -13,6 +13,7 @@ import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from '../Reference/UitkxReferencePage.style'
 
 const GUITKX_CONFIG = `{
+  "root": "res://ui",
   "formatter": {
     "printWidth": 100,
     "indentStyle": "tab",
@@ -153,16 +154,34 @@ export const UitkxConfigPage: FC = () => (
 
     {/* ── guitkx.config.json ───────────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
-      Formatter configuration (<code>guitkx.config.json</code>)
+      Project configuration (<code>guitkx.config.json</code>)
     </Typography>
     <Typography variant="body2" paragraph>
-      To override the formatter, drop a <code>guitkx.config.json</code> at or
-      above the file being formatted (a Prettier-style walk-up — the first one
-      found, walking up to the filesystem root, wins). No file is needed; the
-      defaults below apply when none is found. Unknown keys are ignored, and a
-      malformed file falls back to the defaults.
+      Drop a <code>guitkx.config.json</code> at or above the file (a
+      Prettier-style walk-up — the <strong>nearest</strong> one found, walking up
+      to the project root, wins; configs are <strong>not merged</strong>, so a
+      formatter-only config in a subdirectory shadows an ancestor that set{' '}
+      <code>root</code>). No file is needed; the defaults apply when none is
+      found. Unknown keys are ignored, and a malformed file falls back to the
+      defaults.
     </Typography>
     <CodeBlock language="json" code={GUITKX_CONFIG} />
+    <Typography variant="h6" component="h3" sx={Styles.section}>
+      <code>root</code> — the <code>~/</code> import root (0.10.0)
+    </Typography>
+    <Typography variant="body2" paragraph>
+      The top-level <code>root</code> key sets the project UI source root that{' '}
+      <code>~/</code> import specifiers (and <code>~/</code> asset paths in{' '}
+      <code>@uss</code>/<code>@theme</code>) resolve against. Default:{' '}
+      <code>res://</code>. A <code>res://…</code> value is used verbatim; any
+      other value is taken relative to the config file&apos;s own directory. With{' '}
+      <code>{'"root": "res://ui"'}</code>, the specifier <code>~/cards/badge</code>{' '}
+      resolves to <code>res://ui/cards/badge.guitkx</code>. See the Imports &amp;
+      Exports page.
+    </Typography>
+    <Typography variant="h6" component="h3" sx={Styles.section}>
+      <code>formatter</code>
+    </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
         <TableHead>

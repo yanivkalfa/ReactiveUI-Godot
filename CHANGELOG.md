@@ -25,9 +25,9 @@ implicit reference to another component/hook/module is an error — import it.
   not-declared, duplicate import, unused import, defined-but-not-imported, value-cycle,
   used-but-unexported, boundary crossing, import-after-first-declaration.
 - **Migration codemod** — run once, `godot --headless --path . --script
-  res://tests/guitkx_migrate.gd`: it exports every declaration and writes the import lines
+  res://addons/reactive_ui/dev/migrate_0_10_0.gd`: it exports every declaration and writes the import lines
   for each file's cross-file references. Idempotent and re-runnable. The bundled examples
-  (including the Doom demo) ship migrated.
+  (including the Doom demo) ship migrated. Full guide: [MIGRATION-0.10.md](MIGRATION-0.10.md).
 - The generated-script parse check is now a **two-pass, counted CI gate** (a value import
   preloading a not-yet-written sibling no longer false-fails), and Fast Refresh re-renders
   only the component importers of a changed hook/module instead of the whole tree.

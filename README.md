@@ -119,10 +119,12 @@ From here on, edit `counter.guitkx` while the game runs under F5 and watch it up
 
 ## Authoring in `.guitkx`
 
-A `.guitkx` file declares one `component` (or a `hook` / a `module` grouping several — see
-[Companion files](#companion-files)), with GDScript **setup code** followed by exactly one markup
-`return (...)`. Canonical formatting is **2-space indentation** (Unity-exact); the compiler and
-formatter both enforce it.
+A `.guitkx` file is a sequence of declarations — `component`s, `hook`s, and `module`s, in any mix
+(since 0.10.0; one per file remains the recommended convention — see
+[Companion files](#companion-files)). A component is GDScript **setup code** followed by exactly one
+markup `return (...)`. Files reference each other through explicit
+[imports](#imports--exports-0100). Canonical formatting is **2-space indentation** (Unity-exact);
+the compiler and formatter both enforce it.
 
 ### Naming is 1:1 loyal to Godot (0.9.0)
 
@@ -142,6 +144,42 @@ You never learn a second vocabulary (migrating from 0.8? — [MIGRATION-0.9.md](
   for **every** signal of **every** node; `on_<signal>` also binds verbatim.
 - **Style keys are the exact Godot property / theme-item / StyleBoxFlat names**; enum values are
   Godot's own constants (`Control.SIZE_EXPAND_FILL` or the constant name as a string).
+
+### Imports & exports (0.10.0)
+
+Files say what they depend on, and cross-file resolution is **strict** — referencing another
+file's component/hook/module without importing it is a compile error that tells you the exact
+import line to add (migrating from 0.9? — [MIGRATION-0.10.md](MIGRATION-0.10.md)):
+
+```guitkx
+import { StatusChip } from "./status_chip"
+import { HudHooks } from "~/ui/hud.hooks"
+
+export component Panel(level: int = 1) {
+  var blink = HudHooks.use_blink(0.5)
+  return ( <PanelContainer><StatusChip level={level} /></PanelContainer> )
+}
+```
+
+- **Specifiers** are relative (`./`, `../`) or root-aliased (`~/` — the project UI source root, set
+  by a `"root"` key in the nearest `guitkx.config.json`, default `res://`), always **extensionless**.
+  `res://`/`uid://` are not valid import specifiers (they stay valid in `@uss`/`@theme` asset
+  positions, which also accept `~/`). **Named imports only** — no default, no `import *`.
+- **`export`** makes a declaration reachable across files; without it a declaration is
+  file-private. A file may hold **several** declarations; its binding (`class_name`) is the
+  `@class_name` override, else the first exported declaration.
+- **Component cycles are legal** (component imports stay lazy through `V.comp`); **value cycles**
+  (hooks/modules — eager `const` preloads) are a compile error that prints the chain.
+- **Migrating an existing project is one command** — idempotent, re-runnable, leaves hand-written
+  `class_name` scripts alone (they stay ambient, no import needed):
+
+  ```bash
+  godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_10_0.gd
+  ```
+
+Import mistakes surface as **`GUITKX2300`–`GUITKX2309`** (unresolved specifier, not exported,
+not declared, duplicate, unused, not imported, value cycle, unexported reference, boundary
+crossing, misplaced import) — see the docs site's Imports page for the full table.
 
 ### Hooks
 
@@ -268,8 +306,11 @@ when the callback identity **or** `redraw_key` changes.
 
 A `hook use_thing() { ... }` or a `module Name { component A {...} hook use_b() {...} }`
 declaration groups reusable logic into its own `.guitkx` file, compiled the same way — this is
-still `.guitkx`, not raw GDScript. See the docs site's Companion Files page for the full layout
-convention (one `component` per file, sub-components as sibling files, `module` for shared hooks).
+still `.guitkx`, not raw GDScript. Consumers reach it through an explicit
+[import](#imports--exports-0100) (`import { Name } from "./file.hooks"`). Since 0.10.0 a single
+file may also hold several declarations, so the layout is a **convention**, not a rule — the
+recommended shape stays one `component` per file, sub-components as sibling files, `module` for
+shared hooks. See the docs site's Companion Files page.
 
 ### Where `V.*` still shows up
 
@@ -311,8 +352,9 @@ share state across components without prop-drilling. Read it with `useSignal`/`u
 Save a `.guitkx` while your game runs under F5 and the UI updates **in place**, hook state
 preserved — no restart:
 
-- A changed **component** re-renders just its own fibers; a changed **hook/module** triggers a
-  global re-render (any component may call it).
+- A changed **component** re-renders just its own fibers; a changed **hook/module** re-renders
+  just the components that (transitively) import it — falling back to a global re-render only when
+  the import graph can't name them (e.g. pre-0.10 files without imports).
 - If the hook-call shape changed (added/removed/reordered), that component's state is
   **deliberately reset** instead of risking corruption — React Fast Refresh semantics, backed by a
   compiler-embedded hook-order fingerprint.
@@ -367,9 +409,10 @@ keep the classic `Foo.render` form.
 ## Diagnostics
 
 The compiler validates as it goes — rules of hooks, duplicate/unstable keys, unknown elements,
-directive-header grammar, dangling/duplicate component references, asset paths, and more — **39
-`GUITKX####` codes** in total, with "did you mean" hints where it can tell. See the docs site's
-Diagnostics reference for the full table; `GUITKX2103` is the one you'll hit migrating pre-0.7
+directive-header grammar, import resolution, dangling/duplicate component references, asset paths,
+and more — **50 `GUITKX####` codes** in total, with "did you mean" hints where it can tell. See the
+docs site's Diagnostics reference for the full table; `GUITKX2300`–`GUITKX2309` are the import
+family (shared across the ReactiveUI engines), `GUITKX2103` is the one you'll hit migrating pre-0.7
 `.guitkx` (directive bodies need `return ( <markup> )` now), and `GUITKX2106`/`GUITKX2107` guard
 against a copy-pasted or dangling component reference.
 
@@ -421,21 +464,19 @@ raw `V.*`/`Hooks.*` calls is not the intended day-to-day workflow — see
   this library relies on elsewhere), but a large `Array`/`Dictionary` in a deps list is deep-compared
   every render — keep deps small/primitive where you can. (State/signal change-detection is
   identity-based already, matching React; only the deps-array comparison differs.)
-- **The VS 2022 extension lags VS Code**: both ship from the same `lsp-server`, but VS 2022 hasn't
-  been re-published since 0.5.5 while VS Code/the language server are at 0.8.6 — VS 2022 users are
-  missing several releases' worth of fixes (dangling-reference detection, sidecar watching, folder
-  deletion handling) until it's repackaged.
+- **VS Code and VS 2022 ship together**: both extensions bundle the same `lsp-server` and are
+  version-locked to it (0.10.0), published in the same release window as the addon — if you update
+  one, update the others.
 
 ## Roadmap
 
 - **Markup tags for the remaining `V.*`-only primitives** (`Portal`, `Suspense`, `Router`/`Routes`/
   `Route`, …) so the "escape hatch" list above gets shorter.
-- **Native-editor parity** — go-to-definition, find-references, rename, and embedded-GDScript
-  intelligence for `reactive_ui_editor`, closing the gap with the VS Code/VS 2022 extensions (see
-  `plans/NATIVE_EDITOR_PARITY_PLAN.md`).
+- **Native-editor parity** — embedded-GDScript intelligence for `reactive_ui_editor`, closing the
+  remaining gap with the VS Code/VS 2022 extensions (see `plans/archive/NATIVE_EDITOR_PARITY_PLAN.md`).
 - **Docs site** (`ReactiveUIGodotDocs~/`) — a full guide beyond this README; run it locally with
   `cd ReactiveUIGodotDocs~ && npm ci && npm run dev`.
-- **Test parity** — golden codegen corpus, rules-of-hooks matrix.
+- **Re-exports** (`export { X } from "./x"`) — the imports fast-follow, family-wide.
 - **Godot Asset Store / Asset Library distribution** — repo prep (license, icon, export rules) is
   in place; publishing itself is not live yet.
 

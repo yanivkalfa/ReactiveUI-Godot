@@ -1,6 +1,9 @@
 export const EXAMPLE_UITKX = `@class_name PlayerCard
 
-component PlayerCard(player: PlayerInfo) {
+import { PlayerCardStyle } from "./PlayerCard.style"
+import { PlayerCardUtils } from "./PlayerCard.utils"
+
+export component PlayerCard(player: PlayerInfo) {
   var health_color = PlayerCardStyle.HEALTH_GREEN \\
     if player.health > player.max_health / 2 \\
     else PlayerCardStyle.DAMAGE_RED
@@ -31,7 +34,7 @@ export const EXAMPLE_DIRECTORY = `res://ui/PlayerCard/
   PlayerCard.utils.guitkx      # utilities      -> PlayerCard.utils.gd (optional)`
 
 export const EXAMPLE_HOOKS = `# PlayerCard.hooks.guitkx
-module PlayerCardHooks {
+export module PlayerCardHooks {
   hook use_player_animation(player: PlayerInfo) -> Dictionary {
     var opacity = Hooks.useState(1.0)
     var flashing = Hooks.useState(false)
@@ -48,7 +51,7 @@ module PlayerCardHooks {
 }`
 
 export const EXAMPLE_STYLES = `# PlayerCard.style.guitkx
-module PlayerCardStyle {
+export module PlayerCardStyle {
   static var HEALTH_GREEN := Color(0.2, 0.8, 0.3)
   static var DAMAGE_RED   := Color(0.9, 0.2, 0.2)
   static var AVATAR_SIZE  := 64.0
@@ -62,7 +65,7 @@ module PlayerCardStyle {
 }`
 
 export const EXAMPLE_TYPES = `# PlayerCard.types.guitkx
-module PlayerCardTypes {
+export module PlayerCardTypes {
   enum PlayerRank { BRONZE, SILVER, GOLD, DIAMOND }
 
   # A plain typed dictionary shape used by the component.
@@ -72,7 +75,9 @@ module PlayerCardTypes {
 }`
 
 export const EXAMPLE_UTILS = `# PlayerCard.utils.guitkx
-module PlayerCardUtils {
+import { PlayerCardTypes } from "./PlayerCard.types"
+
+export module PlayerCardUtils {
   static func format_health(current: int, max: int) -> String:
     return "%d / %d HP" % [current, max]
 
@@ -85,7 +90,7 @@ module PlayerCardUtils {
 }`
 
 export const EXAMPLE_STANDALONE = `# SharedColors.guitkx — standalone module, not tied to a specific component
-module SharedColors {
+export module SharedColors {
   static var GOLD   := Color(1.0, 0.84, 0.0)
   static var SILVER := Color(0.75, 0.75, 0.75)
 }`

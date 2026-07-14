@@ -144,10 +144,12 @@ component RefDemo() {
 }`
 
 export const HOOKS_CONTEXT_EXAMPLE = `# ============ theme_provider.guitkx ============
-# One declaration per file (GUITKX2105) -- these are TWO files.
+# Two files -- the provider imports the card it renders (cross-file refs are explicit since 0.10).
 @class_name ThemeProvider
 
-component ThemeProvider() {
+import { ThemedCard } from "./themed_card"
+
+export component ThemeProvider() {
   Hooks.provideContext("theme", "dark")
 
   return (
@@ -158,10 +160,10 @@ component ThemeProvider() {
 }
 
 # ============ themed_card.guitkx ============
-# Consumer component — any depth in the subtree
+# Consumer component — any depth in the subtree; \`export\` makes it importable
 @class_name ThemedCard
 
-component ThemedCard() {
+export component ThemedCard() {
   var theme = useContext("theme")   # "dark"
 
   return (

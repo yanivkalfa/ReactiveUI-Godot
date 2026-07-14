@@ -80,6 +80,22 @@ const structuralRows: DiagRow[] = [
   { code: 'GUITKX0026', sev: 'Error', title: 'Statement used in an embedded expression', fix: <>A statement (e.g. a control-flow directive) cannot be lowered inside an embedded <code>{'{expr}'}</code> / JSX-value. Lift it to the top-level markup return, or use <code>.map()</code> for lists.</> },
 ]
 
+/* ── Import diagnostics (GUITKX2300–2309, 0.10.0) ────────────────────── */
+// The family-frozen import block, shared verbatim (modulo prefix) with ReactiveUI for
+// Unreal (UETKX23xx) and Unity (UITKX23xx). Only 2304 is a warning.
+const importRows: DiagRow[] = [
+  { code: 'GUITKX2300', sev: 'Error', title: 'Unknown import specifier', fix: <>No <code>.guitkx</code> file exists at the specifier&apos;s path. Specifiers are extensionless and relative (<code>./</code>, <code>../</code>) or root-aliased (<code>~/</code>); <code>res://</code> / <code>uid://</code> are not valid import specifiers. Check the path and the <code>root</code> key in <code>guitkx.config.json</code>.</> },
+  { code: 'GUITKX2301', sev: 'Error', title: 'Not exported by the target', fix: <>The name is declared in the target file but not marked <code>export</code> — file-private declarations are unreachable cross-file. Add <code>export</code> to its declaration.</> },
+  { code: 'GUITKX2302', sev: 'Error', title: 'Not declared in the target', fix: <>The target file has no declaration with this name. Check the spelling, or import it from the file that actually declares it.</> },
+  { code: 'GUITKX2303', sev: 'Error', title: 'Duplicate import', fix: <>The same name is imported twice (possibly from two different files). Remove one.</> },
+  { code: 'GUITKX2304', sev: 'Warning', title: 'Unused import', fix: <>The imported name is never referenced in this file. Remove the import (or use it).</> },
+  { code: 'GUITKX2305', sev: 'Error', title: 'Referenced but not imported', fix: <>Cross-file resolution is strict — the message contains the exact <code>import {'{ X }'} from &quot;…&quot;</code> line to add. Hand-written <code>class_name</code> scripts are ambient and never need an import.</> },
+  { code: 'GUITKX2306', sev: 'Error', title: 'Value-import cycle', fix: <>Hooks/modules are eager <code>const</code> preloads, so an import cycle between them is a load-order error (the message prints the chain). Break the chain, or restructure so the cyclic edge is a <em>component</em> reference — component imports are lazy and may cycle freely.</> },
+  { code: 'GUITKX2307', sev: 'Error', title: 'Used like a component/hook but no file exports it', fix: <>A component-like tag matches no host element, no import, and no <code>.guitkx</code> export (and isn&apos;t a near-miss of one). Create/export the component and import it, or fix the name.</> },
+  { code: 'GUITKX2308', sev: 'Error', title: 'Import crosses the project boundary', fix: <>The specifier resolves above <code>res://</code> (a <code>../</code> chain or a <code>~/</code> root that escapes the project). Imports are project-scoped in v1 — keep the target inside <code>res://</code>.</> },
+  { code: 'GUITKX2309', sev: 'Error', title: 'Import after the first declaration', fix: <>Imports are preamble-only. Move the <code>import</code> line above the first <code>component</code> / <code>hook</code> / <code>module</code>.</> },
+]
+
 /* ── Language-server diagnostics (GUITKX0105, GUITKX0109) ────────────── */
 // Editor-only: emitted live by the language server (VS Code / VS 2022 extension).
 // They have no compile-time equivalent and are never written to the sibling
@@ -125,6 +141,18 @@ export const UitkxDiagnosticsPage: FC = () => (
       structure and the reconciliation keys.
     </Typography>
     <DiagTable rows={structuralRows} />
+
+    {/* ── Import Diagnostics ────────────────────────────────────────────── */}
+    <Typography variant="h5" component="h2" sx={Styles.section}>
+      Import Diagnostics (0.10.0)
+    </Typography>
+    <Typography variant="body2" paragraph>
+      Emitted while resolving <code>import {'{ … }'} from &quot;…&quot;</code> — the
+      family-frozen <code>2300–2309</code> block, shared with ReactiveUI for Unreal
+      and Unity. See the Imports &amp; Exports page for the grammar and the
+      migration codemod.
+    </Typography>
+    <DiagTable rows={importRows} />
 
     {/* ── Language-Server Diagnostics ───────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>

@@ -41,8 +41,12 @@ godot --headless --path . --script res://tests/core_test.gd
 
 The suites: `core_test.gd` (reconciler/hooks/effects/bailout/context/keyed), `style_test.gd`,
 `router_match_test.gd` + `router_spine_test.gd`, `update_test.gd` (diff), `demos_test.gd` (renders
-every demo — the real check that generated `.gd` render without error), `guitkx_test.gd` (compiler +
-codegen). `bench*.gd` / `microbench.gd` are benchmarks, not pass/fail tests.
+every demo — the real check that generated `.gd` render without error), `doom_game_test.gd` (the
+Doom demo end-to-end), `guitkx_test.gd` (compiler + codegen + imports/resolver/codemod),
+`hmr_test.gd` (Fast Refresh), `guitkx_editor_test.gd` + `guitkx_lsp_test.gd` (editor addon),
+`contract_dump.gd -- --check` (GD↔TS grammar goldens). `tests/guitkx_migrate.gd` runs the 0.10.0
+import codemod over `examples/` (idempotent — a clean tree reports 0 migrated). `bench*.gd` /
+`microbench.gd` are benchmarks, not pass/fail tests.
 
 ### IDE tooling (TypeScript language server + VS Code extension)
 
@@ -110,6 +114,15 @@ are synchronous. Preserve these behaviors — they're faithful-to-reference, not
 - **Compiler (`addons/reactive_ui/guitkx/`)** — pure GDScript: `guitkx_lexer.gd` → `guitkx_markup.gd` /
   `guitkx_jsx_scan.gd` → `guitkx_codegen.gd` (`RUIGuitkxCodegen`, the entry point:
   `compile_file` / `compile_all` / `find_all`) → `guitkx_formatter.gd`.
+- **Imports (0.10.0):** a file is a SEQUENCE of declarations; `export` marks cross-file visibility;
+  `import { Name } from "./spec"` (also `../`, `~/` from `guitkx_config.gd`'s `"root"` walk-up) is
+  resolved by `guitkx_resolve.gd` — component imports lower LAZILY through `V.comp(path, func)`
+  (cycles legal), hook/module imports become eager `const` preloads (cycles = GUITKX2306).
+  Cross-file resolution is STRICT (unimported ref = GUITKX2305); the import diagnostics are the
+  family-frozen `GUITKX2300–2309`. `guitkx_migrate.gd` is the idempotent migration codemod
+  (shipped runner: `dev/migrate_0_10_0.gd`). The build/sweep is TWO-PASS (write all `.gd`, then
+  parse-check) so value-import preloads never false-fail, and a changed export table re-compiles
+  importers in the same sweep (`export_hash` in the `.diags.json` v3 sidecar).
 - **In-Godot-editor plugin (`addons/reactive_ui_editor/`)** — watches the filesystem and recompiles
   each `.guitkx`→`.gd`. It recompiles on **editor focus-in** (not just `filesystem_changed`) because a
   `.guitkx`-only external edit doesn't reliably flip Godot's changed flag; an mtime staleness guard
