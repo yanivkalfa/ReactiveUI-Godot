@@ -56,6 +56,12 @@ func _run() -> void:
 	_test_cold_open_recovery()
 	_test_phase_d_bodies()
 	_test_spread()
+	_test_imports_m1()
+	_test_mixed_decl()
+	_test_imports_m3()
+	_test_m4()
+	_test_codemod()
+	_test_bughunt_fixes()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -117,8 +123,8 @@ func _test_jsx_value() -> void:
 	_check_true(not ("<Label" in gd), "no raw <Label markup left in expression")
 	# 0.7.2 anchor regression (field capture 2026-07-04): diagnostics from setup-VALUE markup must
 	# anchor in the ORIGINAL source. Aliasing used to run BEFORE the splice, so every inserted
-	# `Hooks.` prefix (6 chars) shifted every later diagnostic -- two useState calls pushed a 0105
-	# onto the CLOSING tag (the dock said 8:33 instead of 8:21). Splice first, alias second.
+	# `Hooks.` prefix (6 chars) shifted every later diagnostic onto the CLOSING tag (8:33 vs 8:21).
+	# Splice first, alias second. (A no-suggestion PascalCase miss is GUITKX2307 since the imports leg.)
 	var a_src := "component AnchorProbe() {\n" + \
 		"\tvar n = useState(0)\n" + \
 		"\tvar m = useState(1)\n" + \
@@ -128,11 +134,11 @@ func _test_jsx_value() -> void:
 	_check_true(not ra["ok"], "unknown component in a setup value fails the compile")
 	var a_found := false
 	for da in (ra["diagnostics"] as Array):
-		if str((da as Dictionary).get("code", "")) == "GUITKX0105":
+		if str((da as Dictionary).get("code", "")) == "GUITKX2307":
 			a_found = true
 			_check_true(int((da as Dictionary).get("offset", -1)) == a_src.find("<Nope>") + 1,
-				"0105 anchors on the OPENING tag name in the original source (got %d, want %d)" % [int((da as Dictionary).get("offset", -1)), a_src.find("<Nope>") + 1])
-	_check_true(a_found, "0105 reported for the unknown setup-value component")
+				"2307 anchors on the OPENING tag name in the original source (got %d, want %d)" % [int((da as Dictionary).get("offset", -1)), a_src.find("<Nope>") + 1])
+	_check_true(a_found, "2307 reported for the unknown setup-value component (no file exports it)")
 	_check(gd, "if (cond) else null", "short-circuit `and` desugared to ternary")
 	_check(gd, "V.Label({ \"text\": it })", "map-lambda markup lowered")
 	# runtime: cond=true -> Label x + (map a,b) = 3 Labels, + 1 Button (short-circuit)
@@ -577,12 +583,20 @@ func _test_t15_unknown_tags() -> void:
 	_check_true(names is Array, "T1.5: known_component_names runs headless (global classes only)")
 
 func _test_t13_single_decl() -> void:
-	# T1.3: content after the single top-level declaration errors (Unity UITKX2105 parity) --
-	# a second component used to be dropped silently while the LSP still indexed the ghost.
-	var src := "component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	# 0.10.0 MIXED-DECL v1: several top-level declarations in one file are now LEGAL (they were a
+	# GUITKX2105 error until this leg). The binding = first EXPORTED decl; it emits `render`, the rest
+	# emit static funcs named after the decl. Content that is NOT a declaration still errors.
+	var src := "export component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
 	var r := RUIGuitkx.compile(src, "A")
-	_check_true(not r["ok"], "T1.3: second top-level declaration fails the compile")
-	_check_diag_at(r, "GUITKX2105", src, "component B() {", "T1.3: 2105 lands on the second declaration")
+	_check_true(r["ok"], "mixed-decl: two top-level components compile (%s)" % str(r.get("diagnostics", [])))
+	_check_true((r["gd"] as String).contains("class_name A"), "mixed-decl: binding = first exported decl")
+	_check_true((r["gd"] as String).contains("static func render(") and (r["gd"] as String).contains("static func B("), "mixed-decl: binding -> render, non-binding -> its own name")
+
+	# genuinely non-declaration content BETWEEN declarations still errors (GUITKX2105).
+	var src_j := "component A() {\n\treturn ( <Label /> )\n}\nvar oops = 1\ncomponent B() { return ( <Label /> ) }\n"
+	var r_j := RUIGuitkx.compile(src_j, "A")
+	_check_true(not r_j["ok"], "mixed-decl: non-declaration content between decls errors")
+	_check_diag_at(r_j, "GUITKX2105", src_j, "var oops = 1", "mixed-decl: 2105 lands on the junk between decls")
 
 	# trailing comments after the declaration stay legal.
 	var src_c := "component A() {\n\treturn ( <Label /> )\n}\n# trailing note\n"
@@ -908,6 +922,449 @@ func _test_deep_flatten() -> void:
 	_check_true(flat2.size() == 2, "deep _norm drops nested nulls (got %d)" % flat2.size())
 
 # First diagnostic with `code` from a compile() result, or {} — T0.2 structured-diag test helper.
+## M1 (0.10.0 imports leg): the import/export GRAMMAR + scan. Emission is unchanged this milestone
+## (single binding decl); these cover preamble parsing, the `export` prefix, malformed-import errors,
+## and the order-agnostic binding scan (`@class_name` after an import must still win).
+func _test_imports_m1() -> void:
+	# --- import parse forms accepted, stored on the result, and non-fatal to a normal compile ---
+	var one := "import { StatusChip } from \"./status_chip\"\n\ncomponent A() {\n\treturn ( <Label /> )\n}\n"
+	var r_one := RUIGuitkx.compile(one, "A")
+	_check_true(r_one["ok"], "M1: a single import line compiles (%s)" % str(r_one.get("diagnostics", [])))
+	_check_true((r_one.get("imports", []) as Array).size() == 1, "M1: one import parsed and threaded onto the result")
+	if (r_one.get("imports", []) as Array).size() == 1:
+		var imp0: Dictionary = r_one["imports"][0]
+		_check_true(str(imp0.get("spec", "")) == "./status_chip", "M1: import specifier captured verbatim")
+		_check_true((imp0.get("names", []) as Array).size() == 1 and str(imp0["names"][0]["name"]) == "StatusChip", "M1: import name captured")
+
+	# multi-name + `~/` root alias + `../` relative, in any preamble order relative to @class_name.
+	var multi := "import { A, B } from \"~/demos/x\"\nimport { C } from \"../y\"\n@class_name Widget\n\ncomponent Thing() {\n\treturn ( <Label /> )\n}\n"
+	var r_multi := RUIGuitkx.compile(multi, "Thing")
+	_check_true(r_multi["ok"], "M1: multi-name + ~/ + ../ imports before @class_name compile (%s)" % str(r_multi.get("diagnostics", [])))
+	_check_true((r_multi.get("imports", []) as Array).size() == 2, "M1: two import lines parsed")
+	_check_true((r_multi["imports"][0]["names"] as Array).size() == 2, "M1: `{ A, B }` yields two names")
+
+	# @class_name AFTER an import must still bind the file (order-agnostic scan, §6.2 latent-bug fix).
+	_check_true(Codegen._binding_name(multi) == "Widget", "M1: @class_name after imports wins the binding")
+	# @uss before @class_name likewise (the other order case).
+	var uss_first := "@uss \"res://theme.tres\"\n@class_name Themed\ncomponent T() { return ( <Label /> ) }\n"
+	_check_true(Codegen._binding_name(uss_first) == "Themed", "M1: @class_name after @uss wins the binding")
+
+	# --- the `export` prefix on each declaration kind is accepted; binding is unchanged ---
+	var ec := "export component Exp() {\n\treturn ( <Label /> )\n}\n"
+	var r_ec := RUIGuitkx.compile(ec, "Exp")
+	_check_true(r_ec["ok"], "M1: `export component` compiles (%s)" % str(r_ec.get("diagnostics", [])))
+	_check_true(bool(r_ec.get("binding_export", false)), "M1: exported binding flagged on the result")
+	_check_true(Codegen._binding_name(ec) == "Exp", "M1: `export component` binds to its name")
+	var eh := "export hook use_thing() -> int {\n\treturn 1\n}\n"
+	_check_true(RUIGuitkx.compile(eh, "use_thing")["ok"], "M1: `export hook` compiles")
+	var em := "export module Styles {\n\thook use_x() { return 1 }\n}\n"
+	_check_true(RUIGuitkx.compile(em, "Styles")["ok"], "M1: `export module` compiles")
+
+	# a private (unexported) decl is still a legal file this milestone (privacy semantics land in M2).
+	_check_true(RUIGuitkx.compile("component Priv() { return ( <Label /> ) }\n", "Priv")["ok"], "M1: unexported decl still compiles")
+
+	# --- malformed imports are GUITKX0300 errors and fail the compile ---
+	var no_from := "import { A } \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	var r_nf := RUIGuitkx.compile(no_from, "C")
+	_check_true(not r_nf["ok"], "M1: import without `from` fails")
+	_check_true(_has_code(r_nf, "GUITKX0300"), "M1: missing `from` -> GUITKX0300")
+
+	var no_brace := "import A from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(no_brace, "C"), "GUITKX0300"), "M1: missing `{ }` -> GUITKX0300")
+
+	var empty_braces := "import { } from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(empty_braces, "C"), "GUITKX0300"), "M1: empty `{ }` -> GUITKX0300")
+
+	var unterminated := "import { A } from \"./x\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(unterminated, "C"), "GUITKX0300"), "M1: unterminated specifier -> GUITKX0300")
+
+	var bad_name := "import { 9bad } from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(bad_name, "C"), "GUITKX0300"), "M1: non-identifier import name -> GUITKX0300")
+
+	# an import line must NOT be mistaken for stray content-before-decl (GUITKX2105).
+	_check_true(not _has_code(r_one, "GUITKX2105"), "M1: a valid import never trips the 2105 junk check")
+
+## Assert the emitted .gd actually PARSES as GDScript (the throwaway-reload check the codegen runs),
+## with the `class_name` line stripped so it can't collide with the scanned global class.
+func _gd_parses(gd: String) -> bool:
+	var chk := GDScript.new()
+	var src := gd
+	if src.begins_with("class_name "):
+		src = src.substr(src.find("\n") + 1)
+	chk.source_code = src
+	return chk.reload() == OK
+
+## M2 (0.10.0): MIXED-DECL v1 emission (§6.3) — several declarations in one file, privacy, __RUI_DECLS.
+func _test_mixed_decl() -> void:
+	# --- exported binding + private component: binding -> render, private -> its name, class_name set ---
+	var mc := "export component Hud() {\n\treturn ( <LocalRow /> )\n}\n\ncomponent LocalRow() {\n\treturn ( <Label text=\"r\" /> )\n}\n"
+	var r := RUIGuitkx.compile(mc, "hud")
+	_check_true(r["ok"], "mixed: exported binding + private component compiles (%s)" % str(r.get("diagnostics", [])))
+	var gd: String = r["gd"]
+	_check_true(gd.contains("class_name Hud"), "mixed: class_name = binding (first exported)")
+	_check_true(gd.contains("static func render(") and gd.contains("static func LocalRow("), "mixed: binding->render, private->name")
+	_check_true(gd.contains("const __RUI_KIND := \"mixed\""), "mixed: __RUI_KIND is 'mixed'")
+	_check_true(gd.contains("const __RUI_DECLS := {"), "mixed: __RUI_DECLS emitted")
+	_check_true(gd.contains("\"Hud\": { \"kind\": \"component\"") and gd.contains("\"export\": true"), "mixed: __RUI_DECLS records binding export")
+	_check_true(gd.contains("\"LocalRow\": { \"kind\": \"component\"") and gd.contains("\"export\": false"), "mixed: __RUI_DECLS records private decl")
+	# the binding's markup references LocalRow -> a bare sibling static-func call, not V.comp.
+	_check_true(gd.contains("V.fc(LocalRow"), "mixed: intra-file component ref lowers to the sibling static func")
+	_check_true(_gd_parses(gd), "mixed: emitted mixed .gd parses as GDScript")
+
+	# --- binding preference: the first EXPORTED decl wins over decl order (privacy: the non-exported
+	# decl becomes a private static func, never the file's public `render`). A fully-unexported file
+	# still binds to its first decl (back-compat until strict mode + the codemod land). ---
+	var mixp := "component Helper() {\n\treturn ( <Label /> )\n}\n\nexport component Main() {\n\treturn ( <Label /> )\n}\n"
+	var rmp := RUIGuitkx.compile(mixp, "file")
+	_check_true(rmp["ok"] and (rmp["gd"] as String).contains("class_name Main"), "mixed: first EXPORTED decl wins the binding over decl order")
+	_check_true((rmp["gd"] as String).contains("static func render(") and (rmp["gd"] as String).contains("static func Helper("), "mixed: exported binding -> render; non-exported -> a private named func")
+	_check_true(_gd_parses(rmp["gd"]), "mixed: emitted .gd parses")
+
+	var noexp := "component A() {\n\treturn ( <Label /> )\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	var rne := RUIGuitkx.compile(noexp, "ab")
+	_check_true(rne["ok"] and (rne["gd"] as String).contains("class_name A"), "mixed: a zero-export file binds to its first decl (back-compat)")
+	_check_true(_gd_parses(rne["gd"]), "mixed: zero-export file parses")
+
+	# --- component + top-level hook: hook emits a static func; a bare call to it stays un-prefixed ---
+	var ch := "export component Panel() {\n\tvar d = use_blink(0.5)\n\treturn ( <Label text={d} /> )\n}\n\nexport hook use_blink(interval: float) -> float {\n\treturn interval\n}\n"
+	var rc := RUIGuitkx.compile(ch, "panel")
+	_check_true(rc["ok"], "mixed-hook: component + top-level hook compiles (%s)" % str(rc.get("diagnostics", [])))
+	_check_true((rc["gd"] as String).contains("static func use_blink("), "mixed-hook: top-level hook emits a static func")
+	_check_true((rc["gd"] as String).contains("use_blink(0.5)") and not (rc["gd"] as String).contains("Hooks.use_blink("), "mixed-hook: sibling hook call stays un-prefixed (not Hooks.*)")
+	_check_true((rc["gd"] as String).contains("\"use_blink\": { \"kind\": \"hook\""), "mixed-hook: __RUI_DECLS records the hook")
+	_check_true(_gd_parses(rc["gd"]), "mixed-hook: emitted .gd parses")
+
+	# --- component + module: module lowers to an inner `class Name:` block ---
+	var cm := "export component Screen() {\n\treturn ( <Label /> )\n}\n\nexport module Styles {\n\thook use_tint() -> Color { return Color.RED }\n}\n"
+	var rm := RUIGuitkx.compile(cm, "screen")
+	_check_true(rm["ok"], "mixed-module: component + module compiles (%s)" % str(rm.get("diagnostics", [])))
+	_check_true((rm["gd"] as String).contains("class Styles:"), "mixed-module: non-binding module -> inner class")
+	_check_true((rm["gd"] as String).contains("\n\tstatic func use_tint("), "mixed-module: module member indented one level inside the inner class")
+	_check_true((rm["gd"] as String).contains("\"Styles\": { \"kind\": \"module\""), "mixed-module: __RUI_DECLS records the module")
+	_check_true(_gd_parses(rm["gd"]), "mixed-module: emitted .gd parses")
+
+	# --- @class_name override wins the binding over the first-exported rule ---
+	# It names First (an unexported decl), so First becomes the binding component and emits render,
+	# even though Second is the first EXPORTED decl.
+	var ov := "@class_name First\ncomponent First() {\n\treturn ( <Label /> )\n}\nexport component Second() {\n\treturn ( <Label /> )\n}\n"
+	var ro := RUIGuitkx.compile(ov, "file")
+	_check_true(ro["ok"] and (ro["gd"] as String).contains("class_name First"), "mixed: @class_name overrides the first-exported binding")
+	_check_true((ro["gd"] as String).contains("static func render(") and (ro["gd"] as String).contains("static func Second("), "mixed: the @class_name'd component emits render, the other its name")
+
+## M4 (0.10.0): the reverse-edge-staleness + two-pass PRIMITIVES (the integration is exercised by
+## the green compile_all/guitkx_build two-pass; here we pin the building blocks).
+func _test_m4() -> void:
+	var eh1 := Codegen.export_hash(Codegen.exports_of("export component A() { return ( <Label /> ) }\n"))
+	var eh2 := Codegen.export_hash(Codegen.exports_of("export component A() { return ( <Label /> ) }\n"))
+	var eh3 := Codegen.export_hash(Codegen.exports_of("export component B() { return ( <Label /> ) }\n"))
+	_check_true(eh1 == eh2, "M4: export_hash is stable for an identical export table")
+	_check_true(eh1 != eh3, "M4: export_hash moves when the export table changes (drives reverse-edge staleness)")
+	# exports_of = exported decls only; the binding component's cross-file func is `render`.
+	var ex := Codegen.exports_of("export component Main() { return ( <Label /> ) }\ncomponent Priv() { return ( <Label /> ) }\n")
+	_check_true(ex.size() == 1 and str(ex[0]["name"]) == "Main" and str(ex[0]["func"]) == "render", "M4: exports_of drops private decls; binding func = render")
+	var ex2 := Codegen.exports_of("export hook use_x() -> int { return 1 }\n")
+	_check_true(ex2.size() == 1 and str(ex2[0]["kind"]) == "hook" and str(ex2[0]["func"]) == "use_x", "M4: exported hook carries its own func name")
+	# the counted-gate parse primitive.
+	_check_true(Codegen.gd_source_parses("class_name X\nextends RefCounted\nstatic func f() -> int:\n\treturn 1\n"), "M4: gd_source_parses accepts a valid script")
+	_check_true(not Codegen.gd_source_parses("class_name X\nextends RefCounted\nstatic func f( -> int:\n\treturn 1\n"), "M4: gd_source_parses rejects a broken script (counted-gate primitive)")
+
+## M6 (0.10.0): the migration CODEMOD -- export-everything + synthesized imports, idempotent, ambient
+## names left import-free. In-memory (no writes); the whole-tree run is a separate CI step.
+func _test_codemod() -> void:
+	const Migrate := preload("res://addons/reactive_ui/guitkx/guitkx_migrate.gd")
+	var ref := { "StatusChip": "res://ui/chip.guitkx", "HudHooks": "res://ui/hooks.guitkx", "Panel": "res://ui/panel.guitkx", "Far": "res://other/far.guitkx" }
+	# Panel uses <StatusChip/> (markup tag) + HudHooks.use_x() (qualified) + DoomTypes.X (ambient hand class).
+	var src := "component Panel() {\n\tvar d = HudHooks.use_x()\n\tvar t = DoomTypes.THING\n\treturn ( <StatusChip /> )\n}\n"
+	var r := Migrate.migrate_source("res://ui/panel.guitkx", src, ref)
+	_check_true(r["changed"], "codemod: file changed")
+	var out: String = r["source"]
+	_check_true(out.contains("export component Panel"), "codemod: export prefix added to the decl")
+	_check_true(out.contains("import { StatusChip } from \"./chip\""), "codemod: markup-tag ref imported (%s)" % out)
+	_check_true(out.contains("import { HudHooks } from \"./hooks\""), "codemod: qualified ref imported")
+	_check_true(not out.contains("import { DoomTypes"), "codemod: ambient hand-class ref NOT imported")
+	_check_true(out.contains("DoomTypes.THING"), "codemod: ambient ref left untouched in the body")
+	_check_true(not out.contains("import { Panel"), "codemod: own decl not self-imported")
+	# import block sits before the decl.
+	_check_true(out.find("import {") < out.find("export component Panel"), "codemod: imports precede the first decl")
+
+	# idempotent: a second run over the migrated output is a no-op.
+	_check_true(not Migrate.migrate_source("res://ui/panel.guitkx", out, ref)["changed"], "codemod: idempotent (second run no-op)")
+
+	# cross-directory references use a ~/-rooted specifier.
+	var r2 := Migrate.migrate_source("res://ui/p.guitkx", "component P() { return ( <Far /> ) }\n", ref)
+	_check_true((r2["source"] as String).contains("import { Far } from \"~/other/far\""), "codemod: cross-dir ref uses ~/ specifier (%s)" % r2["source"])
+
+	# an already-migrated file (export + import present) is stable.
+	var pre := "import { StatusChip } from \"./chip\"\n\nexport component Q() {\n\treturn ( <StatusChip /> )\n}\n"
+	_check_true(not Migrate.migrate_source("res://ui/q.guitkx", pre, ref)["changed"], "codemod: already-migrated file untouched")
+
+## Regression tests for the adversarial bug hunt (plans/IMPORTS_LEG_BUGHUNT.md). Each asserts the
+## FIXED behavior on the exact repro that failed before.
+func _test_bughunt_fixes() -> void:
+	# BH-01: a component body's markup comment (`//`) with a brace must NOT desync decl enumeration.
+	var bh01 := "component A() {\n\treturn (\n\t\t<Label /> // close } here\n\t)\n}\n\ncomponent B() {\n\treturn ( <Label /> )\n}\n"
+	var r01 := RUIGuitkx.compile(bh01, "file")
+	_check_true(r01["ok"], "BH-01: mixed file with a markup comment containing `}` compiles (%s)" % str(r01.get("diagnostics", [])))
+	_check_true((r01["gd"] as String).contains("static func render(") and (r01["gd"] as String).contains("static func B("), "BH-01: both components emitted")
+	# `/* */` and `<!-- -->` markup comments too.
+	var bh01b := "component A() {\n\treturn ( <Label /> /* brace } */ )\n}\ncomponent B() { return ( <Label /> ) }\n"
+	_check_true(RUIGuitkx.compile(bh01b, "file")["ok"], "BH-01: block markup comment `/* } */` doesn't desync")
+
+	# BH-08: a multi-line import (names / `from` on later lines) is legal, no false GUITKX0300.
+	var bh08 := "import {\n\tFoo,\n\tBar\n} from \"./x\"\n\ncomponent A() { return ( <Label /> ) }\n"
+	var r08 := RUIGuitkx.compile(bh08, "file")
+	_check_true(r08["ok"], "BH-08: multi-line import compiles (%s)" % str(r08.get("diagnostics", [])))
+	_check_true(not _has_code(r08, "GUITKX0300"), "BH-08: no false 0300 on a multi-line import")
+	_check_true((r08.get("imports", []) as Array).size() == 1 and (r08["imports"][0]["names"] as Array).size() == 2, "BH-08: both names + specifier parsed across lines")
+	# a specifier string that actually spans a newline is still unterminated -> 0300.
+	_check_true(_has_code(RUIGuitkx.compile("import { A } from \"./x\ncomponent B() { return ( <Label /> ) }\n", "b"), "GUITKX0300"), "BH-08: a newline inside the specifier string is still 0300")
+
+	# BH-02: when @class_name != the decl name, the sole component still emits `render`, and the export
+	# tables must ADDRESS it as `render` (not the decl name) -- else a cross-file import mis-targets it.
+	const Resolve := preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+	var bh02 := "@class_name Custom\nexport component Widget() {\n\treturn ( <Label /> )\n}\n"
+	_check_true((RUIGuitkx.compile(bh02, "file")["gd"] as String).contains("static func render("), "BH-02: sole component emits render under @class_name override")
+	_check_true(str(Codegen.exports_of(bh02)[0]["func"]) == "render", "BH-02: exports_of addresses the sole component as render (%s)" % str(Codegen.exports_of(bh02)))
+	_check_true(str(Resolve.decl_table(_bh_writefile("__bh02", bh02))["decls"]["Widget"]["func"]) == "render", "BH-02: decl_table addresses Widget as render")
+	# mixed @class_name-mismatch: the first EXPORTED component becomes the render component.
+	var bh02m := "@class_name Zzz\nexport component A() {\n\treturn ( <Label /> )\n}\nexport component B() {\n\treturn ( <Label /> )\n}\n"
+	var r02m := RUIGuitkx.compile(bh02m, "file")
+	_check_true((r02m["gd"] as String).contains("static func render(") and (r02m["gd"] as String).contains("static func B("), "BH-02: mixed @class_name-mismatch -> first exported component renders")
+	_check_true(str(Codegen.exports_of(bh02m)[0]["func"]) == "render", "BH-02: exports_of first-exported = render in mixed mismatch")
+
+	# BH-17: resolver and codegen agree on the binding for a two-@class_name file (both take the LAST).
+	var bh17 := "@class_name First\n@class_name Second\ncomponent A() { return ( <Label /> ) }\n"
+	_check_true(Codegen._binding_name(bh17) == Resolve._binding_of(bh17), "BH-17: resolver/codegen agree on binding with two @class_name (%s vs %s)" % [Codegen._binding_name(bh17), Resolve._binding_of(bh17)])
+	_check_true(Codegen._binding_name(bh17) == "Second", "BH-17: last @class_name wins (matches the emitter)")
+
+	# BH-03: codemod inserts the import block at the decl START, not the keyword -- an already-exported
+	# first decl must not become `export import { … } … component`; and it must stay idempotent.
+	const Migrate := preload("res://addons/reactive_ui/guitkx/guitkx_migrate.gd")
+	var refc := { "Card": "res://x/card.guitkx" }
+	var m1 := Migrate.migrate_source("res://x/widget.guitkx", "export component Widget() {\n\treturn ( <Card /> )\n}\n", refc)
+	_check_true(not (m1["source"] as String).contains("export import"), "BH-03: no `export import` split (%s)" % (m1["source"] as String).substr(0, 40))
+	_check_true((m1["source"] as String).find("import {") < (m1["source"] as String).find("export component"), "BH-03: import precedes the already-exported decl")
+	_check_true(not Migrate.migrate_source("res://x/widget.guitkx", m1["source"], refc)["changed"], "BH-03: idempotent on an already-exported first decl")
+
+	# BH-13: path-boundary. `<root>ui2/card` is NOT under root `<root>ui` -> must NOT be ~/2/card, and
+	# whatever specifier is chosen must round-trip to the real file.
+	var uiroot := "res://tests/__bh_tmp/ui"
+	var s13 := RUIGuitkx.import_specifier("res://tests/__bh_tmp/app/importer.guitkx", "res://tests/__bh_tmp/ui2/card.guitkx", uiroot)
+	_check_true(not s13.begins_with("~/2"), "BH-13: prefix-sibling not mis-rooted (got %s)" % s13)
+	var t13 := _bh_writefile_at("res://tests/__bh_tmp/ui2/card", "export component Card() { return ( <Label /> ) }\n")
+	var from13 := "res://tests/__bh_tmp/app/importer.guitkx"
+	var spec13 := RUIGuitkx.import_specifier(from13, t13, uiroot)
+	_check_true(str(Resolve.resolve_specifier(spec13, from13, uiroot).get("guitkx", "")) == t13, "BH-13: specifier round-trips to the right file (spec=%s)" % spec13)
+
+	# BH-14: an under-root target still uses ~/ and round-trips.
+	var t14 := _bh_writefile_at("res://tests/__bh_tmp/ui/sub/card", "export component Card() { return ( <Label /> ) }\n")
+	var spec14 := RUIGuitkx.import_specifier(from13, t14, uiroot)
+	_check_true(spec14 == "~/sub/card", "BH-14: under-root target uses ~/root-relative (got %s)" % spec14)
+	_check_true(str(Resolve.resolve_specifier(spec14, from13, uiroot).get("guitkx", "")) == t14, "BH-14: ~/ round-trips")
+
+	# BH-06: a bare top-level hook import must lower to an aliased const + rewritten call -- the emitted
+	# .gd must PARSE (a plain `const use_x = preload(...)` would call a resource).
+	var hpath := _bh_writefile_at("res://tests/__bh_tmp/h", "export hook use_thing() -> int {\n\treturn 42\n}\n")
+	Codegen.compile_file(hpath)   # produce h.gd so the preload target exists
+	var bh06 := "import { use_thing } from \"./h\"\n\nexport component A() {\n\tvar v = use_thing()\n\treturn ( <Label text={str(v)} /> )\n}\n"
+	var r06 := RUIGuitkx.compile(bh06, "a", [], {}, "res://tests/__bh_tmp/a.guitkx", "res://")
+	_check_true(r06["ok"], "BH-06: bare-hook importer compiles")
+	_check_true((r06["gd"] as String).contains("__RUI_IMP_") and (r06["gd"] as String).contains(".use_thing("), "BH-06: bare call rewritten to <const>.use_thing(")
+	_check_true(not (r06["gd"] as String).contains("const use_thing = preload"), "BH-06: no uncallable `const use_thing = preload`")
+	_check_true(Codegen.gd_source_parses(r06["gd"]), "BH-06: emitted .gd PARSES")
+	if FileAccess.file_exists("res://tests/__bh_tmp/h.gd"): DirAccess.remove_absolute("res://tests/__bh_tmp/h.gd")
+	for ext in [".gd.uid", ".guitkx.diags.json", ".guitkx.uid"]:
+		if FileAccess.file_exists("res://tests/__bh_tmp/h" + ext): DirAccess.remove_absolute("res://tests/__bh_tmp/h" + ext)
+
+	# BH-09: mixed-decl @uss with a non-single-element render-component root emits GUITKX2210.
+	var bh09 := "@uss \"res://theme.tres\"\nexport component A() {\n\treturn ( <><Label /><Label /></> )\n}\n\nexport component B() {\n\treturn ( <Label /> )\n}\n"
+	_check_true(_has_code(RUIGuitkx.compile(bh09, "file"), "GUITKX2210"), "BH-09: mixed @uss non-element root -> 2210 (not a silent drop)")
+
+	# BH-11: a `../` (or ~/) specifier that climbs above res:// crosses the boundary -> GUITKX2308.
+	var bh11 := RUIGuitkx.compile("import { X } from \"../../../../outside\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, "res://tests/__bh_tmp/a.guitkx", "res://")
+	_check_true(_has_code(bh11, "GUITKX2308"), "BH-11: root-escaping specifier -> 2308 (%s)" % str(bh11.get("diagnostics", [])))
+
+	# BH-12: an import AFTER the first declaration -> GUITKX2309 (not a generic 2105).
+	var bh12s := RUIGuitkx.compile("component A() { return ( <Label /> ) }\nimport { X } from \"./x\"\n", "a")
+	_check_true(_has_code(bh12s, "GUITKX2309") and not _has_code(bh12s, "GUITKX2105"), "BH-12: trailing import -> 2309 (single-decl)")
+	var bh12m := RUIGuitkx.compile("component A() { return ( <Label /> ) }\nimport { X } from \"./x\"\ncomponent B() { return ( <Label /> ) }\n", "a")
+	_check_true(_has_code(bh12m, "GUITKX2309"), "BH-12: import between decls -> 2309 (mixed)")
+
+	# BH-10: a value-import cycle (two modules importing each other) -> GUITKX2306 with the chain.
+	var cdir := "res://tests/__bh_cyc"
+	DirAccess.make_dir_recursive_absolute(cdir)
+	_imp_write(cdir + "/va.guitkx", "import { VB } from \"./vb\"\n\nexport module VA {\n\thook use_a() -> int { return VB.use_b() }\n}\n")
+	_imp_write(cdir + "/vb.guitkx", "import { VA } from \"./va\"\n\nexport module VB {\n\thook use_b() -> int { return VA.use_a() }\n}\n")
+	var swept := Codegen.compile_all(cdir)
+	var got2306 := false
+	var chain2306 := ""
+	for e in swept.get("errors", []):
+		for d in e.get("diagnostics", []):
+			if str(d.get("code", "")) == "GUITKX2306":
+				got2306 = true
+				chain2306 = str(d.get("message", ""))
+	_check_true(got2306, "BH-10: value-import cycle emits 2306 (errors=%s)" % str(swept.get("errors", []).size()))
+	_check_true(chain2306.contains("va.guitkx") and chain2306.contains("vb.guitkx"), "BH-10: 2306 prints the cycle chain (%s)" % chain2306)
+	_bh_rm_tree(cdir)
+
+	# BH-16: a PascalCase tag that no file exports (and has no near-miss) -> GUITKX2307; a lowercase
+	# host-vocab miss or a near-miss typo stays GUITKX0105 (unchanged markup-vocab path).
+	var bh16 := RUIGuitkx.compile("component T() {\n\treturn ( <VBoxContainer><Zzyzx /></VBoxContainer> )\n}\n", "T", ["DemoBox"])
+	_check_true(_has_code(bh16, "GUITKX2307") and not _has_code(bh16, "GUITKX0105"), "BH-16: unexported component-like tag -> 2307 (%s)" % str(bh16.get("diagnostics", [])))
+	var bh16b := RUIGuitkx.compile("component T() {\n\treturn ( <VBoxContainer><lable /></VBoxContainer> )\n}\n", "T", ["DemoBox"])
+	_check_true(_has_code(bh16b, "GUITKX0105") and not _has_code(bh16b, "GUITKX2307"), "BH-16: lowercase host-vocab miss stays 0105")
+
+	# BH-18: the strict-2305 squiggle anchors on the ACTUAL reference (a `<Tag`), not the first textual
+	# occurrence (a comment). `Widget` appears first in a comment; 2305 must point at `<Widget`.
+	var cp18 := { "Widget": "res://x/widget.gd" }
+	var s18 := "# Widget is cool\ncomponent A() {\n\treturn ( <Widget /> )\n}\n"
+	var d18 := _diag(RUIGuitkx.compile(s18, "a", [], cp18, "res://x/a.guitkx", "res://"), "GUITKX2305")
+	_check_true(int(d18.get("offset", -1)) == s18.find("<Widget"), "BH-18: 2305 anchors on `<Widget` not the comment (got %d, want %d)" % [int(d18.get("offset", -1)), s18.find("<Widget")])
+
+	# BH-07: refresh roots include a TRANSITIVE component consumer (component -> module -> changed module).
+	var rdir := "res://tests/__bh_rr"
+	DirAccess.make_dir_recursive_absolute(rdir)
+	_imp_write(rdir + "/m2.guitkx", "export module M2 {\n\thook use_x() -> int { return 1 }\n}\n")
+	_imp_write(rdir + "/m1.guitkx", "import { M2 } from \"./m2\"\n\nexport module M1 {\n\thook use_y() -> int { return M2.use_x() }\n}\n")
+	_imp_write(rdir + "/screen.guitkx", "import { M1 } from \"./m1\"\n\nexport component Screen() {\n\tvar v = M1.use_y()\n\treturn ( <Label text={str(v)} /> )\n}\n")
+	var all := [rdir + "/m2.guitkx", rdir + "/m1.guitkx", rdir + "/screen.guitkx"]
+	var srcs := {}
+	for pth in all:
+		srcs[pth] = FileAccess.get_file_as_string(pth)
+	var roots := Codegen._compute_refresh_roots([{ "path": rdir + "/m2.guitkx" }], all, srcs)
+	_check_true((roots as Array).has(rdir + "/screen.gd"), "BH-07: transitive component consumer is a refresh root (got %s)" % str(roots))
+	_bh_rm_tree(rdir)
+
+	# cleanup: remove the whole __bh_tmp tree (and the __bh02 file under __bh_tmp)
+	_bh_rm_tree("res://tests/__bh_tmp")
+	_bh_tmp_files.clear()
+
+func _bh_writefile(name: String, content: String) -> String:
+	return _bh_writefile_at("res://tests/__bh_tmp/" + name, content)
+
+## Write `content` to `<path_no_ext>.guitkx` (creating parent dirs + a `.gdignore` at the __bh_tmp root
+## so the build walker never sees these fixtures) and track it for cleanup. Returns the .guitkx path.
+func _bh_writefile_at(path_no_ext: String, content: String) -> String:
+	var p := path_no_ext + ".guitkx"
+	DirAccess.make_dir_recursive_absolute(p.get_base_dir())
+	if not FileAccess.file_exists("res://tests/__bh_tmp/.gdignore"):
+		DirAccess.make_dir_recursive_absolute("res://tests/__bh_tmp")
+		_imp_write("res://tests/__bh_tmp/.gdignore", "")
+	_imp_write(p, content)
+	_bh_tmp_files.append(p)
+	return p
+
+## Recursively delete a res:// directory tree (files + subdirs + the dir itself).
+func _bh_rm_tree(dir: String) -> void:
+	var d := DirAccess.open(dir)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if name != "." and name != "..":
+			var p := dir.path_join(name)
+			if d.current_is_dir():
+				_bh_rm_tree(p)
+			else:
+				DirAccess.remove_absolute(p)
+		name = d.get_next()
+	d.list_dir_end()
+	DirAccess.remove_absolute(dir)
+
+var _bh_tmp_files: Array = []
+
+func _imp_write(path: String, content: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(content)
+		f.close()
+
+## M3 (0.10.0): import RESOLUTION -- specifier->path, value/component lowering, frozen 2300-2308.
+## Uses a `.gdignore`'d temp dir so the build walker never sees the fixtures; the resolver reaches
+## them by direct FileAccess. Everything is cleaned up at the end.
+func _test_imports_m3() -> void:
+	const Resolve := preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+	var dir := "res://tests/__imp_tmp"
+	DirAccess.make_dir_recursive_absolute(dir)
+	_imp_write(dir + "/.gdignore", "")
+	_imp_write(dir + "/status_chip.guitkx", "export component StatusChip() {\n\treturn ( <Label /> )\n}\n")
+	_imp_write(dir + "/hud_hooks.guitkx", "export module HudHooks {\n\thook use_blink() -> int { return 1 }\n}\n")
+	_imp_write(dir + "/priv.guitkx", "component Secret() {\n\treturn ( <Label /> )\n}\n")
+	# Compile the value-import target to .gd so the importer's `preload(...)` has a real target to
+	# parse-check against (a missing preload = ERR_PARSE_ERROR -- the M4 two-pass ordering concern).
+	Codegen.compile_file(dir + "/hud_hooks.guitkx")
+
+	# component import -> V.comp(path); module import -> const preload; both usable in one file.
+	var imp := "import { StatusChip } from \"./status_chip\"\nimport { HudHooks } from \"./hud_hooks\"\n\nexport component Panel() {\n\tvar b = HudHooks.use_blink()\n\treturn ( <StatusChip /> )\n}\n"
+	var r := RUIGuitkx.compile(imp, "panel", [], {}, dir + "/panel.guitkx", "res://")
+	_check_true(r["ok"], "M3: importer compiles (%s)" % str(r.get("diagnostics", [])))
+	_check_true((r["gd"] as String).contains("V.comp(\"res://tests/__imp_tmp/status_chip.gd\")"), "M3: component import lowers to V.comp(path)")
+	_check_true((r["gd"] as String).contains("const HudHooks = preload(\"res://tests/__imp_tmp/hud_hooks.gd\")"), "M3: module import lowers to a const preload")
+	_check_true(_gd_parses(r["gd"]), "M3: importer .gd parses")
+
+	# 2302: name not declared in the target file.
+	var r2 := RUIGuitkx.compile("import { Nope } from \"./status_chip\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r2, "GUITKX2302"), "M3: importing an undeclared name -> 2302")
+
+	# 2301: name declared but not exported.
+	var r3 := RUIGuitkx.compile("import { Secret } from \"./priv\"\ncomponent A() { return ( <Secret /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r3, "GUITKX2301"), "M3: importing a non-exported decl -> 2301")
+
+	# 2300: unresolvable specifier.
+	var r4 := RUIGuitkx.compile("import { X } from \"./nope\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r4, "GUITKX2300"), "M3: unresolvable specifier -> 2300")
+
+	# engine-native specifier is forbidden in import position -> 2300.
+	var r4b := RUIGuitkx.compile("import { X } from \"res://x\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r4b, "GUITKX2300"), "M3: res:// specifier forbidden in import -> 2300")
+
+	# 2303: duplicate import of the same name.
+	var r5 := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\nimport { StatusChip } from \"./status_chip\"\ncomponent A() { return ( <StatusChip /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r5, "GUITKX2303"), "M3: duplicate import -> 2303")
+
+	# 2304 (warning): imported but never referenced.
+	var r6 := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(r6, "GUITKX2304"), "M3: unused import -> 2304 (warning)")
+	_check_true(int(_diag(r6, "GUITKX2304").get("severity", -9)) == GDiag.WARNING, "M3: 2304 is a warning")
+
+	# resolve_specifier: ./ ../ ~/ forms + extensionless.
+	var sc := Resolve.resolve_specifier("./status_chip", dir + "/panel.guitkx", "res://")
+	_check_true(sc["ok"] and sc["gd"] == "res://tests/__imp_tmp/status_chip.gd", "M3: ./ resolves + .guitkx implied -> sibling .gd")
+	var tilde := Resolve.resolve_specifier("~/tests/__imp_tmp/status_chip", dir + "/panel.guitkx", "res://")
+	_check_true(tilde["ok"] and tilde["guitkx"] == "res://tests/__imp_tmp/status_chip.guitkx", "M3: ~/ resolves against the root")
+
+	# 2306: value-import cycle (hook/module preload edges), chain printed. a -> b -> a.
+	_imp_write(dir + "/cyc_a.guitkx", "export module CycA {\n\thook use_a() -> int { return 1 }\n}\n")
+	_imp_write(dir + "/cyc_b.guitkx", "export module CycB {\n\thook use_b() -> int { return 1 }\n}\n")
+	var edges := func(p: String) -> Array:
+		if p.ends_with("cyc_a.guitkx"): return [dir + "/cyc_b.guitkx"]
+		if p.ends_with("cyc_b.guitkx"): return [dir + "/cyc_a.guitkx"]
+		return []
+	var chain := Resolve.value_cycle(dir + "/cyc_a.guitkx", edges)
+	_check_true(chain.contains("cyc_a.guitkx") and chain.contains("cyc_b.guitkx") and chain.contains(" -> "), "M3: value_cycle prints the chain (%s)" % chain)
+	_check_true(Resolve.value_cycle(dir + "/status_chip.guitkx", func(_p): return []) == "", "M3: acyclic returns empty")
+
+	# M6 STRICT: an un-imported cross-file reference to a guitkx binding (present in component_paths)
+	# is GUITKX2305; importing it clears the error. This is the "implicit resolution is an error" gate.
+	var cp := { "StatusChip": "res://tests/__imp_tmp/status_chip.gd" }
+	var strict_bad := RUIGuitkx.compile("component A() {\n\treturn ( <StatusChip /> )\n}\n", "a", [], cp, dir + "/a.guitkx", "res://")
+	_check_true(_has_code(strict_bad, "GUITKX2305"), "M6 strict: un-imported cross-file ref -> 2305")
+	var strict_ok := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\ncomponent A() {\n\treturn ( <StatusChip /> )\n}\n", "a", [], cp, dir + "/a.guitkx", "res://")
+	_check_true(not _has_code(strict_ok, "GUITKX2305"), "M6 strict: importing the ref clears 2305")
+
+	# M3.6: `~/`-rooted asset path rewrites to res:// before validation.
+	var ua := RUIGuitkx.compile("@uss \"~/tests/__imp_tmp/missing.tres\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
+	_check_true(_diag(ua, "GUITKX0120").get("message", "").contains("res://tests/__imp_tmp/missing.tres"), "M3.6: ~/ asset path rewritten to res:// (%s)" % str(ua.get("diagnostics", [])))
+
+	# cleanup (sources + any generated .gd/.uid/sidecars from the compile_file call above)
+	for f in ["status_chip", "hud_hooks", "priv", "cyc_a", "cyc_b"]:
+		for ext in [".guitkx", ".gd", ".gd.uid", ".guitkx.uid", ".guitkx.diags.json"]:
+			if FileAccess.file_exists(dir + "/" + f + ext):
+				DirAccess.remove_absolute(dir + "/" + f + ext)
+	DirAccess.remove_absolute(dir + "/.gdignore")
+	DirAccess.remove_absolute(dir)
+
 func _diag(r: Dictionary, code: String) -> Dictionary:
 	for d in r.get("diagnostics", []):
 		if d is Dictionary and (d as Dictionary).get("code", "") == code:
@@ -1302,12 +1759,15 @@ func _test_codegen() -> void:
 		Codegen.compile_all(g_dir)   # settle the fingerprint marker; the 2107 path is non-force
 	var g_child := g_dir + "/child_probe.guitkx"
 	var g_parent := g_dir + "/parent_probe.guitkx"
-	var g_child_src := "@class_name ChildProbe\n\ncomponent ChildProbe {\n\treturn ( <Label text=\"c\" /> )\n}\n"
+	# 0.10.0: strict cross-file resolution -- the parent IMPORTS the child (an implicit reference is a
+	# GUITKX2305 error now). The import still lowers through V.comp, so the 2107 dangling-ref machinery
+	# (which keys on the recorded V.comp path) works exactly as before when the child is deleted.
+	var g_child_src := "@class_name ChildProbe\n\nexport component ChildProbe {\n\treturn ( <Label text=\"c\" /> )\n}\n"
 	var gf1 := FileAccess.open(g_child, FileAccess.WRITE)
 	gf1.store_string(g_child_src)
 	gf1.close()
 	var gf2 := FileAccess.open(g_parent, FileAccess.WRITE)
-	gf2.store_string("@class_name ParentProbe\n\ncomponent ParentProbe {\n\treturn ( <VBoxContainer><ChildProbe /></VBoxContainer> )\n}\n")
+	gf2.store_string("@class_name ParentProbe\n\nimport { ChildProbe } from \"./child_probe\"\n\nexport component ParentProbe {\n\treturn ( <VBoxContainer><ChildProbe /></VBoxContainer> )\n}\n")
 	gf2.close()
 	var g_sweep1 := Codegen.compile_all(g_dir)
 	_check_true((g_sweep1["errors"] as Array).is_empty() and (g_sweep1["compiled"] as Array).size() == 2,

@@ -1,6 +1,6 @@
 @class_name DemoDeepTreeNode
 
-component DemoDeepTreeNode(level: int = 0) {
+export component DemoDeepTreeNode(level: int = 0) {
   return (
     <>
       @if (level <= 0) {

@@ -59,6 +59,10 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> Dictionary:
 	# nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
 	# byte-for-byte -- Format Document must never delete user content (it used to eat file-header
 	# comments whole). Mirrors formatGuitkx.ts.
+	# 0.10.0 imports leg: `import { ... } from "..."` lines and an `export` decl prefix are NEVER
+	# canonical here (they leave real text in `pre_check` below), so they always take the verbatim
+	# branch -- imports are preserved byte-for-byte, never reordered or dropped, and the round-trip
+	# stays idempotent. (`decl["at"]` is the KEYWORD, so an `export` prefix rides along inside `pre`.)
 	var pre := source.substr(0, decl["at"])
 	var pre_check := pre
 	var cn_at := pre_check.find("@class_name")

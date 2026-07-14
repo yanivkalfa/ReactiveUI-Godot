@@ -1,6 +1,8 @@
 @class_name DemoEffect
 
-component DemoEffect {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoEffect {
   var on = useState(true)
   var log = useRef([])
   var eff = func():

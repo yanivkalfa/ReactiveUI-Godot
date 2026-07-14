@@ -112,3 +112,28 @@ friendly string, following the existing `_mouse_filter` / `_size_flag` string→
 **Status:** open / accepted. Curated 90%-shorthand set over 100% generic reach; the deferred keys
 are convenience, not capability. (Runtime-addon `style` API grew by 4 keys unreleased — a patch bump
 + one CHANGELOG line at next Publish covers it; deliberately not bumped on the feature branch.)
+
+## TD-03 — Imports leg (0.10.0): deferred IDE-polish + docs page
+
+The import/export leg (plans/IMPORT_EXPORT_PLAN.md) shipped its runtime + compiler + resolver +
+codemod + strict resolution + HMR + version/changelog release plumbing, all green. Deferred as
+follow-ups (none affect the migrated tree's correctness, the CI matrix, or shippability):
+
+- **Docs site Imports page** (`ReactiveUIGodotDocs~/src/pages/UITKX/`): the grammar/strictness/
+  codemod/`~/` narrative page + `CompanionFiles`/`Config`/`Diagnostics` touch-ups. The changelogs
+  (root + Discord) and MIGRATION notes cover the release; the site build is green (its `lint` was
+  already failing pre-leg on unrelated existing pages — setState-in-effect, unused var, whitespace).
+- **M7 cross-file IDE navigation**: go-to-def / find-refs THROUGH an import specifier
+  (`guitkx_refs.gd` + `server.ts`) and multi-decl outline export badges. The correctness-critical
+  M7 piece (imported names resolve in embedded analysis; 23xx surface from the sidecar; import/
+  export highlight as syntax) shipped, so migrated files don't red-squiggle.
+- **VS2022 `.vsix` rebuild**: version bumped (2.1.0) + changelog regenerated; the binary rebuild via
+  `ide-extensions/visual-studio/build-local.ps1` happens at the release/Publish step.
+
+**Status:** RESOLVED (2026-07-12). All three items shipped in the same leg: the docs-site
+"Imports & Exports" page (registered in the nav; docs `build` + `lint` green — the four pre-existing
+lint errors were fixed too); cross-file go-to-definition through import specifiers/names +
+outline `export` badges (`importNav.ts` + `server.ts`, node --test 182/182); and the VS2022 `.vsix`
+rebuild — verified by an actual `msbuild … -t:CreateVsixContainer -p:Configuration=Release` producing
+GuitkxVsix.vsix (36.8 MB), which also caught a version bug (the VSIX manifest SCHEMA version must stay
+2.0.0; the extension `Identity` version is the one that moves — now 0.10.0, tracking the lsp-server).

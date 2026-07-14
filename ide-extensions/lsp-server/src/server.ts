@@ -40,6 +40,7 @@ import { uriToProjectPath } from "./guitkxFormat";
 import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans, splitBody } from "./formatGuitkx";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
+import { importAt, resolveSpecifier } from "./importNav";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
@@ -931,8 +932,10 @@ function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic
     extra.push({
       severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
       range,
-      // v2 messages carry no code prefix (compose it, matching the live tier's style); v1 already do.
-      message: sc.v === 2 ? `${d.code}: ${d.message}` : d.message,
+      code: d.code, // the GUITKX#### identity as a real Diagnostic.code (also click-through-able)
+      // v2 AND v3 store bare messages -- compose the code prefix (matching the live tier's style);
+      // v1 messages already embed the code. `>= 2` (not `=== 2`) so the v3 bump kept the prefix (BH-04).
+      message: sc.v >= 2 ? `${d.code}: ${d.message}` : d.message,
       source: "guitkx (compiler)",
     });
   }
@@ -973,6 +976,21 @@ connection.onDefinition(async (params) => {
         const targetText = documents.get(e.uri)?.getText() ?? readTextForUri(e.uri);
         return { uri: e.uri, range: { start: offsetToPos(targetText, e.nameStart), end: offsetToPos(targetText, e.nameEnd) } };
       });
+  }
+  // 0.10.0: click-through on an import specifier or an imported name -> the target .guitkx file (and,
+  // for a name, its declaration). Resolves ./ ../ ~/ exactly like the compiler.
+  const imp = importAt(src, offset);
+  if (imp) {
+    const target = resolveSpecifier(imp.spec, uriToProjectPath(params.textDocument.uri), projectPath);
+    if (target) {
+      const targetUri = pathToFileURL(target).href;
+      const tText = documents.get(targetUri)?.getText() ?? readTextForUri(targetUri);
+      if (imp.kind === "name" && imp.name) {
+        const d = scanDeclarations(tText).find((x) => x.name === imp.name || x.binding === imp.name);
+        if (d) return [{ uri: targetUri, range: { start: offsetToPos(tText, d.nameStart), end: offsetToPos(tText, d.nameEnd) } }];
+      }
+      return [{ uri: targetUri, range: { start: offsetToPos(tText, 0), end: offsetToPos(tText, 0) } }];
+    }
   }
   // Otherwise an embedded-GDScript symbol -> resolve via @gdscript-analyzer/core; return cross-file (library)
   // locations (e.g. `useRef` -> core/hooks.gd). Same-file (virtual-doc) hits are skipped for now.
@@ -1440,6 +1458,7 @@ connection.onDocumentSymbol((params): DocumentSymbol[] => {
   for (const d of scanDeclarations(src)) {
     const sym: DocumentSymbol = {
       name: d.name,
+      detail: d.export ? "export" : undefined, // outline export badge (0.10.0 imports leg)
       kind: symbolKind(d.kind),
       range: { start: offsetToPos(src, d.declStart), end: offsetToPos(src, d.declEnd) },
       selectionRange: { start: offsetToPos(src, d.nameStart), end: offsetToPos(src, d.nameEnd) },

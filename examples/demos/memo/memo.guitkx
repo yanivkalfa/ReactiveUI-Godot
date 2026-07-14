@@ -1,6 +1,8 @@
 @class_name DemoMemo
 
-component DemoMemo {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoMemo {
   var n = useState(1)
   var other = useState(0)
   var calc_count = useRef(0)

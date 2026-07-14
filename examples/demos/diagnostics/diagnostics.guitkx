@@ -1,6 +1,8 @@
 @class_name DemoDiagnostics
 
-component DemoDiagnostics {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoDiagnostics {
   RUIDiagnostics.enabled = true
   var tick = useState(0)
   var shown = useState(RUIDiagnostics.report())

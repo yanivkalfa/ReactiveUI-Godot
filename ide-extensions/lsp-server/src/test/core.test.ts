@@ -337,11 +337,11 @@ test("T1.3: trailing comments after the declaration stay clean (no 2105)", () =>
   assert.equal(declarationDiags("component A() {\n\treturn ( <Label /> )\n}\n# note\n").length, 0);
 });
 
-test("T1.3: the index holds only the first top-level declaration (no completion ghosts)", () => {
+test("mixed-decl: the index holds EVERY top-level declaration (BH-05)", () => {
   const idx = new WorkspaceIndex();
-  idx.reindex("file:///t/A.guitkx", "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(idx.has("A"), "first decl indexed");
-  assert.ok(!idx.has("B"), "ghost second decl NOT indexed");
+  idx.reindex("file:///t/A.guitkx", "export component A() {\n\treturn ( <Label /> )\n}\nexport component B() {\n\treturn ( <Label /> )\n}\n");
+  // 0.10.0 compiles both, so both must be indexed for cross-file go-to-def / find-refs / completion.
+  assert.ok(idx.has("A") && idx.has("B"), "both top-level decls indexed");
 });
 
 test("T1.3: module members still index (the compiler compiles them)", () => {
@@ -456,6 +456,30 @@ test("markupWindows survives a typo'd header AND a malformed tag (does not go da
 test("buildVirtualDoc emits a render body for a typo'd header (embedded analysis survives)", () => {
   const { text } = buildVirtualDoc("comssponent Card() {\n\tvar s = useState(0)\n\treturn ( <Label /> )\n}\n");
   assert.ok(/static func render/.test(text) && text.includes("var s = useState(0)"), text);
+});
+
+test("buildVirtualDoc declares imported names so embedded analysis resolves them (imports leg)", () => {
+  const src =
+    'import { DoomGameScreenHooks } from "./doom_game_screen.hooks"\n' +
+    'import { StatusChip } from "./status_chip"\n' +
+    "\nexport component Panel() {\n\tvar d = DoomGameScreenHooks.use_x()\n\treturn ( <StatusChip /> )\n}\n";
+  const { text } = buildVirtualDoc(src);
+  assert.ok(/static var DoomGameScreenHooks\b/.test(text), "imported value name declared: " + text);
+  assert.ok(/static var StatusChip\b/.test(text), "imported component name declared");
+  assert.ok(text.includes("DoomGameScreenHooks.use_x()"), "the qualified reference survives in the body");
+});
+
+test("importAt detects the specifier vs an imported name under the cursor (imports leg)", async () => {
+  const { importAt } = await import("../importNav");
+  const src = 'import { StatusChip, Hud } from "./widgets"\n\nexport component A() { return ( <StatusChip /> ) }\n';
+  const onName = src.indexOf("StatusChip");
+  const onSecond = src.indexOf("Hud");
+  const onSpec = src.indexOf("./widgets") + 2;
+  assert.deepEqual(importAt(src, onName), { kind: "name", spec: "./widgets", name: "StatusChip" });
+  assert.deepEqual(importAt(src, onSecond), { kind: "name", spec: "./widgets", name: "Hud" });
+  assert.deepEqual(importAt(src, onSpec), { kind: "spec", spec: "./widgets" });
+  // a position inside the component body is NOT an import hit.
+  assert.equal(importAt(src, src.indexOf("<StatusChip") + 1), null);
 });
 
 test("virtualDoc extracts @if/@for conditions", () => {

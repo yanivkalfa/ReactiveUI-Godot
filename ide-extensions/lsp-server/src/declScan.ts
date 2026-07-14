@@ -17,7 +17,9 @@ export const DECL_KEYWORDS: DeclKind[] = ["component", "hook", "module"];
 
 export interface FoundDecl {
   kind: "" | DeclKind;
-  at: number;
+  at: number; // the declaration KEYWORD position (past any `export` prefix)
+  export?: boolean; // whether the declaration carried an `export` visibility prefix
+  start?: number; // the declaration's first char (the `export` prefix when present, else `at`)
 }
 
 // Bounded Levenshtein (two-row DP). Kept here as the one implementation the recovery + linter share.
@@ -88,12 +90,35 @@ export function findDecl(src: string, from: number, recover = false): FoundDecl 
       i = k;
       continue;
     }
-    if (keywordAt(src, i, "component")) return { kind: "component", at: i };
-    if (keywordAt(src, i, "hook")) return { kind: "hook", at: i };
-    if (keywordAt(src, i, "module")) return { kind: "module", at: i };
+    // `export` is a declaration prefix only when a decl keyword follows it (else an ordinary token).
+    if (keywordAt(src, i, "export")) {
+      const e = skipNoncodeWs(src, i + 6);
+      const ek: DeclKind | null = keywordAt(src, e, "component")
+        ? "component"
+        : keywordAt(src, e, "hook")
+          ? "hook"
+          : keywordAt(src, e, "module")
+            ? "module"
+            : null;
+      if (ek) return { kind: ek, at: e, export: true, start: i };
+    }
+    if (keywordAt(src, i, "component")) return { kind: "component", at: i, export: false, start: i };
+    if (keywordAt(src, i, "hook")) return { kind: "hook", at: i, export: false, start: i };
+    if (keywordAt(src, i, "module")) return { kind: "module", at: i, export: false, start: i };
     i++;
   }
   return recover ? recoverDecl(src, from) : { kind: "", at: -1 };
+}
+
+// Skip whitespace AND comments/strings (skipNoncode) but keep advancing over interleaved runs — used
+// to reach the decl keyword after an `export` prefix (a comment between the two is legal).
+function skipNoncodeWs(src: string, i: number): number {
+  for (;;) {
+    i = skipWs(src, i);
+    const k = skipNoncode(src, i);
+    if (k === i) return i;
+    i = k;
+  }
 }
 
 function recoverDecl(src: string, from: number): FoundDecl {

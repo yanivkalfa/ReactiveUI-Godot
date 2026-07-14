@@ -1,6 +1,8 @@
 @class_name DemoHello
 
-component DemoHello {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoHello {
   return (
     <DemoBox title="Hello World">
       <Label text="Hello, reactive Godot! 👋" style={ {"font_size": 20} } />

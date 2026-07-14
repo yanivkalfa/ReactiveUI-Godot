@@ -4,6 +4,34 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] — 2026-07-12
+
+**Imports & mixed declarations.** `.guitkx` files now declare cross-file dependencies
+explicitly and may hold several declarations. Cross-file resolution is **strict**: an
+implicit reference to another component/hook/module is an error — import it.
+
+- **`import { Name, … } from "specifier"`** in the preamble. Specifiers are relative
+  (`./`, `../`) or root-aliased (`~/`, the project UI source root from a new `"root"` key
+  in `guitkx.config.json`, default `res://`); they are extensionless (`.guitkx` implied).
+  Engine-native `res://` / `uid://` are not valid import specifiers (they remain valid in
+  `@uss` / `@theme` asset positions, which now also accept `~/`). **Named exports only.**
+- **`export`** marks a declaration reachable across files. A file may now hold **multiple**
+  top-level declarations (components, hooks, modules); the binding = `@class_name` override,
+  else the first exported declaration. Non-exported declarations are file-private. Component
+  imports stay lazy (`V.comp`), so cross-file component **cycles are legal**; value imports
+  (hooks/modules) are eager `const` preloads and a value-import **cycle is an error** that
+  prints the chain.
+- **New diagnostics GUITKX2300–2309** (family-frozen): unresolved specifier, not-exported,
+  not-declared, duplicate import, unused import, defined-but-not-imported, value-cycle,
+  used-but-unexported, boundary crossing, import-after-first-declaration.
+- **Migration codemod** — run once, `godot --headless --path . --script
+  res://addons/reactive_ui/dev/migrate_0_10_0.gd`: it exports every declaration and writes the import lines
+  for each file's cross-file references. Idempotent and re-runnable. The bundled examples
+  (including the Doom demo) ship migrated. Full guide: [MIGRATION-0.10.md](MIGRATION-0.10.md).
+- The generated-script parse check is now a **two-pass, counted CI gate** (a value import
+  preloading a not-yet-written sibling no longer false-fails), and Fast Refresh re-renders
+  only the component importers of a changed hook/module instead of the whole tree.
+
 ## [0.9.0] — 2026-07-11
 
 **BREAKING — naming is now 1:1 loyal to Godot.** Every user-facing name is the official

@@ -1,6 +1,8 @@
 @class_name DemoCounter
 
-component DemoCounter {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoCounter {
   var s = useState(0)
   return (
     <DemoBox title="Counter — useState">

@@ -7,6 +7,9 @@ shared with the GUITKX IDE extensions) — add entries via `changelog.mjs add --
 editor`, then regenerate this file with `extract`; never edit it by hand. The history
 below the marker line predates the cutover and is preserved verbatim.
 
+## [0.8.0] - 2026-07-11
+- 0.10.0 imports leg (rides the library 0.10.0): the editor addon recognizes the new `import { … } from "…"` preamble and the `export` declaration prefix — highlighting, tokenizer, and the workspace/declaration index are import/export-aware, and multi-declaration `.guitkx` files index every declaration. The compiler-driven 23xx import diagnostics surface live from the sidecar. Recompile-on-save keeps resolving imports each sweep; HMR re-renders only the component importers of a changed hook/module.
+
 ## [0.7.0] - 2026-07-11
 - 0.9.0 naming loyalty support (BREAKING vocabulary, rides the library 0.9.0 — see MIGRATION-0.9.md): the bundled guitkx-schema.json is rewritten to the loyal vocabulary (54 curated elements, tags = official Godot class names, factories = V.ClassName, loyal per-element events, exact style keys); event intelligence is now derived LIVE from ClassDB — on + PascalCase(signal) for every signal of every class (the REACT_EVENTS alias table is gone); host-tag recognition gains the open vocabulary (any instantiable ClassDB Node class highlights and completes as a host element, matching the compiler).
 

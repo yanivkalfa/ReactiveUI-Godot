@@ -1,0 +1,294 @@
+{
+  "_readme": [
+    "The .guitkx scanner contract corpus (D-22): run by BOTH the C++ automation test",
+    "(ReactiveUI.Guitkx.Scanner) and lsp-server's node --test — the family mechanism that keeps",
+    "two implementations in two languages in lockstep (scanner-cases.json precedent).",
+    "Every `at`/`expect` value is a Unicode CODE POINT index (D-18) — the nonBmp cases exist",
+    "to catch any implementation indexing by UTF-16 units.",
+    "skipNoncode = C++ lexis. skipNoncodeMarkup/findMatchingMarkup = the family markup lexis."
+  ],
+  "_tiers": {
+    "_doc": [
+      "Corpus mirroring partition (A4 / TD-009). familyCore sections are BYTE-IDENTICAL",
+      "family-wide after the code-prefix substitution (GUITKX|GUITKX|UITKX -> TKX) and are",
+      "hashed by scripts/corpus-hash.mjs into plans/family-corpus.hash; sibling repos adopt",
+      "the same script + hash file (release-time hash-match resolves TD-009). perLeg sections",
+      "are engine-specific lexis (C++/GDScript/C#) and are NOT part of the family hash.",
+      "nonBmp cases are routed by their per-case `section` field into whichever tier owns it."
+    ],
+    "familyCore": ["skipNoncodeMarkup", "findMatchingMarkup", "fileScan"],
+    "perLeg": ["skipNoncode", "findMatching", "fileScanLeg"]
+  },
+  "skipNoncode": [
+    { "name": "not at noncode returns i", "input": "int x = 1;", "at": 0, "expect": 0 },
+    { "name": "line comment to EOL", "input": "a // comment\nb", "at": 2, "expect": 12 },
+    { "name": "line comment at EOF", "input": "// tail", "at": 0, "expect": 7 },
+    { "name": "block comment", "input": "a /* x */ b", "at": 2, "expect": 9 },
+    { "name": "block comment unterminated", "input": "/* open", "at": 0, "expect": 7 },
+    { "name": "block comment with slashes inside", "input": "/* a // b */c", "at": 0, "expect": 12 },
+    { "name": "string simple", "input": "x\"hi\"y", "at": 1, "expect": 5 },
+    { "name": "string with escape", "input": "\"a\\\"b\"c", "at": 0, "expect": 6 },
+    { "name": "string with escaped backslash", "input": "\"a\\\\\"c", "at": 0, "expect": 5 },
+    { "name": "string stops at newline (unterminated)", "input": "\"abc\ndef", "at": 0, "expect": 4 },
+    { "name": "char literal", "input": "'c' + x", "at": 0, "expect": 3 },
+    { "name": "char literal escaped quote", "input": "'\\''x", "at": 0, "expect": 4 },
+    { "name": "digit separator apostrophe is NOT a char", "input": "1'000'000", "at": 1, "expect": 1 },
+    { "name": "preprocessor line", "input": "#include <x.h>\nint y;", "at": 0, "expect": 14 },
+    { "name": "preprocessor after leading ws", "input": "  #if X\nint y;", "at": 2, "expect": 7 },
+    { "name": "hash mid-line is not preprocessor", "input": "a #b", "at": 2, "expect": 2 },
+    { "name": "preprocessor backslash continuation", "input": "#define A \\\n  b\nint c;", "at": 0, "expect": 15 },
+    { "name": "raw string", "input": "R\"(a \" b)\" x", "at": 0, "expect": 10 },
+    { "name": "raw string with delimiter", "input": "R\"xy(a )\" b)xy\" z", "at": 0, "expect": 15 },
+    { "name": "raw string unterminated", "input": "R\"(open", "at": 0, "expect": 7 },
+    { "name": "prefix L string", "input": "L\"wide\" x", "at": 0, "expect": 7 },
+    { "name": "prefix u8 string", "input": "u8\"s\" x", "at": 0, "expect": 5 },
+    { "name": "prefix LR raw string", "input": "LR\"(a)\" x", "at": 0, "expect": 7 },
+    { "name": "prefix u8R raw string", "input": "u8R\"(a)\" x", "at": 0, "expect": 8 },
+    { "name": "prefix after identifier is not a prefix", "input": "FOOL\"(x)\"", "at": 3, "expect": 3 },
+    { "name": "quote after prefix-lookalike identifier char", "input": "AU\"s\"", "at": 1, "expect": 1 },
+    { "name": "R after identifier is not raw", "input": "VAR\"s\"", "at": 2, "expect": 2 }
+  ],
+  "findMatching": [
+    { "name": "simple parens", "input": "(a + b)", "at": 0, "expect": 6 },
+    { "name": "nested mixed", "input": "{ a[1] + (b) }", "at": 0, "expect": 13 },
+    { "name": "brace inside string ignored", "input": "( \"}\" )", "at": 0, "expect": 6 },
+    { "name": "paren inside line comment ignored", "input": "( // )\n)", "at": 0, "expect": 7 },
+    { "name": "paren inside block comment ignored", "input": "( /* ) */ )", "at": 0, "expect": 10 },
+    { "name": "paren inside char literal ignored", "input": "( ')' )", "at": 0, "expect": 6 },
+    { "name": "paren inside raw string ignored", "input": "( R\"(x))(y)\" )", "at": 0, "expect": 13 },
+    { "name": "unbalanced returns -1", "input": "( ( )", "at": 0, "expect": -1 },
+    { "name": "mismatched kind returns -1", "input": "( ]", "at": 0, "expect": -1 },
+    { "name": "preprocessor line skipped", "input": "(\n#if 0 )\n)", "at": 0, "expect": 10 }
+  ],
+  "skipNoncodeMarkup": [
+    { "name": "hash is literal text in markup", "input": "# not a comment", "at": 0, "expect": 0 },
+    { "name": "line comment", "input": "// c\nx", "at": 0, "expect": 4 },
+    { "name": "block comment", "input": "/* c */x", "at": 0, "expect": 7 },
+    { "name": "html comment", "input": "<!-- hi -->x", "at": 0, "expect": 11 },
+    { "name": "html comment unterminated", "input": "<!-- open", "at": 0, "expect": 9 },
+    { "name": "double-quoted string", "input": "\"a'b\"x", "at": 0, "expect": 5 },
+    { "name": "single-quoted string", "input": "'a\"b'x", "at": 0, "expect": 5 },
+    { "name": "triple-quoted string spans newline", "input": "\"\"\"a\nb\"\"\"x", "at": 0, "expect": 9 },
+    { "name": "lt not comment", "input": "<Tag>", "at": 0, "expect": 0 }
+  ],
+  "findMatchingMarkup": [
+    {
+      "name": "return window with hash literal",
+      "input": "return (\n\t<TextBlock Text=\"Score #3\" />\n)",
+      "at": 7,
+      "expect": 40
+    },
+    {
+      "name": "component body: prelude comment with paren does not desync",
+      "input": "{\n\tint32 A = 1; // note (unbalanced\n\t// still) fine\n\treturn (\n\t\t<Box />\n\t)\n}",
+      "at": 0,
+      "expect": 75
+    },
+    {
+      "name": "expr hole is code lexis",
+      "input": "( <T V={ FString(\")\") } /> )",
+      "at": 0,
+      "expect": 27
+    },
+    {
+      "name": "if header is code then body braces",
+      "input": "{\n\t@if (A > 0) {\n\t\t<T />\n\t}\n}",
+      "at": 0,
+      "expect": 28
+    },
+    {
+      "name": "else re-arms body",
+      "input": "{\n\t@if (A) {\n\t\t<T />\n\t} @else {\n\t\t<U />\n\t}\n}",
+      "at": 0,
+      "expect": 43
+    },
+    {
+      "name": "markup text hash inside return window line classified prelude",
+      "input": "{\n\tint32 X = 0;\n\treturn ( <L T=\"#7\" /> )\n}",
+      "at": 0,
+      "expect": 41
+    },
+    {
+      "name": "unbalanced returns -1",
+      "input": "( <T ",
+      "at": 0,
+      "expect": -1
+    },
+    {
+      "name": "code island bracket inherits code lexis",
+      "input": "( <T V={ Arr[0] } /> )",
+      "at": 0,
+      "expect": 21
+    }
+  ],
+  "nonBmp": [
+    {
+      "name": "emoji in string counts as ONE code point (skipNoncode)",
+      "section": "skipNoncode",
+      "input": "\"a😀b\" x",
+      "at": 0,
+      "expect": 5
+    },
+    {
+      "name": "emoji before delimiter (findMatching)",
+      "section": "findMatching",
+      "input": "( \"😀\" )",
+      "at": 0,
+      "expect": 6
+    },
+    {
+      "name": "emoji literal markup text (findMatchingMarkup)",
+      "section": "findMatchingMarkup",
+      "input": "( <T L=\"😀#\" /> )",
+      "at": 0,
+      "expect": 15
+    }
+  ],
+  "_fileScanDoc": [
+    "fileScan cases run FGuitkxFileScan::Scan (C++) / scanFile (TS) over a whole .guitkx source and",
+    "assert the parsed shape: imports (names+specifier), components/hooks/modules (name+exported),",
+    "the source `order`, and the exact set of diagnostic CODES. `basename` defaults to \"\" (so the",
+    "component/file-name nudge 0103 never fires). `noError` asserts hasError()==false (LINT-only).",
+    "fileScan = family-core import/export/mixed grammar (byte-identical family-wide); fileScanLeg =",
+    "per-leg hook casing (Unreal/Unity PascalCase Use*, Godot snake_case use_*)."
+  ],
+  "fileScan": [
+    {
+      "name": "import one name",
+      "input": "import { StatusChip } from \"./StatusChip\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": {
+        "imports": [{ "names": ["StatusChip"], "specifier": "./StatusChip" }],
+        "components": [{ "name": "Foo", "exported": false }],
+        "order": ["component:Foo"],
+        "diags": [],
+        "noError": true
+      }
+    },
+    {
+      "name": "import multiple names, ~/ root specifier",
+      "input": "import { A, B, C } from \"~/Shared/Types\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": {
+        "imports": [{ "names": ["A", "B", "C"], "specifier": "~/Shared/Types" }],
+        "order": ["component:Foo"],
+        "diags": []
+      }
+    },
+    {
+      "name": "import parent-relative specifier",
+      "input": "import { X } from \"../lib/X\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "imports": [{ "names": ["X"], "specifier": "../lib/X" }], "diags": [] }
+    },
+    {
+      "name": "import non-BMP specifier keeps code points intact",
+      "input": "import { X } from \"./caf🎮\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "imports": [{ "names": ["X"], "specifier": "./caf🎮" }], "diags": [] }
+    },
+    {
+      "name": "multiple imports, mixed specifier forms",
+      "input": "import { A } from \"./A\"\nimport { B } from \"../B\"\nimport { C } from \"~/C\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": {
+        "imports": [
+          { "names": ["A"], "specifier": "./A" },
+          { "names": ["B"], "specifier": "../B" },
+          { "names": ["C"], "specifier": "~/C" }
+        ],
+        "diags": []
+      }
+    },
+    {
+      "name": "export component",
+      "input": "export component Widget {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": {
+        "components": [{ "name": "Widget", "exported": true }],
+        "order": ["component:Widget"],
+        "diags": []
+      }
+    },
+    {
+      "name": "private component (no export)",
+      "input": "component Widget {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "components": [{ "name": "Widget", "exported": false }], "diags": [] }
+    },
+    {
+      "name": "export module",
+      "input": "export module Styles { inline const float Pad = 4.0f; }\n",
+      "expect": {
+        "modules": [{ "name": "Styles", "exported": true }],
+        "order": ["module:Styles"],
+        "diags": []
+      }
+    },
+    {
+      "name": "mixed component + module preserves source order",
+      "input": "component Foo {\n\treturn ( <Spacer /> );\n}\nexport module M { }\n",
+      "expect": {
+        "components": [{ "name": "Foo", "exported": false }],
+        "modules": [{ "name": "M", "exported": true }],
+        "order": ["component:Foo", "module:M"],
+        "diags": []
+      }
+    },
+    {
+      "name": "duplicate import is GUITKX2303",
+      "input": "import { A } from \"./X\"\nimport { A } from \"./Y\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "diags": ["GUITKX2303"] }
+    },
+    {
+      "name": "import after a declaration is GUITKX2309",
+      "input": "component Foo {\n\treturn ( <Spacer /> );\n}\nimport { A } from \"./X\"\n",
+      "expect": { "components": [{ "name": "Foo", "exported": false }], "diags": ["GUITKX2309"] }
+    },
+    {
+      "name": "two components is the one-per-file convention warn GUITKX2105 (not an error)",
+      "input": "component Alpha {\n\treturn ( <Spacer /> );\n}\ncomponent Beta {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": {
+        "components": [{ "name": "Alpha", "exported": false }, { "name": "Beta", "exported": false }],
+        "order": ["component:Alpha", "component:Beta"],
+        "diags": ["GUITKX2105"],
+        "noError": true
+      }
+    },
+    {
+      "name": "import-only file (no declaration) is GUITKX2101",
+      "input": "import { A } from \"./X\"\n",
+      "expect": { "imports": [{ "names": ["A"], "specifier": "./X" }], "diags": ["GUITKX2101"] }
+    },
+    {
+      "name": "empty import list is GUITKX0303",
+      "input": "import { } from \"./X\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "diags": ["GUITKX0303"] }
+    }
+  ],
+  "fileScanLeg": [
+    {
+      "name": "export hook (PascalCase Use*)",
+      "input": "export hook UseThing(int32 A) -> int32 { return A; }\n",
+      "expect": {
+        "hooks": [{ "name": "UseThing", "exported": true }],
+        "order": ["hook:UseThing"],
+        "diags": []
+      }
+    },
+    {
+      "name": "private hook (no export)",
+      "input": "hook UseThing() { }\n",
+      "expect": { "hooks": [{ "name": "UseThing", "exported": false }], "diags": [] }
+    },
+    {
+      "name": "full mixed sequence: component + hook + module in source order",
+      "input": "component Foo {\n\treturn ( <Spacer /> );\n}\nhook UseBar() { }\nmodule Styles { }\n",
+      "expect": {
+        "components": [{ "name": "Foo", "exported": false }],
+        "hooks": [{ "name": "UseBar", "exported": false }],
+        "modules": [{ "name": "Styles", "exported": false }],
+        "order": ["component:Foo", "hook:UseBar", "module:Styles"],
+        "diags": []
+      }
+    },
+    {
+      "name": "hook before component keeps declaration order",
+      "input": "hook UseBar() { }\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "order": ["hook:UseBar", "component:Foo"], "diags": [] }
+    }
+  ]
+}

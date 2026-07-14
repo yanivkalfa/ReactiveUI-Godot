@@ -215,7 +215,17 @@
     "GUITKX2106": "error",
     "GUITKX2107": "error",
     "GUITKX2203": "warning",
-    "GUITKX2210": "error"
+    "GUITKX2210": "error",
+    "GUITKX2300": "error",
+    "GUITKX2301": "error",
+    "GUITKX2302": "error",
+    "GUITKX2303": "error",
+    "GUITKX2304": "warning",
+    "GUITKX2305": "error",
+    "GUITKX2306": "error",
+    "GUITKX2307": "error",
+    "GUITKX2308": "error",
+    "GUITKX2309": "error"
   },
   "live": [
     "GUITKX0013",

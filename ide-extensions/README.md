@@ -20,6 +20,14 @@ visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient
   and VS2022 (VS never drives coloring over LSP, so the grammar is required there too).
 - **Markup intelligence** (tag / attribute / directive completion + hover) — answered locally by the
   language server from the schema (`grammar/guitkx-schema.json`, embedded in `lsp-server/src/schema.ts`).
+- **Import intelligence (0.10.0)** — `import { … } from "…"` / `export` are first-class syntax;
+  go-to-definition works **through** an import (F12 on a specifier opens the target file, on an
+  imported name jumps to its declaration — `./ ../ ~/` resolved exactly like the compiler,
+  including the `guitkx.config.json` `"root"` key); imported names resolve during embedded analysis
+  (no false "undefined identifier" squiggles); the workspace index covers every declaration of a
+  multi-declaration file; the outline badges `export`ed declarations; and the compiler's
+  `GUITKX2300`–`GUITKX2309` import diagnostics surface from the `.diags` sidecar. Imports are
+  optional syntax — pre-0.10 projects stay green.
 - **Embedded-GDScript intelligence** (completion/hover/go-to-definition inside `{expr}`/setup/conditions)
   — the server builds a synthetic `.gd` **virtual document** with a length-preserving **source map**
   (Volar's technique, hand-rolled), then analyzes it **in-process** with
@@ -148,6 +156,6 @@ check that would have caught `changelog.json` silently falling 14 releases behin
 | Grammar + schema | Done (valid JSON, adapted from the shipping Unity grammar) |
 | Language server — markup completion/hover, structural diagnostics, dangling-reference detection | Done + tested (`npm test`, `smoke.js`) |
 | Language server — embedded GDScript (completion/hover/goto/diagnostics) | Done — headless, in-process via `@gdscript-analyzer/core` (no Godot editor, no TCP) |
-| VS Code extension | Published; **0.8.6** — grammar, LSP client, format-on-save, sidecar + workspace-index watching, plain-`.gd` analyzer LSP, gdformat integration |
-| VS2022 extension | Published; **0.5.5** — behind VS Code 0.6.0–0.8.6 (same shared `lsp-server`, not repackaged since). Gap analysis + closure plan: [`plans/VSCODE_VS2022_PARITY_PLAN.md`](../plans/VSCODE_VS2022_PARITY_PLAN.md) |
+| VS Code extension | **0.10.0** — grammar, LSP client, format-on-save, sidecar + workspace-index watching, plain-`.gd` analyzer LSP, gdformat integration, import intelligence |
+| VS2022 extension | **0.10.0** — at feature parity with VS Code (same shared `lsp-server`, released in the same window; parity record: [`plans/archive/VSCODE_VS2022_PARITY_PLAN.md`](../plans/archive/VSCODE_VS2022_PARITY_PLAN.md)). Outstanding: the interactive UI verification pass (`plans/MASTER_PLAN.md` §1.2) |
 | Publishing + changelogs | Automated via `publish.yml`, but **`changelog.json` had drifted behind the hand-edited `vscode/CHANGELOG.md`** (now reconciled) — keep using `scripts/changelog.mjs add` so future releases don't diverge again |

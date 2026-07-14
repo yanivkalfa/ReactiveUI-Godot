@@ -1,6 +1,8 @@
 @class_name DemoTextField
 
-component DemoTextField {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoTextField {
   var s = useState("")
   return (
     <DemoBox title="Text Field — controlled input">

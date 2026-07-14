@@ -2,7 +2,9 @@
 
 ## The demo gallery shell: a scrollable sidebar + a content area. Entries come from DemoGalleryTable;
 ## each points at a Demo<Name>.render — one folder per demo under examples/demos/ (now .guitkx).
-component DemoGallery {
+import { DemoGalleryTable } from "./gallery_table"
+
+export component DemoGallery {
   var sel = useState(0)
   var demos := DemoGalleryTable.entries()
   var buttons: Array = []

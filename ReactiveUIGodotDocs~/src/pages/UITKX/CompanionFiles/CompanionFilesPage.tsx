@@ -131,7 +131,10 @@ export const CompanionFilesPage: FC = () => (
     <Typography variant="body2" paragraph>
       All companion files end in <code>.guitkx</code>. The naming conventions (
       <code>.hooks.</code>, <code>.style.</code>, <code>.utils.</code>) are recommendations, not
-      enforced rules.
+      enforced rules — since 0.10 a single file may even hold several declarations. What <em>is</em>{' '}
+      enforced is the wiring: mark a companion&apos;s declaration <code>export</code> and{' '}
+      <code>import</code> it where it&apos;s used (see the Imports &amp; Exports page) — an implicit
+      cross-file reference is a compile error that tells you the exact import to add.
     </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>

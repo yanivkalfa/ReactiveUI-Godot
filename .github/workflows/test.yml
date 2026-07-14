@@ -21,6 +21,21 @@ env:
   GODOT_VERSION: "4.7.0"
 
 jobs:
+  # Engine-free gates run without Godot so they stay green even when engine CI is unavailable.
+  gates:
+    name: engine-free gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: family-corpus hash gate (A4/TD-009 mirror tripwire)
+        # Verifies the mirrored family scanner corpus (familyCore tiers) still hashes to the
+        # value pinned in plans/family-corpus.hash — i.e. it has not drifted from the Unreal/Unity
+        # siblings. Re-pin with `node scripts/corpus-hash.mjs --write` after an intentional change.
+        run: node scripts/corpus-hash.mjs --check
+
   headless-tests:
     name: Headless GDScript tests
     runs-on: ubuntu-latest
@@ -34,13 +49,24 @@ jobs:
           use-dotnet: false
           include-templates: false
 
+      # The class-cache scan must run BEFORE the compile step on a fresh clone: guitkx_build's
+      # two-pass parse gate reload()s every generated .gd, whose code references global
+      # class_names (V, Hooks, RUIVNode, hand-written DoomTypes, ...) that only resolve once
+      # .godot/global_script_class_cache.cfg exists. This mirrors the real editor lifecycle —
+      # the editor always scans before its watcher compiles. (PR #71 CI capture: 49/49
+      # "Identifier V not declared" parse fails without it.)
+      - name: Build class cache (committed class_names -- required by the parse gate)
+        run: godot --headless --path . --editor --quit || true
+
       - name: Compile .guitkx -> sibling .gd (generated output is git-ignored)
         run: godot --headless --path . --script res://tests/guitkx_build.gd
 
       - name: Contract goldens are fresh (GD half of the GD<->TS grammar parity harness)
         run: godot --headless --path . --script res://tests/contract_dump.gd -- --check
 
-      - name: Build class cache (editor import scan)
+      # Second scan AFTER the build: registers the just-generated .gd class_names so the demo /
+      # doom / editor suites resolve them by global name.
+      - name: Rebuild class cache (now includes the generated .gd)
         run: godot --headless --path . --editor --quit || true
 
       - name: Core reconciler / hooks tests

@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_rapid_resave_idempotent()
 	_test_reload_with_pending_update()
 	_test_new_component_hot_link()
+	_test_injector_dedupe()
 	_cleanup_dir()
 	if _failed > 0:
 		print("[hmr_test] FAILED (%d passed, %d failed)" % [_passed, _failed])
@@ -34,6 +35,27 @@ func _initialize() -> void:
 	else:
 		print("[hmr_test] ALL PASSED (%d checks)" % _passed)
 		quit(0)
+
+## M5 / A6c: the binding injector must SKIP a name the source already `const`-declares (mixed/import
+## files emit their own `const Name = preload(...)` for value imports; a second one = reload crash).
+func _test_injector_dedupe() -> void:
+	var bindings := { "HudHooks": "res://x/hud_hooks.gd" }
+	var with_const := "class_name Panel\nextends RefCounted\nconst HudHooks = preload(\"res://x/hud_hooks.gd\")\nstatic func render():\n\tHudHooks.use()\n"
+	_check_true(RUIHmr_._inject_unregistered_bindings(with_const, bindings) == with_const, "injector: skips a name already const-declared (no duplicate const)")
+	var bare := "class_name Panel\nextends RefCounted\nstatic func render():\n\tHudHooks.use()\n"
+	_check_true(RUIHmr_._inject_unregistered_bindings(bare, bindings).contains("const HudHooks = preload("), "injector: still injects a used, non-global, non-const name")
+	# _has_const_decl is line-anchored: a mid-line mention of the name is NOT a declaration.
+	_check_true(RUIHmr_._has_const_decl("const Foo = 1\n", "Foo"), "injector: _has_const_decl matches a real const line")
+	_check_true(not RUIHmr_._has_const_decl("var x = Foo\n", "Foo"), "injector: _has_const_decl ignores a usage site")
+
+	# BH-15: a MIXED file (component + a hook/module) is classified _is_module==true (its value decl
+	# drives a global/targeted refresh) YET its render component's __RUI_HOOK_SIG must still be compared
+	# so a shape change resets state. apply() now checks the hook-sig INDEPENDENTLY of _is_module.
+	var mixed := GDScript.new()
+	mixed.source_code = "extends RefCounted\nconst __RUI_DECLS := { \"C\": { \"kind\": \"component\", \"sig\": \"useState\", \"export\": true }, \"use_h\": { \"kind\": \"hook\", \"export\": true } }\nconst __RUI_KIND := \"mixed\"\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(_p, _c): return null\nstatic func use_h(): return 1\n"
+	mixed.reload()
+	_check_true(RUIHmr_._is_module(mixed), "BH-15: a mixed file with a hook is classified as module (drives refresh)")
+	_check_true(RUIHmr_._hook_sig(mixed) == "useState", "BH-15: yet its render component's hook-sig is still readable for the reset compare")
 
 # --------------------------------------------------------------------------------- harness ---
 

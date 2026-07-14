@@ -1,6 +1,8 @@
 @class_name DemoStyling
 
-component DemoStyling {
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export component DemoStyling {
   return (
     <DemoBox title="Styling — StyleBoxFlat + theme channels">
       <PanelContainer style={ DemoStylingStyle.PANEL }>

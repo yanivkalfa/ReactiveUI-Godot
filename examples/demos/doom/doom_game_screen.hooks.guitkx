@@ -1,4 +1,4 @@
-module DoomGameScreenHooks {
+export module DoomGameScreenHooks {
   ## Faithful port of the Unity ReactiveUIToolKit `DoomGame` sample's
   ## `DoomGameScreen.hooks.uitkx` (`useDoomGame`). Input capture itself lives in
   ## doom_bootstrap.gd + doom_input_state.gd (plan §1.5 -- .guitkx

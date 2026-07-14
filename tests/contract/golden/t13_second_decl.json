@@ -1,18 +1,5 @@
 {
-	"diagnostics": [
-		{
-			"code": "GUITKX0103",
-			"len": 5,
-			"off": 10,
-			"severity": 1
-		},
-		{
-			"code": "GUITKX2105",
-			"len": 20,
-			"off": 59,
-			"severity": 0
-		}
-	],
+	"diagnostics": [],
 	"markup": [
 		{
 			"error": "",
@@ -27,7 +14,7 @@
 			"tree": "[{\"at\":90,\"attrs\":[{\"at\":97,\"end\":105,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":103}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"}]"
 		}
 	],
-	"ok": false,
+	"ok": true,
 	"windows": [
 		{
 			"end": 54,

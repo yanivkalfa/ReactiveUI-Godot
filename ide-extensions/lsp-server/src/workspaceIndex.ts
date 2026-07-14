@@ -20,6 +20,7 @@ export interface DeclInfo {
   nameEnd: number;
   declStart: number; // offset of the component/hook/module keyword (for documentSymbol range)
   declEnd: number; // offset just past the closing `}` (or nameEnd if bodyless) — also bounds a module's members
+  export?: boolean; // carried an `export` visibility prefix (0.10.0 imports leg); undefined = not exported
   // First component with an `@class_name` override: the override identifier's offsets, so a rename can
   // rewrite the directive in lockstep with the decl name + every `<Tag>` usage (BUG-4). Undefined otherwise.
   classNameStart?: number;
@@ -48,21 +49,32 @@ function scanRange(src: string, start: number, end: number, override: ClassNameR
       i = k;
       continue;
     }
+    // An optional `export` visibility prefix precedes a top-level declaration (0.10.0). Only treat it
+    // as a prefix when a decl keyword follows; otherwise fall through and let the scan walk past it.
+    let exported = false;
+    let kwPos = i;
+    if (!mod && keywordAt(src, i, "export")) {
+      const e = skipWs(src, i + 6);
+      if (keywordAt(src, e, "component") || keywordAt(src, e, "hook") || keywordAt(src, e, "module")) {
+        exported = true;
+        kwPos = e;
+      }
+    }
     let kw = "";
     let kind: DeclInfo["kind"] | null = null;
-    if (keywordAt(src, i, "component")) {
+    if (keywordAt(src, kwPos, "component")) {
       kw = "component";
       kind = mod ? "member" : "component";
-    } else if (keywordAt(src, i, "hook")) {
+    } else if (keywordAt(src, kwPos, "hook")) {
       kw = "hook";
       kind = mod ? "member" : "hook";
-    } else if (keywordAt(src, i, "module")) {
+    } else if (keywordAt(src, kwPos, "module")) {
       kw = "module";
       kind = "module";
     }
     if (kind) {
-      const declStart = i;
-      const j = skipWs(src, i + kw.length);
+      const declStart = kwPos;
+      const j = skipWs(src, kwPos + kw.length);
       const nm = readIdent(src, j);
       if (nm.text === "") {
         i = j + 1;
@@ -76,6 +88,7 @@ function scanRange(src: string, start: number, end: number, override: ClassNameR
       const declEnd = body ? body.end + 1 : nm.end;
       out.push({
         kind, kw: kw as DeclInfo["kw"], name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
+        export: exported || undefined,
         classNameStart: useOverride ? override!.start : undefined,
         classNameEnd: useOverride ? override!.end : undefined,
       });
@@ -177,14 +190,10 @@ export class WorkspaceIndex {
     } catch {
       return; // parse-failure tolerant: keep nothing rather than corrupt the index
     }
-    // T1.3: index only what the compiler would actually COMPILE -- the first top-level declaration
-    // (anything after it is a GUITKX2105 error) plus, when it is a module, its members. A second
-    // top-level component used to be indexed and offered in completion while the generated .gd never
-    // contained it (a ghost). scanDeclarations itself stays full-scan for documentSymbol/outline.
-    const first = decls.find((d) => d.kind !== "member");
-    if (first) {
-      decls = decls.filter((d) => d === first || (d.kind === "member" && d.declStart > first.declStart && d.declEnd <= first.declEnd));
-    }
+    // 0.10.0 MIXED-DECL: the compiler now compiles EVERY top-level declaration (components, hooks,
+    // modules) plus module members -- not just the first. Index them all so cross-file go-to-def,
+    // find-references, and tag completion resolve the 2nd+ declaration of a mixed file too. (The old
+    // T1.3 first-only filter reflected the pre-mixed "one decl per file, rest is a 2105 error" model.)
     const entries: IndexEntry[] = decls.map((d) => ({
       uri,
       binding: d.binding,

@@ -36,4 +36,7 @@ export const VersionProvider: FC<{ children: ReactNode }> = ({ children }) => {
   )
 }
 
+// Colocating the provider + its consumer hook is idiomatic for a React context module; the
+// fast-refresh "only export components" rule doesn't apply to a context accessor.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useSelectedVersion = () => useContext(VersionContext)

@@ -29,6 +29,8 @@ export const SUPPORTED_VERSIONS: VersionInfo[] = [
   { version: '4.3', label: '4.3' },
   { version: '4.4', label: '4.4' },
   { version: '4.5', label: '4.5' },
+  { version: '4.6', label: '4.6' },
+  { version: '4.7', label: '4.7' },
 ]
 
 export const FLOOR_VERSION = SUPPORTED_VERSIONS[0]

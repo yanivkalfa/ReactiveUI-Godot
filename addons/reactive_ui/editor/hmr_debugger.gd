@@ -16,14 +16,18 @@ extends EditorDebuggerPlugin
 ## Push freshly-compiled generated .gd paths into every live play session. `bindings` is the
 ## project's full class -> generated-.gd map: the game uses it to hot-LINK components whose
 ## global class_name was created after launch (unresolvable by name until the next run).
-func push_reload(gd_paths: Array, bindings: Dictionary = {}) -> void:
+## `refresh_roots` (M5) = generated .gd paths of the COMPONENT importers of any changed hooks/module
+## file this sweep -- the game re-renders exactly those instead of the whole world (React Fast Refresh
+## parity). Sending a 3-element message stays wire-compatible: an older running game reads only the
+## first two and takes the global-rerender fallback.
+func push_reload(gd_paths: Array, bindings: Dictionary = {}, refresh_roots: Array = []) -> void:
 	if gd_paths.is_empty():
 		return
 	var pushed := 0
 	for s in get_sessions():
 		var session := s as EditorDebuggerSession
 		if session != null and session.is_active():
-			session.send_message("rui_hmr:reload", [gd_paths, bindings])
+			session.send_message("rui_hmr:reload", [gd_paths, bindings, refresh_roots])
 			pushed += 1
 	# ALWAYS say what happened -- "-> 0 session(s)" means no debugger-attached game was running
 	# (not launched via F5, or already closed), which is otherwise indistinguishable from a

@@ -40,7 +40,9 @@ export function readSidecar(guitkxFsPath: string): Sidecar | null {
   try {
     const j = JSON.parse(readFileSync(guitkxFsPath + ".diags.json", "utf8"));
     if (typeof j.src_hash !== "number" || !Array.isArray(j.diagnostics)) return null;
-    if (j.v === 2) {
+    // v2 and v3 share the structured-diagnostic shape (numeric severity, off/len positions); v3 only
+    // ADDS fields the LSP ignores here (exports/export_hash/imports — the compiler's staleness cache).
+    if (j.v === 2 || j.v === 3) {
       const diagnostics: SidecarDiag[] = [];
       for (const d of j.diagnostics) {
         if (typeof d.code !== "string" || typeof d.message !== "string") continue;
@@ -52,7 +54,7 @@ export function readSidecar(guitkxFsPath: string): Sidecar | null {
           len: typeof d.len === "number" ? Math.max(0, d.len) : 0,
         });
       }
-      return { v: 2, src_hash: j.src_hash, diagnostics };
+      return { v: j.v, src_hash: j.src_hash, diagnostics };
     }
     // v1 fallback: severity was "error"/"warning" and `message` embedded the code prefix; no positions.
     const diagnostics: SidecarDiag[] = [];

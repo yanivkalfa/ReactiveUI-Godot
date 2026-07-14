@@ -41,7 +41,14 @@ export const SearchModal: FC<SearchModalProps> = ({ open, onClose }) => {
       return words.every((w) => haystack.includes(w))
     })
   }, [flat, q, styleTerms])
-  useEffect(() => setSel(0), [results])
+  // Reset the highlighted row to the top whenever the result set changes. Done DURING render
+  // (React's "adjust state when a prop changes" pattern) instead of in an effect, which would
+  // cascade a second render. `results` is a fresh array each time its useMemo deps change.
+  const [prevResults, setPrevResults] = useState(results)
+  if (prevResults !== results) {
+    setPrevResults(results)
+    setSel(0)
+  }
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
       <DialogContent sx={Styles.content}>
