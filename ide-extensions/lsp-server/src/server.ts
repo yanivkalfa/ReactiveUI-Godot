@@ -932,8 +932,10 @@ function mergeCompilerSidecar(doc: TextDocument, live: Diagnostic[]): Diagnostic
     extra.push({
       severity: d.severity === 1 ? DiagnosticSeverity.Warning : d.severity === 2 ? DiagnosticSeverity.Hint : DiagnosticSeverity.Error,
       range,
-      // v2 messages carry no code prefix (compose it, matching the live tier's style); v1 already do.
-      message: sc.v === 2 ? `${d.code}: ${d.message}` : d.message,
+      code: d.code, // the GUITKX#### identity as a real Diagnostic.code (also click-through-able)
+      // v2 AND v3 store bare messages -- compose the code prefix (matching the live tier's style);
+      // v1 messages already embed the code. `>= 2` (not `=== 2`) so the v3 bump kept the prefix (BH-04).
+      message: sc.v >= 2 ? `${d.code}: ${d.message}` : d.message,
       source: "guitkx (compiler)",
     });
   }

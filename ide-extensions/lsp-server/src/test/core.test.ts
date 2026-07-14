@@ -337,11 +337,11 @@ test("T1.3: trailing comments after the declaration stay clean (no 2105)", () =>
   assert.equal(declarationDiags("component A() {\n\treturn ( <Label /> )\n}\n# note\n").length, 0);
 });
 
-test("T1.3: the index holds only the first top-level declaration (no completion ghosts)", () => {
+test("mixed-decl: the index holds EVERY top-level declaration (BH-05)", () => {
   const idx = new WorkspaceIndex();
-  idx.reindex("file:///t/A.guitkx", "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(idx.has("A"), "first decl indexed");
-  assert.ok(!idx.has("B"), "ghost second decl NOT indexed");
+  idx.reindex("file:///t/A.guitkx", "export component A() {\n\treturn ( <Label /> )\n}\nexport component B() {\n\treturn ( <Label /> )\n}\n");
+  // 0.10.0 compiles both, so both must be indexed for cross-file go-to-def / find-refs / completion.
+  assert.ok(idx.has("A") && idx.has("B"), "both top-level decls indexed");
 });
 
 test("T1.3: module members still index (the compiler compiles them)", () => {
