@@ -1137,24 +1137,67 @@ func _test_bughunt_fixes() -> void:
 	_check_true(Codegen._binding_name(bh17) == Resolve._binding_of(bh17), "BH-17: resolver/codegen agree on binding with two @class_name (%s vs %s)" % [Codegen._binding_name(bh17), Resolve._binding_of(bh17)])
 	_check_true(Codegen._binding_name(bh17) == "Second", "BH-17: last @class_name wins (matches the emitter)")
 
-	# cleanup any temp files the file-backed checks created
-	for p in _bh_tmp_files:
-		if FileAccess.file_exists(p):
-			DirAccess.remove_absolute(p)
-	if DirAccess.dir_exists_absolute("res://tests/__bh_tmp"):
-		if FileAccess.file_exists("res://tests/__bh_tmp/.gdignore"):
-			DirAccess.remove_absolute("res://tests/__bh_tmp/.gdignore")
-		DirAccess.remove_absolute("res://tests/__bh_tmp")
+	# BH-03: codemod inserts the import block at the decl START, not the keyword -- an already-exported
+	# first decl must not become `export import { … } … component`; and it must stay idempotent.
+	const Migrate := preload("res://addons/reactive_ui/guitkx/guitkx_migrate.gd")
+	var refc := { "Card": "res://x/card.guitkx" }
+	var m1 := Migrate.migrate_source("res://x/widget.guitkx", "export component Widget() {\n\treturn ( <Card /> )\n}\n", refc)
+	_check_true(not (m1["source"] as String).contains("export import"), "BH-03: no `export import` split (%s)" % (m1["source"] as String).substr(0, 40))
+	_check_true((m1["source"] as String).find("import {") < (m1["source"] as String).find("export component"), "BH-03: import precedes the already-exported decl")
+	_check_true(not Migrate.migrate_source("res://x/widget.guitkx", m1["source"], refc)["changed"], "BH-03: idempotent on an already-exported first decl")
+
+	# BH-13: path-boundary. `<root>ui2/card` is NOT under root `<root>ui` -> must NOT be ~/2/card, and
+	# whatever specifier is chosen must round-trip to the real file.
+	var uiroot := "res://tests/__bh_tmp/ui"
+	var s13 := RUIGuitkx.import_specifier("res://tests/__bh_tmp/app/importer.guitkx", "res://tests/__bh_tmp/ui2/card.guitkx", uiroot)
+	_check_true(not s13.begins_with("~/2"), "BH-13: prefix-sibling not mis-rooted (got %s)" % s13)
+	var t13 := _bh_writefile_at("res://tests/__bh_tmp/ui2/card", "export component Card() { return ( <Label /> ) }\n")
+	var from13 := "res://tests/__bh_tmp/app/importer.guitkx"
+	var spec13 := RUIGuitkx.import_specifier(from13, t13, uiroot)
+	_check_true(str(Resolve.resolve_specifier(spec13, from13, uiroot).get("guitkx", "")) == t13, "BH-13: specifier round-trips to the right file (spec=%s)" % spec13)
+
+	# BH-14: an under-root target still uses ~/ and round-trips.
+	var t14 := _bh_writefile_at("res://tests/__bh_tmp/ui/sub/card", "export component Card() { return ( <Label /> ) }\n")
+	var spec14 := RUIGuitkx.import_specifier(from13, t14, uiroot)
+	_check_true(spec14 == "~/sub/card", "BH-14: under-root target uses ~/root-relative (got %s)" % spec14)
+	_check_true(str(Resolve.resolve_specifier(spec14, from13, uiroot).get("guitkx", "")) == t14, "BH-14: ~/ round-trips")
+
+	# cleanup: remove the whole __bh_tmp tree (and the __bh02 file under __bh_tmp)
+	_bh_rm_tree("res://tests/__bh_tmp")
 	_bh_tmp_files.clear()
 
 func _bh_writefile(name: String, content: String) -> String:
-	var dir := "res://tests/__bh_tmp"
-	DirAccess.make_dir_recursive_absolute(dir)
-	_imp_write(dir + "/.gdignore", "")
-	var p := dir + "/" + name + ".guitkx"
+	return _bh_writefile_at("res://tests/__bh_tmp/" + name, content)
+
+## Write `content` to `<path_no_ext>.guitkx` (creating parent dirs + a `.gdignore` at the __bh_tmp root
+## so the build walker never sees these fixtures) and track it for cleanup. Returns the .guitkx path.
+func _bh_writefile_at(path_no_ext: String, content: String) -> String:
+	var p := path_no_ext + ".guitkx"
+	DirAccess.make_dir_recursive_absolute(p.get_base_dir())
+	if not FileAccess.file_exists("res://tests/__bh_tmp/.gdignore"):
+		DirAccess.make_dir_recursive_absolute("res://tests/__bh_tmp")
+		_imp_write("res://tests/__bh_tmp/.gdignore", "")
 	_imp_write(p, content)
 	_bh_tmp_files.append(p)
 	return p
+
+## Recursively delete a res:// directory tree (files + subdirs + the dir itself).
+func _bh_rm_tree(dir: String) -> void:
+	var d := DirAccess.open(dir)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if name != "." and name != "..":
+			var p := dir.path_join(name)
+			if d.current_is_dir():
+				_bh_rm_tree(p)
+			else:
+				DirAccess.remove_absolute(p)
+		name = d.get_next()
+	d.list_dir_end()
+	DirAccess.remove_absolute(dir)
 
 var _bh_tmp_files: Array = []
 

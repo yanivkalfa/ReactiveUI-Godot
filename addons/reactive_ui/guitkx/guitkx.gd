@@ -265,7 +265,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 				continue
 			var tgt_gd := str(component_paths[name])
 			var tgt_guitkx := tgt_gd.get_basename() + ".guitkx"
-			var spec := _import_specifier(self_path, tgt_guitkx, eff_root2)
+			var spec := import_specifier(self_path, tgt_guitkx, eff_root2)
 			var ref_at := maxi(0, source.find(name))
 			diags.append(D.make("GUITKX2305", D.ERROR, "`%s` is defined in %s but not imported -- add: import { %s } from \"%s\"" % [name, tgt_guitkx, name, spec], ref_at, name.length()))
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
@@ -416,18 +416,37 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
 
-## The import specifier from `from_guitkx` to `target_guitkx`: `./name` when siblings, else `~/`-rooted
-## (root-relative, extensionless). Shared shape with the codemod's specifier choice.
-static func _import_specifier(from_guitkx: String, target_guitkx: String, root: String) -> String:
+## The CANONICAL import specifier from `from_guitkx` to `target_guitkx` (extensionless). The single
+## source of truth for BOTH the strict-2305 hint (here) and the codemod (`guitkx_migrate._specifier`
+## delegates to this), and every specifier it emits round-trips through `RUIGuitkxResolve.resolve_specifier`:
+##   - same directory      -> `./name`
+##   - under the `~/` root  -> `~/<root-relative>` (PATH-boundary matched: `res://ui2/x` is NOT under
+##                            root `res://ui`, a `begins_with(root)` string-prefix bug — BH-13)
+##   - anywhere else        -> a relative `../…` path (a `~/` cannot name a target outside the root — BH-14)
+static func import_specifier(from_guitkx: String, target_guitkx: String, root: String) -> String:
 	var base := target_guitkx.get_basename()
 	if from_guitkx.get_base_dir() == target_guitkx.get_base_dir():
 		return "./" + base.get_file()
-	if base.begins_with(root):
-		var rel := base.substr(root.length())
-		if rel.begins_with("/"):
-			rel = rel.substr(1)
-		return "~/" + rel
-	return "~/" + base.trim_prefix("res://")
+	var root_prefix := root if root.ends_with("/") else root + "/"   # "res://" already ends with "/"
+	if base.begins_with(root_prefix):
+		return "~/" + base.substr(root_prefix.length())
+	return _relative_specifier(from_guitkx.get_base_dir(), base)
+
+## A `./…`/`../…` relative specifier from `from_dir` to `target_base` (both res://-absolute; target has
+## no extension). Used only for targets outside the `~/` root; `resolve_specifier` resolves it back.
+static func _relative_specifier(from_dir: String, target_base: String) -> String:
+	var a := from_dir.trim_prefix("res://").split("/", false)
+	var b := target_base.trim_prefix("res://").split("/", false)   # last element is the file name
+	var common := 0
+	while common < a.size() and common < b.size() - 1 and str(a[common]) == str(b[common]):
+		common += 1
+	var parts: Array = []
+	for _u in range(a.size() - common):
+		parts.append("..")
+	for k in range(common, b.size()):
+		parts.append(str(b[k]))
+	var rel := "/".join(parts)
+	return rel if rel.begins_with("..") else ("./" + rel)
 
 ## Standalone preamble IMPORT scan (the graph truth for reverse-edge staleness, rule 9): returns the
 ## parsed imports [{names,[…], spec, …}] without compiling. Skips `@`-directives, stops at the first

@@ -82,7 +82,12 @@ static func migrate_source(guitkx_path: String, src: String, referenceable: Dict
 			out = out.substr(0, at) + "export " + out.substr(at)
 	# 4. Insert the import block at the first decl's start (after any @directives, before the decl).
 	if not import_lines.is_empty():
-		var insert_at := int(decls[0]["at"])   # unexported first decl: at == start; unaffected by step 3
+		# Insert at the first decl's START (the `export` prefix when present, else the keyword), NOT its
+		# keyword `at`. For an unexported decl start==at; for an ALREADY-exported first decl `at` points
+		# PAST the existing `export `, so inserting there would split `export … component` into
+		# `export import { … } … component` -- invalid + non-idempotent (BH-03). `start` is correct for
+		# both, and step 3's reverse-order export insertions never move an earlier decl's start.
+		var insert_at := int(decls[0]["start"])
 		var block := "\n".join(import_lines) + "\n\n"
 		out = out.substr(0, insert_at) + block + out.substr(insert_at)
 	return { "changed": out != src, "source": out }
@@ -121,17 +126,11 @@ static func _next_nonspace(src: String, i: int) -> String:
 
 ## The import specifier from `guitkx_path` to `target`: `./name` when siblings, else `~/`-rooted
 ## (root-relative, extensionless).
+## Delegate to the compiler's CANONICAL specifier rule so the codemod can never write a specifier the
+## resolver would resolve differently (or fail to resolve) -- the BH-13 path-boundary bug and the
+## BH-14 out-of-root mis-rooting both lived in the old copy here.
 static func _specifier(guitkx_path: String, target: String, root: String) -> String:
-	var base := target.get_basename()   # drop `.guitkx`
-	if guitkx_path.get_base_dir() == target.get_base_dir():
-		return "./" + base.get_file()
-	if base.begins_with(root):
-		var rel := base.substr(root.length())
-		if rel.begins_with("/"):
-			rel = rel.substr(1)
-		return "~/" + rel
-	# outside the root (shouldn't happen in a res:// tree) -- fall back to a res://-relative ~/ path.
-	return "~/" + base.trim_prefix("res://")
+	return Compiler.import_specifier(guitkx_path, target, root)
 
 static func _find_guitkx(root: String) -> Array:
 	var out: Array = []
