@@ -156,6 +156,6 @@ and press Play to explore.
 - **Faithful port.** Algorithms/behavior mirror ReactiveUIToolKit (the C#/Unity library); the code is
   GDScript. When in doubt about intended semantics, that library is the reference. GDScript divergences
   (no exceptions, fresh fibers per pass) are documented at the top of the relevant core file.
-- Requires Godot **4.1+** (uses `static var`); verified on **4.7**. Standard build — no C#/.NET.
+- Requires Godot **4.4+** (compiler core uses 4.3+ APIs; the editor addon's bundled analyzer GDExtension has `compatibility_minimum = "4.4"` — both plugins gate on `MIN_GODOT`); verified on **4.7**. Standard build — no C#/.NET.
 - `plans/` holds design/porting docs; `research/` holds background notes. `CHANGELOG.md` (runtime) and
   `ide-extensions/changelog.json` (the source of truth for extension changelogs) track releases.

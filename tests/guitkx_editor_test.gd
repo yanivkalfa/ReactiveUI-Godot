@@ -345,6 +345,14 @@ func _test_deps_handshake() -> void:
 	_ok(Deps._version_lt("0.9.9", "0.10.0"), "semver: numeric, not lexicographic")
 	_ok(not Deps._version_lt("0.8.2", "0.8.2"), "semver: equal is not less")
 	_ok(not Deps._version_lt("1.0.0", "0.9.9"), "semver: major dominates")
+	# Godot-version gate (MIN_GODOT 4.4 -- the analyzer GDExtension's compatibility_minimum).
+	_ok(Deps.godot_version_ok(), "gate: the RUNNING Godot satisfies MIN_GODOT (this suite runs on it)")
+	_ok(not Deps.godot_version_ok("4.3.2"), "gate: 4.3.x is refused")
+	_ok(Deps.godot_version_ok("4.4.0") and Deps.godot_version_ok("4.7.1") and Deps.godot_version_ok("5.0.0"), "gate: 4.4+/5.x pass")
+	# The runtime addon's watcher gate agrees (same floor, its own testable static).
+	const RtPlugin := preload("res://addons/reactive_ui/plugin.gd")
+	_ok(str(RtPlugin.MIN_GODOT) == str(Deps.MIN_GODOT), "gate: runtime and editor addons claim the SAME floor")
+	_ok(RtPlugin.godot_supported() and not RtPlugin.godot_supported("4.3.2") and RtPlugin.godot_supported("4.4.0"), "gate: runtime godot_supported matches")
 
 # W6/F8/F12 — the bundled schema is a hand-synced copy with no generator; these tripwires turn
 # silent drift (between the two shipping editors, and against the compiler's tag universe) into

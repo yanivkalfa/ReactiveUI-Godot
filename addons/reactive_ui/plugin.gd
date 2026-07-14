@@ -21,6 +21,28 @@ const Codegen = preload("res://addons/reactive_ui/guitkx/guitkx_codegen.gd")
 const Diag = preload("res://addons/reactive_ui/guitkx/guitkx_diag.gd")
 const HmrDebugger = preload("res://addons/reactive_ui/editor/hmr_debugger.gd")
 
+## The oldest Godot this addon supports. Evidence-based floor (2026-07): the compiler/HMR core
+## uses `ProjectSettings.get_global_class_list()` (added in 4.3), and the paired editor addon's
+## bundled native analyzer is a GDExtension with `compatibility_minimum = "4.4"` — the two assets
+## release together, so both claim 4.4. `FoldableContainer` (4.5) is is_class()/string-guarded and
+## degrades gracefully below 4.5. Verified on 4.7.
+const MIN_GODOT := "4.4"
+
+## True when the running (or given, for tests) Godot version satisfies MIN_GODOT.
+static func godot_supported(version_string: String = "") -> bool:
+	var v := version_string
+	if v == "":
+		var info := Engine.get_version_info()
+		v = "%d.%d.%d" % [int(info["major"]), int(info["minor"]), int(info["patch"])]
+	var pa := v.split(".")
+	var pb := MIN_GODOT.split(".")
+	for i in maxi(pa.size(), pb.size()):
+		var na := int(pa[i]) if i < pa.size() else 0
+		var nb := int(pb[i]) if i < pb.size() else 0
+		if na != nb:
+			return na > nb
+	return true
+
 var _efs: EditorFileSystem
 var _busy := false
 var _busy_since := 0
@@ -51,6 +73,12 @@ var _first_sweep_done := false
 var _scan_waits := 0
 
 func _enter_tree() -> void:
+	# Godot-version gate: refuse politely instead of failing on a missing 4.3/4.4 API mid-sweep.
+	# The runtime's global class_names still load (that needs no plugin); only the .guitkx
+	# compile-on-save/HMR tooling is disabled on an unsupported engine.
+	if not godot_supported():
+		push_error("[reactive_ui] Godot %s is not supported -- this addon needs Godot %s or newer (verified on 4.7). The .guitkx watcher stays disabled." % [Engine.get_version_info()["string"], MIN_GODOT])
+		return
 	_efs = EditorInterface.get_resource_filesystem()
 	if _efs and not _efs.filesystem_changed.is_connected(_on_fs_changed):
 		_efs.filesystem_changed.connect(_on_fs_changed)
