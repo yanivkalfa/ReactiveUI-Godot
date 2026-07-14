@@ -1214,6 +1214,27 @@ func _test_bughunt_fixes() -> void:
 	var bh16b := RUIGuitkx.compile("component T() {\n\treturn ( <VBoxContainer><lable /></VBoxContainer> )\n}\n", "T", ["DemoBox"])
 	_check_true(_has_code(bh16b, "GUITKX0105") and not _has_code(bh16b, "GUITKX2307"), "BH-16: lowercase host-vocab miss stays 0105")
 
+	# BH-18: the strict-2305 squiggle anchors on the ACTUAL reference (a `<Tag`), not the first textual
+	# occurrence (a comment). `Widget` appears first in a comment; 2305 must point at `<Widget`.
+	var cp18 := { "Widget": "res://x/widget.gd" }
+	var s18 := "# Widget is cool\ncomponent A() {\n\treturn ( <Widget /> )\n}\n"
+	var d18 := _diag(RUIGuitkx.compile(s18, "a", [], cp18, "res://x/a.guitkx", "res://"), "GUITKX2305")
+	_check_true(int(d18.get("offset", -1)) == s18.find("<Widget"), "BH-18: 2305 anchors on `<Widget` not the comment (got %d, want %d)" % [int(d18.get("offset", -1)), s18.find("<Widget")])
+
+	# BH-07: refresh roots include a TRANSITIVE component consumer (component -> module -> changed module).
+	var rdir := "res://tests/__bh_rr"
+	DirAccess.make_dir_recursive_absolute(rdir)
+	_imp_write(rdir + "/m2.guitkx", "export module M2 {\n\thook use_x() -> int { return 1 }\n}\n")
+	_imp_write(rdir + "/m1.guitkx", "import { M2 } from \"./m2\"\n\nexport module M1 {\n\thook use_y() -> int { return M2.use_x() }\n}\n")
+	_imp_write(rdir + "/screen.guitkx", "import { M1 } from \"./m1\"\n\nexport component Screen() {\n\tvar v = M1.use_y()\n\treturn ( <Label text={str(v)} /> )\n}\n")
+	var all := [rdir + "/m2.guitkx", rdir + "/m1.guitkx", rdir + "/screen.guitkx"]
+	var srcs := {}
+	for pth in all:
+		srcs[pth] = FileAccess.get_file_as_string(pth)
+	var roots := Codegen._compute_refresh_roots([{ "path": rdir + "/m2.guitkx" }], all, srcs)
+	_check_true((roots as Array).has(rdir + "/screen.gd"), "BH-07: transitive component consumer is a refresh root (got %s)" % str(roots))
+	_bh_rm_tree(rdir)
+
 	# cleanup: remove the whole __bh_tmp tree (and the __bh02 file under __bh_tmp)
 	_bh_rm_tree("res://tests/__bh_tmp")
 	_bh_tmp_files.clear()

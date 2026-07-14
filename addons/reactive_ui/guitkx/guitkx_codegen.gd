@@ -699,17 +699,38 @@ static func _compute_refresh_roots(compiled: Array, all_paths: Array, sources: D
 				break
 	if changed_value.is_empty():
 		return []
-	var roots := {}
+	# Build the reverse VALUE-import graph (importer -> value targets, inverted) + note which files
+	# declare a component. A changed hook/module only re-renders through its VALUE consumers.
+	var importers_of := {}    # target guitkx path -> [importer guitkx paths]
+	var declares_comp := {}   # guitkx path -> true if it declares any component
 	for p in all_paths:
 		var s := str(sources.get(p, ""))
 		if s == "":
 			continue
-		var root := RGConfig.root_for(str(p))
-		for im in Compiler.scan_imports(s):
-			var res := RGResolve.resolve_specifier(str(im["spec"]), str(p), root)
-			if res["ok"] and changed_value.has(str(res["guitkx"])):
-				roots[gd_path_for(str(p))] = true
+		for dm in Compiler._enumerate_decls(s, 0):
+			if str(dm["kind"]) == "component":
+				declares_comp[str(p)] = true
 				break
+		for t in _value_import_edges(str(p), sources):
+			if not importers_of.has(t):
+				importers_of[t] = []
+			(importers_of[t] as Array).append(str(p))
+	# BFS backward from each changed value-decl file: a COMPONENT importer is a refresh root (stop --
+	# nearest-component-boundary, React Fast Refresh parity); a module/hook importer keeps propagating
+	# up so a TRANSITIVE component consumer (component -> module -> changed module) is still reached (BH-07).
+	var roots := {}
+	var visited := {}
+	var queue: Array = changed_value.keys()
+	while not queue.is_empty():
+		var cur: String = queue.pop_front()
+		if visited.has(cur):
+			continue
+		visited[cur] = true
+		for imp in importers_of.get(cur, []):
+			if declares_comp.has(str(imp)):
+				roots[gd_path_for(str(imp))] = true
+			elif not visited.has(str(imp)):
+				queue.append(str(imp))
 	return roots.keys()
 
 ## M4 reverse-edge staleness: the set of importer paths to force-recompile because a file they import

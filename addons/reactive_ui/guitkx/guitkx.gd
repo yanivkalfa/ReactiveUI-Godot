@@ -262,14 +262,16 @@ static func compile(source: String, basename: String = "Component", known_compon
 			for nm in (imp["names"] as Array):
 				imported[str(nm["name"])] = true
 		var eff_root2 := root if root != "" else Config.root_for(self_path)
-		for name in Resolve.referenced_names(source, component_paths, own_names):
+		var refd := Resolve.referenced_names(source, component_paths, own_names)
+		for name in refd:
 			if imported.has(name):
 				continue
 			var tgt_gd := str(component_paths[name])
 			var tgt_guitkx := tgt_gd.get_basename() + ".guitkx"
 			var spec := import_specifier(self_path, tgt_guitkx, eff_root2)
-			var ref_at := maxi(0, source.find(name))
-			diags.append(D.make("GUITKX2305", D.ERROR, "`%s` is defined in %s but not imported -- add: import { %s } from \"%s\"" % [name, tgt_guitkx, name, spec], ref_at, name.length()))
+			# Anchor on the actual reference the scan found (a `<Tag` or `Name.`/`Name(`), not the first
+			# textual occurrence -- source.find would land on a comment or a substring (BH-18).
+			diags.append(D.make("GUITKX2305", D.ERROR, "`%s` is defined in %s but not imported -- add: import { %s } from \"%s\"" % [name, tgt_guitkx, name, spec], int(refd[name]), name.length()))
 	# 2. Detect the declaration kind (component | hook | module) and dispatch.
 	var decl := _find_decl(source, i)
 	# T2.6: _find_decl SKIPS anything before the keyword -- real content there (a stray statement, a

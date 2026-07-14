@@ -185,9 +185,10 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 	return { "comps": comps, "values": values, "hooks": hooks, "diags": diags }
 
 ## Names from `referenceable` (name -> anything) actually USED in `src` as a markup tag (`<Name`) or
-## a qualified reference (`Name.` / `Name(`), excluding this file's own decls. The CANONICAL cross-file
-## reference scan -- shared by the codemod (which imports what it finds) and strict resolution (which
-## errors on a found-but-unimported name), so the two can never disagree on the migrated tree.
+## a qualified reference (`Name.` / `Name(`), excluding this file's own decls, mapped to the offset of
+## the FIRST such use. The CANONICAL cross-file reference scan -- shared by the codemod (which iterates
+## the keys) and strict resolution (which uses the offset to anchor GUITKX2305 precisely, instead of a
+## naive source.find that lands on a comment/substring -- BH-18) -- so the two can never disagree.
 static func referenced_names(src: String, referenceable: Dictionary, own: Dictionary) -> Dictionary:
 	var out := {}
 	var i := 0
@@ -210,7 +211,8 @@ static func referenced_names(src: String, referenceable: Dictionary, own: Dictio
 					j += 1
 				var nxt := src[j] if j < n else ""
 				if prev_lt or nxt == "." or nxt == "(":
-					out[word] = true
+					if not out.has(word):
+						out[word] = (s - 1) if prev_lt else s   # anchor a tag on `<`, a qualified ref on the name
 			continue
 		i += 1
 	return out

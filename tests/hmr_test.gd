@@ -48,6 +48,15 @@ func _test_injector_dedupe() -> void:
 	_check_true(RUIHmr_._has_const_decl("const Foo = 1\n", "Foo"), "injector: _has_const_decl matches a real const line")
 	_check_true(not RUIHmr_._has_const_decl("var x = Foo\n", "Foo"), "injector: _has_const_decl ignores a usage site")
 
+	# BH-15: a MIXED file (component + a hook/module) is classified _is_module==true (its value decl
+	# drives a global/targeted refresh) YET its render component's __RUI_HOOK_SIG must still be compared
+	# so a shape change resets state. apply() now checks the hook-sig INDEPENDENTLY of _is_module.
+	var mixed := GDScript.new()
+	mixed.source_code = "extends RefCounted\nconst __RUI_DECLS := { \"C\": { \"kind\": \"component\", \"sig\": \"useState\", \"export\": true }, \"use_h\": { \"kind\": \"hook\", \"export\": true } }\nconst __RUI_KIND := \"mixed\"\nconst __RUI_HOOK_SIG := \"useState\"\nstatic func render(_p, _c): return null\nstatic func use_h(): return 1\n"
+	mixed.reload()
+	_check_true(RUIHmr_._is_module(mixed), "BH-15: a mixed file with a hook is classified as module (drives refresh)")
+	_check_true(RUIHmr_._hook_sig(mixed) == "useState", "BH-15: yet its render component's hook-sig is still readable for the reset compare")
+
 # --------------------------------------------------------------------------------- harness ---
 
 func _check_true(cond: bool, msg: String) -> void:

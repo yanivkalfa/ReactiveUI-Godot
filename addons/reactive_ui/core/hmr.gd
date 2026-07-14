@@ -120,7 +120,12 @@ static func apply(paths: Array, bindings: Dictionary = {}, refresh_roots: Array 
 							targeted.append(rscr)
 				if targeted.is_empty():
 					global_rerender = true   # importers not loaded in this game -- safe fallback
-		elif _hook_sig(scr) != old_sig:
+		# A hook-SIGNATURE change resets the component's positional-hook state -- checked INDEPENDENTLY
+		# of the module path, because a MIXED file is BOTH (its __RUI_HOOK_SIG is its render component's
+		# fingerprint). Making these mutually exclusive skipped the reset for a mixed file whose
+		# component shape changed, corrupting its state (BH-15). A pure module/hook file has an empty
+		# __RUI_HOOK_SIG, so this never fires spuriously.
+		if _hook_sig(scr) != old_sig:
 			resets.append(scr)
 	var refreshed := 0
 	if not changed.is_empty():
