@@ -1,6 +1,4 @@
-export const HOOKS_USESTATE_EXAMPLE = `@class_name CounterDemo
-
-component CounterDemo() {
+export const HOOKS_USESTATE_EXAMPLE = `component CounterDemo() {
   # useState returns [value, setter]. Destructure by index.
   var count = useState(0)
 
@@ -16,9 +14,7 @@ component CounterDemo() {
   )
 }`
 
-export const HOOKS_USEREDUCER_EXAMPLE = `@class_name ReducerDemo
-
-component ReducerDemo() {
+export const HOOKS_USEREDUCER_EXAMPLE = `component ReducerDemo() {
   # reducer(state, action) -> new_state. Actions are just values (here: String).
   var reducer = func(state, action):
     match action:
@@ -40,9 +36,7 @@ component ReducerDemo() {
   )
 }`
 
-export const HOOKS_USEEFFECT_EXAMPLE = `@class_name EffectDemo
-
-component EffectDemo() {
+export const HOOKS_USEEFFECT_EXAMPLE = `component EffectDemo() {
   var seconds = useState(0)
 
   # [] => run once on mount. The effect returns a cleanup Callable (run on unmount).
@@ -62,9 +56,7 @@ component EffectDemo() {
   return (<Label text={ "Elapsed: %ds" % seconds[0] } />)
 }`
 
-export const HOOKS_USELAYOUTEFFECT_EXAMPLE = `@class_name LayoutMeasure
-
-component LayoutMeasure() {
+export const HOOKS_USELAYOUTEFFECT_EXAMPLE = `component LayoutMeasure() {
   var el_ref = useRef(null)     # Control ref box
   var width = useState(0.0)
 
@@ -82,9 +74,7 @@ component LayoutMeasure() {
   )
 }`
 
-export const HOOKS_USEMEMO_EXAMPLE = `@class_name ExpensiveList
-
-component ExpensiveList() {
+export const HOOKS_USEMEMO_EXAMPLE = `component ExpensiveList() {
   var filter = useState("")
   var items = useState(get_all_items())   # an Array
 
@@ -103,9 +93,7 @@ component ExpensiveList() {
   )
 }`
 
-export const HOOKS_USECALLBACK_EXAMPLE = `@class_name StableCallback
-
-component StableCallback() {
+export const HOOKS_USECALLBACK_EXAMPLE = `component StableCallback() {
   var count = useState(0)
 
   # Returns a Callable whose identity is stable while deps are unchanged.
@@ -119,9 +107,7 @@ component StableCallback() {
   )
 }`
 
-export const HOOKS_USEREF_EXAMPLE = `@class_name RefDemo
-
-component RefDemo() {
+export const HOOKS_USEREF_EXAMPLE = `component RefDemo() {
   # Mutable value ref — persists across renders, no re-render on change.
   var render_count = useRef(0)
   render_count["current"] += 1
@@ -145,8 +131,6 @@ component RefDemo() {
 
 export const HOOKS_CONTEXT_EXAMPLE = `# ============ theme_provider.guitkx ============
 # Two files -- the provider imports the card it renders (cross-file refs are explicit since 0.10).
-@class_name ThemeProvider
-
 import { ThemedCard } from "./themed_card"
 
 export component ThemeProvider() {
@@ -161,8 +145,6 @@ export component ThemeProvider() {
 
 # ============ themed_card.guitkx ============
 # Consumer component — any depth in the subtree; \`export\` makes it importable
-@class_name ThemedCard
-
 export component ThemedCard() {
   var theme = useContext("theme")   # "dark"
 
@@ -176,9 +158,7 @@ export component ThemedCard() {
   )
 }`
 
-export const HOOKS_STABLE_EXAMPLE = `@class_name EventOptimization
-
-component EventOptimization() {
+export const HOOKS_STABLE_EXAMPLE = `component EventOptimization() {
   var name = useState("")
 
   # useStableAction wraps a 1-arg callback with a stable identity that always
@@ -196,9 +176,7 @@ component EventOptimization() {
   )
 }`
 
-export const HOOKS_DEFERRED_EXAMPLE = `@class_name SearchResults
-
-component SearchResults() {
+export const HOOKS_DEFERRED_EXAMPLE = `component SearchResults() {
   var query = useState("")
 
   # Deferred value lags one frame behind: the LineEdit updates immediately while
@@ -213,9 +191,7 @@ component SearchResults() {
   )
 }`
 
-export const HOOKS_IMPERATIVE_EXAMPLE = `@class_name FancyInput
-
-component FancyInput(handle_ref) {
+export const HOOKS_IMPERATIVE_EXAMPLE = `component FancyInput(handle_ref) {
   var input_ref = useRef(null)
   var val = useState("")
 

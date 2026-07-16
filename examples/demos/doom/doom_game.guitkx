@@ -1,5 +1,3 @@
-@class_name DoomGame
-
 ## Faithful port of the Unity `DoomGame.uitkx` -- the root screen switch
 ## (menu <-> game) plus level / difficulty / session-version state. A bumped
 ## session_version re-runs DoomGameScreen's restart (replay same level), a

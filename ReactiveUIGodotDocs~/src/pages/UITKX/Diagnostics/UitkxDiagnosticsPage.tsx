@@ -71,7 +71,6 @@ const structuralRows: DiagRow[] = [
   { code: 'GUITKX2104', sev: 'Error', title: 'Hook called inside a directive body', fix: <>Hooks must run unconditionally, in component order, every render — a call inside <code>@if</code> / <code>@for</code> / <code>@case</code> runs conditionally or per-iteration and corrupts the hook sequence. Call the hook in setup and reference the result in the body.</> },
   { code: 'GUITKX2106', sev: 'Error', title: 'Duplicate class binding', fix: <>Two <code>.guitkx</code> files bind the same class — usually a copied file that hasn&apos;t been renamed yet (the watcher compiles the copy within seconds). The original keeps compiling; the copy produces <em>no output</em> until you rename its <code>@class_name</code> / component, so a duplicate <code>class_name</code> can never reach the project.</> },
   { code: 'GUITKX2107', sev: 'Error', title: 'Referenced component no longer exists', fix: <>A component this file references was deleted or renamed (its generated <code>.gd</code> is gone). Remove or update the dangling tag, or restore/rename the component back — the next sweep heals the file automatically once every reference resolves again. Until then the last good code keeps running.</> },
-  { code: 'GUITKX0103', sev: 'Warning', title: 'component name differs from file name', fix: <>Rename the <code>component</code> to match the file (a <code>Foo.guitkx</code> should declare <code>component Foo()</code>), or rename the file.</> },
   { code: 'GUITKX0104', sev: 'Warning', title: 'Duplicate sibling key', fix: <>Ensure each sibling element has a unique <code>key</code> value.</> },
   { code: 'GUITKX0106', sev: 'Warning', title: 'Loop element missing key', fix: <>An element inside <code>@for</code> / <code>@while</code> has no <code>key</code>. Add <code>key={'{...}'}</code> with a stable unique identifier so reordered children reconcile correctly.</> },
   { code: 'GUITKX0108', sev: 'Error', title: 'Multiple root elements', fix: <>A component must return exactly one root element. Wrap siblings in a container (<code>{'<VBoxContainer>'}</code>, <code>{'<HBoxContainer>'}</code>) or a fragment (<code>{'<>…</>'}</code>).</> },
@@ -141,6 +140,13 @@ export const UitkxDiagnosticsPage: FC = () => (
       structure and the reconciliation keys.
     </Typography>
     <DiagTable rows={structuralRows} />
+    <Typography variant="body2" paragraph sx={{ mt: 1 }}>
+      <strong>GUITKX0103</strong> (<em>component name differs from file name</em>) is retired as of
+      0.10.2 — imports made filename identity meaningless, since a declaration&apos;s binding is now
+      inferred (<code>@class_name</code> override, else the first exported declaration, else the
+      first declaration) rather than required to match the file. The code number stays reserved and
+      is never reused; older sidecars may still contain it.
+    </Typography>
 
     {/* ── Import Diagnostics ────────────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>

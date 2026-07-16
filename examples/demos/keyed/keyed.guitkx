@@ -1,5 +1,3 @@
-@class_name DemoKeyed
-
 import { DemoBox } from "~/examples/demos/demo_box"
 import { DemoKeyedTile } from "./keyed_tile"
 

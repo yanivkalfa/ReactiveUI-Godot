@@ -556,8 +556,9 @@ func _test_formatter_config() -> void:
 
 # M2 wave 1b / D3+D5 — sidecar overlay (2106/2107 reach the editor) + hint rendering tier.
 func _test_sidecar_overlay() -> void:
-	# @class_name matches the declared name so GUITKX0103 (name-vs-filename warning) stays out of
-	# the picture — this test owns lines 0 and the tag line exclusively.
+	# @class_name is kept here to pin the override grammar (GUITKX0103 is retired since 0.10.2,
+	# so it's no longer needed to silence anything) — this test owns lines 0 and the tag line
+	# exclusively.
 	var src := "@class_name ScT\n\ncomponent ScT() {\n\treturn (\n\t\t<ScOther />\n\t)\n}\n"
 	var fa := FileAccess.open(TMP_PATH, FileAccess.WRITE)
 	fa.store_string(src)

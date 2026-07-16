@@ -320,6 +320,16 @@ const CHANGELOG_FILES = {
   editor: '../addons/reactive_ui_editor/CHANGELOG.md',
 };
 
+/**
+ * Marketplace-body targets that are GENERATED + COMMITTED (unlike vs2022's overview.md,
+ * which is publish-time-only and never checked into git). Each entry is checked only when
+ * its template file exists, so adding a template for a new target wires the drift gate for
+ * free — no verify-side change needed.
+ */
+const OVERVIEW_TARGETS = {
+  vscode: { template: 'vscode/readme-template.md', output: 'vscode/README.md' },
+};
+
 /** Repo-relative display path (for hints/messages), forward slashes on every OS. */
 function displayPath(relToIdeRoot) {
   return relative(REPO_ROOT, resolve(IDE_ROOT, relToIdeRoot)).replace(/\\/g, '/');
@@ -373,6 +383,36 @@ function cmdVerify(args) {
     }
   }
 
+  // Generated-and-committed marketplace bodies (e.g. vscode/README.md) — same drift gate
+  // as the CHANGELOGs above, only when the target has opted in via a template file.
+  for (const ide of ides) {
+    const target = OVERVIEW_TARGETS[ide];
+    if (!target) continue;
+    const templatePath = resolve(IDE_ROOT, target.template);
+    if (!existsSync(templatePath)) continue;
+
+    const outPath = resolve(IDE_ROOT, target.output);
+    const disp = displayPath(target.output);
+    const expected = renderOverview(data, ide, readFileSync(templatePath, 'utf8'));
+
+    if (!existsSync(outPath)) {
+      console.error(`✗ ${disp}: missing (expected it to be generated from ${displayPath(target.template)} + changelog.json)`);
+      console.error(`  Generate it: node ide-extensions/scripts/changelog.mjs extract-overview --ide ${ide} --template ${displayPath(target.template)} --out ${disp}`);
+      ok = false;
+      continue;
+    }
+
+    const actual = readFileSync(outPath, 'utf8').replace(/\r\n/g, '\n');
+    if (actual.trimEnd() !== expected.trimEnd()) {
+      console.error(`✗ ${disp} is out of sync with ${displayPath(target.template)} + changelog.json.`);
+      console.error(`  Regenerate it: node ide-extensions/scripts/changelog.mjs extract-overview --ide ${ide} --template ${displayPath(target.template)} --out ${disp}`);
+      console.error(`  (Never hand-edit ${disp} — edit the template, then regenerate.)`);
+      ok = false;
+    } else {
+      console.error(`✓ ${disp} matches ${displayPath(target.template)} + changelog.json`);
+    }
+  }
+
   if (!ok) {
     console.error('\nchangelog verify FAILED — see above.');
     process.exit(1);
@@ -382,22 +422,13 @@ function cmdVerify(args) {
 
 // ── extract-overview ─────────────────────────────────────────────────────────
 
-function cmdExtractOverview(args) {
-  const ide = args.ide;
-  const template = args.template;
-
-  if (!ide || !template) {
-    console.error('Usage: extract-overview --ide <vs2022> --template <path> [--out file]');
-    process.exit(1);
-  }
-
-  const templatePath = resolve(template);
-  if (!existsSync(templatePath)) {
-    console.error(`Template not found: ${templatePath}`);
-    process.exit(1);
-  }
-
-  const data = readChangelog();
+/**
+ * Render a marketplace-page body: a template's content plus a generated `## Changelog`
+ * section from the changelog data. Shared by `extract-overview` (writes it) and `verify`
+ * (checks committed generated bodies, e.g. vscode/README.md) — one implementation, so the
+ * two can never drift from each other.
+ */
+function renderOverview(data, ide, templateContent) {
   const relevant = data.entries.filter(e => e.versions && e.versions[ide]);
 
   const changelogLines = ['## Changelog', ''];
@@ -409,8 +440,27 @@ function cmdExtractOverview(args) {
     changelogLines.push('');
   }
 
-  const templateContent = readFileSync(templatePath, 'utf8').trimEnd();
-  output(templateContent + '\n\n' + changelogLines.join('\n'), args);
+  return templateContent.trimEnd() + '\n\n' + changelogLines.join('\n');
+}
+
+function cmdExtractOverview(args) {
+  const ide = args.ide;
+  const template = args.template;
+
+  if (!ide || !KNOWN_IDES.includes(ide) || !template) {
+    console.error(`Usage: extract-overview --ide <${KNOWN_IDES.join('|')}> --template <path> [--out file]`);
+    process.exit(1);
+  }
+
+  const templatePath = resolve(template);
+  if (!existsSync(templatePath)) {
+    console.error(`Template not found: ${templatePath}`);
+    process.exit(1);
+  }
+
+  const data = readChangelog();
+  const templateContent = readFileSync(templatePath, 'utf8');
+  output(renderOverview(data, ide, templateContent), args);
 }
 
 // ── import ───────────────────────────────────────────────────────────────────
@@ -484,9 +534,10 @@ mirrored byte-identically into addons/reactive_ui/).
 Commands:
   add              Add a changelog entry
   extract          Generate a target's CHANGELOG.md
-  extract-overview Generate overview.md with changelog section
+  extract-overview Generate a marketplace-page body (template + changelog section)
   import           Import entries from existing markdown changelog
-  verify           Check every committed CHANGELOG.md matches changelog.json (CI gate)
+  verify           Check every committed CHANGELOG.md / generated body matches
+                   changelog.json (CI gate)
 
 Examples:
   add --scope shared --message "Fix: server crash" --vscode 0.1.1 --vs2022 0.1.1
@@ -495,12 +546,16 @@ Examples:
   add --scope editor --message-file NOTES.txt --editor 0.6.4
   extract --ide vscode --out ide-extensions/vscode/CHANGELOG.md
   extract --ide editor --out addons/reactive_ui_editor/CHANGELOG.md
+  extract-overview --ide vscode --template ide-extensions/vscode/readme-template.md --out ide-extensions/vscode/README.md
   extract-overview --ide vs2022 --template ide-extensions/visual-studio/GuitkxVsix/overview-template.md --out overview.md
   import --ide vscode --file ide-extensions/vscode/CHANGELOG.md
 
 Tips:
   • After add: run extract for EVERY target the entry names, and commit the
     regenerated files with changelog.json — the changelog-sync CI job fails on drift.
+  • ide-extensions/vscode/README.md is GENERATED (from readme-template.md) and COMMITTED —
+    same drift rule as the CHANGELOGs; never hand-edit it. vs2022's overview.md is
+    publish-time only (never committed), so verify doesn't check it.
   • Prefer --message-file for any non-ASCII content (em-dashes, quotes, code chars).
     PowerShell/cmd on Windows transcode argv through CP1252 and strip embedded quotes —
     --message-file reads UTF-8 verbatim and avoids both pitfalls.`

@@ -1,6 +1,4 @@
-export const PORTAL_BASIC = `@class_name ModalDemo
-
-component ModalDemo() {
+export const PORTAL_BASIC = `component ModalDemo() {
   var show = useState(false)
   var mounted = useState(false)
   var target = useRef(null)   // the host subtree we portal INTO

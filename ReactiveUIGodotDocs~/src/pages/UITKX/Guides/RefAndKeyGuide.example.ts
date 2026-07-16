@@ -1,6 +1,4 @@
-export const REF_BASIC_EXAMPLE = `@class_name MeasureDemo
-
-component MeasureDemo() {
+export const REF_BASIC_EXAMPLE = `component MeasureDemo() {
   var label_ref = useRef(null)   # box: { "current": <Control> }
   var width = useState(0.0)
 
@@ -19,9 +17,7 @@ component MeasureDemo() {
   )
 }`
 
-export const REF_MUTABLE_EXAMPLE = `@class_name RenderCounter
-
-component RenderCounter() {
+export const REF_MUTABLE_EXAMPLE = `component RenderCounter() {
   # Mutating .current never triggers a re-render — the box persists across renders.
   var render_count = useRef(0)
   render_count["current"] += 1
@@ -37,9 +33,7 @@ component RenderCounter() {
   )
 }`
 
-export const REF_FOCUS_EXAMPLE = `@class_name AutoFocusInput
-
-component AutoFocusInput() {
+export const REF_FOCUS_EXAMPLE = `component AutoFocusInput() {
   var input_ref = useRef(null)
 
   var focus_on_mount = func():
@@ -54,8 +48,6 @@ component AutoFocusInput() {
 }`
 
 export const REF_IMPERATIVE_EXAMPLE = `# A child builds an imperative handle over its own node/state.
-@class_name FancyInput
-
 component FancyInput() {
   var input_ref = useRef(null)
   var val = useState("")
@@ -75,8 +67,6 @@ component FancyInput() {
 }
 
 # A parent gets the handle by passing its own ref box down as a prop.
-@class_name FormHost
-
 component FormHost() {
   var child = useRef(null)   # will hold FancyInput's handle
   return (
@@ -89,9 +79,7 @@ component FormHost() {
   )
 }`
 
-export const KEY_BASIC_EXAMPLE = `@class_name TodoList
-
-component TodoList() {
+export const KEY_BASIC_EXAMPLE = `component TodoList() {
   var items = useState(["Buy milk", "Walk dog"])
 
   return (
@@ -114,9 +102,7 @@ export const KEY_INDEX_ANTIPATTERN = `# BAD — using the loop index as key brea
   <TodoItem todo={ todo } key={ str(todo.id) } />
 }`
 
-export const KEY_REORDER_EXAMPLE = `@class_name ReorderDemo
-
-component ReorderDemo() {
+export const KEY_REORDER_EXAMPLE = `component ReorderDemo() {
   var items = useState(["A", "B", "C", "D", "E"])
 
   var shuffle = func():
@@ -138,16 +124,12 @@ component ReorderDemo() {
   )
 }`
 
-export const KEY_RESET_EXAMPLE = `@class_name UserProfile
-
-component UserProfile(user_id) {
+export const KEY_RESET_EXAMPLE = `component UserProfile(user_id) {
   # Changing key forces a full unmount + remount of the child.
   return (
     <ProfileContent key={ user_id } user_id={ user_id } />
   )
 }
-
-@class_name ProfileContent
 
 component ProfileContent(user_id) {
   # All hooks reset when key changes — fresh state for each user.

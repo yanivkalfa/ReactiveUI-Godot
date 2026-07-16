@@ -49,10 +49,9 @@ export const UitkxGettingStartedPage: FC = () => (
       1. Create a .guitkx component
     </Typography>
     <Typography variant="body1" paragraph>
-      Each <code>.guitkx</code> file contains exactly one component (or module/hook). The{' '}
-      <code>@class_name</code> becomes the generated GDScript <code>class_name</code> (e.g.{' '}
-      <code>HelloWorld.guitkx</code> defines <code>component HelloWorld</code>). Setup code goes at
-      the top; the component returns markup.
+      Each <code>.guitkx</code> file can hold one or more components/modules/hooks. The generated
+      GDScript <code>class_name</code> is inferred from the declaration itself — no filename
+      convention to follow. Setup code goes at the top; the component returns markup.
     </Typography>
     <CodeBlock language="jsx" code={UITKX_HELLO_WORLD_COMPONENT} />
     <Typography variant="body1" paragraph>

@@ -1,5 +1,3 @@
-@class_name DemoStress
-
 ## Ported from uitkx Samples/Components/StressTest. N bouncing boxes, ALL re-rendered
 ## every frame via keyed reconciliation, measuring avg FPS — the real throughput test.
 import { DemoBox } from "~/examples/demos/demo_box"

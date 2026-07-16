@@ -31,6 +31,7 @@ release.
 |---|---|---|---|---|
 | 2.1 | **Unity imports leg (leg 3)** — port the frozen import/export contract to `.uitkx` (`UITKX2300–2309`, same corpus mirror + `corpus-hash.mjs` gate) | not started (by design) | starts only after the 0.10.0 PR merges (campaign order: Unreal → Godot → Unity) | family master plan (Unreal repo) |
 | 2.2 | **Re-exports** (`export { X } from "./x"`) — the imports fast-follow, family-wide (frozen decision: not v1) | designed-out of v1 | family-level go; implement in all three legs together | IMPORT_EXPORT_PLAN §1 (archived) |
+| 2.3 | **`@class_name` grammar removal + generated-registry privacy end-state** — GDScript's flat global class registry is the one leg where the override is a namespace substitute (Unreal/Unity have real namespaces); the Godot leg retired 0103 emission and the redundant demo usages (0.10.2) but kept the directive itself as the escape hatch | directive kept, emission-only cleanup done | family decision — decide alongside re-exports (§2.2) with the Unity leg 3 | CLASSNAME_CLEANUP_PLAN (archived) |
 
 ## 3. Feature work (library)
 
@@ -75,3 +76,5 @@ Everything below is **done or superseded** — record, not work. Full per-plan n
 | `VSCODE_VS2022_PARITY_PLAN.md` | all phases shipped (interactive verification → §1.2 here) |
 | `PARITY_PLAN.md` | parity reached; status role superseded by this file (leftovers → §3) |
 | `ASSET_STORE_PLAN.md` | research + prep done (owner actions → §1.3 here) |
+| `EXTENSION_LISTING_PLAN.md` | marketplace listing overhaul shipped — extensions 0.10.1, distinguishable display names + structured page bodies (Title/Description/Features/Requirements/Changelog) on both marketplaces |
+| `CLASSNAME_CLEANUP_PLAN.md` | GUITKX0103 retired + 45 demos' redundant `@class_name` dropped — shipped 0.10.2 (grammar-removal decision deferred → §2.3 here) |

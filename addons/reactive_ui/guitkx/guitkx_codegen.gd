@@ -226,7 +226,10 @@ static func has_stale(root: String = "res://") -> bool:
 				break
 		var missing := false
 		for cls in refs:
-			if not FileAccess.file_exists(str(refs[cls])):
+			# Same predicate as compile_all's 2107 check: dangling = output AND source gone.
+			# A restored source with no .gd yet reads as not-missing here, so a flagged sidecar
+			# mismatches and the poll goes hot for the heal recompile.
+			if not FileAccess.file_exists(str(refs[cls])) and not FileAccess.file_exists(str(refs[cls]).get_basename() + ".guitkx"):
 				missing = true
 				break
 		if missing != flagged:
@@ -632,7 +635,11 @@ static func compile_all(root: String = "res://") -> Dictionary:
 				var refs: Dictionary = sc_raw.get("refs", {})
 				var missing := {}
 				for cls in refs:
-					if not FileAccess.file_exists(str(refs[cls])):
+					# A ref dangles only when the component is GONE -- output AND source. A present
+					# source with a missing .gd is just pending (re)generation (e.g. restored this
+					# sweep but walked after this file -- DirAccess order is filesystem-dependent),
+					# and flagging it would make the same-sweep heal depend on walk order.
+					if not FileAccess.file_exists(str(refs[cls])) and not FileAccess.file_exists(str(refs[cls]).get_basename() + ".guitkx"):
 						missing[cls] = refs[cls]
 				var had_2107 := false
 				for e in (sc_raw.get("diagnostics", []) as Array):

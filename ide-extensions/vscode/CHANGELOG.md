@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2] - 2026-07-16
+- Extension descriptions now link the repo (github.com/yanivkalfa/ReactiveUI-Godot) and the community Discord (discord.gg/Knedqu4Wyv), so both marketplace listing pages point back to the project and its community from the very top.
+
+## [0.10.1] - 2026-07-16
+- Marketplace listing overhaul: distinguishable display names — `GUITKX (Godot - VS Code)` / `GUITKX (Godot - VS2022)` — and a structured page body (Title / Description / Features / Requirements / Changelog) on both marketplaces + Open VSX.
+- README.md is now generated from the centralized changelog — the page body carries the changelog inline.
+
 ## [0.10.0] - 2026-07-11
 - 0.10.0 imports leg: the language server understands cross-file imports. `import`/`export` are first-class syntax (no red squiggles); imported names resolve in embedded GDScript analysis via synthesized const/member stubs; the declaration index and completion are export-aware; and the compiler's frozen GUITKX2300–2309 import diagnostics surface from the .guitkx.diags sidecar (schema v3). Imports are OPTIONAL syntax — projects without them stay green.
 

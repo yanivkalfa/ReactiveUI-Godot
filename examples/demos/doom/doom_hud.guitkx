@@ -1,5 +1,3 @@
-@class_name DoomHUD
-
 ## Faithful port of the Unity `DoomHUD.uitkx` -- the bottom status bar. All values
 ## are read off state.player / state at the call site and passed in as props.
 import { DoomFace } from "./doom_face"

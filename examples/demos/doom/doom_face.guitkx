@@ -1,5 +1,3 @@
-@class_name DoomFace
-
 ## Faithful port of the Unity `DoomFace.uitkx` -- the Doomguy mug widget.
 ## `frame` is state.player.face_state (0=god, 1..5 hp buckets, 6=hurt, 7=dead).
 export component DoomFace(frame: int = 0) {

@@ -1,6 +1,29 @@
 {
   "entries": [
     {
+      "date": "2026-07-16",
+      "versions": {
+        "vscode": "0.10.2",
+        "vs2022": "0.10.2"
+      },
+      "shared": [
+        "Extension descriptions now link the repo (github.com/yanivkalfa/ReactiveUI-Godot) and the community Discord (discord.gg/Knedqu4Wyv), so both marketplace listing pages point back to the project and its community from the very top."
+      ]
+    },
+    {
+      "date": "2026-07-16",
+      "versions": {
+        "vscode": "0.10.1",
+        "vs2022": "0.10.1"
+      },
+      "shared": [
+        "Marketplace listing overhaul: distinguishable display names — `GUITKX (Godot - VS Code)` / `GUITKX (Godot - VS2022)` — and a structured page body (Title / Description / Features / Requirements / Changelog) on both marketplaces + Open VSX."
+      ],
+      "vscode": [
+        "README.md is now generated from the centralized changelog — the page body carries the changelog inline."
+      ]
+    },
+    {
       "date": "2026-07-14",
       "versions": {
         "editor": "0.8.1"

@@ -4,6 +4,34 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.2] — 2026-07-16
+
+**`GUITKX0103` retired; demos and docs now model pure imports/exports.** Since 0.10.0 a
+declaration's binding is *inferred* (`@class_name` override, else the first exported
+declaration, else the first declaration) rather than required to match the file — the
+warning that flagged a mismatch was a pre-imports convention check whose purpose died
+when name-based resolution went away.
+
+- **`GUITKX0103` ("component X differs from file name Y") no longer fires.** Its emission
+  site is removed from the compiler; the diagnostic number stays reserved in the vocabulary
+  (never reused — old sidecars still render it) and its docs table row moves to a short
+  "Retired" note.
+- **The 45 bundled demos drop their redundant `@class_name` directives** — every one of
+  them equaled the component's own name, kept only to silence the now-retired warning.
+  Verified byte-for-byte: the generated `.gd` for every demo is identical before and after
+  (binding is inferred to the same name either way).
+- **`@class_name` itself is unchanged** — it remains a documented, optional override for
+  the rare case of a name collision on GDScript's flat global class registry. The README
+  quick start and the docs site's teaching examples were swept to match: they show plain
+  imports/exports and only mention `@class_name` where it's actually doing something.
+- **Fixed: the `GUITKX2107` dangling-reference heal no longer depends on directory walk
+  order.** A reference whose generated `.gd` was missing but whose **source `.guitkx`
+  exists** was wrongly treated as dangling — so restoring a deleted component healed its
+  dependents only if the filesystem happened to walk the component first (it does on NTFS,
+  not necessarily on Linux — caught by CI). Dangling now means output **and** source gone,
+  matching the diagnostic's own wording; the sweep heal and the watch poll share the
+  predicate.
+
 ## [0.10.1] — 2026-07-14
 
 **Godot version floor made explicit and gated.** The supported minimum is **Godot 4.4**

@@ -1,5 +1,3 @@
-@class_name DemoContextConsumer
-
 export component DemoContextConsumer {
   var accent = useContext("accent")
   return (
