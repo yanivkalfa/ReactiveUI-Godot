@@ -3,6 +3,19 @@
     {
       "date": "2026-07-16",
       "versions": {
+        "vscode": "0.10.3",
+        "vs2022": "0.10.3"
+      },
+      "shared": [
+        "Requirements corrected on both marketplace pages: there is nothing to install — VS Code runs the language server on its own built-in Node runtime, and the VS2022 VSIX bundles a Node runtime of its own. The \"Node.js on your PATH\" requirement was a stale pre-bundling claim."
+      ],
+      "vs2022": [
+        "First upload since 0.10.0 (the 0.10.2 upload was rejected on the VS Marketplace's 280-character description cap): carries the full listing overhaul — the distinguishable display name, the structured page body, and the repo + Discord links in a description that now fits the cap."
+      ]
+    },
+    {
+      "date": "2026-07-16",
+      "versions": {
         "vscode": "0.10.2",
         "vs2022": "0.10.2"
       },

@@ -41,7 +41,9 @@ msbuild ide-extensions/visual-studio/GuitkxVsix/GuitkxVsix.csproj /p:Configurati
 #    publish with the VsixPublisher CLI.
 ```
 
-The VSIX bundles the same Node language server under `server\`; the user needs **Node.js on PATH**.
+The VSIX bundles the same Node language server under `server\` **plus a Node runtime**
+(`fetch-node.ps1` — the client prefers the bundled `server\node.exe` and falls back to a PATH
+`node` only if the bundle is missing), so end users need nothing installed.
 Colorization comes from the TextMate grammar registered by `guitkx.pkgdef` (VS never colorizes over
 LSP), so highlighting works even before the server connects.
 
