@@ -24,6 +24,13 @@ when name-based resolution went away.
   the rare case of a name collision on GDScript's flat global class registry. The README
   quick start and the docs site's teaching examples were swept to match: they show plain
   imports/exports and only mention `@class_name` where it's actually doing something.
+- **Fixed: the `GUITKX2107` dangling-reference heal no longer depends on directory walk
+  order.** A reference whose generated `.gd` was missing but whose **source `.guitkx`
+  exists** was wrongly treated as dangling — so restoring a deleted component healed its
+  dependents only if the filesystem happened to walk the component first (it does on NTFS,
+  not necessarily on Linux — caught by CI). Dangling now means output **and** source gone,
+  matching the diagnostic's own wording; the sweep heal and the watch poll share the
+  predicate.
 
 ## [0.10.1] — 2026-07-14
 

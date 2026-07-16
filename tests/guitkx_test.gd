@@ -63,6 +63,7 @@ func _run() -> void:
 	_test_codemod()
 	_test_bughunt_fixes()
 	_test_0103_retired()
+	_test_2107_walk_order()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1293,6 +1294,61 @@ func _test_0103_retired() -> void:
 	var ov := RUIGuitkx.compile("@class_name Custom\n\ncomponent DemoThing() {\n\treturn ( <Label /> )\n}\n", "some_file")
 	_check_true(bool(ov["ok"]), "0103 retired: @class_name override still compiles (%s)" % str(ov.get("diagnostics", [])))
 	_check(str(ov["gd"]), "class_name Custom", "0103 retired: @class_name Custom still overrides the generated binding")
+
+## Regression (CI 2026-07-16): the GUITKX2107 dangling verdict must not depend on DirAccess walk
+## order. A ref whose .gd is missing but whose SOURCE .guitkx exists is pending regeneration, not
+## dangling -- the CI runner's filesystem walked the dependent before the restored component, so
+## the same-sweep heal never fired (NTFS walks alphabetically and always compiled the child first,
+## which is why it never reproduced locally). Pinned deterministically by keeping the child OUTSIDE
+## the swept dir: its .gd can never come back mid-sweep, so a disk-only predicate fails everywhere.
+func _test_2107_walk_order() -> void:
+	var a_dir := "res://tests/__2107_a_tmp"
+	var b_dir := "res://tests/__2107_b_tmp"
+	DirAccess.make_dir_recursive_absolute(a_dir)
+	DirAccess.make_dir_recursive_absolute(b_dir)
+	if Codegen.compiler_changed():
+		Codegen.compile_all(a_dir)   # settle the fingerprint marker; every check below is non-force
+	var w_child := b_dir + "/pend_child.guitkx"
+	var w_parent := a_dir + "/pend_parent.guitkx"
+	var w_child_src := "export component PendChild {\n\treturn ( <Label text=\"c\" /> )\n}\n"
+	var wf1 := FileAccess.open(w_child, FileAccess.WRITE)
+	wf1.store_string(w_child_src)
+	wf1.close()
+	var wf2 := FileAccess.open(w_parent, FileAccess.WRITE)
+	wf2.store_string("import { PendChild } from \"../__2107_b_tmp/pend_child\"\n\nexport component PendParent {\n\treturn ( <VBoxContainer><PendChild /></VBoxContainer> )\n}\n")
+	wf2.close()
+	Codegen.compile_all(b_dir)
+	var w1 := Codegen.compile_all(a_dir)
+	_check_true((w1["errors"] as Array).is_empty(), "walk-order fixture compiles clean: " + str(w1["errors"]))
+	# (a) missing .gd + PRESENT source = pending regeneration, not dangling: no flag, poll settled.
+	DirAccess.remove_absolute(Codegen.gd_path_for(w_child))
+	_check_true(not Codegen.has_stale(a_dir), "missing .gd with a present source is pending, not dangling (poll settled)")
+	var w2 := Codegen.compile_all(a_dir)
+	_check_true((w2["errors"] as Array).is_empty(), "missing .gd with a present source never flags 2107: " + str(w2["errors"]))
+	# (b) source gone too -> NOW it dangles; restoring the SOURCE alone must trigger the heal,
+	# even though the child's .gd stays absent for the whole sweep (b_dir is never swept again).
+	DirAccess.remove_absolute(w_child)
+	_check_true(Codegen.has_stale(a_dir), "output+source both gone -> dangling -> poll hot")
+	var w3 := Codegen.compile_all(a_dir)
+	var w3_hit := false
+	for we in (w3["errors"] as Array):
+		for wd in ((we as Dictionary).get("diagnostics", []) as Array):
+			if str((wd as Dictionary).get("code", "")) == "GUITKX2107":
+				w3_hit = true
+	_check_true(w3_hit, "output+source both gone flags 2107: " + str(w3["errors"]))
+	var wf3 := FileAccess.open(w_child, FileAccess.WRITE)
+	wf3.store_string(w_child_src)
+	wf3.close()
+	_check_true(Codegen.has_stale(a_dir), "restored source mismatches the standing flag -> poll hot (heal work)")
+	var w4 := Codegen.compile_all(a_dir)
+	_check_true((w4["errors"] as Array).is_empty() and (w4["compiled"] as Array).size() == 1,
+		"heal recompile fires with the child's .gd still absent (walk-order independent): " + str(w4["errors"]))
+	_check_true(not Codegen.has_stale(a_dir), "poll settles after the heal")
+	for wl in [w_child, Codegen.gd_path_for(w_child), w_child + ".diags.json", w_parent, Codegen.gd_path_for(w_parent), w_parent + ".diags.json"]:
+		if FileAccess.file_exists(str(wl)):
+			DirAccess.remove_absolute(str(wl))
+	DirAccess.remove_absolute(a_dir)
+	DirAccess.remove_absolute(b_dir)
 
 ## M3 (0.10.0): import RESOLUTION -- specifier->path, value/component lowering, frozen 2300-2308.
 ## Uses a `.gdignore`'d temp dir so the build walker never sees the fixtures; the resolver reaches
