@@ -1,6 +1,4 @@
-export const EXAMPLE_UITKX = `@class_name PlayerCard
-
-import { PlayerCardStyle } from "./PlayerCard.style"
+export const EXAMPLE_UITKX = `import { PlayerCardStyle } from "./PlayerCard.style"
 import { PlayerCardUtils } from "./PlayerCard.utils"
 
 export component PlayerCard(player: PlayerInfo) {
@@ -19,7 +17,7 @@ export component PlayerCard(player: PlayerInfo) {
 }`
 
 export const EXAMPLE_GENERATED_CLASS = `# Auto-generated sibling: PlayerCard.gd (simplified)
-class_name PlayerCard          # ← from @class_name
+class_name PlayerCard          # ← inferred: first exported declaration
 extends RefCounted
 ## AUTO-GENERATED from PlayerCard.guitkx -- do not edit.
 

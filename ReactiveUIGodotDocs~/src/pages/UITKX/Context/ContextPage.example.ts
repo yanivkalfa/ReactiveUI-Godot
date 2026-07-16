@@ -19,8 +19,6 @@ extends RefCounted
 static var Theme: RUIContext = Hooks.createContext({ "accent": Color.CYAN }, "Theme")
 
 # ── Provider ────────────────────────────────────────────────
-@class_name AppRoot
-
 component AppRoot(my_theme: Dictionary) {
   # Pass the HANDLE (not a string) plus the value.
   Hooks.provideContext(AppContexts.Theme, my_theme)
@@ -33,8 +31,6 @@ component AppRoot(my_theme: Dictionary) {
 }
 
 # ── Consumer ────────────────────────────────────────────────
-@class_name Toolbar
-
 component Toolbar() {
   # Pass the same handle. Returns my_theme, or the handle's default if no
   # AppRoot provided one above this component.
@@ -53,8 +49,6 @@ module ThemePanel {
   const Theme = Hooks.createContext({ "accent": Color.CYAN }, "Theme")
 }
 
-@class_name ThemePanel
-
 component ThemePanel(accent: Color = Color.MAGENTA) {
   # Provide overrides the default for this subtree.
   Hooks.provideContext(ThemePanel.Theme, { "accent": accent })
@@ -65,8 +59,6 @@ component ThemePanel(accent: Color = Color.MAGENTA) {
     </VBoxContainer>
   )
 }
-
-@class_name AccentDot
 
 component AccentDot() {
   # If no ThemePanel provided a value above, this returns { "accent": Color.CYAN }
@@ -79,8 +71,6 @@ component AccentDot() {
 }`
 
 export const CONTEXT_BASIC_EXAMPLE = `# Provider — makes a value available to all descendants
-@class_name AppRoot
-
 component AppRoot() {
   Hooks.provideContext("user_name", "Alice")
   Hooks.provideContext("theme", "dark")
@@ -94,8 +84,6 @@ component AppRoot() {
 }
 
 # Consumer — reads the value anywhere in the subtree
-@class_name Sidebar
-
 component Sidebar() {
   var user_name = useContext("user_name")
   var theme = useContext("theme")
@@ -107,9 +95,7 @@ component Sidebar() {
   )
 }`
 
-export const CONTEXT_SHADOWING_EXAMPLE = `@class_name OuterProvider
-
-component OuterProvider() {
+export const CONTEXT_SHADOWING_EXAMPLE = `component OuterProvider() {
   Hooks.provideContext("theme", "light")
 
   return (
@@ -119,8 +105,6 @@ component OuterProvider() {
     </VBoxContainer>
   )
 }
-
-@class_name InnerProvider
 
 component InnerProvider() {
   Hooks.provideContext("theme", "dark")   # shadows outer
@@ -132,9 +116,7 @@ component InnerProvider() {
   )
 }`
 
-export const CONTEXT_DYNAMIC_EXAMPLE = `@class_name ThemeToggle
-
-component ThemeToggle() {
+export const CONTEXT_DYNAMIC_EXAMPLE = `component ThemeToggle() {
   var dark = useState(true)
   Hooks.provideContext("theme", "dark" if dark[0] else "light")
 
@@ -146,8 +128,6 @@ component ThemeToggle() {
     </VBoxContainer>
   )
 }
-
-@class_name ThemedPanel
 
 component ThemedPanel() {
   var theme = useContext("theme")
@@ -184,8 +164,6 @@ const LOCALE := "app.locale"
 const AUTH := "app.auth"
 
 # Provider
-@class_name AppShell
-
 component AppShell(current_theme, auth_state) {
   Hooks.provideContext(AppContextKeys.THEME, current_theme)
   Hooks.provideContext(AppContextKeys.LOCALE, "en-US")
@@ -194,8 +172,6 @@ component AppShell(current_theme, auth_state) {
 }
 
 # Consumer
-@class_name LocalizedLabel
-
 component LocalizedLabel() {
   var locale = useContext(AppContextKeys.LOCALE)
   # ...

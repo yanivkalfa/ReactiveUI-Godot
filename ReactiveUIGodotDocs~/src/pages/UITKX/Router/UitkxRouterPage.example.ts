@@ -1,6 +1,4 @@
-export const UITKX_ROUTER_EXAMPLE = `@class_name RouterDemo
-
-component RouterDemo() {
+export const UITKX_ROUTER_EXAMPLE = `component RouterDemo() {
   var navigate = RUIRouter.useNavigate()
   var search = RUIRouter.useSearchParams()   // [query, setter]
 
@@ -47,9 +45,7 @@ component RouterDemo() {
   )
 }`
 
-export const UITKX_ROUTER_LAYOUT_EXAMPLE = `@class_name UsersLayout
-
-component UsersLayout() {
+export const UITKX_ROUTER_LAYOUT_EXAMPLE = `component UsersLayout() {
   return (
     <VBoxContainer style={ {"separation": 8} }>
       <Label text="Users header" />
@@ -59,9 +55,7 @@ component UsersLayout() {
   )
 }`
 
-export const UITKX_ROUTER_DETAILS_EXAMPLE = `@class_name UserDetails
-
-component UserDetails() {
+export const UITKX_ROUTER_DETAILS_EXAMPLE = `component UserDetails() {
   var params = RUIRouter.useParams()       // { "id": "42", ... }
   var matches = RUIRouter.useMatches()     // breadcrumb chain (root -> current)
   return (

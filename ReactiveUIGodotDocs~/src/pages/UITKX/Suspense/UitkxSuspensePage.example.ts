@@ -1,6 +1,4 @@
-export const SUSPENSE_CALLBACK = `@class_name DataView
-
-component DataView() {
+export const SUSPENSE_CALLBACK = `component DataView() {
   var data = useState(null)
 
   // Kick off the async load once. is_ready() below reports readiness.
@@ -29,9 +27,7 @@ component DataView() {
   )
 }`
 
-export const SUSPENSE_SIGNAL = `@class_name AsyncView
-
-component AsyncView() {
+export const SUSPENSE_SIGNAL = `component AsyncView() {
   var loader = useRef(null)
 
   // Build the loader once and expose a Godot Signal to await.
