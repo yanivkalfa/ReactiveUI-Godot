@@ -11,5 +11,4 @@ Editor support for **`.guitkx`**, the JSX-like markup of [ReactiveUI for Godot](
 
 ## Requirements
 
-- **Node.js** on your PATH (the bundled language server runs on Node).
-- That's it — embedded-GDScript intelligence runs offline; no Godot editor, no TCP/language-server connection.
+- None — the language server ships with the extension (a Node.js runtime is bundled). Embedded-GDScript intelligence runs offline; no Godot editor, no TCP/language-server connection required.

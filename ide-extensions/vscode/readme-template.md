@@ -39,6 +39,6 @@ no TCP connection, works fully offline.
 
 ## Requirements
 
-- **Node.js** on your PATH (the bundled language server runs on Node).
-- That's it — embedded-GDScript intelligence runs offline; no Godot editor, no TCP/language-server
-  connection required.
+- None — everything ships in the extension. The language server runs on VS Code's own built-in
+  Node runtime (no Node.js install needed), and embedded-GDScript intelligence is fully offline:
+  no Godot editor, no TCP/language-server connection required.

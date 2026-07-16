@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.10.3] - 2026-07-16
+- Requirements corrected on both marketplace pages: there is nothing to install — VS Code runs the language server on its own built-in Node runtime, and the VS2022 VSIX bundles a Node runtime of its own. The "Node.js on your PATH" requirement was a stale pre-bundling claim.
+- First upload since 0.10.0 (the 0.10.2 upload was rejected on the VS Marketplace's 280-character description cap): carries the full listing overhaul — the distinguishable display name, the structured page body, and the repo + Discord links in a description that now fits the cap.
+
 ## [0.10.2] - 2026-07-16
 - Extension descriptions now link the repo (github.com/yanivkalfa/ReactiveUI-Godot) and the community Discord (discord.gg/Knedqu4Wyv), so both marketplace listing pages point back to the project and its community from the very top.
 
