@@ -717,8 +717,6 @@ static func _compile_component(source: String, ci: int, class_name_override: Str
 			(pc["root"]["attrs"] as Array).append({ "name": "theme", "kind": "expr", "value": "__THEME", "at": -1, "vat": -1, "end": -1 })
 	_error_on_trailing(source, int(pc["next"]), "component", diags)
 	_validate_unused_params(pc["params"], int(pc.get("params_at", -1)), source.substr(int(pc["body_at"]), int(pc["next"]) - 1 - int(pc["body_at"])), diags)
-	if class_name_override == "" and pc["name"] != basename:
-		diags.append(D.make("GUITKX0103", D.WARNING, "component `%s` differs from file name `%s`" % [pc["name"], basename], pc["name_at"], (pc["name"] as String).length()))
 	_validate(str(pc.get("vsetup", pc["setup"])), pc["root"], diags, pc["body_at"])
 	# A hard-error diagnostic from validation (e.g. GUITKX0108 in a loop body) fails the compile —
 	# warnings/hints do not.
