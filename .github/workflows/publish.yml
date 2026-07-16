@@ -415,6 +415,10 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: node ide-extensions/scripts/changelog.mjs extract --ide vscode --out ide-extensions/vscode/CHANGELOG.md
 
+      - name: Generate README.md from centralized changelog
+        if: steps.check.outputs.skip == 'false'
+        run: node ide-extensions/scripts/changelog.mjs extract-overview --ide vscode --template ide-extensions/vscode/readme-template.md --out ide-extensions/vscode/README.md
+
       - name: Install + build extension
         if: steps.check.outputs.skip == 'false'
         working-directory: ide-extensions/vscode

@@ -1,3 +1,11 @@
+## [Tooling 0.10.1] - 2026-07-16
+
+**Marketplace listing refresh — GUITKX extensions only, no runtime changes.** The VS Code and Visual Studio 2022 extensions were both listed as a bare "GUITKX" on their marketplace publisher pages — indistinguishable from the sibling Unreal/Unity tooling. Both are now `GUITKX (Godot - VS Code)` / `GUITKX (Godot - VS2022)`, and both extension pages get a proper structured body: Title → Description → Features → Requirements → Changelog. The VS Code page in particular finally has real content — its README is now generated straight from the same centralized changelog that drives the CHANGELOG tab, so the two can never drift.
+
+**Tooling:** GUITKX **0.10.1** (VS Code + VS 2022). `reactive_ui` and the Reactive UI Editor addon are unaffected — still at their last-published versions.
+
+---
+
 ## [0.10.0] - 2026-07-12
 
 **Imports arrive — `.guitkx` files now say what they depend on, and can hold more than one thing.** Reference another component/hook/module and you import it: `import { StatusChip } from "./status_chip"`. Specifiers are relative (`./`, `../`) or root-aliased (`~/`, pointed at your UI source root via a new `"root"` key in `guitkx.config.json`), always extensionless. Add `export` to make a declaration reachable across files — and a single file may now hold several declarations (components + hooks + modules), the first exported one binding the file. Cross-file resolution is **strict**: an implicit reference is an error that tells you the exact import to add.

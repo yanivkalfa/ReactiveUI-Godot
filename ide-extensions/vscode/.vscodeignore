@@ -1,4 +1,5 @@
 .vscode/**
+readme-template.md
 src/**
 scripts/**
 **/*.ts

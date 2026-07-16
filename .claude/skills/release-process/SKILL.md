@@ -70,6 +70,28 @@ scope+versions+date accumulate into one entry (multiple messages → multiple bu
 The editor addon's file has a **cutover marker** — its pre-0.6.3 history below the marker
 is frozen verbatim (extract/verify re-emit it untouched); never move or edit the marker.
 
+### Marketplace listing surfaces (what extension users SEE — know before touching)
+
+Every marketplace-visible string has exactly one source; edit the source, never the output:
+
+| Surface | VS Code | VS2022 |
+|---|---|---|
+| List/page title | `ide-extensions/vscode/package.json` → `displayName` | `GuitkxVsix/source.extension.vsixmanifest` → `<DisplayName>` |
+| Short description | package.json `description` | vsixmanifest `<Description>` |
+| Page body | `ide-extensions/vscode/README.md` — GENERATED + COMMITTED at edit time from `vscode/readme-template.md` by `changelog.mjs extract-overview`; packaged into every platform .vsix and also the Open VSX page | `GuitkxVsix/overview.md` — generated at publish time from `overview-template.md` by `changelog.mjs extract-overview` (publish.yml step) |
+| Changelog tab/section | appended into README.md by extract-overview (embedded inline, not a separate CHANGELOG.md tab) | appended into overview.md by extract-overview |
+
+- Naming scheme (family-wide, 2026-07-16): display name = `GUITKX (Godot - VS Code)` /
+  `GUITKX (Godot - VS2022)`; body H1 = `Reactive UI - Godot - <IDE> (GUITKX)`; body order =
+  Title → Description → Features → Requirements → Changelog. Execution details:
+  `plans/archive/EXTENSION_LISTING_PLAN.md`.
+- A LISTING-ONLY change still bumps both extensions (patch) + a Lane B entry — shipped bytes change.
+- Where a body file is generated (`vscode/README.md` from `readme-template.md`; VS2022's
+  `overview.md` from `overview-template.md`): edit the TEMPLATE, re-run extract-overview, commit
+  template + output together (vscode's is drift-gated by `changelog.mjs verify`'s
+  `OVERVIEW_TARGETS` check — vs2022's overview.md is publish-time-only and never committed, so
+  it isn't).
+
 ### Discord (community note)
 
 Add an entry at the top of `plans/DISCORD_CHANGELOG.md`, matching the existing entries'
