@@ -62,6 +62,7 @@ func _run() -> void:
 	_test_m4()
 	_test_codemod()
 	_test_bughunt_fixes()
+	_test_0103_retired()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1279,6 +1280,19 @@ func _imp_write(path: String, content: String) -> void:
 	if f != null:
 		f.store_string(content)
 		f.close()
+
+## Retired 0.10.2 (plans/archive/CLASSNAME_CLEANUP_PLAN.md M1): a component whose name differs
+## from the file's basename no longer warns -- imports made filename identity moot, since binding
+## is inferred (override else first-exported-decl else first-decl), not required to match the file.
+## The directive itself is kept as a grammar escape hatch: `@class_name` still overrides the binding.
+func _test_0103_retired() -> void:
+	var r := RUIGuitkx.compile("component DemoThing() {\n\treturn ( <Label /> )\n}\n", "some_file")
+	_check_true(bool(r["ok"]), "0103 retired: DemoThing in some_file.guitkx still compiles (%s)" % str(r.get("diagnostics", [])))
+	_check_true(not _has_code(r, "GUITKX0103"), "0103 retired: no GUITKX0103 even though the name differs from the basename (got %s)" % str(r["diagnostics"]))
+	# Grammar keep-alive: @class_name still overrides the binding.
+	var ov := RUIGuitkx.compile("@class_name Custom\n\ncomponent DemoThing() {\n\treturn ( <Label /> )\n}\n", "some_file")
+	_check_true(bool(ov["ok"]), "0103 retired: @class_name override still compiles (%s)" % str(ov.get("diagnostics", [])))
+	_check(str(ov["gd"]), "class_name Custom", "0103 retired: @class_name Custom still overrides the generated binding")
 
 ## M3 (0.10.0): import RESOLUTION -- specifier->path, value/component lowering, frozen 2300-2308.
 ## Uses a `.gdignore`'d temp dir so the build walker never sees the fixtures; the resolver reaches

@@ -1,12 +1,6 @@
 {
 	"diagnostics": [
 		{
-			"code": "GUITKX0103",
-			"len": 11,
-			"off": 10,
-			"severity": 1
-		},
-		{
 			"code": "GUITKX0111",
 			"len": 5,
 			"off": 22,
