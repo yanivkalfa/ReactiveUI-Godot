@@ -1,8 +1,8 @@
 {
   "name": "guitkx",
   "displayName": "GUITKX (Godot - VS Code)",
-  "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence analyzed headlessly via gdscript-analyzer (no running Godot editor required).",
-  "version": "0.10.1",
+  "description": "Syntax highlighting + language intelligence for .guitkx markup (ReactiveUI for Godot). Markup completion/hover from the schema; embedded-GDScript intelligence analyzed headlessly via gdscript-analyzer (no running Godot editor required). Repo: https://github.com/yanivkalfa/ReactiveUI-Godot · Discord: https://discord.gg/Knedqu4Wyv",
+  "version": "0.10.2",
   "icon": "icon.png",
   "publisher": "ReactiveUITK",
   "license": "MIT",

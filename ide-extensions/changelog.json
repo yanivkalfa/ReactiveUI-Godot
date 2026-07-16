@@ -3,6 +3,16 @@
     {
       "date": "2026-07-16",
       "versions": {
+        "vscode": "0.10.2",
+        "vs2022": "0.10.2"
+      },
+      "shared": [
+        "Extension descriptions now link the repo (github.com/yanivkalfa/ReactiveUI-Godot) and the community Discord (discord.gg/Knedqu4Wyv), so both marketplace listing pages point back to the project and its community from the very top."
+      ]
+    },
+    {
+      "date": "2026-07-16",
+      "versions": {
         "vscode": "0.10.1",
         "vs2022": "0.10.1"
       },
