@@ -1,3 +1,13 @@
+## [0.10.2] - 2026-07-16
+
+**A cleanup release: `GUITKX0103` is retired, and the demos/docs finally practice what they preach.** Since 0.10.0 a `.guitkx` file's generated `class_name` has been *inferred* — `@class_name` override, else the first exported declaration, else the first declaration — rather than required to match the filename. The old "component X differs from file name Y" warning outlived the convention it was protecting; it's gone now (the diagnostic number stays reserved, never reused).
+
+**All 45 bundled demos drop their `@class_name` directives** — every one was pure redundancy, equal to the component's own name, kept only to silence the warning above. The README quick start and the docs site's teaching examples got the same treatment. Nothing about `@class_name` itself changed — it's still there as an optional override for the rare case of a name collision on GDScript's flat global registry.
+
+Update to **Reactive UI 0.10.2** (copy `addons/reactive_ui/` into your project, or update via AssetLib).
+
+---
+
 ## [Tooling 0.10.1] - 2026-07-16
 
 **Marketplace listing refresh — GUITKX extensions only, no runtime changes.** The VS Code and Visual Studio 2022 extensions were both listed as a bare "GUITKX" on their marketplace publisher pages — indistinguishable from the sibling Unreal/Unity tooling. Both are now `GUITKX (Godot - VS Code)` / `GUITKX (Godot - VS2022)`, and both extension pages get a proper structured body: Title → Description → Features → Requirements → Changelog. The VS Code page in particular finally has real content — its README is now generated straight from the same centralized changelog that drives the CHANGELOG tab, so the two can never drift.
