@@ -1,6 +1,4 @@
-export const EVENTS_CLICK_EXAMPLE = `@class_name ClickDemo
-
-component ClickDemo() {
+export const EVENTS_CLICK_EXAMPLE = `component ClickDemo() {
   var msg = useState("Click the button")
 
   return (
@@ -12,9 +10,7 @@ component ClickDemo() {
   )
 }`
 
-export const EVENTS_POINTER_EXAMPLE = `@class_name PointerTracker
-
-component PointerTracker() {
+export const EVENTS_POINTER_EXAMPLE = `component PointerTracker() {
   var inside = useState(false)
 
   return (
@@ -28,9 +24,7 @@ component PointerTracker() {
   )
 }`
 
-export const EVENTS_KEYBOARD_EXAMPLE = `@class_name KeyboardDemo
-
-component KeyboardDemo() {
+export const EVENTS_KEYBOARD_EXAMPLE = `component KeyboardDemo() {
   var last = useState("None")
 
   // Godot has no per-Control key signals; use the native gui_input escape
@@ -47,9 +41,7 @@ component KeyboardDemo() {
   )
 }`
 
-export const EVENTS_FOCUS_EXAMPLE = `@class_name FocusDemo
-
-component FocusDemo() {
+export const EVENTS_FOCUS_EXAMPLE = `component FocusDemo() {
   var focused = useState(false)
 
   // onFocusEntered -> focus_entered, onFocusExited -> focus_exited.
@@ -61,9 +53,7 @@ component FocusDemo() {
   )
 }`
 
-export const EVENTS_GEOMETRY_EXAMPLE = `@class_name ResizeWatcher
-
-component ResizeWatcher() {
+export const EVENTS_GEOMETRY_EXAMPLE = `component ResizeWatcher() {
   var size = useState(Vector2.ZERO)
   var box = useRef(null)
 
@@ -100,9 +90,7 @@ export const EVENTS_CHANGE_EXAMPLE = `// One rule, every control: on + PascalCas
 // LineEdit — "text_changed" passes the new String.
 <LineEdit text={ name } onTextChanged={ func(s): set_name.call(s) } />`
 
-export const EVENTS_SUBMIT_EXAMPLE = `@class_name SearchBox
-
-component SearchBox() {
+export const EVENTS_SUBMIT_EXAMPLE = `component SearchBox() {
   var query = useState("")
   var submitted = useState("")
 
@@ -117,9 +105,7 @@ component SearchBox() {
   )
 }`
 
-export const EVENTS_NATIVE_EXAMPLE = `@class_name NativeEscapeHatch
-
-component NativeEscapeHatch() {
+export const EVENTS_NATIVE_EXAMPLE = `component NativeEscapeHatch() {
   // The on_<signal> escape hatch binds VERBATIM to any Godot signal on the
   // node — the exact snake_case name, no case transform. It is equivalent to
   // the on + PascalCase spelling; use whichever reads better.

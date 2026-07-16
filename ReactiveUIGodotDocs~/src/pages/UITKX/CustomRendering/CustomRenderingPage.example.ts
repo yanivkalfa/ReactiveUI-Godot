@@ -38,9 +38,7 @@ module {
 
 // Vector drawing driven by component state. A fresh inline lambda each render
 // is a new callable, so the node repaints whenever its owner re-renders.
-export const CUSTOM_RENDERING_PAINTER_EXAMPLE = `@class_name PolygonCanvas
-
-component PolygonCanvas() {
+export const CUSTOM_RENDERING_PAINTER_EXAMPLE = `component PolygonCanvas() {
   var sides = useState(3)
 
   return (
@@ -54,9 +52,7 @@ component PolygonCanvas() {
 }`
 
 // Drawing that depends on state, toggled by a button.
-export const CUSTOM_RENDERING_RAW_MESH_EXAMPLE = `@class_name QuadCanvas
-
-component QuadCanvas() {
+export const CUSTOM_RENDERING_RAW_MESH_EXAMPLE = `component QuadCanvas() {
   var blue = useState(true)
 
   return (
@@ -69,9 +65,7 @@ component QuadCanvas() {
 }`
 
 // Stable callback + redraw_key: repaint on demand WITHOUT changing the callback.
-export const CUSTOM_RENDERING_REDRAW_KEY_EXAMPLE = `@class_name ScatterCanvas
-
-component ScatterCanvas() {
+export const CUSTOM_RENDERING_REDRAW_KEY_EXAMPLE = `component ScatterCanvas() {
   var tick = useState(0)
 
   // A stable callable: its identity never changes between renders, so the node

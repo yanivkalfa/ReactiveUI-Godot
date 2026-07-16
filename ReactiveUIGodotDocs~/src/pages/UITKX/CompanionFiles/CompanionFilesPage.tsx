@@ -65,8 +65,9 @@ export const CompanionFilesPage: FC = () => (
         <ListItemText
           primary={
             <>
-              <strong>Class name</strong> — comes from the <code>@class_name</code> directive (or,
-              absent that, the <code>component</code> / <code>module</code> name).
+              <strong>Class name</strong> — inferred: an <code>@class_name</code> override if
+              present, else the first <code>export</code>ed declaration's name, else the first
+              declaration's name.
             </>
           }
         />

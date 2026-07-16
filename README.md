@@ -77,8 +77,6 @@ Requires **Godot 4.4+** (the compiler core uses 4.3+ engine APIs and the editor 
 2. Write your first component as a `.guitkx` file, e.g. `res://ui/counter.guitkx`:
 
 ```
-@class_name Counter
-
 component Counter {
 	var s = useState(0)
 	return (
@@ -90,8 +88,9 @@ component Counter {
 }
 ```
 
-Saving it compiles a sibling `res://ui/counter.gd` (git-ignore this — it's generated). `@class_name`
-gives the generated script a real Godot `class_name`, so you can reference it like any other class.
+Saving it compiles a sibling `res://ui/counter.gd` (git-ignore this — it's generated) with a real
+Godot `class_name` — `Counter`, inferred from the declaration — so you can reference it like any
+other class. An `@class_name` directive can override that name; it's rarely needed.
 
 3. Mount it from a plain `.gd` script — this one bootstrap point is the only place raw GDScript is
    unavoidable, the same way a React app still has one `ReactDOM.render` call:

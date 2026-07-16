@@ -3,8 +3,6 @@ export const PROPTYPES_EXAMPLE = `# Every function component already bails its r
 # (shallow ==). For a custom comparison, pass __memo_eq in props — the reconciler
 # consults it to decide whether to skip the child's re-render.
 
-@class_name ExpensiveChild
-
 component ExpensiveChild(data) {
   # ... heavy render work over 'data' ...
   return (<Label text={ "rows: %d" % data.size() } />)
@@ -32,8 +30,6 @@ component Parent() {
 // Refs to Godot nodes (repurposed slot: HOSTCONTEXT_EXAMPLE)
 export const HOSTCONTEXT_EXAMPLE = `# useRef(null) + the ref prop capture the underlying Godot Control after commit.
 # ref["current"] is a real node — call any of its methods / read any property.
-
-@class_name ScrollToBottom
 
 component ScrollToBottom(lines) {
   var scroll_ref = useRef(null)   # -> ScrollContainer node
@@ -72,9 +68,7 @@ var on_login = func():
 #   var deferred = useDeferredValue(query[0])`
 
 // useStableCallback (repurposed slot: FLUSHSYNC_EXAMPLE)
-export const FLUSHSYNC_EXAMPLE = `@class_name SearchForm
-
-component SearchForm() {
+export const FLUSHSYNC_EXAMPLE = `component SearchForm() {
   var query = useState("")
   var results = useState([])
 
@@ -146,8 +140,6 @@ export const DEPTH_GUARD_EXAMPLE = `# The reconciler guards against runaway re-r
 export const SNAPSHOT_EXAMPLE = `# The Godot analogue of Unity's OnGenerateVisualContent + RedrawKey.
 # 'draw_fn' is a Callable(canvas_item) that issues the node's draw_* calls; it runs
 # during the node's 'draw' signal. Bump 'redraw_key' to repaint the SAME callback.
-
-@class_name Gauge
 
 component Gauge(value) {
   # Read the latest 'value' inside the closure; redraw_key forces a repaint when it changes.

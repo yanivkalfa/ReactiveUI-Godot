@@ -1,6 +1,4 @@
-export const UITKX_SIGNALS_COMPONENT_EXAMPLE = `@class_name SignalCounterDemo
-
-component SignalCounterDemo() {
+export const UITKX_SIGNALS_COMPONENT_EXAMPLE = `component SignalCounterDemo() {
   // Read the PROCESS-WIDE signal registered under "demo.counter".
   // useSignalKey lazily creates one shared RUISignal per key, so every
   // component that reads the same key sees the same store.

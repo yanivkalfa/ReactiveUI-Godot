@@ -18,9 +18,7 @@ import {
 import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from '../../Components/ComponentPage.style'
 
-const COMPONENT_SAMPLE = `@class_name ButtonShowcase
-
-component ButtonShowcase() {
+const COMPONENT_SAMPLE = `component ButtonShowcase() {
   var s = useState(true)
   return (
     <VBoxContainer style={ {"separation": 8} }>
@@ -330,7 +328,7 @@ export const UitkxComponentsPage: FC = () => (
           <ListItemText primary="Custom component names must be PascalCase and must not collide with built-in tag names." />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="Each .guitkx file contains exactly one component; the @class_name becomes the generated GDScript class." />
+          <ListItemText primary="A .guitkx file can hold one or more declarations; the generated GDScript class name is inferred from them (an @class_name directive can override it, but rarely needs to)." />
         </ListItem>
       </List>
     </Box>

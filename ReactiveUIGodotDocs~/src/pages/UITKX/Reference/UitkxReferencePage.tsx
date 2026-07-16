@@ -21,9 +21,7 @@ component MyButton(label: String = "Click") {
   )
 }`
 
-const FUNCTION_STYLE_EXAMPLE = `@class_name Counter
-
-component Counter(label: String = "Count") {
+const FUNCTION_STYLE_EXAMPLE = `component Counter(label: String = "Count") {
   var s = useState(0)
   var count = s[0]
   return (
@@ -178,7 +176,7 @@ export const UitkxReferencePage: FC = () => (
           <TableRow>
             <TableCell><code>@class_name</code></TableCell>
             <TableCell><code>@class_name MyButton</code></TableCell>
-            <TableCell>Override the generated GDScript <code>class_name</code> (defaults to the first exported declaration&apos;s name).</TableCell>
+            <TableCell>Optional override for the generated GDScript <code>class_name</code> (defaults to the first exported declaration&apos;s name, else the first declaration&apos;s) — rarely needed; mainly for a name collision with a hand-written class.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>@uss</code></TableCell>
@@ -494,7 +492,7 @@ export const UitkxReferencePage: FC = () => (
       <li>A directive body is a code block: GDScript prep statements followed by <code>return ( {'<markup>'} )</code>, nesting recursively. The pre-0.7 bare-markup form is a compile error (<code>GUITKX2103</code>).</li>
       <li>Direct children of <code>@for</code> need a <code>key</code> attribute for stable reconciliation.</li>
       <li>A component's FINAL top-level return must be markup (a single root element, or a single raw <code>{'{ expr }'}</code>); earlier <code>return</code>s may conditionally return markup too (v0.6+).</li>
-      <li>The declaration name should match the file / <code>@class_name</code> (e.g. <code>MyButton.guitkx</code> defines <code>component MyButton</code>).</li>
+      <li>The generated <code>class_name</code> is inferred — an <code>@class_name</code> override, else the first <code>export</code>ed declaration&apos;s name, else the first declaration&apos;s — it does not need to match the file name.</li>
       <li><code>@match</code> is a statement-level directive; it can't be embedded inside a <code>{'{ expr }'}</code> attribute or child value.</li>
     </Typography>
   </Box>
