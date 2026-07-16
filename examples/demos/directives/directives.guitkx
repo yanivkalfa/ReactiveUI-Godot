@@ -1,4 +1,3 @@
-@class_name DemoDirectives
 @uss "res://examples/demos/directives/directives_theme.tres"
 export component DemoDirectives(items: Array = ["alpha", "beta"], mode: int = 1) {
   # setup is plain GDScript -- its comments use `#` as usual

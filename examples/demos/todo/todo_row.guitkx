@@ -1,5 +1,3 @@
-@class_name DemoTodoRow
-
 export component DemoTodoRow(item, onRemove) {
   return (
     <HBoxContainer style={ {"separation": 8} }>

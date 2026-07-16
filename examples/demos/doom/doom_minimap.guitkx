@@ -1,5 +1,3 @@
-@class_name DoomMinimap
-
 ## Faithful port of the Unity `DoomMinimap.uitkx` -- top-right automap. Its two
 ## inline @foreach loops are ported to DoomGameScreenLogic.build_minimap_cells /
 ## build_minimap_dots (pure builders); this component just lays out the rects.

@@ -1,5 +1,3 @@
-@class_name DemoBailout
-
 import { DemoBailoutChild } from "./bailout_child"
 import { DemoBox } from "~/examples/demos/demo_box"
 
