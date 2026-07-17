@@ -75,9 +75,9 @@ export const EXAMPLE_STYLEBOX = `component Framed() {
 }`
 
 export const EXAMPLE_AUDIO = `component Chime() {
-  # AudioStream resources drive the AudioStreamPlayer element (V.AudioStreamPlayer factory).
+  # AudioStream resources drive the <AudioStreamPlayer> element.
   var stream = preload("res://sfx/chime.ogg")
   return (
-    { V.AudioStreamPlayer({ "stream": stream, "autoplay": true }) }
+    <AudioStreamPlayer stream={ stream } autoplay />
   )
 }`

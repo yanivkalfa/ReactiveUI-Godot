@@ -21,7 +21,7 @@ export const UitkxRouterPage: FC = () => (
       <code>V.link</code> factories from an embedded expression as part of the returned UI.
     </Typography>
     <Alert severity="warning" sx={{ mb: 2 }}>
-      None of the router primitives are registered <code>.guitkx</code> markup tags — there is
+      None of the router primitives are registered <code>.guitkx</code> markup tags yet — there is
       no <code>{'<Router>'}</code>, <code>{'<Route>'}</code>, <code>{'<Outlet>'}</code>,{' '}
       <code>{'<NavLink>'}</code>, or <code>{'<Navigate>'}</code> element. Build the router tree with
       the <code>V.*</code> factories above and mount it from an embedded{' '}

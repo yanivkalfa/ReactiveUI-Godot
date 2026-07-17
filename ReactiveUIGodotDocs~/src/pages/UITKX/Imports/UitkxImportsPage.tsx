@@ -52,7 +52,7 @@ export const UitkxImportsPage: FC = () => (
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_EXPORT} />
     <Typography variant="body1" paragraph sx={{ mt: 2 }}>
-      Component imports stay lazy (they resolve through <code>V.comp</code>), so cross-file component{' '}
+      Component imports stay lazy (they resolve by path, at first render), so cross-file component{' '}
       <strong>cycles are legal</strong>. Value imports (hooks and modules) are eager{' '}
       <code>const</code> preloads, so a value-import <strong>cycle is an error</strong> that prints
       the full chain.
