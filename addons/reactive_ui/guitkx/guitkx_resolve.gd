@@ -39,10 +39,12 @@ static func resolve_specifier(spec: String, from_guitkx: String, root: String) -
 		return { "ok": false, "error": "no file at %s" % guitkx_path }
 	return { "ok": true, "guitkx": guitkx_path, "gd": guitkx_path.get_basename() + ".gd" }
 
-## The declaration table of a target `.guitkx`: { binding, decls: { name -> { kind, export, func } } }.
-## `func` is the emitted static-func name a cross-file reference must call: `render` for the binding
-## component, the decl name for any other component/hook, and the module name for a module (its
-## preload member). Cached per source-hash so a sweep reads each target once.
+## The declaration table of a target `.guitkx`: { binding, default, decls: { name -> { kind,
+## export, func } } }. `func` is the emitted static-func name a cross-file reference must call:
+## `render` for the binding component, the decl name for any other component/hook/util (a value's
+## `func` is its member name -- data, not callable), and the module name for a module (its
+## preload member). `default` = the `export default` decl's name ("" when none -- E-07). Cached
+## per source-hash so a sweep reads each target once.
 static var _table_cache := {}
 static func decl_table(guitkx_path: String) -> Dictionary:
 	var src := FileAccess.get_file_as_string(guitkx_path)
@@ -50,7 +52,10 @@ static func decl_table(guitkx_path: String) -> Dictionary:
 	if _table_cache.has(key):
 		return _table_cache[key]
 	var binding := _binding_of(src)
-	var decl_list := Compiler._enumerate_decls(src, 0)
+	# analyzed_decls applies the E-07/E-09 export markers so list-exported / default-marked decls
+	# read as exported here exactly as the emitter sees them (M1.3 single-source-of-truth).
+	var analyzed := Compiler.analyzed_decls(src, 0)
+	var decl_list: Array = analyzed["decls"]
 	var render_comp := Compiler.render_component(decl_list, binding)   # the component that emits `render`
 	var decls := {}
 	for dm in decl_list:
@@ -58,17 +63,17 @@ static func decl_table(guitkx_path: String) -> Dictionary:
 		var kind := str(dm["kind"])
 		var fn := "render" if (kind == "component" and nm == render_comp) else nm
 		decls[nm] = { "kind": kind, "export": bool(dm["export"]), "func": fn }
-	var out := { "binding": binding, "decls": decls }
+	var out := { "binding": binding, "default": str(analyzed["default"]), "decls": decls }
 	_table_cache[key] = out
 	return out
 
 ## The binding name of a source (mirrors codegen._binding_name without the FileAccess round-trip):
-## @class_name override, else first exported decl, else first decl, else "".
+## @class_name override, else first exported decl (marker-applied -- M1.3), else first decl, else "".
 static func _binding_of(src: String) -> String:
 	var override := _class_name_override(src)
 	if override != "":
 		return override
-	var decls := Compiler._enumerate_decls(src, 0)
+	var decls: Array = Compiler.analyzed_decls(src, 0)["decls"]
 	if decls.is_empty():
 		return ""
 	for dm in decls:
@@ -129,19 +134,20 @@ static func _skip_import(src: String, i: int) -> int:
 	return maxi(le, bc + 1)
 
 ## Resolve every import of one file into the emitter's lowering plan + the frozen import diagnostics.
-## `imports` = RUIGuitkx.compile()'s parsed list; `used(name)->bool` reports whether a name is
+## `imports` = RUIGuitkx.compile()'s parsed list; `used(name)->bool` reports whether a LOCAL name is
 ## referenced in the body (drives 2304 unused). Returns:
-##   { comps: { local_name -> { gd, func } },          # component imports -> V.comp(gd, func)
-##     values: [ { name, gd, member, kind } ],          # hook/module imports -> const preloads
-##     diags: [ … 2300/2301/2302/2303/2304/2308 … ] }
+##   { comps: { local_name -> { gd, func } },     # component imports -> V.comp(gd, func)
+##     values: [ { name, gd, member, kind } ],    # module + `* as` namespace -> const preloads
+##     hooks:  [ { name, remote, gd } ],          # bare hooks -> aliased const + CALL rewrite (BH-06)
+##     bares:  [ { name, remote, gd } ],          # named values/utils -> aliased const + FREE-REF rewrite
+##     diags: [ … 2300-2304/2308/2326 … ] }
 static func resolve_file_imports(imports: Array, from_guitkx: String, root: String, used: Callable = Callable()) -> Dictionary:
 	var comps := {}
 	var values: Array = []
-	var hooks: Array = []   # imported TOP-LEVEL hooks -> {name, gd}; called bare, so lowered via an
-	                        # aliased const preload + call-site rewrite (NOT a plain `const use_x = ...`,
-	                        # which would call a script resource -- BH-06).
+	var hooks: Array = []
+	var bares: Array = []
 	var diags: Array = []
-	var seen := {}   # name -> spec (duplicate-import 2303, cross-line — the scan already caught same-line)
+	var seen := {}   # LOCAL name -> spec (duplicate-import 2303, cross-line — the scan already caught same-line)
 	for imp in imports:
 		var spec := str(imp["spec"])
 		var res := resolve_specifier(spec, from_guitkx, root)
@@ -154,35 +160,83 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 			diags.append(D.make("GUITKX2300", D.ERROR, "unknown import specifier `%s` — no file at %s" % [spec, spec], int(imp["spec_at"]), spec.length() + 2))
 			continue
 		var table := decl_table(str(res["guitkx"]))
+		var decls: Dictionary = table["decls"]
+		# E-06 namespace form: ONE eager whole-script preload; members resolve as script statics at
+		# runtime (`X.name`). A VALUE edge for 2306. No component tags via `X.` in v1.
+		var nsn := str(imp.get("ns", ""))
+		if nsn != "":
+			var ns_at := int(imp.get("ns_at", int(imp["at"])))
+			if seen.has(nsn):
+				diags.append(D.make("GUITKX2303", D.ERROR, "duplicate import of `%s` (already imported from %s)" % [nsn, seen[nsn]], ns_at, nsn.length()))
+				continue
+			seen[nsn] = spec
+			if used.is_valid() and not bool(used.call(nsn)):
+				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nsn, ns_at, nsn.length()))
+			values.append({ "name": nsn, "gd": res["gd"], "member": "", "kind": "namespace" })
+			continue
+		# E-07 default form: binds the target's `export default` decl; lowers per that decl's KIND.
+		var defn := str(imp.get("def", ""))
+		if defn != "":
+			var def_at := int(imp.get("def_at", int(imp["at"])))
+			if seen.has(defn):
+				diags.append(D.make("GUITKX2303", D.ERROR, "duplicate import of `%s` (already imported from %s)" % [defn, seen[defn]], def_at, defn.length()))
+				continue
+			seen[defn] = spec
+			var tgt_default := str(table.get("default", ""))
+			if tgt_default == "":
+				diags.append(D.make("GUITKX2326", D.ERROR, "%s has no default export -- use a named import: import { %s } from \"%s\"" % [str(res["guitkx"]).get_file(), str(table["binding"]), spec], def_at, defn.length()))
+				continue
+			if used.is_valid() and not bool(used.call(defn)):
+				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % defn, def_at, defn.length()))
+			var dd: Dictionary = decls[tgt_default]
+			match str(dd["kind"]):
+				"component":
+					comps[defn] = { "gd": res["gd"], "func": dd["func"] }
+				"hook":
+					hooks.append({ "name": defn, "remote": tgt_default, "gd": res["gd"] })
+				"module":
+					var dmember := "" if tgt_default == str(table["binding"]) else tgt_default
+					values.append({ "name": defn, "gd": res["gd"], "member": dmember, "kind": "module" })
+				_:
+					bares.append({ "name": defn, "remote": tgt_default, "gd": res["gd"] })
+			continue
 		for nm_entry in (imp["names"] as Array):
-			var nm := str(nm_entry["name"])
+			var nm := str(nm_entry["name"])                        # LOCAL binding name
+			var remote := str(nm_entry.get("remote", nm))           # exported name it resolves against (E-08)
 			var at := int(nm_entry["at"])
+			var remote_at := int(nm_entry.get("remote_at", at))
 			if seen.has(nm):
 				diags.append(D.make("GUITKX2303", D.ERROR, "duplicate import of `%s` (already imported from %s)" % [nm, seen[nm]], at, nm.length()))
 				continue
 			seen[nm] = spec
-			var decls: Dictionary = table["decls"]
-			if not decls.has(nm):
-				diags.append(D.make("GUITKX2302", D.ERROR, "`%s` is not declared in %s" % [nm, res["guitkx"]], at, nm.length()))
+			# 2301/2302 validate the REMOTE name (the one the target must declare/export), anchored
+			# on its own offset -- for `a as b` the squiggle lands on `a` (E-08).
+			if not decls.has(remote):
+				diags.append(D.make("GUITKX2302", D.ERROR, "`%s` is not declared in %s" % [remote, res["guitkx"]], remote_at, remote.length()))
 				continue
-			var d: Dictionary = decls[nm]
+			var d: Dictionary = decls[remote]
 			if not bool(d["export"]):
-				diags.append(D.make("GUITKX2301", D.ERROR, "`%s` is not exported by %s — add `export` to its declaration" % [nm, res["guitkx"]], at, nm.length()))
+				diags.append(D.make("GUITKX2301", D.ERROR, "`%s` is not exported by %s — add `export` to its declaration" % [remote, res["guitkx"]], remote_at, remote.length()))
 				continue
-			# 2304: imported but never referenced in the body.
+			# 2304: imported but never referenced in the body (by its LOCAL name).
 			if used.is_valid() and not bool(used.call(nm)):
 				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nm, at, nm.length()))
-			if str(d["kind"]) == "component":
-				comps[nm] = { "gd": res["gd"], "func": d["func"] }
-			elif str(d["kind"]) == "hook":
-				# a top-level hook is a static func, called bare -- lower to an aliased const + rewrite.
-				hooks.append({ "name": nm, "gd": res["gd"] })
-			else:
-				# module -> a value preload used as `Name.member(...)`. A binding member (the file's own
-				# name) is the whole script; a non-binding module member is an inner class on it.
-				var member := "" if nm == str(table["binding"]) else nm
-				values.append({ "name": nm, "gd": res["gd"], "member": member, "kind": d["kind"] })
-	return { "comps": comps, "values": values, "hooks": hooks, "diags": diags }
+			match str(d["kind"]):
+				"component":
+					comps[nm] = { "gd": res["gd"], "func": d["func"] }
+				"hook":
+					# a top-level hook is a static func, called bare -- aliased const + call rewrite.
+					hooks.append({ "name": nm, "remote": remote, "gd": res["gd"] })
+				"module":
+					# module -> a value preload used as `Name.member(...)`. A binding member (the file's
+					# own name) is the whole script; a non-binding module member is an inner class on it.
+					var member := "" if remote == str(table["binding"]) else remote
+					values.append({ "name": nm, "gd": res["gd"], "member": member, "kind": d["kind"] })
+				_:
+					# value/util (E-05): data / plain static func -- aliased const + free-ref rewrite
+					# (a `const local = preload(gd).static_var` is NOT a constant expression).
+					bares.append({ "name": nm, "remote": remote, "gd": res["gd"] })
+	return { "comps": comps, "values": values, "hooks": hooks, "bares": bares, "diags": diags }
 
 ## Names from `referenceable` (name -> anything) actually USED in `src` as a markup tag (`<Name`) or
 ## a qualified reference (`Name.` / `Name(`), excluding this file's own decls, mapped to the offset of

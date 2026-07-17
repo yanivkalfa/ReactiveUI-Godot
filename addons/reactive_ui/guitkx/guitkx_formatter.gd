@@ -63,7 +63,12 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> Dictionary:
 	# canonical here (they leave real text in `pre_check` below), so they always take the verbatim
 	# branch -- imports are preserved byte-for-byte, never reordered or dropped, and the round-trip
 	# stays idempotent. (`decl["at"]` is the KEYWORD, so an `export` prefix rides along inside `pre`.)
-	var pre := source.substr(0, decl["at"])
+	# Plain (E-01) rows anchor at the NAME (`at`), with any `export ` prefix BEFORE it -- slice the
+	# preamble at `start` for those and re-emit the prefix ourselves; wrapper rows keep the shipped
+	# `at`-based slice (the prefix rides inside `pre`), preserving their byte-stable formatting.
+	var is_plain: bool = not bool(decl.get("deprecated", true))
+	var pre_end: int = int(decl.get("start", decl["at"])) if is_plain else int(decl["at"])
+	var pre := source.substr(0, pre_end)
 	var pre_check := pre
 	var cn_at := pre_check.find("@class_name")
 	if cn_at != -1:
@@ -78,19 +83,59 @@ static func _format_or_verbatim(source: String, o: Dictionary) -> Dictionary:
 	elif class_name_line != "":
 		out += class_name_line + "\n\n"
 	var decl_end := -1
+	var exp_prefix: String = "export " if (is_plain and bool(decl.get("export", false))) else ""
 	match decl["kind"]:
 		"component":
-			var pc: Dictionary = Compiler._parse_component_at(source, decl["at"], diags)
-			if not pc["ok"]:
+			if is_plain:
+				var ppc: Dictionary = Compiler._parse_plain_component_body(source, str(decl["name"]), int(decl["name_at"]), str(decl.get("params", "")), int(decl.get("params_at", -1)), int(decl["body_open"]), diags)
+				if not ppc.get("ok", false):
+					return { "text": source, "fell_back": true }
+				out += exp_prefix + _fmt_plain_component(ppc["name"], ppc["params"], ppc["setup"], ppc["window_nodes"], o)
+				decl_end = int(ppc["next"])
+			else:
+				var pc: Dictionary = Compiler._parse_component_at(source, decl["at"], diags)
+				if not pc["ok"]:
+					return { "text": source, "fell_back": true }
+				out += _fmt_component(pc["name"], pc["params"], pc["setup"], pc["window_nodes"], o)
+				decl_end = int(pc["next"])
+		"hook", "util":
+			if is_plain:
+				var gb: Dictionary = Compiler._parse_plain_gd_body(source, int(decl["body_open"]), diags)
+				if not gb.get("ok", false):
+					return { "text": source, "fell_back": true }
+				out += exp_prefix + _fmt_plain_callable(str(decl["name"]), str(decl.get("params", "")), str(gb["body"]), o, str(decl.get("ret", "")))
+				decl_end = int(gb["next"])
+			else:
+				var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
+				if not ph["ok"]:
+					return { "text": source, "fell_back": true }
+				out += _fmt_hook(ph["name"], ph["params"], ph["body"], o, str(ph.get("ret", "")))
+				decl_end = int(ph["next"])
+		"value":
+			# E-01 value decl: canonical `[export ]name<eq> <initializer>`; the initializer slice
+			# stays VERBATIM (it is arbitrary GDScript -- a from-scratch re-emit is unsound).
+			var vend := Compiler._value_end(source, int(decl["value_start"]))
+			if vend == -1:
 				return { "text": source, "fell_back": true }
-			out += _fmt_component(pc["name"], pc["params"], pc["setup"], pc["window_nodes"], o)
-			decl_end = int(pc["next"])
-		"hook":
-			var ph: Dictionary = Compiler._parse_hook_at(source, decl["at"], diags)
-			if not ph["ok"]:
-				return { "text": source, "fell_back": true }
-			out += _fmt_hook(ph["name"], ph["params"], ph["body"], o, str(ph.get("ret", "")))
-			decl_end = int(ph["next"])
+			var vexpr := source.substr(int(decl["value_start"]), vend - int(decl["value_start"])).strip_edges()
+			match str(decl.get("eq_style", "plain")):
+				"infer":
+					out += "%s%s := %s\n" % [exp_prefix, str(decl["name"]), vexpr]
+				"typed":
+					out += "%s%s: %s = %s\n" % [exp_prefix, str(decl["name"]), str(decl.get("type_text", "")), vexpr]
+				_:
+					out += "%s%s = %s\n" % [exp_prefix, str(decl["name"]), vexpr]
+			decl_end = vend
+		"export_list":
+			# E-09: canonical one-line list.
+			var lns: Array = []
+			for le3 in (decl.get("list_names", []) as Array):
+				lns.append(str(le3["name"]))
+			out += "export { %s }\n" % ", ".join(lns)
+			decl_end = int(decl["list_end"])
+		"export_default":
+			out += "export default %s\n" % str(decl["name"])
+			decl_end = int(decl["list_end"])
 		"module":
 			var m: Variant = _fmt_module(source, decl["at"], o, diags)
 			if m == null:
@@ -132,6 +177,41 @@ static func _fmt_component(comp_name: String, params: String, setup: String, nod
 	out += _pad(1, o) + ")\n"
 	out += "}\n"
 	return out
+
+## E-01 plain component: identical body emission to _fmt_component with the keywordless header
+## (`Name(params) -> RUIVNode {`). The annotation IS the classification -- never dropped.
+static func _fmt_plain_component(comp_name: String, params: String, setup: String, nodes: Array, o: Dictionary) -> String:
+	var out := "%s%s -> RUIVNode {\n" % [comp_name, _fmt_params_always(params)]
+	var fs := _fmt_setup(setup, 1, o)
+	if fs != "":
+		if _has_leading_blank(setup): out += "\n"
+		out += fs
+		if _has_trailing_blank(setup): out += "\n"
+	out += _pad(1, o) + "return (\n"
+	for nd in nodes:
+		if nd == null:
+			continue
+		out += _fmt_node(nd, 2, o)
+	out += _pad(1, o) + ")\n"
+	out += "}\n"
+	return out
+
+## E-01 plain hook/util: `name(params)[ -> T] {` + the body (same body handling as _fmt_hook).
+static func _fmt_plain_callable(fn_name: String, params: String, body: String, o: Dictionary, ret_hint: String = "") -> String:
+	var hint := "" if ret_hint.strip_edges() == "" else " -> %s" % ret_hint.strip_edges()
+	var out := "%s%s%s {\n" % [fn_name, _fmt_params_always(params), hint]
+	var fb := _fmt_setup(body, 1, o)
+	if fb != "":
+		if _has_leading_blank(body): out += "\n"
+		out += fb
+		if _has_trailing_blank(body): out += "\n"
+	out += "}\n"
+	return out
+
+## A plain decl's `()` is part of its callable signature and always emitted -- a paramless plain
+## decl formatted as bare `Name {` would be reclassified as something else on the next parse.
+static func _fmt_params_always(params: String) -> String:
+	return "(%s)" % params.strip_edges()
 
 static func _fmt_hook(hook_name: String, params: String, body: String, o: Dictionary, ret_hint: String = "") -> String:
 	# The `-> Type` return hint is part of the signature -- dropping it turned every `var x := use_x(...)`

@@ -42,19 +42,25 @@ static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: A
 			"code": d.get("code", ""), "severity": int(d.get("severity", Diag.ERROR)),
 			"message": d.get("message", ""), "off": int(d.get("offset", -1)), "len": int(d.get("length", 0)),
 		})
-	# Schema v3 (M4): adds `exports` (this file's exported decl table -> {name,kind,func}),
-	# `export_hash` (FNV of the sorted table -- the reverse-edge staleness key), and `imports`
-	# ({names, spec} from the preamble; the graph is truth-in-SOURCE per rule 9, this is the cache).
-	# `refs` (component class -> V.comp .gd path) still drives the GUITKX2107 dangling check.
+	# Schema v4 (ES-modules leg): v3's `exports` rows now include the `value`/`util` kinds, and the
+	# file-level `default` records the `export default` decl name ("" = none). `export_hash` covers
+	# the default mark too (a default flip must move it -- reverse-edge staleness). Imports rows
+	# gain `ns`/`def` for the new forms. `refs` still drives the GUITKX2107 dangling check.
 	var exports := exports_of(src)
+	var def_name := default_of(src)
 	var imp_rows: Array = []
 	for im in imports:
 		var nm_list: Array = []
 		for nm in (im.get("names", []) as Array):
 			nm_list.append(str(nm["name"]) if nm is Dictionary else str(nm))
-		imp_rows.append({ "names": nm_list, "spec": str(im.get("spec", "")) })
-	var payload := JSON.stringify({ "v": 3, "src_hash": src_hash(src), "diagnostics": entries, "refs": refs,
-		"exports": exports, "export_hash": export_hash(exports), "imports": imp_rows })
+		var row := { "names": nm_list, "spec": str(im.get("spec", "")) }
+		if str(im.get("ns", "")) != "":
+			row["ns"] = str(im["ns"])
+		if str(im.get("def", "")) != "":
+			row["def"] = str(im["def"])
+		imp_rows.append(row)
+	var payload := JSON.stringify({ "v": 4, "src_hash": src_hash(src), "diagnostics": entries, "refs": refs,
+		"exports": exports, "default": def_name, "export_hash": export_hash(exports, def_name), "imports": imp_rows })
 	var sc_path := diags_path_for(guitkx_path)
 	if FileAccess.file_exists(sc_path) and FileAccess.get_file_as_string(sc_path) == payload:
 		return   # identical verdict -- don't churn the file (the LSP watches sidecars for changes)
@@ -65,9 +71,10 @@ static func write_diags_sidecar(guitkx_path: String, src: String, diagnostics: A
 
 ## This file's EXPORTED top-level declaration table: [{name, kind, func}], func = the emitted static
 ## func a cross-file reference calls (`render` for the binding component, else the decl name).
+## Marker-applied (M1.3): list-exported and default-marked decls count as exported.
 static func exports_of(src: String) -> Array:
 	var binding := _binding_name(src)
-	var decls := Compiler._enumerate_decls(src, 0)
+	var decls: Array = Compiler.analyzed_decls(src, 0)["decls"]
 	var render_comp := Compiler.render_component(decls, binding)   # the component that emits `render`
 	var out: Array = []
 	for dm in decls:
@@ -79,13 +86,20 @@ static func exports_of(src: String) -> Array:
 		out.append({ "name": nm, "kind": kind, "func": fn })
 	return out
 
-## FNV-1a over the export table (sorted) -- the reverse-edge staleness key: when a file's exports
-## change, every importer must recompile so its resolver diagnostics + lowering stay current.
-static func export_hash(exports: Array) -> int:
+## The `export default` decl name of a source ("" when none) -- E-07's sidecar/table channel.
+static func default_of(src: String) -> String:
+	return str(Compiler.analyzed_decls(src, 0)["default"])
+
+## FNV-1a over the export table (sorted) + the default mark -- the reverse-edge staleness key:
+## when a file's exports OR its default flip, every importer must recompile so its resolver
+## diagnostics + lowering stay current (a default flip re-targets `import X from` importers).
+static func export_hash(exports: Array, default_name: String = "") -> int:
 	var parts: Array = []
 	for e in exports:
 		parts.append("%s:%s:%s" % [e["name"], e["kind"], e["func"]])
 	parts.sort()
+	if default_name != "":
+		parts.append("default:%s" % default_name)
 	return src_hash("|".join(parts))
 
 ## True if the sibling .gd is missing or older than the .guitkx source. A zero mtime (the editor
@@ -354,9 +368,11 @@ static func _binding_name(src: String) -> String:
 	if override != "":
 		return override
 	# Binding (no override) = first EXPORTED declaration, else the first declaration (mixed-decl §6.2;
-	# the export-first preference is what keeps a mixed file's public binding stable). Enumerating all
-	# decls also makes this correct for multi-decl files, not just the first one.
-	var decls: Array = Compiler._enumerate_decls(src, 0)
+	# the export-first preference is what keeps a mixed file's public binding stable). analyzed_decls
+	# applies the E-07/E-09 export markers (`export { ... }` / `export default X`) so a list-exported
+	# or default-marked decl counts as exported here exactly as the emitter sees it (M1.3 -- every
+	# identity table keys on this scan).
+	var decls: Array = Compiler.analyzed_decls(src, 0)["decls"]
 	if decls.is_empty():
 		return ""
 	for dm in decls:
@@ -697,11 +713,13 @@ static func compile_all(root: String = "res://") -> Dictionary:
 ## instead of doing a global re-render when an eagerly-loaded hook/module changes. Empty on an
 ## import-free tree. `compiled` = this sweep's compiled entries ({path,…}); edges from source imports.
 static func _compute_refresh_roots(compiled: Array, all_paths: Array, sources: Dictionary) -> Array:
-	var changed_value := {}   # guitkx_path -> true if recompiled AND it exports a hook/module
+	var changed_value := {}   # guitkx_path -> true if recompiled AND it exports an EAGER decl
 	for c in compiled:
 		var p := str(c["path"])
 		for e in exports_of(str(sources.get(p, ""))):
-			if str(e["kind"]) == "hook" or str(e["kind"]) == "module":
+			# Any non-component export (hook/module/value/util) is an eagerly-consumed dependency
+			# of its importers -- a change re-renders through the same refresh-root targeting.
+			if str(e["kind"]) != "component":
 				changed_value[p] = true
 				break
 	if changed_value.is_empty():
@@ -752,8 +770,8 @@ static func _reverse_edge_stale(all_paths: Array, sources: Dictionary) -> Dictio
 			continue
 		var raw := _read_sidecar_raw(str(p))
 		if raw.is_empty() or not raw.has("export_hash"):
-			continue   # no v3 sidecar yet -- is_stale already covers a first/expired compile
-		if int(raw["export_hash"]) != export_hash(exports_of(s)):
+			continue   # no v3+ sidecar yet -- is_stale already covers a first/expired compile
+		if int(raw["export_hash"]) != export_hash(exports_of(s), default_of(s)):
 			changed[str(p)] = true
 	if changed.is_empty():
 		return {}
@@ -771,8 +789,11 @@ static func _reverse_edge_stale(all_paths: Array, sources: Dictionary) -> Dictio
 				break
 	return out
 
-## The VALUE-import target files of `guitkx_path` (files it imports a HOOK or MODULE from) -- the
-## edges of the value-import graph. Component imports are lazy `V.comp` and EXEMPT (they may cycle).
+## The VALUE-import target files of `guitkx_path` -- the edges of the eager-preload graph
+## (2306 + HMR refresh-root propagation). An edge exists for: a named import whose REMOTE decl is
+## a hook/module/value/util; ANY `* as` namespace import (whole-script preload); a default import
+## whose target default decl is anything but a component. Component references are lazy `V.comp`
+## and EXEMPT (they may cycle) -- G-08.
 static func _value_import_edges(guitkx_path: String, sources: Dictionary) -> Array:
 	var src := str(sources.get(guitkx_path, ""))
 	if src == "":
@@ -784,9 +805,20 @@ static func _value_import_edges(guitkx_path: String, sources: Dictionary) -> Arr
 		if not bool(res.get("ok", false)):
 			continue
 		var tbl := RGResolve.decl_table(str(res["guitkx"]))
+		if str(im.get("ns", "")) != "":
+			out[str(res["guitkx"])] = true
+			continue
+		if str(im.get("def", "")) != "":
+			var dflt := str(tbl.get("default", ""))
+			if dflt != "":
+				var dd = (tbl["decls"] as Dictionary).get(dflt)
+				if dd is Dictionary and str(dd["kind"]) != "component":
+					out[str(res["guitkx"])] = true
+			continue
 		for nm in (im["names"] as Array):
-			var d = (tbl["decls"] as Dictionary).get(str(nm["name"]))
-			if d is Dictionary and (str(d["kind"]) == "hook" or str(d["kind"]) == "module"):
+			var remote := str((nm as Dictionary).get("remote", (nm as Dictionary).get("name", "")))
+			var d = (tbl["decls"] as Dictionary).get(remote)
+			if d is Dictionary and str(d["kind"]) != "component":
 				out[str(res["guitkx"])] = true
 				break
 	return out.keys()

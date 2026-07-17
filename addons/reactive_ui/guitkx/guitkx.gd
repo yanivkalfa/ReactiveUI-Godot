@@ -239,6 +239,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 	# (GUITKX2300–2308) join `diags`. Absent a path (string callers), imports stay parsed-but-inert.
 	var import_values: Array = []
 	var import_hooks: Array = []
+	var import_bares: Array = []
 	if self_path != "" and not imports.is_empty():
 		var eff_root := root if root != "" else Config.root_for(self_path)
 		var used_cb := func(nm: String) -> bool: return _name_referenced(source, nm)
@@ -247,6 +248,7 @@ static func compile(source: String, basename: String = "Component", known_compon
 			known[cn] = ir["comps"][cn]   # { gd, func } -> V.comp lowering (Dictionary value)
 		import_values = ir["values"]
 		import_hooks = ir.get("hooks", [])
+		import_bares = ir.get("bares", [])   # named value/util imports -- free-ref alias rewrite
 		diags.append_array(ir["diags"])
 	# 1c. STRICT (M6, post-migration): a cross-file reference to another .guitkx binding that was NOT
 	# imported is GUITKX2305 -- implicit cross-file resolution is an error; the reference must be an
@@ -261,6 +263,10 @@ static func compile(source: String, basename: String = "Component", known_compon
 		for imp in imports:
 			for nm in (imp["names"] as Array):
 				imported[str(nm["name"])] = true
+			if str(imp.get("ns", "")) != "":
+				imported[str(imp["ns"])] = true
+			if str(imp.get("def", "")) != "":
+				imported[str(imp["def"])] = true
 		var eff_root2 := root if root != "" else Config.root_for(self_path)
 		var refd := Resolve.referenced_names(source, component_paths, own_names)
 		for name in refd:
@@ -299,11 +305,38 @@ static func compile(source: String, basename: String = "Component", known_compon
 			diags.append(D.make("GUITKX2101", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	var decls := _enumerate_decls(source, i)
-	# M2.1: a single PLAIN decl also routes through the mixed emitter (its __RUI_DECLS/value/util
-	# shapes) -- only a single WRAPPER decl keeps the byte-frozen legacy paths (E-12).
+	# M1.2: apply the E-07/E-09 export markers (`export { ... }` / `export default X`) onto the
+	# real decl rows BEFORE any routing/binding decision -- 2323/2324/2327 fire here.
+	var marked := apply_export_markers(decls, diags)
+	var default_name := str(marked["default"])
+	# 2325 (E-08): an import-created LOCAL (a named/renamed import, `* as X`, or a default-import
+	# name) colliding with an in-file declaration or another import. Scan-local -- both name sets
+	# are already known; no resolution needed.
+	var decl_names := {}
+	for dm0 in (marked["decls"] as Array):
+		decl_names[str(dm0["name"])] = true
+	var import_locals := {}
+	for imp in imports:
+		var locs: Array = []
+		for nm in (imp["names"] as Array):
+			locs.append({ "name": str(nm["name"]), "at": int(nm["at"]) })
+		if str(imp.get("ns", "")) != "":
+			locs.append({ "name": str(imp["ns"]), "at": int(imp["ns_at"]) })
+		if str(imp.get("def", "")) != "":
+			locs.append({ "name": str(imp["def"]), "at": int(imp["def_at"]) })
+		for lc in locs:
+			var lname := str(lc["name"])
+			if decl_names.has(lname):
+				diags.append(D.make("GUITKX2325", D.ERROR, "import alias `%s` collides with a declaration in this file -- rename the import" % lname, int(lc["at"]), lname.length()))
+			elif import_locals.has(lname):
+				diags.append(D.make("GUITKX2325", D.ERROR, "import alias `%s` collides with another import -- rename the import" % lname, int(lc["at"]), lname.length()))
+			import_locals[lname] = true
+	# M2.1: a single PLAIN decl (or ANY file using export markers) routes through the mixed
+	# emitter (its __RUI_DECLS/value/util/__RUI_DEFAULT shapes) -- only a pure single-WRAPPER
+	# file keeps the byte-frozen legacy paths (E-12).
 	var single_plain := decls.size() == 1 and not bool(decls[0].get("deprecated", false))
 	if decls.size() > 1 or single_plain:
-		r = _compile_mixed(source, decls, class_name_override, basename, diags, known, uss_path, refs)
+		r = _compile_mixed(source, decls, class_name_override, basename, diags, known, uss_path, refs, default_name)
 	else:
 		# G-10: the wrapper keyword parses for the deprecation window with a warning -- never
 		# emitted into the generated .gd (E-12).
@@ -318,17 +351,17 @@ static func compile(source: String, basename: String = "Component", known_compon
 				r = _compile_hook(source, decl["at"], class_name_override, basename, diags)
 			"module":
 				r = _compile_module(source, decl["at"], class_name_override, basename, diags, known, refs)
-	# Value imports (hooks/modules) lower to `const Name = preload("res://…​.gd")[.Member]` header
-	# lines (§6.4), inserted right after the AUTO-GENERATED banner so the imported name is in scope
-	# for the body's `Name.member(...)` references. Components never come through here — they stay
-	# lazy via V.comp.
+	# Value imports (modules + `* as` namespaces) lower to `const Name = preload("res://….gd")
+	# [.Member]` header lines (§6.4 + E-06), inserted right after the AUTO-GENERATED banner so the
+	# imported name is in scope for the body's `Name.member(...)` references. Components never
+	# come through here — they stay lazy via V.comp.
 	if r.get("ok", false) and not import_values.is_empty():
 		r["gd"] = _insert_value_imports(str(r["gd"]), import_values)
-	# Bare top-level hook imports: one deduped `const __RUI_IMP_<file> = preload(path)` per target +
-	# a lexer-aware call-site rewrite `use_x(` -> `__RUI_IMP_<file>.use_x(` (§6.4). A plain
-	# `const use_x = preload(...)` would make `use_x()` call a script resource -- BH-06.
-	if r.get("ok", false) and not import_hooks.is_empty():
-		r["gd"] = _lower_hook_imports(str(r["gd"]), import_hooks)
+	# Bare top-level hook + value/util imports: one deduped `const __RUI_IMP_<hash> = preload(path)`
+	# per target + lexer-aware rewrites (hooks by call site, values/utils by free identifier —
+	# BH-06 generalized; see _lower_alias_imports for why the naive const lowering can't work).
+	if r.get("ok", false) and (not import_hooks.is_empty() or not import_bares.is_empty()):
+		r["gd"] = _lower_alias_imports(str(r["gd"]), import_hooks, import_bares)
 	# The preamble's declared imports ride along on every result (ok or not) so the codegen sidecar
 	# (schema v3) and the resolver can read the graph truth straight from this compile.
 	r["imports"] = imports
@@ -365,6 +398,37 @@ static func _find_decl(source: String, from: int) -> Dictionary:
 		if L.keyword_at(source, i, "export"):
 			has_export = true
 			e = _skip_ws_and_comments(source, i + 6)
+			# E-09 deferred export list: `export { a, b }` — a top-level MARKER row (no decl of its
+			# own). Names must name in-file top-level decls (2323); compile() applies the marks.
+			if e < n and source.unicode_at(e) == L.C_LBRACE:
+				var lb := L.find_matching(source, e)
+				if lb != -1:
+					var lnames: Array = []
+					var lp := e + 1
+					while lp < lb:
+						lp = _skip_ws_and_comments(source, lp)
+						if lp >= lb:
+							break
+						if source[lp] == ",":
+							lp += 1
+							continue
+						var lns := lp
+						while lp < lb and L._is_ident_code(source.unicode_at(lp)):
+							lp += 1
+						if lp == lns:
+							lp += 1   # non-identifier junk -- let compile()'s 2323 anchor land near it
+							continue
+						lnames.append({ "name": source.substr(lns, lp - lns), "at": lns })
+					return { "kind": "export_list", "at": i, "export": true, "start": start,
+						"deprecated": false, "list_names": lnames, "name": "", "name_at": -1, "list_end": lb + 1 }
+			# E-07 default marker: `export default Name` — also a marker row.
+			if L.keyword_at(source, e, "default"):
+				var dn := _skip_ws_and_comments(source, e + 7)
+				var dns := dn
+				while dn < n and L._is_ident_code(source.unicode_at(dn)):
+					dn += 1
+				return { "kind": "export_default", "at": i, "export": true, "start": start,
+					"deprecated": false, "name": source.substr(dns, dn - dns), "name_at": dns, "list_end": dn }
 		if L.keyword_at(source, e, "component"):
 			return { "kind": "component", "at": e, "export": has_export, "start": start, "deprecated": true, "wrapper_kind": "component" }
 		if L.keyword_at(source, e, "hook"):
@@ -539,35 +603,79 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		diags.append(D.make("GUITKX0300", D.ERROR, msg, at, length))
 		return { "ok": false, "end": end }
 	var j := _skip_ws_and_comments(source, imp_i + 6)   # past "import"
-	if j >= n or source[j] != "{":
-		return fail.call("`import` expects `{ Name, ... } from \"specifier\"`", imp_i, maxi(1, line_end - imp_i), line_end)
-	var bclose := L.find_matching(source, j)
-	if bclose == -1:
-		return fail.call("unclosed `{` in import", j, 1, line_end)
-	# Names inside the braces (comma-separated identifiers; ws/comments skipped, offsets tracked).
 	var names: Array = []
-	var p := j + 1
-	while p < bclose:
-		p = _skip_ws_and_comments(source, p)
-		if p >= bclose:
-			break
-		if source[p] == ",":
-			p += 1
-			continue
-		if not L._is_ident_code(source.unicode_at(p)):
-			return fail.call("import names must be identifiers (got `%s`)" % source[p], p, 1, bclose + 1)
-		var s := p
-		while p < bclose and L._is_ident_code(source.unicode_at(p)):
-			p += 1
-		var nm := source.substr(s, p - s)
-		if not _is_valid_identifier(nm):
-			return fail.call("import names must be identifiers (got `%s`)" % nm, s, p - s, bclose + 1)
-		names.append({ "name": nm, "at": s })
-	if names.is_empty():
-		return fail.call("`import { }` names at least one exported declaration", j, bclose - j + 1, bclose + 1)
-	var k := _skip_ws_and_comments(source, bclose + 1)
+	var ns := ""        # `import * as X` namespace local (G-05/E-06)
+	var ns_at := -1
+	var def := ""       # `import X from` bare default local (G-05/E-07)
+	var def_at := -1
+	if j < n and source[j] == "*":
+		# G-05 namespace form: `import * as X from "spec"`.
+		var a2 := _skip_ws_and_comments(source, j + 1)
+		if not L.keyword_at(source, a2, "as"):
+			return fail.call("`import *` must be followed by `as <Name>`", j, 1, line_end)
+		var x := _skip_ws_and_comments(source, a2 + 2)
+		var xs := x
+		while x < n and L._is_ident_code(source.unicode_at(x)):
+			x += 1
+		ns = source.substr(xs, x - xs)
+		if not _is_valid_identifier(ns):
+			return fail.call("`import * as` expects a single identifier", xs, maxi(1, x - xs), line_end)
+		ns_at = xs
+		j = x
+	elif j < n and source[j] == "{":
+		var bclose := L.find_matching(source, j)
+		if bclose == -1:
+			return fail.call("unclosed `{` in import", j, 1, line_end)
+		# Names inside the braces (comma-separated identifiers, each optionally `remote as local`;
+		# ws/comments skipped, offsets tracked). Every entry binds a LOCAL name; `remote` is the
+		# exported name it resolves against (== local for a plain name) — E-08.
+		var p := j + 1
+		while p < bclose:
+			p = _skip_ws_and_comments(source, p)
+			if p >= bclose:
+				break
+			if source[p] == ",":
+				p += 1
+				continue
+			if not L._is_ident_code(source.unicode_at(p)):
+				return fail.call("import names must be identifiers (got `%s`)" % source[p], p, 1, bclose + 1)
+			var s := p
+			while p < bclose and L._is_ident_code(source.unicode_at(p)):
+				p += 1
+			var nm := source.substr(s, p - s)
+			if not _is_valid_identifier(nm):
+				return fail.call("import names must be identifiers (got `%s`)" % nm, s, p - s, bclose + 1)
+			# Optional `as <local>` rename clause (E-08): `nm` becomes the REMOTE name.
+			var q := _skip_ws_and_comments(source, p)
+			if q < bclose and L.keyword_at(source, q, "as"):
+				var l0 := _skip_ws_and_comments(source, q + 2)
+				var ls := l0
+				while l0 < bclose and L._is_ident_code(source.unicode_at(l0)):
+					l0 += 1
+				var lnm := source.substr(ls, l0 - ls)
+				if not _is_valid_identifier(lnm):
+					return fail.call("`as` expects a single identifier", ls, maxi(1, l0 - ls), bclose + 1)
+				names.append({ "name": lnm, "at": ls, "remote": nm, "remote_at": s })
+				p = l0
+			else:
+				names.append({ "name": nm, "at": s, "remote": nm, "remote_at": s })
+		if names.is_empty():
+			return fail.call("`import { }` names at least one exported declaration", j, bclose - j + 1, bclose + 1)
+		j = bclose + 1
+	elif j < n and L._is_ident_code(source.unicode_at(j)) and not L.keyword_at(source, j, "from"):
+		# G-05 default form: `import X from "spec"` — binds the target's `export default` under X.
+		var ds := j
+		while j < n and L._is_ident_code(source.unicode_at(j)):
+			j += 1
+		def = source.substr(ds, j - ds)
+		if not _is_valid_identifier(def):
+			return fail.call("`import` expects `{ Name, ... }`, `* as Name`, or a default-import name", ds, maxi(1, j - ds), line_end)
+		def_at = ds
+	else:
+		return fail.call("`import` expects `{ Name, ... } from \"specifier\"`", imp_i, maxi(1, line_end - imp_i), line_end)
+	var k := _skip_ws_and_comments(source, j)
 	if not L.keyword_at(source, k, "from"):
-		return fail.call("`import { ... }` must be followed by `from \"specifier\"`", imp_i, maxi(1, k - imp_i), line_end)
+		return fail.call("`import ...` must be followed by `from \"specifier\"`", imp_i, maxi(1, k - imp_i), line_end)
 	# ws-only, NOT skip_noncode: skip_noncode would leap the specifier STRING itself (it treats string
 	# literals as non-code), landing us past the closing quote.
 	k = _skip_ws_only(source, k + 4)   # past "from"
@@ -582,7 +690,7 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 	if qe == -1 or (nl != -1 and nl < qe):
 		return fail.call("unterminated import specifier string", k, 1, line_end)
 	var spec := source.substr(k + 1, qe - k - 1)
-	return { "ok": true, "names": names, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
+	return { "ok": true, "names": names, "ns": ns, "ns_at": ns_at, "def": def, "def_at": def_at, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
 
 ## The CANONICAL import specifier from `from_guitkx` to `target_guitkx` (extensionless). The single
 ## source of truth for BOTH the strict-2305 hint (here) and the codemod (`guitkx_migrate._specifier`
@@ -670,28 +778,48 @@ static func _insert_after_banner(gd: String, block: String) -> String:
 		return head + "\n" + block + rest.substr(1)   # keep the one blank line after the banner
 	return head + block + rest
 
-## Lower bare top-level hook imports (§6.4): one deduped `const __RUI_IMP_<hash> = preload(<gd>)` per
-## target file, then rewrite each imported hook's bare call site `use_x(` -> `__RUI_IMP_<hash>.use_x(`.
-## The rewrite runs on the EMITTED gd (GDScript lexis) so it skips strings/comments and never touches
-## the `__RUI_HOOK_SIG` string literal (fingerprints stay on the bare name -- family key stability).
-static func _lower_hook_imports(gd: String, hooks: Array) -> String:
-	var consts := {}    # gd path -> const identifier
-	var aliases := {}   # hook name -> const identifier
+## Lower bare top-level hook + value/util imports (§6.4 + E-05/E-08): one deduped
+## `const __RUI_IMP_<hash> = preload(<gd>)` per target file, then rewrite each imported name's
+## use sites onto that const: hooks by CALL site (`use_x(` -> `__RUI_IMP_<hash>.<remote>(`),
+## values/utils by FREE IDENTIFIER (any bare occurrence -- a value is data, referenced without
+## `(`). Why this shape and not the naive `const local = preload(gd).remote`: GDScript rejects a
+## static-var member access as a const initializer ("isn't a constant expression" -- engine-
+## verified 2026-07-18), so the whole-script const + member rewrite is the ONLY lowering that
+## works uniformly for static var/static func members while keeping the eager preload edge
+## (G-08/2306 semantics) intact. Same mechanism as BH-06, generalized with local/remote names.
+## The rewrites run on the EMITTED gd (GDScript lexis) so they skip strings/comments and never
+## touch the `__RUI_HOOK_SIG` string literal (fingerprints stay on the bare name -- family key
+## stability). Hooks and values/utils share ONE const per target (two passes emitting separate
+## consts for the same target would be a duplicate-declaration parse error).
+static func _lower_alias_imports(gd: String, hooks: Array, bares: Array) -> String:
+	var consts := {}       # gd path -> const identifier
+	var call_aliases := {} # local hook name -> { c: const identifier, remote }
+	var ref_aliases := {}  # local value/util name -> { c: const identifier, remote }
 	for h in hooks:
 		var g := str(h["gd"])
 		if not consts.has(g):
 			consts[g] = "__RUI_IMP_%08x" % (hash(g) & 0xFFFFFFFF)
-		aliases[str(h["name"])] = consts[g]
-	var rewritten := _rewrite_bare_calls(gd, aliases)
+		call_aliases[str(h["name"])] = { "c": consts[g], "remote": str(h.get("remote", h["name"])) }
+	for b in bares:
+		var g2 := str(b["gd"])
+		if not consts.has(g2):
+			consts[g2] = "__RUI_IMP_%08x" % (hash(g2) & 0xFFFFFFFF)
+		ref_aliases[str(b["name"])] = { "c": consts[g2], "remote": str(b.get("remote", b["name"])) }
+	var rewritten := _rewrite_bare_names(gd, call_aliases, true)
+	rewritten = _rewrite_bare_names(rewritten, ref_aliases, false)
 	var lines: Array = []
 	for g in consts:
 		lines.append("const %s = preload(%s)" % [str(consts[g]), _gd_str(g)])
 	return _insert_after_banner(rewritten, "\n".join(lines) + "\n")
 
-## Rewrite a bare call `name(` -> `<alias>.name(` for every `name` in `aliases`, lexer-aware (GDScript
-## lexis): strings/comments copied verbatim, and a `.`- or identifier-prefixed occurrence (a member
-## call `x.name(` or a longer identifier) is left alone. Mirrors _apply_hook_aliases' guards exactly.
-static func _rewrite_bare_calls(src: String, aliases: Dictionary) -> String:
+## Rewrite a bare occurrence of each `aliases` key -> `<const>.<remote>`, lexer-aware (GDScript
+## lexis): strings/comments copied verbatim, and a `.`- or identifier-prefixed occurrence (a
+## member access `x.name` or a longer identifier) is left alone. `calls_only` restricts the
+## rewrite to CALL sites (`name(`) -- the hook path's shipped shape; values/utils rewrite every
+## free occurrence. Mirrors _apply_hook_aliases' guards exactly.
+static func _rewrite_bare_names(src: String, aliases: Dictionary, calls_only: bool) -> String:
+	if aliases.is_empty():
+		return src
 	var out := ""
 	var i := 0
 	var n := src.length()
@@ -704,11 +832,12 @@ static func _rewrite_bare_calls(src: String, aliases: Dictionary) -> String:
 		if i == 0 or (not L._is_ident_code(src.unicode_at(i - 1)) and src.unicode_at(i - 1) != L.C_DOT):
 			var matched := ""
 			for name in aliases:
-				if L.keyword_at(src, i, str(name)) and _is_call_at(src, i + str(name).length()):
+				if L.keyword_at(src, i, str(name)) and (not calls_only or _is_call_at(src, i + str(name).length())):
 					matched = str(name)
 					break
 			if matched != "":
-				out += str(aliases[matched]) + "." + matched
+				var al: Dictionary = aliases[matched]
+				out += str(al["c"]) + "." + str(al["remote"])
 				i += matched.length()
 				continue
 		out += src[i]
@@ -772,6 +901,11 @@ static func _enumerate_decls(source: String, from: int) -> Array:
 			name = source.substr(ns, j - ns)
 			name_at = ns
 			end = _decl_body_end(source, j, str(d["kind"]))
+		elif str(d["kind"]) == "export_list" or str(d["kind"]) == "export_default":
+			# E-07/E-09 marker rows: no body of their own; extent = the parsed span.
+			name = str(d.get("name", ""))
+			name_at = int(d.get("name_at", -1))
+			end = int(d["list_end"])
 		else:
 			name = str(d.get("name", ""))
 			name_at = int(d.get("name_at", -1))
@@ -785,7 +919,7 @@ static func _enumerate_decls(source: String, from: int) -> Array:
 		# and emitter) without re-scanning the header a second time.
 		if not deprecated:
 			for key in ["params", "params_at", "ret", "ret_at", "body_open", "cross_guard",
-				"eq_style", "value_start", "type_text"]:
+				"eq_style", "value_start", "type_text", "list_names"]:
 				if d.has(key):
 					row[key] = d[key]
 		out.append(row)
@@ -793,6 +927,58 @@ static func _enumerate_decls(source: String, from: int) -> Array:
 			break   # unterminated body -- let the parser diagnose; stop enumerating
 		scan = end
 	return out
+
+## Apply the E-07/E-09 export MARKER rows (`export { a, b }`, `export default X`) onto the real
+## declaration rows: a listed/defaulted name's decl gains export=true; the marker rows are
+## validated (2323 not-a-decl, 2324 duplicate export, 2327 duplicate default) and the default
+## name is extracted. Returns { decls (REAL rows only, export applied), default: String,
+## markers: Array }. Mutates the rows in `decls` in place (they are per-call dictionaries).
+static func apply_export_markers(decls: Array, diags: Array) -> Dictionary:
+	var real: Array = []
+	var markers: Array = []
+	var by_name := {}
+	for dm in decls:
+		var kd := str(dm["kind"])
+		if kd == "export_list" or kd == "export_default":
+			markers.append(dm)
+		else:
+			real.append(dm)
+			by_name[str(dm["name"])] = dm
+	var def_name := ""
+	for mk in markers:
+		if str(mk["kind"]) == "export_list":
+			for le in (mk.get("list_names", []) as Array):
+				var nm := str(le["name"])
+				var at := int(le["at"])
+				if not by_name.has(nm):
+					diags.append(D.make("GUITKX2323", D.ERROR, "`export { ... }` names `%s`, which is not a top-level declaration in this file" % nm, at, nm.length()))
+					continue
+				if bool((by_name[nm] as Dictionary)["export"]):
+					diags.append(D.make("GUITKX2324", D.ERROR, "`%s` is already exported -- remove the duplicate export" % nm, at, nm.length()))
+					continue
+				(by_name[nm] as Dictionary)["export"] = true
+		else:
+			var dnm := str(mk["name"])
+			var dat := int(mk["name_at"])
+			if def_name != "":
+				diags.append(D.make("GUITKX2327", D.ERROR, "duplicate `export default` -- a file has at most one default export", int(mk["at"]), 14))
+				continue
+			if dnm == "" or not by_name.has(dnm):
+				diags.append(D.make("GUITKX2323", D.ERROR, "`export default` names `%s`, which is not a top-level declaration in this file" % dnm, (dat if dat >= 0 else int(mk["at"])), maxi(1, dnm.length())))
+				continue
+			def_name = dnm
+			# A default export IS an export (M1.3): it joins the public surface (and the
+			# binding's first-exported rule) even without an inline `export` prefix. It is NOT a
+			# 2324 duplicate when the decl also carries inline `export` -- ES allows both.
+			(by_name[dnm] as Dictionary)["export"] = true
+	return { "decls": real, "default": def_name, "markers": markers }
+
+## The one-call analysis every identity table keys on (M1.3): enumerate + apply export markers.
+## Shared by compile(), codegen `_binding_name`/`exports_of`, and the resolver `decl_table` so
+## binding/export/default truth can never diverge between the emitter and the tables.
+static func analyzed_decls(source: String, from: int = 0) -> Dictionary:
+	var throwaway: Array = []
+	return apply_export_markers(_enumerate_decls(source, from), throwaway)
 
 ## Index just past a declaration's closing `}` given `name_end` (the char after the decl name), or
 ## -1 if the body is missing/unterminated. Mirrors the parsers' shape: `[(params)] [-> Type(hook)] { … }`,
@@ -1668,9 +1854,11 @@ static func render_component(decls: Array, binding: String) -> String:
 ## inner `class Name:` blocks. `__RUI_DECLS` records each decl's kind/sig/export for HMR (§6.3); the
 ## legacy `__RUI_KIND`/`__RUI_HOOK_SIG` consts are kept for old HMR readers. Single-decl files never
 ## reach here — they keep the byte-identical _compile_component/_compile_hook/_compile_module paths.
-static func _compile_mixed(source: String, decls: Array, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, uss_path: String = "", refs: Dictionary = {}) -> Dictionary:
+static func _compile_mixed(source: String, decls: Array, class_name_override: String, basename: String, diags: Array, known: Dictionary = {}, uss_path: String = "", refs: Dictionary = {}, default_name: String = "") -> Dictionary:
 	var n := source.length()
-	# 1. Content BETWEEN declarations (and after the last) is GUITKX2105 -- a file is a pure sequence.
+	# 1. Content BETWEEN declarations (and after the last) is GUITKX2105 -- a file is a pure
+	# sequence. Marker rows (export list / default) participate here with their own extents, so
+	# the marker text itself is never junk-flagged.
 	var cursor := int(decls[0]["next"])
 	for di in range(1, decls.size()):
 		var jk := _first_real(source, cursor, int(decls[di]["start"]))
@@ -1687,6 +1875,12 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 		if tje == -1:
 			tje = n
 		diags.append(_content_diag(source, tj, maxi(1, tje - tj), "invalid content between declarations"))
+		return { "ok": false, "gd": "", "diagnostics": diags }
+	# From here on, only the REAL declaration rows matter -- the markers were applied/validated
+	# by compile()'s apply_export_markers pass and emit nothing of their own.
+	decls = decls.filter(func(dm): return str(dm["kind"]) != "export_list" and str(dm["kind"]) != "export_default")
+	if decls.is_empty():
+		diags.append(D.make("GUITKX2101", D.ERROR, "no declarations found (export markers alone declare nothing)"))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	# 2. Duplicate top-level names collide in one script -> GUITKX2505.
 	var seen := {}
@@ -1835,6 +2029,10 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 		row += ", \"export\": %s }," % ("true" if bool(dm["export"]) else "false")
 		out += row + "\n"
 	out += "}\n\n"
+	# E-07: the default-export marker, readable via get_script_constant_map like the other
+	# __RUI_* consts. Absent entirely when the file has no default -- old outputs stay valid.
+	if default_name != "":
+		out += "const __RUI_DEFAULT := %s\n\n" % _gd_str(default_name)
 	out += "const __RUI_KIND := \"mixed\"\n\n"
 	var binding_sig := ""
 	if comp_parses.has(binding) and comp_parses[binding] != null:

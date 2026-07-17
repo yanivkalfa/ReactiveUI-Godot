@@ -47,6 +47,22 @@ func _test_injector_dedupe() -> void:
 	# _has_const_decl is line-anchored: a mid-line mention of the name is NOT a declaration.
 	_check_true(RUIHmr_._has_const_decl("const Foo = 1\n", "Foo"), "injector: _has_const_decl matches a real const line")
 	_check_true(not RUIHmr_._has_const_decl("var x = Foo\n", "Foo"), "injector: _has_const_decl ignores a usage site")
+	# M5.2 (ES-modules leg): generated files now hold `static var <name>` VALUE declarations --
+	# splicing a `const X` above a same-named `static var X` is a duplicate declaration =
+	# reload ERR_PARSE_ERROR. The skip covers both spellings.
+	_check_true(RUIHmr_._has_const_decl("static var Foo := 1\n", "Foo"), "injector: _has_const_decl matches a static var value decl")
+	var with_static := "class_name Panel\nextends RefCounted\nstatic var HudHooks := 1\nstatic func render():\n\treturn HudHooks\n"
+	_check_true(RUIHmr_._inject_unregistered_bindings(with_static, bindings) == with_static, "M5.2: injector skips a name already static-var-declared (no duplicate)")
+	# ES-modules: a mixed file whose only eager decl is a VALUE (or util) classifies as
+	# module-like for refresh purposes -- its importers consumed it eagerly.
+	var val_mixed := GDScript.new()
+	val_mixed.source_code = "extends RefCounted\nconst __RUI_DECLS := { \"C\": { \"kind\": \"component\", \"sig\": \"\", \"export\": true }, \"w\": { \"kind\": \"value\", \"export\": true } }\nconst __RUI_KIND := \"mixed\"\nconst __RUI_HOOK_SIG := \"\"\nstatic var w := 1\nstatic func render(_p, _c): return null\n"
+	val_mixed.reload()
+	_check_true(RUIHmr_._is_module(val_mixed), "M5.1: a mixed file with a VALUE decl drives importer refresh (kind value)")
+	var util_mixed := GDScript.new()
+	util_mixed.source_code = "extends RefCounted\nconst __RUI_DECLS := { \"fmt\": { \"kind\": \"util\", \"export\": true } }\nconst __RUI_KIND := \"mixed\"\nconst __RUI_HOOK_SIG := \"\"\nstatic func fmt(): return 1\n"
+	util_mixed.reload()
+	_check_true(RUIHmr_._is_module(util_mixed), "M5.1: a util-only mixed file drives importer refresh (kind util)")
 
 	# BH-15: a MIXED file (component + a hook/module) is classified _is_module==true (its value decl
 	# drives a global/targeted refresh) YET its render component's __RUI_HOOK_SIG must still be compared

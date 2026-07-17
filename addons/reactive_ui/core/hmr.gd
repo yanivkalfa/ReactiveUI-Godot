@@ -199,20 +199,25 @@ static func _is_module(scr: GDScript) -> bool:
 		return kind != "component"
 	return not (scr as GDScript).source_code.contains("static func render(")
 
-## True if a line-anchored `const <name>` declaration exists in `src` (M5/A6c injector dedupe).
+## True if a line-anchored `const <name>` OR `static var <name>` declaration exists in `src`
+## (M5/A6c injector dedupe). The `static var` alternative is the ES-modules leg: generated files
+## now hold `static var <name>` value declarations, and splicing a `const X` above a same-named
+## `static var X` is a duplicate declaration = reload ERR_PARSE_ERROR (the A6c failure class).
 static func _has_const_decl(src: String, name: String) -> bool:
 	var re := RegEx.new()
-	re.compile("(?m)^const[ \\t]+" + name + "\\b")
+	re.compile("(?m)^(const|static var)[ \\t]+" + name + "\\b")
 	return re.search(src) != null
 
-## True if this generated script's `__RUI_DECLS` table declares any hook or module (M5). Absent
-## table (single-decl component/hook/module file) -> false; those use the __RUI_KIND path above.
+## True if this generated script's `__RUI_DECLS` table declares any EAGER decl -- hook, module,
+## value, or util (M5 + ES-modules leg: values/utils are eagerly consumed by importers exactly
+## like hooks/modules, so a change re-renders through the same refresh-root path). Absent table
+## (single-decl component/hook/module file) -> false; those use the __RUI_KIND path above.
 static func _has_value_decl(scr: GDScript) -> bool:
 	var decls: Variant = (scr as GDScript).get_script_constant_map().get("__RUI_DECLS")
 	if not (decls is Dictionary):
 		return false
 	for nm in (decls as Dictionary):
 		var kind := str(((decls as Dictionary)[nm] as Dictionary).get("kind", ""))
-		if kind == "hook" or kind == "module":
+		if kind == "hook" or kind == "module" or kind == "value" or kind == "util":
 			return true
 	return false
