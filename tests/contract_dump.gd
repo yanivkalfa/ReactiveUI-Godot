@@ -95,8 +95,10 @@ func _derive(src: String, basename: String) -> Dictionary:
 	return { "ok": bool(r["ok"]), "diagnostics": diags, "windows": windows, "markup": markup }
 
 ## The same decl walk as the LSP's markupWindows(): component windows directly and inside modules,
-## hooks skipped. Deliberately NOT typo-recovering (the compiler's _find_decl is exact) — the
-## declScan-recovery asymmetry is pinned by the *.pending.guitkx fixtures.
+## hooks/utils/values/markers skipped. ES-modules leg: plain components (signature-classified, no
+## keyword) carry their own `body_open`; wrapper components keep the keyword-anchored body walk.
+## Deliberately NOT typo-recovering (the compiler's _find_decl is exact) — the declScan-recovery
+## asymmetry is pinned by the *.pending.guitkx fixtures. MIRROR: workspaceIndex.ts markupWindows.
 func _collect_windows(src: String, from: int, to: int, out: Array) -> void:
 	var i := from
 	while i < to:
@@ -104,8 +106,14 @@ func _collect_windows(src: String, from: int, to: int, out: Array) -> void:
 		if d["kind"] == "" or int(d["at"]) >= to:
 			break
 		var at := int(d["at"])
+		var plain: bool = not bool(d.get("deprecated", true))
 		if d["kind"] == "component":
-			var b := _decl_body(src, at, true)
+			var b: Dictionary
+			if plain:
+				var close := L.find_matching_markup(src, int(d["body_open"]))
+				b = {} if close == -1 else { "start": int(d["body_open"]) + 1, "close": close }
+			else:
+				b = _decl_body(src, at, true)
 			if b.is_empty():
 				i = at + 1
 				continue
@@ -119,9 +127,18 @@ func _collect_windows(src: String, from: int, to: int, out: Array) -> void:
 				if int(split["m_end"]) > int(split["m_start"]):
 					out.append({ "start": int(b["start"]) + int(split["m_start"]), "end": int(b["start"]) + int(split["m_end"]) })
 			i = int(b["close"]) + 1
-		elif d["kind"] == "hook":
-			var h: Dictionary = Compiler._parse_hook_at(src, at, [])
-			i = int(h["next"]) if h["ok"] else at + 1
+		elif d["kind"] == "hook" or d["kind"] == "util":
+			if plain:
+				var hc := L.find_matching(src, int(d["body_open"]))
+				i = (hc + 1) if hc != -1 else at + 1
+			else:
+				var h: Dictionary = Compiler._parse_hook_at(src, at, [])
+				i = int(h["next"]) if h["ok"] else at + 1
+		elif d["kind"] == "value":
+			var ve: int = Compiler._value_end(src, int(d["value_start"]))
+			i = ve if ve != -1 else at + 1
+		elif d["kind"] == "export_list" or d["kind"] == "export_default":
+			i = int(d["list_end"])
 		elif d["kind"] == "module":
 			var mb := _decl_body(src, at)
 			if mb.is_empty():

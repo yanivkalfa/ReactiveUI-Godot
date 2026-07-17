@@ -1,6 +1,6 @@
 import { DemoBox } from "~/examples/demos/demo_box"
 
-export component DemoCounter {
+export DemoCounter() -> RUIVNode {
   var s = useState(0)
   return (
     <DemoBox title="Counter — useState">

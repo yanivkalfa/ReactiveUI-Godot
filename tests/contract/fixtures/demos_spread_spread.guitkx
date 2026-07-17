@@ -1,6 +1,6 @@
-@class_name DemoSpread
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoSpread {
+export DemoSpread() -> RUIVNode {
   var n = useState(0)
   var shared = { "custom_minimum_size": Vector2(140, 0), "text": "shared" }
   return (

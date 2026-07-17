@@ -1,25 +1,18 @@
 {
-	"diagnostics": [
-		{
-			"code": "GUITKX2320",
-			"len": 9,
-			"off": 207,
-			"severity": 1
-		}
-	],
+	"diagnostics": [],
 	"markup": [
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":262,\"attrs\":[{\"at\":279,\"end\":367,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"margin_left\\\": 20, \\\"margin_top\\\": 20, \\\"margin_right\\\": 20, \\\"margin_bottom\\\": 20}\",\"vat\":287}],\"children\":[{\"at\":375,\"attrs\":[{\"at\":390,\"end\":418,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 12}\",\"vat\":398}],\"children\":[{\"at\":428,\"attrs\":[{\"at\":435,\"end\":449,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"title\",\"vat\":442},{\"at\":450,\"end\":514,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 24, \\\"font_color\\\": Color(0.55, 0.8, 1.0)}\",\"vat\":458}],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":526,\"attrs\":[],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"HSeparator\"},{\"at\":549,\"code\":\"children\",\"t\":\"expr\",\"vat\":551}],\"line\":8,\"t\":\"el\",\"tag\":\"VBoxContainer\"}],\"line\":7,\"t\":\"el\",\"tag\":\"MarginContainer\"}]"
+			"tree": "[{\"at\":250,\"attrs\":[{\"at\":267,\"end\":355,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"margin_left\\\": 20, \\\"margin_top\\\": 20, \\\"margin_right\\\": 20, \\\"margin_bottom\\\": 20}\",\"vat\":275}],\"children\":[{\"at\":363,\"attrs\":[{\"at\":378,\"end\":406,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 12}\",\"vat\":386}],\"children\":[{\"at\":416,\"attrs\":[{\"at\":423,\"end\":437,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"title\",\"vat\":430},{\"at\":438,\"end\":502,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 24, \\\"font_color\\\": Color(0.55, 0.8, 1.0)}\",\"vat\":446}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":514,\"attrs\":[],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"HSeparator\"},{\"at\":537,\"code\":\"children\",\"t\":\"expr\",\"vat\":539}],\"line\":6,\"t\":\"el\",\"tag\":\"VBoxContainer\"}],\"line\":5,\"t\":\"el\",\"tag\":\"MarginContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 610,
-			"start": 257
+			"end": 598,
+			"start": 245
 		}
 	]
 }

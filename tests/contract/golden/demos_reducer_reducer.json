@@ -1,25 +1,18 @@
 {
-	"diagnostics": [
-		{
-			"code": "GUITKX2320",
-			"len": 9,
-			"off": 25,
-			"severity": 1
-		}
-	],
+	"diagnostics": [],
 	"markup": [
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":253,\"attrs\":[{\"at\":262,\"end\":313,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useReducer — actions instead of raw setters\",\"vat\":269}],\"children\":[{\"at\":321,\"attrs\":[{\"at\":328,\"end\":355,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"State: %d\\\" % r[0]\",\"vat\":335},{\"at\":356,\"end\":383,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 28}\",\"vat\":364}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":393,\"attrs\":[{\"at\":408,\"end\":435,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":416}],\"children\":[{\"at\":445,\"attrs\":[{\"at\":453,\"end\":463,\"kind\":\"str\",\"name\":\"text\",\"value\":\"dec\",\"vat\":459},{\"at\":464,\"end\":502,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): r[1].call(\\\"dec\\\")\",\"vat\":476}],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":514,\"attrs\":[{\"at\":522,\"end\":532,\"kind\":\"str\",\"name\":\"text\",\"value\":\"inc\",\"vat\":528},{\"at\":533,\"end\":571,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): r[1].call(\\\"inc\\\")\",\"vat\":545}],\"children\":[],\"line\":16,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":583,\"attrs\":[{\"at\":591,\"end\":603,\"kind\":\"str\",\"name\":\"text\",\"value\":\"reset\",\"vat\":597},{\"at\":604,\"end\":644,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): r[1].call(\\\"reset\\\")\",\"vat\":616}],\"children\":[],\"line\":17,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":14,\"t\":\"el\",\"tag\":\"HBoxContainer\"}],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":292,\"attrs\":[{\"at\":301,\"end\":352,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useReducer — actions instead of raw setters\",\"vat\":308}],\"children\":[{\"at\":360,\"attrs\":[{\"at\":367,\"end\":394,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"State: %d\\\" % r[0]\",\"vat\":374},{\"at\":395,\"end\":422,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 28}\",\"vat\":403}],\"children\":[],\"line\":13,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":432,\"attrs\":[{\"at\":447,\"end\":474,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":455}],\"children\":[{\"at\":484,\"attrs\":[{\"at\":492,\"end\":502,\"kind\":\"str\",\"name\":\"text\",\"value\":\"dec\",\"vat\":498},{\"at\":503,\"end\":541,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): r[1].call(\\\"dec\\\")\",\"vat\":515}],\"children\":[],\"line\":15,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":553,\"attrs\":[{\"at\":561,\"end\":571,\"kind\":\"str\",\"name\":\"text\",\"value\":\"inc\",\"vat\":567},{\"at\":572,\"end\":610,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): r[1].call(\\\"inc\\\")\",\"vat\":584}],\"children\":[],\"line\":16,\"t\":\"el\",\"tag\":\"Button\"},{\"at\":622,\"attrs\":[{\"at\":630,\"end\":642,\"kind\":\"str\",\"name\":\"text\",\"value\":\"reset\",\"vat\":636},{\"at\":643,\"end\":683,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): r[1].call(\\\"reset\\\")\",\"vat\":655}],\"children\":[],\"line\":17,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":14,\"t\":\"el\",\"tag\":\"HBoxContainer\"}],\"line\":12,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 688,
-			"start": 248
+			"end": 727,
+			"start": 287
 		}
 	]
 }

@@ -13,8 +13,13 @@ export interface ImportHit {
 }
 
 const IMPORT_RE = /import[ \t]*\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["']/g;
+// G-05 (ES-modules leg): namespace + default clause shapes.
+const IMPORT_NS_RE = /import[ \t]*\*[ \t]*as[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]*["']([^"']+)["']/g;
+const IMPORT_DEFAULT_RE = /import[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]*["']([^"']+)["']/g;
 
-/** If `offset` sits on an import specifier or an imported name, describe it; else null. */
+/** If `offset` sits on an import specifier or an imported name, describe it; else null. Covers all
+ *  G-05 clause shapes: named (with `remote as local` renames -- navigation targets the REMOTE
+ *  declaration), `* as X` namespace, and bare default imports. */
 export function importAt(src: string, offset: number): ImportHit | null {
   IMPORT_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -27,16 +32,32 @@ export function importAt(src: string, offset: number): ImportHit | null {
     const specEnd = specStart + spec.length;
     if (offset >= specStart && offset <= specEnd) return { kind: "spec", spec };
     if (offset >= namesStart && offset <= namesEnd) {
-      // which comma-separated name is the cursor on?
+      // which comma-separated clause is the cursor on? A `remote as local` rename navigates to
+      // the REMOTE name (the declaration that actually exists in the target file -- E-08).
       let p = namesStart;
       for (const raw of namesText.split(",")) {
-        const nm = raw.trim();
-        const at = src.indexOf(nm, p);
-        if (nm && offset >= at && offset <= at + nm.length) return { kind: "name", spec, name: nm };
+        const clause = raw.trim();
+        const at = src.indexOf(clause, p);
+        if (clause && offset >= at && offset <= at + clause.length) {
+          const asM = /^([A-Za-z_][A-Za-z0-9_]*)[ \t]+as[ \t]+[A-Za-z_][A-Za-z0-9_]*$/.exec(clause);
+          return { kind: "name", spec, name: asM ? asM[1] : clause };
+        }
         p += raw.length + 1;
       }
       return { kind: "spec", spec };
     }
+  }
+  IMPORT_NS_RE.lastIndex = 0;
+  while ((m = IMPORT_NS_RE.exec(src)) !== null) {
+    const spec = m[2];
+    if (offset >= m.index && offset <= m.index + m[0].length) return { kind: "spec", spec };
+  }
+  IMPORT_DEFAULT_RE.lastIndex = 0;
+  while ((m = IMPORT_DEFAULT_RE.exec(src)) !== null) {
+    const spec = m[2];
+    // The default-import local binds the target's `export default` decl; the file itself is the
+    // navigation target (the LSP resolves the decl once there).
+    if (offset >= m.index && offset <= m.index + m[0].length) return { kind: "spec", spec };
   }
   return null;
 }

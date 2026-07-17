@@ -1,6 +1,6 @@
 import { DemoBox } from "~/examples/demos/demo_box"
 
-export component DemoReducer {
+export DemoReducer() -> RUIVNode {
   var reducer = func(state, action):
     match action:
       "inc": return state + 1

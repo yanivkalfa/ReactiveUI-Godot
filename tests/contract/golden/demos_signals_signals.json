@@ -1,25 +1,18 @@
 {
-	"diagnostics": [
-		{
-			"code": "GUITKX2320",
-			"len": 9,
-			"off": 25,
-			"severity": 1
-		}
-	],
+	"diagnostics": [],
 	"markup": [
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":64,\"attrs\":[{\"at\":73,\"end\":121,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Signals — shared state, no prop drilling\",\"vat\":80}],\"children\":[{\"at\":129,\"attrs\":[{\"at\":144,\"end\":202,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Two independent components read the SAME RUISignal:\",\"vat\":150},{\"at\":211,\"end\":257,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":219}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":267,\"attrs\":[],\"children\":[],\"line\":9,\"t\":\"el\",\"tag\":\"DemoSignalsDisplay\"},{\"at\":296,\"attrs\":[],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"DemoSignalsDisplay\"},{\"at\":325,\"attrs\":[{\"at\":341,\"end\":371,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Increment shared signal\",\"vat\":347},{\"at\":380,\"end\":455,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): DemoSignalsStore.shared.update(func(v): return v + 1)\",\"vat\":392}],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":5,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":158,\"attrs\":[{\"at\":167,\"end\":215,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Signals — shared state, no prop drilling\",\"vat\":174}],\"children\":[{\"at\":223,\"attrs\":[{\"at\":238,\"end\":296,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Two independent components read the SAME RUISignal:\",\"vat\":244},{\"at\":305,\"end\":351,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":313}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":361,\"attrs\":[],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"DemoSignalsDisplay\"},{\"at\":390,\"attrs\":[],\"children\":[],\"line\":11,\"t\":\"el\",\"tag\":\"DemoSignalsDisplay\"},{\"at\":419,\"attrs\":[{\"at\":435,\"end\":465,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Increment shared signal\",\"vat\":441},{\"at\":474,\"end\":549,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): DemoSignalsStore.shared.update(func(v): return v + 1)\",\"vat\":486}],\"children\":[],\"line\":12,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 476,
-			"start": 59
+			"end": 570,
+			"start": 153
 		}
 	]
 }

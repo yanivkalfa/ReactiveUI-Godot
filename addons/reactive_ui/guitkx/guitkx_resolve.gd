@@ -259,12 +259,20 @@ static func referenced_names(src: String, referenceable: Dictionary, own: Dictio
 				i += 1
 			var word := src.substr(s, i - s)
 			if referenceable.has(word) and not own.has(word):
+				# A DOT-PRECEDED identifier is a member access (`X.entries(`): a use of the
+				# QUALIFIER X, never a free reference to `entries` -- without this guard, hoisted
+				# module members (top-level decls since 0.11.0) got spuriously self-imported by
+				# the codemod on its second run (found by the modernize idempotency gate).
+				var pb := s - 1
+				while pb >= 0 and (src[pb] == " " or src[pb] == "\t"):
+					pb -= 1
+				var dotted := pb >= 0 and src[pb] == "."
 				var prev_lt := s > 0 and src[s - 1] == "<"
 				var j := i
 				while j < n and (src[j] == " " or src[j] == "\t"):
 					j += 1
 				var nxt := src[j] if j < n else ""
-				if prev_lt or nxt == "." or nxt == "(":
+				if not dotted and (prev_lt or nxt == "." or nxt == "("):
 					if not out.has(word):
 						out[word] = (s - 1) if prev_lt else s   # anchor a tag on `<`, a qualified ref on the name
 			continue

@@ -1,10 +1,11 @@
-@class_name DemoStressNative
-
 ## NATIVE stress test — identical bouncing-box workload to DemoStress, but the boxes are raw
 ## ColorRect nodes animated directly (no reconciler). Run this next to "Stress test" to see the
 ## engine's native ceiling vs the library's per-frame reconcile cost, in-game. The only thing the
 ## library renders here is the chrome (status/inputs/button) + the empty box area.
-component DemoStressNative {
+import { DemoBox } from "~/examples/demos/demo_box"
+import * as DemoStressNativeHooks from "./stress_native.hooks"
+
+export DemoStressNative() -> RUIVNode {
   var box_count = useState(300)
   var duration = useState(10.0)
   var count_text = useState("300")

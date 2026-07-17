@@ -1,4 +1,4 @@
-export component DemoKeyedTile(id) {
+export DemoKeyedTile(id) -> RUIVNode {
   var col = useRef(null)
   if col["current"] == null:
     col["current"] = Color(randf() * 0.5 + 0.3, randf() * 0.5 + 0.3, randf() * 0.5 + 0.3)

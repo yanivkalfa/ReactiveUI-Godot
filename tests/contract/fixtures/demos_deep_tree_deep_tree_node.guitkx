@@ -1,6 +1,4 @@
-@class_name DemoDeepTreeNode
-
-component DemoDeepTreeNode(level: int = 0) {
+export DemoDeepTreeNode(level: int = 0) -> RUIVNode {
   return (
     <>
       @if (level <= 0) {

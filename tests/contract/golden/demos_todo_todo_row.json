@@ -1,25 +1,18 @@
 {
-	"diagnostics": [
-		{
-			"code": "GUITKX2320",
-			"len": 9,
-			"off": 25,
-			"severity": 1
-		}
-	],
+	"diagnostics": [],
 	"markup": [
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":80,\"attrs\":[{\"at\":95,\"end\":122,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":103}],\"children\":[{\"at\":130,\"attrs\":[{\"at\":137,\"end\":171,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"•  \\\" + str(item[\\\"text\\\"])\",\"vat\":144},{\"at\":172,\"end\":233,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"size_flags_horizontal\\\": Control.SIZE_EXPAND_FILL}\",\"vat\":180}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":243,\"attrs\":[{\"at\":251,\"end\":261,\"kind\":\"str\",\"name\":\"text\",\"value\":\" ✕ \",\"vat\":257},{\"at\":262,\"end\":309,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): onRemove.call(item[\\\"id\\\"])\",\"vat\":274}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":5,\"t\":\"el\",\"tag\":\"HBoxContainer\"}]"
+			"tree": "[{\"at\":64,\"attrs\":[{\"at\":79,\"end\":106,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":87}],\"children\":[{\"at\":114,\"attrs\":[{\"at\":121,\"end\":155,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"•  \\\" + str(item[\\\"text\\\"])\",\"vat\":128},{\"at\":156,\"end\":217,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"size_flags_horizontal\\\": Control.SIZE_EXPAND_FILL}\",\"vat\":164}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":227,\"attrs\":[{\"at\":235,\"end\":245,\"kind\":\"str\",\"name\":\"text\",\"value\":\" ✕ \",\"vat\":241},{\"at\":246,\"end\":293,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): onRemove.call(item[\\\"id\\\"])\",\"vat\":258}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":3,\"t\":\"el\",\"tag\":\"HBoxContainer\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 336,
-			"start": 75
+			"end": 320,
+			"start": 59
 		}
 	]
 }

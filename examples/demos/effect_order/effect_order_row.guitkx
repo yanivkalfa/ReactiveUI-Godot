@@ -1,5 +1,5 @@
 
-export component DemoEffectOrderRow(idx, append) {
+export DemoEffectOrderRow(idx, append) -> RUIVNode {
   var eff = func():
     append.call("▶ mount row %d" % idx)
     return func(): append.call("■ unmount row %d" % idx)

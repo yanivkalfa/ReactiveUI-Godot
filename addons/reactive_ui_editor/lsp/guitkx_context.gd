@@ -161,8 +161,10 @@ static func _attr_name_before(text: String, from: int) -> String:
 	return text.substr(i + 1, e - i)
 
 static func _is_body_brace(text: String, brace_pos: int) -> bool:
-	# A body brace ({ of component/hook/module/@if/@for/@while/@match/@case/@else/@default) is
-	# preceded by ')' or the words `else`/`default`, or `module <ident>`. Otherwise it's an {expr}.
+	# A body brace ({ of a declaration or @if/@for/@while/@match/@case/@else/@default) is preceded
+	# by ')', the words `else`/`default`, `module <ident>` (window wrapper), a `-> Type` return
+	# annotation (plain E-01 callable header), or a line-leading bare identifier (paramless plain
+	# decl `Name {`). Otherwise it's an {expr}. MIRROR: semanticTokens.ts isBodyBrace.
 	var j := brace_pos - 1
 	while j >= 0 and _is_ws(text.unicode_at(j)):
 		j -= 1
@@ -176,7 +178,15 @@ static func _is_body_brace(text: String, brace_pos: int) -> bool:
 	while j >= 0 and _is_ident_char(text.unicode_at(j)):
 		j -= 1
 	var word := text.substr(j + 1, end - j - 1)
+	var word_start := j + 1
 	if word == "else" or word == "default":
+		return true
+	# `-> Type {` -- the plain-decl return annotation (E-01): the word before `{` is the TYPE,
+	# preceded (after ws) by `->`.
+	var k := word_start - 1
+	while k >= 0 and _is_ws(text.unicode_at(k)):
+		k -= 1
+	if k >= 1 and text.unicode_at(k) == 62 and text.unicode_at(k - 1) == 45:   # '>' after '-'
 		return true
 	# `module Name {`
 	while j >= 0 and _is_ws(text.unicode_at(j)):
@@ -184,7 +194,13 @@ static func _is_body_brace(text: String, brace_pos: int) -> bool:
 	var pend := j + 1
 	while j >= 0 and _is_ident_char(text.unicode_at(j)):
 		j -= 1
-	return text.substr(j + 1, pend - j - 1) == "module"
+	if text.substr(j + 1, pend - j - 1) == "module":
+		return true
+	# Paramless plain decl `Name {` / `export Name {`: the identifier chain before the `{` starts
+	# at the beginning of its line (a top-level declaration header).
+	var ls := text.rfind("\n", word_start - 1) + 1
+	var lead := text.substr(ls, word_start - ls)
+	return lead.strip_edges() == "" or lead.strip_edges() == "export"
 
 static func _tag_name_at(text: String, lt_pos: int) -> String:
 	if lt_pos < 0:

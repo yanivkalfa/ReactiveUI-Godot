@@ -9,7 +9,7 @@
 
 import { skipNoncode, isIdent } from "./scanner";
 import { scanDeclarations } from "./workspaceIndex";
-import { editDistance } from "./declScan";
+import { editDistance, findDecl } from "./declScan";
 
 export interface DeclDiag {
   start: number;
@@ -123,57 +123,88 @@ export function declarationDiags(src: string): DeclDiag[] {
     }
   }
 
-  // T1.3 live mirror of the compiler's GUITKX2105: the compiler compiles ONLY the first top-level
-  // declaration -- any real content after it (a second component, stray text) errors on save, so
-  // squiggle it while typing too instead of letting it sit as a silent ghost.
+  // T1.3 live mirror of the compiler's GUITKX2105 -- ES-modules leg: a file is a SEQUENCE of
+  // declarations, so only content BETWEEN/AFTER decl spans (never a following declaration or an
+  // export marker) is junk. Mirrors _compile_mixed's sequence check: walk each inter-decl gap and
+  // the tail, skipping the E-07/E-09 markers (legal top-level lines the index doesn't record).
   const first = decls.find((d) => d.kind !== "member");
-  if (first) {
-    const junk = firstRealAfter(src, first.declEnd);
-    if (junk !== -1) {
-      let le = src.indexOf("\n", junk);
-      if (le === -1) le = src.length;
-      out.push({
-        start: junk,
-        end: Math.max(junk + 1, le),
-        code: "GUITKX2105",
-        message: `GUITKX2105: invalid top-level content after the \`${first.kind}\` declaration -- one declaration per file (wrap several in \`module Name { ... }\`)`,
-      });
-    }
-    // T2.6: real content BEFORE the first declaration (a stray statement; a misspelled directive
-    // already gets its own 0300 above, so `@...` lines are skipped here).
-    let p2 = 0;
-    while (p2 < first.declStart) {
-      const k = skipNoncode(src, p2);
-      if (k !== p2) {
-        p2 = k;
-        continue;
-      }
-      if (/[ \t\r\n]/.test(src[p2])) {
-        p2++;
-        continue;
-      }
-      if (src[p2] === "@") {
-        const nl = src.indexOf("\n", p2);
-        p2 = nl === -1 ? src.length : nl + 1;
+  const tops = decls.filter((d) => d.kind !== "member" && !d.module).sort((a, b) => a.declStart - b.declStart);
+  const junkInGap = (from: number, to: number): number => {
+    let junk = firstRealAfter(src, from);
+    while (junk !== -1 && junk < to && src.startsWith("export", junk)) {
+      const d2 = findDecl(src, junk, false);
+      if ((d2.kind === "export_list" || d2.kind === "export_default") && d2.listEnd !== undefined) {
+        junk = firstRealAfter(src, d2.listEnd);
         continue;
       }
       break;
     }
-    if (p2 < first.declStart) {
-      let le2 = src.indexOf("\n", p2);
-      if (le2 === -1 || le2 > first.declStart) le2 = first.declStart;
+    return junk !== -1 && junk < to ? junk : -1;
+  };
+  if (tops.length > 0) {
+    const gaps: { from: number; to: number }[] = [];
+    for (let g = 1; g < tops.length; g++) gaps.push({ from: tops[g - 1].declEnd, to: tops[g].declStart });
+    gaps.push({ from: tops[tops.length - 1].declEnd, to: src.length });
+    for (const gap of gaps) {
+      const junk = junkInGap(gap.from, gap.to);
+      if (junk === -1) continue;
+      let le = src.indexOf("\n", junk);
+      if (le === -1 || le > gap.to) le = Math.min(gap.to, src.length);
       out.push({
-        start: p2,
-        end: Math.max(p2 + 1, le2),
+        start: junk,
+        end: Math.max(junk + 1, le),
         code: "GUITKX2105",
-        message: `GUITKX2105: invalid content before the \`${first.kw}\` declaration`,
+        message: "GUITKX2105: invalid content between declarations",
       });
+      break; // one report, like the compiler's first-error stop
+    }
+    // T2.6: real content BEFORE the first declaration (a stray statement; a misspelled directive
+    // already gets its own 0300 above, so `@...` lines are skipped here — and `import` lines are
+    // preamble, never junk).
+    if (first) {
+      let p2 = 0;
+      while (p2 < first.declStart) {
+        const k = skipNoncode(src, p2);
+        if (k !== p2) {
+          p2 = k;
+          continue;
+        }
+        if (/[ \t\r\n]/.test(src[p2])) {
+          p2++;
+          continue;
+        }
+        if (src[p2] === "@") {
+          const nl = src.indexOf("\n", p2);
+          p2 = nl === -1 ? src.length : nl + 1;
+          continue;
+        }
+        if (src.startsWith("import", p2) && !isIdent(src[p2 + 6] ?? "")) {
+          const nl = src.indexOf("\n", p2);
+          p2 = nl === -1 ? src.length : nl + 1;
+          continue;
+        }
+        break;
+      }
+      if (p2 < first.declStart) {
+        let le2 = src.indexOf("\n", p2);
+        if (le2 === -1 || le2 > first.declStart) le2 = first.declStart;
+        out.push({
+          start: p2,
+          end: Math.max(p2 + 1, le2),
+          code: "GUITKX2105",
+          message: `GUITKX2105: invalid content before the \`${first.kw !== "" ? first.kw : first.kind}\` declaration`,
+        });
+      }
     }
   }
 
-  // T2.6 naming (Unity 2100/2203): PascalCase components; use_-prefixed hooks (warning).
+  // T2.6 naming (Unity 2100/2203) + ES-modules (2320/2321): PascalCase components (both forms);
+  // 2203 fires ONLY on deprecated hook wrappers (E-03 -- under E-01 the use_ prefix IS the
+  // classification, a helper without it is simply a util); one 2320 deprecation warning per
+  // wrapper decl; 2321 on the use_-prefixed-returns-RUIVNode cross-guard (E-02).
   for (const d of decls) {
-    if (d.kw === "component" && d.name !== "" && !/^[A-Z]/.test(d.name)) {
+    const isComp = d.kind === "component" || (d.kind === "member" && d.kw === "component");
+    if (isComp && d.name !== "" && !/^[A-Z]/.test(d.name) && !d.crossGuard) {
       out.push({
         start: d.nameStart,
         end: d.nameEnd,
@@ -181,13 +212,30 @@ export function declarationDiags(src: string): DeclDiag[] {
         message: `GUITKX2100: component name \`${d.name}\` must be PascalCase`,
       });
     }
-    if (d.kw === "hook" && d.name !== "" && !d.name.startsWith("use_")) {
+    if (d.kw === "hook" && d.deprecated !== false && d.name !== "" && !d.name.startsWith("use_")) {
       out.push({
         start: d.nameStart,
         end: d.nameEnd,
         code: "GUITKX2203",
         message: `GUITKX2203: hook name \`${d.name}\` should start with \`use_\``,
         severity: "warning",
+      });
+    }
+    if (d.deprecated === true && d.kw !== "" && !d.module) {
+      out.push({
+        start: d.declStart,
+        end: d.declStart + d.kw.length,
+        code: "GUITKX2320",
+        message: `GUITKX2320: the \`${d.kw}\` wrapper keyword is deprecated -- write a plain declaration (the codemod rewrites it: dev/migrate_0_11_0.gd); the wrapper is removed in a later minor`,
+        severity: "warning",
+      });
+    }
+    if (d.crossGuard) {
+      out.push({
+        start: d.nameStart,
+        end: d.nameEnd,
+        code: "GUITKX2321",
+        message: `GUITKX2321: \`${d.name}\` is \`use_\`-prefixed but returns a markup node -- did you mean a component? (components are PascalCase and return RUIVNode)`,
       });
     }
   }

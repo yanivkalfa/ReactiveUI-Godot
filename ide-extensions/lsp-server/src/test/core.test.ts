@@ -269,7 +269,11 @@ test("virtualDoc: one outlier-shallow setup line does not shift the rest (first-
 // The LSP "floor": a misspelled declaration keyword used to make the whole file go dark (no markup
 // window -> no analysis, no diagnostics). declarationDiags reports it live instead of silence.
 test("declarationDiags flags a misspelled `component` keyword (GUITKX2101)", () => {
-  const d = declarationDiags("@class_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
+  // E-01: a typo followed by a real plain-decl shape (`X { ... }` is a paramless util) reads as
+  // junk-before-decl (2105), mirroring the compiler; the pure typo (no decl anywhere) keeps 2101.
+  const shadowed = declarationDiags("@class_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
+  assert.ok(shadowed.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(shadowed)}`);
+  const d = declarationDiags("@class_name X\ncomssponent X\n");
   assert.ok(d.some((x) => x.code === "GUITKX2101" && /did you mean 'component'/.test(x.message)), `got ${JSON.stringify(d)}`);
 });
 
@@ -280,7 +284,7 @@ test("declarationDiags flags a mistyped @class_name value (GUITKX0300)", () => {
 
 test("declarationDiags: a fully typo'd header still reports something, never silence", () => {
   const d = declarationDiags("@clasaas_name X\ncomssponent X {\n\treturn ( <Label /> )\n}\n");
-  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX2101"), `got ${JSON.stringify(d)}`);
+  assert.ok(d.length > 0 && d.some((x) => x.code === "GUITKX0300") && d.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(d)}`);
 });
 
 // G3: a component whose closed body has NO markup return used to be silent live (no markup window →
@@ -313,7 +317,12 @@ test("missingReturnComponents finds module-member components (and only the broke
 });
 
 test("declarationDiags stays silent for a valid header (no false positives)", () => {
-  assert.equal(declarationDiags("@class_name X\ncomponent X {\n\treturn ( <Label /> )\n}\n").length, 0);
+  // A wrapper header now carries exactly the G-10 deprecation warning (2320) and no errors;
+  // the plain E-01 spelling is fully clean.
+  const d = declarationDiags("@class_name X\ncomponent X {\n\treturn ( <Label /> )\n}\n");
+  assert.equal(d.filter((x) => x.severity !== "warning").length, 0, `got ${JSON.stringify(d)}`);
+  assert.ok(d.some((x) => x.code === "GUITKX2320"), `got ${JSON.stringify(d)}`);
+  assert.equal(declarationDiags("@class_name X\nX() -> RUIVNode {\n\treturn ( <Label /> )\n}\n").length, 0);
 });
 
 test("declarationDiags flags a misspelled @class_name DIRECTIVE (@clasaas_name -> GUITKX0300)", () => {
@@ -324,17 +333,19 @@ test("declarationDiags flags a misspelled @class_name DIRECTIVE (@clasaas_name -
   );
 });
 
-// T1.3: the compiler compiles only the FIRST top-level declaration; everything after is GUITKX2105.
-test("T1.3: declarationDiags flags content after the first top-level declaration (GUITKX2105)", () => {
-  const src = "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n";
-  const d = declarationDiags(src);
-  const hit = d.find((x) => x.code === "GUITKX2105");
-  assert.ok(hit, `got ${JSON.stringify(d)}`);
-  assert.equal(src.slice(hit!.start, hit!.end), "component B() {");
+// ES-modules: a file is a SEQUENCE of declarations -- a second decl is LEGAL; only junk after the
+// LAST declaration is 2105.
+test("T1.3: declarationDiags flags content after the LAST top-level declaration (GUITKX2105)", () => {
+  const two = "component A() {\n\treturn ( <Label /> )\n}\ncomponent B() {\n\treturn ( <Label /> )\n}\n";
+  assert.equal(declarationDiags(two).filter((x) => x.code === "GUITKX2105").length, 0, "a second decl is legal");
+  const junk = "component A() {\n\treturn ( <Label /> )\n}\nvar oops = 1\n";
+  const d = declarationDiags(junk);
+  assert.ok(d.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(d)}`);
 });
 
 test("T1.3: trailing comments after the declaration stay clean (no 2105)", () => {
-  assert.equal(declarationDiags("component A() {\n\treturn ( <Label /> )\n}\n# note\n").length, 0);
+  const d = declarationDiags("component A() {\n\treturn ( <Label /> )\n}\n# note\n");
+  assert.equal(d.filter((x) => x.code === "GUITKX2105").length, 0, `got ${JSON.stringify(d)}`);
 });
 
 test("mixed-decl: the index holds EVERY top-level declaration (BH-05)", () => {
@@ -406,7 +417,8 @@ test("T2.6: live naming checks -- 2100 PascalCase error, 2203 use_ warning", () 
 test("T2.6: junk before the first declaration is 2105 live (comments/directives skipped)", () => {
   const d = declarationDiags("var oops = 1\ncomponent A() {\n\treturn ( <Label /> )\n}\n");
   assert.ok(d.some((x) => x.code === "GUITKX2105"), `got ${JSON.stringify(d)}`);
-  assert.equal(declarationDiags("# header\n@class_name A\ncomponent A() {\n\treturn ( <Label /> )\n}\n").length, 0);
+  const clean = declarationDiags("# header\n@class_name A\ncomponent A() {\n\treturn ( <Label /> )\n}\n");
+  assert.equal(clean.filter((x) => x.severity !== "warning").length, 0, `got ${JSON.stringify(clean)}`);
 });
 
 // T2.5: the live routine is the compiler's _validate_hooks ported line-for-line -- same fixtures
@@ -437,25 +449,39 @@ test("T2.1/T2.2: comments and <Fragment> stay clean live", () => {
 
 // Error-recovery: a near-miss keyword at a real declaration position is treated as that declaration
 // (analysis-only) so a typo'd header no longer blacks out markup + embedded checks. [declScan]
-test("findDecl recovers a typo'd keyword only at a real declaration shape", () => {
-  assert.deepEqual(findDecl("comssponent Foo {\n}\n", 0, true), { kind: "component", at: 0 });
-  assert.deepEqual(findDecl("moduel Foo {\n}\n", 0, true), { kind: "module", at: 0 });
-  // a near-miss identifier WITHOUT the `<Name> {` decl shape is NOT recovered (no false positives)
-  assert.deepEqual(findDecl("var content = 5\n", 0, true), { kind: "", at: -1 });
-  // recovery is opt-in: the formatter path (recover=false) never treats a typo as a declaration
-  assert.deepEqual(findDecl("comssponent Foo {\n}\n", 0, false), { kind: "", at: -1 });
+test("findDecl: E-01 classification routes a typo'd wrapper to the plain decl that follows it", () => {
+  // `comssponent Foo {` -- under signature classification, `Foo {` is a REAL paramless util
+  // declaration; the typo'd word is junk before it (the compiler's 2105), not a recovered header.
+  const d1 = findDecl("comssponent Foo {\n}\n", 0, true);
+  assert.equal(d1.kind, "util");
+  assert.equal(d1.name, "Foo");
+  const d2 = findDecl("moduel Foo {\n}\n", 0, true);
+  assert.equal(d2.kind, "util");
+  // a stray statement like `var content = 5` classifies its tail (`content = 5`) as a VALUE
+  // decl -- the compiler view; declarationDiags then flags the leading `var` as 2105 junk.
+  const dv = findDecl("var content = 5" + String.fromCharCode(10), 0, true);
+  assert.equal(dv.kind, "value");
+  assert.equal(dv.name, "content");
+  // the formatter path (recover=false) classifies identically -- plain decls need no recovery
+  assert.equal(findDecl("comssponent Foo {\n}\n", 0, false).kind, "util");
 });
 
-test("markupWindows survives a typo'd header AND a malformed tag (does not go dark)", () => {
-  // typo'd keyword + otherwise-parseable markup -> the markup window is still found
-  assert.equal(markupWindows("comssponent Card() {\n\treturn (\n\t\t<VBox />\n\t)\n}\n").length, 1);
+test("markupWindows: a typo'd wrapper classifies as a util (no window -- matches the compiler); malformed tags keep theirs", () => {
+  // E-01: `comssponent Card() {` reads as junk + a plain UTIL `Card()` (no -> RUIVNode), so there
+  // is no markup window -- byte-for-byte the compiler's view (contract fixture t05, promoted from
+  // pending when the two sides converged). Embedded analysis still covers the body as a util.
+  assert.equal(markupWindows("comssponent Card() {\n\treturn (\n\t\t<VBox />\n\t)\n}\n").length, 0);
+  // the PLAIN spelling of the same component has its window
+  assert.equal(markupWindows("Card() -> RUIVNode {\n\treturn (\n\t\t<VBox />\n\t)\n}\n").length, 1);
   // a malformed `<  a>` tag inside the markup no longer collapses the whole window (structural span)
   assert.equal(markupWindows("component C() {\n\treturn (\n\t\t<VBox>\n\t\t\t<  a>\n\t\t</VBox>\n\t)\n}\n").length, 1);
 });
 
-test("buildVirtualDoc emits a render body for a typo'd header (embedded analysis survives)", () => {
+test("buildVirtualDoc emits a body for a typo'd header (embedded analysis survives as a util)", () => {
+  // E-01: the typo'd wrapper classifies `Card()` as a plain util -- its body is still analyzed
+  // (the never-go-dark guarantee holds through classification now, not recovery).
   const { text } = buildVirtualDoc("comssponent Card() {\n\tvar s = useState(0)\n\treturn ( <Label /> )\n}\n");
-  assert.ok(/static func render/.test(text) && text.includes("var s = useState(0)"), text);
+  assert.ok(/static func Card/.test(text) && text.includes("var s = useState(0)"), text);
 });
 
 test("buildVirtualDoc declares imported names so embedded analysis resolves them (imports leg)", () => {

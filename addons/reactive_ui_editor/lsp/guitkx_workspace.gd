@@ -12,15 +12,14 @@ static var _index: Dictionary = {}
 static var _paths: Array = []   # every .guitkx seen by the scan (incl. hook-only files w/o tags)
 static var _scanned := false
 
-static var _decl_re: RegEx = null
+## ES-modules leg: declarations are SIGNATURE-classified (plain `Name(...) -> RUIVNode {` etc.),
+## which no regex can express -- the index consumes the compiler's own declaration scan
+## (RUIGuitkx.analyzed_decls, the single source of truth every identity table shares) instead of
+## the retired wrapper-keyword regex. The @class_name regex stays (a line-shaped directive).
+const _Compiler := preload("res://addons/reactive_ui/guitkx/guitkx.gd")
 static var _cn_re: RegEx = null
 
 static func _res() -> void:
-	if _decl_re == null:
-		_decl_re = RegEx.new()
-		# `(?:export[ \t]+)?` — a top-level declaration may carry an `export` visibility prefix (0.10.0
-		# imports leg); the prefix is non-capturing so groups stay 1=kind, 2=name.
-		_decl_re.compile("(?m)^[ \\t]*(?:export[ \\t]+)?(component|hook|module)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
 	if _cn_re == null:
 		_cn_re = RegEx.new()
 		_cn_re.compile("(?m)^[ \\t]*@class_name[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
@@ -88,13 +87,13 @@ static func _index_source(path: String, text: String) -> void:
 		override = cn.get_string(1)
 		override_off = cn.get_start(1)
 	var first := true
-	for m in _decl_re.search_all(text):
-		var kind := m.get_string(1)
-		var name := m.get_string(2)
-		var name_off := m.get_start(2)
-		if kind == "hook":
+	for dm in (_Compiler.analyzed_decls(text, 0)["decls"] as Array):
+		var kind := str(dm["kind"])
+		var name := str(dm["name"])
+		var name_off := int(dm["name_at"])
+		if kind == "hook" or kind == "value" or kind == "util":
 			first = false
-			continue  # hooks are not tags
+			continue  # only components (and modules, window) are tags
 		var tag := name
 		var off := name_off
 		if first and override != "":

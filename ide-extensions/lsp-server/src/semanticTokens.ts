@@ -141,8 +141,11 @@ function scanWindow(src: string, start: number, end: number, emit: (off: number,
 }
 
 // A `{` opens a BODY (markup) — vs a child/attr {expr} (GDScript) — when it follows a `)` (component
-// params or `@if/@for/@while/@match` condition), `@else`/`@default`, or a `component`/`hook`/`module`
-// NAME (paren-less declaration). Shared by enclosingTag + markupDiagnostics + semanticTokens.
+// params or `@if/@for/@while/@match` condition), `@else`/`@default`, a `component`/`hook`/`module`
+// NAME (paren-less wrapper declaration, deprecation window), a `-> Type` return annotation (plain
+// E-01 callable header), or a line-leading bare identifier (paramless plain decl `Name {`). Shared
+// by enclosingTag + markupDiagnostics + semanticTokens + context.ts. MIRROR: guitkx_context.gd
+// _is_body_brace.
 export function isBodyBrace(src: string, bi: number): boolean {
   let b = bi - 1;
   while (b >= 0 && /\s/.test(src[b])) b--;
@@ -153,6 +156,10 @@ export function isBodyBrace(src: string, bi: number): boolean {
   const w = src.slice(s + 1, b + 1);
   if (w === "else" || w === "default") return true;
   if (w.length > 0) {
+    // `-> Type {` — the word before `{` is the TYPE of a plain-decl return annotation (E-01).
+    let ka = s;
+    while (ka >= 0 && /[ \t]/.test(src[ka])) ka--;
+    if (ka >= 1 && src[ka] === ">" && src[ka - 1] === "-") return true;
     // a decl name with no params: `component X {` / `hook use_x {` / `module M {`
     let k = s;
     while (k >= 0 && /\s/.test(src[k])) k--;
@@ -160,6 +167,11 @@ export function isBodyBrace(src: string, bi: number): boolean {
     while (ks >= 0 && isIdent(src[ks])) ks--;
     const kw = src.slice(ks + 1, k + 1);
     if (kw === "component" || kw === "hook" || kw === "module") return true;
+    // paramless plain decl `Name {` / `export Name {`: the identifier chain before the `{` starts
+    // at the beginning of its line (a top-level declaration header).
+    const ls = src.lastIndexOf("\n", s) + 1;
+    const lead = src.slice(ls, s + 1).trim();
+    if (lead === "" || lead === "export") return true;
   }
   return false;
 }

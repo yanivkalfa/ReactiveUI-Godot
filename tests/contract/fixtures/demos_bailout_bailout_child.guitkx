@@ -1,6 +1,4 @@
-@class_name DemoBailoutChild
-
-component DemoBailoutChild {
+export DemoBailoutChild() -> RUIVNode {
   var renders = useRef(0)
   renders["current"] += 1
   return (

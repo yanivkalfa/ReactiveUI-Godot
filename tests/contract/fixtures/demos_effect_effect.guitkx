@@ -1,6 +1,6 @@
-@class_name DemoEffect
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoEffect {
+export DemoEffect() -> RUIVNode {
   var on = useState(true)
   var log = useRef([])
   var eff = func():

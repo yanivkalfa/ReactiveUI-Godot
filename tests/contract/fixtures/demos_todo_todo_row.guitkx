@@ -1,6 +1,4 @@
-@class_name DemoTodoRow
-
-component DemoTodoRow(item, onRemove) {
+export DemoTodoRow(item, onRemove) -> RUIVNode {
   return (
     <HBoxContainer style={ {"separation": 8} }>
       <Label text={ "•  " + str(item["text"]) } style={ {"size_flags_horizontal": Control.SIZE_EXPAND_FILL} } />

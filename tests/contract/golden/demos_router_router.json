@@ -1,25 +1,18 @@
 {
-	"diagnostics": [
-		{
-			"code": "GUITKX2320",
-			"len": 9,
-			"off": 292,
-			"severity": 1
-		}
-	],
+	"diagnostics": [],
 	"markup": [
 		{
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":330,\"code\":\"V.router({ \\\"initial\\\": \\\"/\\\" }, [V.fc(DemoRouterInner.render)])\",\"t\":\"expr\",\"vat\":332}]"
+			"tree": "[{\"at\":368,\"code\":\"V.router({ \\\"initial\\\": \\\"/\\\" }, [V.fc(DemoRouterInner.render)])\",\"t\":\"expr\",\"vat\":370}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 397,
-			"start": 325
+			"end": 435,
+			"start": 363
 		}
 	]
 }

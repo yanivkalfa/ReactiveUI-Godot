@@ -804,16 +804,18 @@ func _test_multifile() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
 	GuitkxWorkspace.rescan()
 
-# W5/G12 — document outline: pure declaration scan, offsets anchored at the NAME.
+# W5/G12 — document outline: the compiler's declaration scan, offsets anchored at the NAME.
+# ES-modules leg: the fixture uses REAL syntax (the outline consumes RUIGuitkx.analyzed_decls,
+# which parses actual declarations, not a keyword regex) and covers wrapper + plain forms.
 func _test_outline() -> void:
 	const Outline := preload("res://addons/reactive_ui_editor/lsp/guitkx_outline.gd")
-	var src := "hook useThing(x):\n\treturn x\n\nmodule Helpers\n\tfunc one():\n\t\tpass\n\tstatic func two():\n\t\tpass\n"
+	var src := "hook useThing(x) {\n\treturn x\n}\nmodule Helpers {\n\thook one() {\n\t\treturn 1\n\t}\n\thook two() {\n\t\treturn 2\n\t}\n}\n"
 	var entries: Array = Outline.outline_of(src)
-	_ok(entries.size() == 4, "outline lists hook + module + 2 member funcs")
+	_ok(entries.size() == 4, "outline lists hook + module + 2 member funcs (got %d)" % entries.size())
 	var names: Array = entries.map(func(e): return str((e as Dictionary).get("name", "")))
-	_ok(names == ["useThing", "Helpers", "one", "two"], "outline sorted by offset")
+	_ok(names == ["useThing", "Helpers", "one", "two"], "outline sorted by offset (got %s)" % str(names))
 	var kinds: Array = entries.map(func(e): return str((e as Dictionary).get("kind", "")))
-	_ok(kinds == ["hook", "module", "func", "func"], "outline kinds classified")
+	_ok(kinds == ["hook", "module", "func", "func"], "outline kinds classified (got %s)" % str(kinds))
 	var anchored := true
 	for e in entries:
 		var ed := e as Dictionary
@@ -828,6 +830,13 @@ func _test_outline() -> void:
 	_ok(str((centries[0] as Dictionary).get("name", "")) == "Foo", "component name listed")
 	_ok(Outline.outline_of("").is_empty(), "empty text -> empty outline")
 	_ok(Outline.outline_of("# just a comment\n").is_empty(), "no declarations -> empty outline")
+	# ES-modules: plain declarations outline with their signature-classified kinds + export flags.
+	var plain := "export w := 1\nexport fmt(x: int) -> String {\n\treturn str(x)\n}\nuse_t() -> int {\n\treturn 1\n}\nexport Foo() -> RUIVNode {\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var pentries: Array = Outline.outline_of(plain)
+	var pkinds: Array = pentries.map(func(e): return str((e as Dictionary).get("kind", "")))
+	_ok(pkinds == ["value", "util", "hook", "component"], "plain decls outline with E-01 kinds (got %s)" % str(pkinds))
+	var pexports: Array = pentries.map(func(e): return bool((e as Dictionary).get("export", false)))
+	_ok(pexports == [true, true, false, true], "outline carries export badges (got %s)" % str(pexports))
 
 # W5/G24 — find-bar replace: step replaces the selected match, All is one undo step and
 # terminates even when the replacement contains the query.
