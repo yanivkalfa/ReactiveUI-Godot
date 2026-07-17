@@ -3,6 +3,8 @@ import { Box, Link, Typography } from '@mui/material'
 import { CodeBlock } from '../../components/CodeBlock/CodeBlock'
 import Styles from '../GettingStarted/GettingStartedPage.style'
 import {
+  MIGRATE_0_11_CMD,
+  MIGRATE_0_11_BEFORE_AFTER,
   MIGRATE_0_10_CMD,
   MIGRATE_0_10_BEFORE_AFTER,
   MIGRATE_0_9_CMD,
@@ -18,10 +20,40 @@ export const MigrationsPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       Every breaking release ships a <strong>codemod</strong> that rewrites your project in place —
-      run one command, review the diff, done. Both codemods ship inside the addon
+      run one command, review the diff, done. The codemods ship inside the addon
       (<code>addons/reactive_ui/dev/</code>), are idempotent (safe to re-run), and never touch your
       hand-written <code>.gd</code> scripts&apos; logic. The full step-by-step guides live in the
       repository; this page is the quick path.
+    </Typography>
+
+    {/* ── 0.10 → 0.11 ────────────────────────────────────────────────── */}
+    <Typography variant="h5" component="h2" gutterBottom sx={{ mt: 3 }}>
+      0.10 → 0.11 — ES modules: a file IS a module
+    </Typography>
+    <Typography variant="body1" paragraph>
+      0.11 replaces the <code>component</code> / <code>hook</code> / <code>module</code> wrapper
+      keywords with <strong>plain, signature-classified declarations</strong>: a callable annotated{' '}
+      <code>{'-> RUIVNode'}</code> is a component, a <code>use_</code>-prefixed callable is a hook,
+      any other callable is a util, and <code>name := expr</code> is a value export (the full
+      classification table lives on the <strong>.guitkx Language Reference</strong> page, under
+      Declarations). It also opens the full ES import surface — rename, namespace
+      (<code>* as</code>), default imports, and <code>{'export { … }'}</code> /{' '}
+      <code>export default</code>. The old wrappers still compile for this minor with one{' '}
+      <code>GUITKX2320</code> warning per declaration, and are removed in a later minor. The
+      codemod is whole-project and idempotent:
+    </Typography>
+    <CodeBlock language="bash" code={MIGRATE_0_11_CMD} />
+    <CodeBlock language="jsx" code={MIGRATE_0_11_BEFORE_AFTER} />
+    <Typography variant="body1" paragraph sx={{ mt: 2 }}>
+      <code>module M {'{ … }'}</code> files hoist their members to top level with{' '}
+      <code>@class_name M</code> preserving the binding (dotted <code>M.member(...)</code> callers
+      keep working), and importers of a former module flip to <code>import * as M</code> — the
+      codemod does both for you. Commit before running; review the diff after. Full story, value
+      exports, and the new <code>2320–2327</code> diagnostics:{' '}
+      <Link href={`${REPO}/MIGRATION-0.11.md`} target="_blank" rel="noopener">
+        MIGRATION-0.11.md
+      </Link>{' '}
+      — grammar reference on the Imports &amp; Exports and Files &amp; Modules pages.
     </Typography>
 
     {/* ── 0.9 → 0.10 ─────────────────────────────────────────────────── */}
@@ -29,10 +61,11 @@ export const MigrationsPage: FC = () => (
       0.9 → 0.10 — imports &amp; exports
     </Typography>
     <Typography variant="body1" paragraph>
-      0.10 makes cross-file references explicit and strict: referencing another file&apos;s
-      component/hook/module now requires an <code>import</code>, and the target must be{' '}
-      <code>export</code>ed. The codemod exports every declaration and writes the import lines for
-      each file&apos;s references:
+      0.10 made cross-file references explicit and strict: referencing another file&apos;s
+      declaration requires an <code>import</code>, and the target must be <code>export</code>ed.
+      The codemod exports every declaration and writes the import lines for each file&apos;s
+      references (the before/after below is shown in 0.10-era wrapper syntax, as the codemod wrote
+      it at the time):
     </Typography>
     <CodeBlock language="bash" code={MIGRATE_0_10_CMD} />
     <CodeBlock language="jsx" code={MIGRATE_0_10_BEFORE_AFTER} />
@@ -67,7 +100,7 @@ export const MigrationsPage: FC = () => (
     </Typography>
 
     <Typography variant="body2" paragraph sx={{ mt: 2 }}>
-      Upgrading across both? Run them in order: the 0.9 codemod first, then the 0.10 one.
+      Upgrading across several? Run the codemods in order: 0.9 first, then 0.10, then 0.11.
     </Typography>
   </Box>
 )

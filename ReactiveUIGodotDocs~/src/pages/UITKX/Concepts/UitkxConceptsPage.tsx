@@ -39,7 +39,7 @@ export const UitkxConceptsPage: FC = () => (
           <ListItemText primary="useState returns a [value, setter] array; you update state by calling the setter, e.g. s[1].call(s[0] + 1)." />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary="Three file types: component (.guitkx) for UI, hook (module with the hook keyword) for reusable state logic, and module (.style.guitkx, .utils.guitkx) for styles, types, and utilities." />
+          <ListItemText primary="A .guitkx file is a module holding plain top-level declarations, classified by signature: a callable annotated -> RUIVNode is a component, a use_-prefixed callable is a hook, any other callable is a util, and name := expr is a value. export marks what other files may import." />
         </ListItem>
       </List>
     </Box>

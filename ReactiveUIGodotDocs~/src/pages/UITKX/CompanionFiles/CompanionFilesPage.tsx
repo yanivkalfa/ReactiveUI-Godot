@@ -19,37 +19,74 @@ import {
   EXAMPLE_UITKX,
   EXAMPLE_GENERATED_CLASS,
   EXAMPLE_DIRECTORY,
+  EXAMPLE_MIXED,
   EXAMPLE_HOOKS,
   EXAMPLE_STYLES,
-  EXAMPLE_TYPES,
   EXAMPLE_UTILS,
+  EXAMPLE_CLASS_NAME,
   EXAMPLE_STANDALONE,
 } from './CompanionFilesPage.example'
 
 export const CompanionFilesPage: FC = () => (
   <Box sx={Styles.root}>
     <Typography variant="h4" component="h1" gutterBottom>
-      Companion Files
+      Files &amp; Modules
     </Typography>
     <Typography variant="body1" paragraph>
-      The editor plugin compiles every <code>.guitkx</code> file into a <strong>sibling{' '}
-      <code>.gd</code> class</strong> — <code>class_name</code>, <code>extends RefCounted</code>, a{' '}
-      <code>render()</code> method, and everything else. A component can work with just a single{' '}
-      <code>.guitkx</code> file.
+      Since 0.11.0, <strong>a <code>.guitkx</code> file IS a module</strong> — the ES-module model.
+      A file holds any number of plain top-level declarations (components, hooks, utils, values,
+      in any mix), <code>export</code> is the only visibility mechanism, and every file compiles to
+      a <strong>sibling <code>.gd</code> class</strong> — <code>class_name</code>,{' '}
+      <code>extends RefCounted</code>, and a static member per declaration.
     </Typography>
     <Typography variant="body1" paragraph>
-      Companion files are <strong>optional</strong> <code>.guitkx</code> files that live next to a
-      component and use the <code>hook</code> and <code>module</code> keywords. Use them to extract
-      reusable state logic, styles, type definitions, or utility functions. Each companion also
-      compiles to its own sibling <code>.gd</code> with its own <code>class_name</code>.
+      There are no wrapper keywords: what a declaration <em>is</em> is read from its signature
+      alone. <code>Name(params) {'-> RUIVNode { … }'}</code> is a component, a{' '}
+      <code>use_</code>-prefixed callable is a hook, any other callable is a util, and{' '}
+      <code>name := expr</code> is a value.
     </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>
-      The .guitkx component
+      Per-file scope &amp; export
     </Typography>
     <Typography variant="body1" paragraph>
-      Here is a component that uses styles, types, and utility functions defined in companion files
-      (referenced by the companion's <code>class_name</code>):
+      Every declaration is scoped to its file. Prefixing it with <code>export</code> makes it
+      importable from other files; without <code>export</code> it is <strong>file-private</strong> —
+      unreachable cross-file, invisible to imports, and free to be renamed or deleted without
+      breaking anyone. One file may mix all four kinds:
+    </Typography>
+    <CodeBlock language="jsx" code={EXAMPLE_MIXED} />
+    <Typography variant="body2" paragraph>
+      Values compile to <code>static var</code> on the generated class (GDScript cannot verify
+      constant-foldability at parse time, so <code>const</code> is not an option) —{' '}
+      <strong>treat them as constants</strong>; mutating an imported value is undefined behavior
+      across hot-reloads.
+    </Typography>
+
+    <Typography variant="h5" component="h2" gutterBottom>
+      Binding identity &amp; <code>@class_name</code>
+    </Typography>
+    <Typography variant="body1" paragraph>
+      The generated class needs one global <code>class_name</code> (GDScript has no namespaces).
+      That <strong>binding</strong> is inferred: an <code>@class_name</code> override if present,
+      else the <strong>first exported declaration&apos;s name</strong>, else the first
+      declaration&apos;s name. For most files you never think about it — the file&apos;s main
+      exported component names the class.
+    </Typography>
+    <Typography variant="body1" paragraph>
+      <code>@class_name</code> remains as the <strong>binding / interop escape hatch</strong>: it
+      pins the class name explicitly, which is exactly how pre-0.11 <code>module M {'{ … }'}</code>{' '}
+      files migrate — members hoist to top level and <code>@class_name M</code> keeps the global
+      identity, so hand-written <code>M.member(...)</code> callers keep working unchanged:
+    </Typography>
+    <CodeBlock language="jsx" code={EXAMPLE_CLASS_NAME} />
+
+    <Typography variant="h5" component="h2" gutterBottom>
+      A component file and its neighbors
+    </Typography>
+    <Typography variant="body1" paragraph>
+      Splitting a feature across sibling files is a convention, not a mechanism — each file is just
+      a module. Here is a component that imports hooks, styles, and utilities from its neighbors:
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_UITKX} />
 
@@ -57,25 +94,8 @@ export const CompanionFilesPage: FC = () => (
       Generated class
     </Typography>
     <Typography variant="body1" paragraph>
-      On save, the plugin creates a sibling GDScript class from the <code>.guitkx</code> file. Its
-      identity comes from one thing:
-    </Typography>
-    <List>
-      <ListItem disablePadding>
-        <ListItemText
-          primary={
-            <>
-              <strong>Class name</strong> — inferred: an <code>@class_name</code> override if
-              present, else the first <code>export</code>ed declaration's name, else the first
-              declaration's name.
-            </>
-          }
-        />
-      </ListItem>
-    </List>
-    <Typography variant="body1" paragraph>
-      There are no C#-style namespaces in GDScript — a global <code>class_name</code> is how the
-      class is referenced project-wide. For the example above, the generator produces:
+      On save, the plugin creates a sibling GDScript class from the <code>.guitkx</code> file. For
+      the example above, the generator produces:
     </Typography>
     <CodeBlock language="gdscript" code={EXAMPLE_GENERATED_CLASS} />
 
@@ -83,57 +103,50 @@ export const CompanionFilesPage: FC = () => (
       Directory layout
     </Typography>
     <Typography variant="body1" paragraph>
-      Place companion files in the <strong>same directory</strong> as the <code>.guitkx</code>{' '}
-      component. Each source produces one sibling <code>.gd</code>:
+      Each source produces one sibling <code>.gd</code>. The dotted suffixes (
+      <code>.hooks.</code>, <code>.style.</code>, <code>.utils.</code>) are naming conventions
+      only — the compiler treats every <code>.guitkx</code> identically:
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_DIRECTORY} />
 
     <Typography variant="h5" component="h2" gutterBottom>
-      File types
+      What goes in which file
     </Typography>
     <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
       <Table size="small">
         <TableHead>
           <TableRow>
             <TableCell><strong>File</strong></TableCell>
-            <TableCell><strong>Keyword</strong></TableCell>
+            <TableCell><strong>Typical declarations</strong></TableCell>
             <TableCell><strong>Purpose</strong></TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           <TableRow>
             <TableCell><code>MyComponent.guitkx</code></TableCell>
-            <TableCell><code>component</code></TableCell>
+            <TableCell>components (<code>{'-> RUIVNode'}</code>)</TableCell>
             <TableCell>UI markup + setup code</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>MyComponent.hooks.guitkx</code></TableCell>
-            <TableCell><code>module</code> + <code>hook</code></TableCell>
+            <TableCell>hooks (<code>use_*</code>)</TableCell>
             <TableCell>Custom hooks — reusable state logic</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>MyComponent.style.guitkx</code></TableCell>
-            <TableCell><code>module</code></TableCell>
+            <TableCell>values (<code>name := …</code>)</TableCell>
             <TableCell>Style dictionaries, colours, sizes</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><code>MyComponent.types.guitkx</code></TableCell>
-            <TableCell><code>module</code></TableCell>
-            <TableCell>Enums and shared data shapes used by the component</TableCell>
-          </TableRow>
-          <TableRow>
             <TableCell><code>MyComponent.utils.guitkx</code></TableCell>
-            <TableCell><code>module</code></TableCell>
-            <TableCell>Pure helper / formatting functions</TableCell>
+            <TableCell>utils + values</TableCell>
+            <TableCell>Pure helper / formatting functions and shared constants</TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </TableContainer>
     <Typography variant="body2" paragraph>
-      All companion files end in <code>.guitkx</code>. The naming conventions (
-      <code>.hooks.</code>, <code>.style.</code>, <code>.utils.</code>) are recommendations, not
-      enforced rules — since 0.10 a single file may even hold several declarations. What <em>is</em>{' '}
-      enforced is the wiring: mark a companion&apos;s declaration <code>export</code> and{' '}
+      What <em>is</em> enforced is the wiring: mark a declaration <code>export</code> and{' '}
       <code>import</code> it where it&apos;s used (see the Imports &amp; Exports page) — an implicit
       cross-file reference is a compile error that tells you the exact import to add.
     </Typography>
@@ -142,44 +155,50 @@ export const CompanionFilesPage: FC = () => (
       Hooks — reusable state logic
     </Typography>
     <Typography variant="body1" paragraph>
-      Declare custom hooks inside a <code>module</code> with the <code>hook</code> keyword. Hook
-      bodies are pure GDScript — they can call <code>Hooks.useState</code>,{' '}
-      <code>Hooks.useEffect</code>, <code>Hooks.useMemo</code>, and any other built-in hook. Use{' '}
-      <code>{'-> ReturnType'}</code> to declare the return type:
+      A hook is any top-level callable whose name starts with <code>use_</code> — the prefix is the
+      classification, no keyword involved. Hook bodies are pure GDScript — they can call{' '}
+      <code>Hooks.useState</code>, <code>Hooks.useEffect</code>, <code>Hooks.useMemo</code>, and any
+      other built-in hook. Use <code>{'-> ReturnType'}</code> to declare the return type:
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_HOOKS} />
 
     <Typography variant="h5" component="h2" gutterBottom>
-      Modules — styles
+      Values — styles and constants
     </Typography>
     <Typography variant="body1" paragraph>
-      Use the <code>module</code> keyword to gather styles, constants, and helpers. Give the module
-      its own <code>class_name</code> and reference its members from the component (e.g.{' '}
-      <code>PlayerCardStyle.CARD</code>):
+      Value exports gather styles, colours, and sizes. Import a value file as a namespace (
+      <code>import * as PlayerCardStyle from &quot;./PlayerCard.style&quot;</code>) to keep the
+      familiar dotted access:
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_STYLES} />
 
     <Typography variant="h5" component="h2" gutterBottom>
-      Modules — type definitions
-    </Typography>
-    <CodeBlock language="jsx" code={EXAMPLE_TYPES} />
-
-    <Typography variant="h5" component="h2" gutterBottom>
-      Modules — utility functions
+      Utils — helper functions
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_UTILS} />
 
     <Typography variant="h5" component="h2" gutterBottom>
-      Standalone modules
+      Standalone shared files
     </Typography>
     <Typography variant="body1" paragraph>
-      Not everything has to be tied to a component. Standalone modules with a unique name are useful
-      for values shared across multiple components:
+      Not everything has to be tied to a component. A standalone file of value exports is useful
+      for constants shared across multiple components:
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_STANDALONE} />
 
     <Typography variant="h5" component="h2" gutterBottom>
-      Compile & hot-reload
+      File renames are semantic
+    </Typography>
+    <Typography variant="body1" paragraph>
+      Because a file&apos;s <strong>identity is its path</strong>, renaming a file changes module
+      identity: importers&apos; specifiers must update (the editor addon cleans up the old outputs
+      and the next sweep flags stale specifiers with <code>GUITKX2300</code>), and the hot-reload
+      identity of its file-private members changes too — their state resets on the next reload.
+      These are accepted, documented semantics of the file-as-module model.
+    </Typography>
+
+    <Typography variant="h5" component="h2" gutterBottom>
+      Compile &amp; hot-reload
     </Typography>
     <List>
       <ListItem disablePadding>
@@ -202,10 +221,9 @@ export const CompanionFilesPage: FC = () => (
         <ListItemText
           primary={
             <>
-              A companion <code>hook</code> or <code>module</code> file reloads the same way,
-              but since any component may call into it, editing one triggers a <em>global</em>{' '}
-              re-render — every mounted component re-runs (state preserved), not just the one
-              file that changed.
+              A file of hooks, utils, or values reloads the same way, but since any component may
+              call into it, editing one triggers a <em>global</em> re-render — every mounted
+              component re-runs (state preserved), not just the one file that changed.
             </>
           }
         />
@@ -224,18 +242,19 @@ export const CompanionFilesPage: FC = () => (
     </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>
-      When not to use companion files
+      When not to split files
     </Typography>
     <List>
       <ListItem disablePadding>
-        <ListItemText primary="Simple components — if a component has no shared styles or types, it doesn't need any companion files." />
+        <ListItemText primary="Simple components — if a component has no shared styles or types, one file with one declaration is perfect." />
       </ListItem>
       <ListItem disablePadding>
         <ListItemText
           primary={
             <>
-              Small helpers — for code that only the component uses, prefer
-              setup code before <code>return ()</code> inside the <code>.guitkx</code> file itself.
+              Small helpers — for code that only one component uses, prefer a file-private util (no{' '}
+              <code>export</code>) in the same file, or plain setup code before{' '}
+              <code>return ()</code>.
             </>
           }
         />

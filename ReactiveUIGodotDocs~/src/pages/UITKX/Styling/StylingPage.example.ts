@@ -57,7 +57,7 @@ RUIStyleSheet.register("card", {
 })
 
 # Reference the bundle by name via the \`classes\` prop.
-component Card() {
+Card() -> RUIVNode {
   return (
     <PanelContainer classes={ ["card"] }>
       <Label text="Styled by the 'card' bundle" style={ {"font_color": Color.WHITE} } />
@@ -76,7 +76,7 @@ RUIStyleSheet.merge({
 
 export const EXAMPLE_USS_MULTIPLE = `# The \`classes\` prop takes an Array — bundles merge left-to-right, so later
 # names override earlier ones for any keys they share.
-component ThemedPanel() {
+ThemedPanel() -> RUIVNode {
   return (
     <PanelContainer classes={ ["card", "danger"] }>
       <Label classes={ ["title"] } text="card + danger (danger's font_color wins)" />
@@ -86,7 +86,7 @@ component ThemedPanel() {
 
 export const EXAMPLE_USS_COMBINED = `# Bundles handle the shared baseline; inline \`style\` handles dynamic, per-render
 # values and always wins last in the merge.
-component Card(is_selected) {
+Card(is_selected) -> RUIVNode {
   var highlight = {
       "border_color": Color(0, 0.67, 1) if is_selected else Color(0, 0, 0, 0),
       "border_width_all": 2,

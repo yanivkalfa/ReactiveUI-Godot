@@ -1,5 +1,6 @@
-export const CONTEXT_HANDLE_API = `# Create a context handle (React parity for createContext). Declare it once, at
-# module scope, and share the SAME handle between provider and consumers.
+export const CONTEXT_HANDLE_API = `# Create a context handle (React parity for createContext). Declare it once —
+# a top-level value or a script static — and share the SAME handle between
+# provider and consumers.
 Hooks.createContext(default_value = null, name = "") -> RUIContext
 
 # Provide a value for all descendants (call inside a component's setup body).
@@ -9,7 +10,7 @@ Hooks.provideContext(handle_or_key, value) -> void
 # no ancestor provides it. (String keys return null when unprovided.)
 Hooks.useContext(handle_or_key)   # auto-prefixed to Hooks.useContext in .guitkx`
 
-export const CONTEXT_HANDLE_EXAMPLE = `# app_contexts.gd — declare the handle ONCE, at module scope, so every file
+export const CONTEXT_HANDLE_EXAMPLE = `# app_contexts.gd — declare the handle ONCE, as a script static, so every file
 # references the same object. Its identity is the map key, so it can never
 # collide with an unrelated feature that happens to also use "theme".
 class_name AppContexts
@@ -19,7 +20,7 @@ extends RefCounted
 static var Theme: RUIContext = Hooks.createContext({ "accent": Color.CYAN }, "Theme")
 
 # ── Provider ────────────────────────────────────────────────
-component AppRoot(my_theme: Dictionary) {
+AppRoot(my_theme: Dictionary) -> RUIVNode {
   # Pass the HANDLE (not a string) plus the value.
   Hooks.provideContext(AppContexts.Theme, my_theme)
 
@@ -31,7 +32,7 @@ component AppRoot(my_theme: Dictionary) {
 }
 
 # ── Consumer ────────────────────────────────────────────────
-component Toolbar() {
+Toolbar() -> RUIVNode {
   # Pass the same handle. Returns my_theme, or the handle's default if no
   # AppRoot provided one above this component.
   var theme = Hooks.useContext(AppContexts.Theme)
@@ -43,13 +44,15 @@ component Toolbar() {
   )
 }`
 
-export const CONTEXT_HANDLE_MODULE_EXAMPLE = `# Idiomatic single-file form: the handle lives in a module alongside the
-# component that owns it, created with an inline default value.
-module ThemePanel {
-  const Theme = Hooks.createContext({ "accent": Color.CYAN }, "Theme")
-}
+export const CONTEXT_HANDLE_MODULE_EXAMPLE = `# Idiomatic single-file form: the handle is a top-level value in the same file
+# as the component that owns it, created with an inline default value.
+# @class_name keeps the file's binding "ThemePanel" so the dotted references
+# below stay stable no matter which declaration comes first.
+@class_name ThemePanel
 
-component ThemePanel(accent: Color = Color.MAGENTA) {
+Theme := Hooks.createContext({ "accent": Color.CYAN }, "Theme")
+
+ThemePanel(accent: Color = Color.MAGENTA) -> RUIVNode {
   # Provide overrides the default for this subtree.
   Hooks.provideContext(ThemePanel.Theme, { "accent": accent })
 
@@ -60,7 +63,7 @@ component ThemePanel(accent: Color = Color.MAGENTA) {
   )
 }
 
-component AccentDot() {
+AccentDot() -> RUIVNode {
   # If no ThemePanel provided a value above, this returns { "accent": Color.CYAN }
   # — the handle's default — rather than null.
   var theme = Hooks.useContext(ThemePanel.Theme)
@@ -71,7 +74,7 @@ component AccentDot() {
 }`
 
 export const CONTEXT_BASIC_EXAMPLE = `# Provider — makes a value available to all descendants
-component AppRoot() {
+AppRoot() -> RUIVNode {
   Hooks.provideContext("user_name", "Alice")
   Hooks.provideContext("theme", "dark")
 
@@ -84,7 +87,7 @@ component AppRoot() {
 }
 
 # Consumer — reads the value anywhere in the subtree
-component Sidebar() {
+Sidebar() -> RUIVNode {
   var user_name = useContext("user_name")
   var theme = useContext("theme")
 
@@ -95,7 +98,7 @@ component Sidebar() {
   )
 }`
 
-export const CONTEXT_SHADOWING_EXAMPLE = `component OuterProvider() {
+export const CONTEXT_SHADOWING_EXAMPLE = `OuterProvider() -> RUIVNode {
   Hooks.provideContext("theme", "light")
 
   return (
@@ -106,7 +109,7 @@ export const CONTEXT_SHADOWING_EXAMPLE = `component OuterProvider() {
   )
 }
 
-component InnerProvider() {
+InnerProvider() -> RUIVNode {
   Hooks.provideContext("theme", "dark")   # shadows outer
 
   return (
@@ -116,7 +119,7 @@ component InnerProvider() {
   )
 }`
 
-export const CONTEXT_DYNAMIC_EXAMPLE = `component ThemeToggle() {
+export const CONTEXT_DYNAMIC_EXAMPLE = `ThemeToggle() -> RUIVNode {
   var dark = useState(true)
   Hooks.provideContext("theme", "dark" if dark[0] else "light")
 
@@ -129,7 +132,7 @@ export const CONTEXT_DYNAMIC_EXAMPLE = `component ThemeToggle() {
   )
 }
 
-component ThemedPanel() {
+ThemedPanel() -> RUIVNode {
   var theme = useContext("theme")
   # Automatically re-renders when the provided value changes
 
@@ -153,9 +156,9 @@ export const CONTEXT_VS_SIGNALS = `# Use context when:
 # - Multiple independent trees need the same value
 # - You want process-wide reactivity without a component hierarchy`
 
-export const CONTEXT_TYPED_EXAMPLE = `# Predefined context keys as constants, kept in a small companion .gd module.
-# (The component/module grammar has no class-level 'const', so shared keys live
-# in a plain script and .guitkx components reference it by class_name.)
+export const CONTEXT_TYPED_EXAMPLE = `# Predefined context keys, kept in a small shared .gd script. (Since 0.11 they
+# could equally be .guitkx value exports — \`export THEME := "app.theme"\` — but a
+# hand-written class_name script is ambient: no import line needed anywhere.)
 class_name AppContextKeys
 extends RefCounted
 
@@ -164,7 +167,7 @@ const LOCALE := "app.locale"
 const AUTH := "app.auth"
 
 # Provider
-component AppShell(current_theme, auth_state) {
+AppShell(current_theme, auth_state) -> RUIVNode {
   Hooks.provideContext(AppContextKeys.THEME, current_theme)
   Hooks.provideContext(AppContextKeys.LOCALE, "en-US")
   Hooks.provideContext(AppContextKeys.AUTH, auth_state)
@@ -172,7 +175,7 @@ component AppShell(current_theme, auth_state) {
 }
 
 # Consumer
-component LocalizedLabel() {
+LocalizedLabel() -> RUIVNode {
   var locale = useContext(AppContextKeys.LOCALE)
   # ...
 }`

@@ -49,16 +49,18 @@ export const UitkxGettingStartedPage: FC = () => (
       1. Create a .guitkx component
     </Typography>
     <Typography variant="body1" paragraph>
-      Each <code>.guitkx</code> file can hold one or more components/modules/hooks. The generated
-      GDScript <code>class_name</code> is inferred from the declaration itself — no filename
-      convention to follow. Setup code goes at the top; the component returns markup.
+      A <code>.guitkx</code> file is a module: it can hold one or more plain top-level
+      declarations (components, hooks, utils, values). There is no <code>component</code> keyword —
+      the <code>{'-> RUIVNode'}</code> return annotation is what marks a declaration as a
+      component. The generated GDScript <code>class_name</code> is inferred from the declarations —
+      no filename convention to follow. Setup code goes at the top; the component returns markup.
     </Typography>
     <CodeBlock language="jsx" code={UITKX_HELLO_WORLD_COMPONENT} />
     <Typography variant="body1" paragraph>
       When you save, the plugin emits a complete GDScript class (<code>HelloWorld.gd</code>) that{' '}
       <code>extends RefCounted</code> and exposes a{' '}
       <code>static func render(props, children) -&gt; RUIVNode</code> method. The generated file is
-      marked <code>AUTO-GENERATED … do not edit</code>. You don't need to create any companion file
+      marked <code>AUTO-GENERATED … do not edit</code>. You don't need to create any other file
       for this to work.
     </Typography>
 
@@ -96,13 +98,14 @@ export const UitkxGettingStartedPage: FC = () => (
     </Alert>
 
     <Typography variant="h5" component="h2" gutterBottom>
-      Companion files (optional)
+      Splitting into more files (optional)
     </Typography>
     <Typography variant="body1" paragraph>
-      The generator produces everything a component needs, but you can optionally add companion{' '}
-      <code>.guitkx</code> files using the <code>hook</code> and <code>module</code> keywords to
-      extract reusable state logic, styles, types, or utilities. See the{' '}
-      <strong>Companion Files</strong> page for details.
+      The generator produces everything a component needs, but you can optionally extract reusable
+      state logic (<code>use_*</code> hooks), styles and constants (value exports), or utilities
+      into sibling <code>.guitkx</code> files — every file is a module, and <code>export</code> /{' '}
+      <code>import</code> wire them together. See the <strong>Files &amp; Modules</strong> page for
+      details.
     </Typography>
   </Box>
 )

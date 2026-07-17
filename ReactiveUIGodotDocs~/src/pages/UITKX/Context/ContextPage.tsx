@@ -71,8 +71,9 @@ export const ContextPage: FC = () => (
       <Typography variant="body1" paragraph>
         <code>Hooks.createContext(default_value = null, name = "")</code> returns a{' '}
         <code>RUIContext</code> handle — the Godot parity of React&apos;s{' '}
-        <code>createContext</code>. Declare the handle <strong>once</strong> (typically at module
-        scope) and share the <em>same object</em> between the provider and every consumer. Because the
+        <code>createContext</code>. Declare the handle <strong>once</strong> (as a top-level value
+        declaration, or a static in a shared script) and share the <em>same object</em> between the
+        provider and every consumer. Because the
         handle&apos;s identity is the map key, it can never collide with an unrelated feature keyed on
         the same word.
       </Typography>
@@ -89,9 +90,9 @@ export const ContextPage: FC = () => (
       </List>
       <CodeBlock language="jsx" code={CONTEXT_HANDLE_EXAMPLE} />
       <Typography variant="body1" paragraph sx={{ mt: 2 }}>
-        When a handle belongs to one component, the tidiest form is to declare it inside that
-        component&apos;s <code>module</code> with an inline default. The default fills in for consumers
-        that render without a provider above them:
+        When a handle belongs to one component, the tidiest form is a top-level value declaration
+        in the same file as the component, with an inline default. The default fills in for
+        consumers that render without a provider above them:
       </Typography>
       <CodeBlock language="jsx" code={CONTEXT_HANDLE_MODULE_EXAMPLE} />
       <Alert severity="info" sx={{ mt: 2 }}>
@@ -175,7 +176,7 @@ export const ContextPage: FC = () => (
         <code>useRef</code> (wired with the <code>ref</code> prop):
       </Typography>
       <CodeBlock language="jsx" code={`# A layout component publishes its overlay root for descendants to portal into.
-component AppLayout() {
+AppLayout() -> RUIVNode {
   var overlay_root = useRef(null)
   Hooks.provideContext("overlay_root", overlay_root)   # provide the ref box
 
@@ -191,7 +192,7 @@ component AppLayout() {
 
 # A deep descendant reads the ref and portals into it (V.portal has no markup
 # tag yet, so it rides an embedded { expr } in the markup return).
-component Tooltip() {
+Tooltip() -> RUIVNode {
   var overlay_root = useContext("overlay_root")
   if overlay_root == null or overlay_root["current"] == null:
     return null

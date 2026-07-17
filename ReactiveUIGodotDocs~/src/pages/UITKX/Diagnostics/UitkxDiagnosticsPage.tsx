@@ -52,10 +52,10 @@ const DiagTable: FC<{ rows: DiagRow[] }> = ({ rows }) => (
 
 /* ── Parser diagnostics (GUITKX0300–0306) ───────────────────────────── */
 const parserRows: DiagRow[] = [
-  { code: 'GUITKX0300', sev: 'Error', title: 'Unexpected / missing token', fix: <>Malformed attributes, a missing component / hook name, or an attribute value that is neither a string nor a <code>{'{expr}'}</code>. Check the syntax near the reported line.</> },
+  { code: 'GUITKX0300', sev: 'Error', title: 'Unexpected / missing token', fix: <>Malformed attributes, a missing declaration name, or an attribute value that is neither a string nor a <code>{'{expr}'}</code>. Check the syntax near the reported line.</> },
   { code: 'GUITKX0301', sev: 'Error', title: 'Unclosed tag', fix: <>Add a matching closing tag, or use self-closing syntax (<code>{'<Foo />'}</code>).</> },
   { code: 'GUITKX0302', sev: 'Error', title: 'Mismatched closing tag', fix: <>The closing tag name must match the opening tag (<code>{'</Foo>'}</code> for <code>{'<Foo>'}</code>).</> },
-  { code: 'GUITKX0303', sev: 'Error', title: 'Missing block / unexpected EOF', fix: <>A <code>component</code>, <code>hook</code>, <code>module</code>, directive, or <code>@match</code> is missing its <code>{'{ ... }'}</code> body (or the file ended mid-tag). Close the block.</> },
+  { code: 'GUITKX0303', sev: 'Error', title: 'Missing block / unexpected EOF', fix: <>A declaration, directive, or <code>@match</code> is missing its <code>{'{ ... }'}</code> body (or the file ended mid-tag). Close the block.</> },
   { code: 'GUITKX0304', sev: 'Error', title: 'Unclosed brace / paren', fix: <>An unclosed <code>{'{expr}'}</code>, <code>(...)</code> param list, <code>return (</code>, directive body, or <code>@match</code> body. Balance the delimiters.</> },
   { code: 'GUITKX0305', sev: 'Warning', title: 'Unknown @directive', fix: <>Valid directives: <code>@if</code>, <code>@else</code>, <code>@for</code>, <code>@while</code>, <code>@match</code>, <code>@case</code>, <code>@default</code> (and the file directives <code>@class_name</code>, <code>@extends</code>, <code>@use</code>).</> },
   { code: 'GUITKX2506', sev: 'Error', title: 'Directive shape error', fix: <>A directive expects <code>(...)</code>, or an <code>@match</code> body expects <code>@case (...) {'{ }'}</code> / <code>@default {'{ }'}</code> arms. Fix the directive header.</> },
@@ -63,7 +63,7 @@ const parserRows: DiagRow[] = [
 
 /* ── Structural / semantic diagnostics (GUITKX2101–0113) ─────────────── */
 const structuralRows: DiagRow[] = [
-  { code: 'GUITKX2101', sev: 'Error', title: 'No declaration / no markup return', fix: <>The file has no <code>component</code>, <code>hook</code>, or <code>module</code> declaration, or a <code>component</code> has no final <code>return ( ... )</code> (only <code>return null</code> or conditional returns). Add the declaration / final return.</> },
+  { code: 'GUITKX2101', sev: 'Error', title: 'No declaration / no markup return', fix: <>The file has no top-level declaration, or a component has no final <code>return ( ... )</code> (only <code>return null</code> or conditional returns). Add the declaration / final return.</> },
   { code: 'GUITKX2102', sev: 'Error', title: 'Final return is not markup', fix: <>The component&apos;s FINAL top-level <code>return</code> must be <code>return ( {'<markup>'} )</code> — an element, <code>{'<>…</>'}</code> fragment, @directive, or <code>{'{expr}'}</code>. Early and conditional <em>markup</em> returns are legal (v0.6+, React-style: <code>if not ready: return ( {'<Label />'} )</code> renders when hit); <code>return null</code> guards and plain value returns are ordinary GDScript.</> },
   { code: 'GUITKX0107', sev: 'Hint', title: 'Unreachable code after a markup return', fix: <>An <strong>unconditional</strong> <code>return ( {'<markup>'} )</code> makes every statement after it dead — including a now-unreachable final return. The editor dims the dead code; delete it or make the earlier return conditional.</> },
   { code: 'GUITKX2508', sev: 'Error', title: 'Malformed directive header', fix: <><code>@for</code> expects <code>({'<identifier>'} in {'<expression>'})</code>; <code>@if</code> / <code>@while</code> / <code>@match</code> / <code>@case</code> expect a single expression (an unbracketed <code>:</code> can never be one — <code>@for (i in 2: int5)</code> is the classic mistake).</> },
@@ -74,8 +74,8 @@ const structuralRows: DiagRow[] = [
   { code: 'GUITKX0104', sev: 'Warning', title: 'Duplicate sibling key', fix: <>Ensure each sibling element has a unique <code>key</code> value.</> },
   { code: 'GUITKX0106', sev: 'Warning', title: 'Loop element missing key', fix: <>An element inside <code>@for</code> / <code>@while</code> has no <code>key</code>. Add <code>key={'{...}'}</code> with a stable unique identifier so reordered children reconcile correctly.</> },
   { code: 'GUITKX0108', sev: 'Error', title: 'Multiple root elements', fix: <>A component must return exactly one root element. Wrap siblings in a container (<code>{'<VBoxContainer>'}</code>, <code>{'<HBoxContainer>'}</code>) or a fragment (<code>{'<>…</>'}</code>).</> },
-  { code: 'GUITKX2504', sev: 'Error', title: 'Invalid module', fix: <>A <code>module</code> has no component / hook declarations, or a <code>module</code> is nested inside another. Give the module content, and keep modules top-level.</> },
-  { code: 'GUITKX2505', sev: 'Error', title: 'Duplicate declaration in module', fix: <>Two declarations in the same <code>module</code> share a name. Rename one.</> },
+  { code: 'GUITKX2504', sev: 'Error', title: 'Invalid module (deprecated wrapper)', fix: <>A deprecated <code>module</code> wrapper block has no declarations, or is nested inside another. Fires only while the 0.11.0 deprecation window keeps the wrapper parsing — run the 0.11.0 codemod to hoist module members to top level.</> },
+  { code: 'GUITKX2505', sev: 'Error', title: 'Duplicate declaration', fix: <>Two declarations in the same file (or in a deprecated <code>module</code> block) share a name. Rename one.</> },
   { code: 'GUITKX0026', sev: 'Error', title: 'Statement used in an embedded expression', fix: <>A statement (e.g. a control-flow directive) cannot be lowered inside an embedded <code>{'{expr}'}</code> / JSX-value. Lift it to the top-level markup return, or use <code>.map()</code> for lists.</> },
 ]
 
@@ -89,10 +89,22 @@ const importRows: DiagRow[] = [
   { code: 'GUITKX2303', sev: 'Error', title: 'Duplicate import', fix: <>The same name is imported twice (possibly from two different files). Remove one.</> },
   { code: 'GUITKX2304', sev: 'Warning', title: 'Unused import', fix: <>The imported name is never referenced in this file. Remove the import (or use it).</> },
   { code: 'GUITKX2305', sev: 'Error', title: 'Referenced but not imported', fix: <>Cross-file resolution is strict — the message contains the exact <code>import {'{ X }'} from &quot;…&quot;</code> line to add. Hand-written <code>class_name</code> scripts are ambient and never need an import.</> },
-  { code: 'GUITKX2306', sev: 'Error', title: 'Value-import cycle', fix: <>Hooks/modules are eager <code>const</code> preloads, so an import cycle between them is a load-order error (the message prints the chain). Break the chain, or restructure so the cyclic edge is a <em>component</em> reference — component imports are lazy and may cycle freely.</> },
+  { code: 'GUITKX2306', sev: 'Error', title: 'Value-import cycle', fix: <>Values, utils, hooks, and <code>* as</code> namespace imports are eager <code>const</code> preloads, so an import cycle among them is a load-order error (the message prints the chain). Break the chain, or restructure so the cyclic edge is a <em>component</em> reference — component imports are lazy and may cycle freely.</> },
   { code: 'GUITKX2307', sev: 'Error', title: 'Used like a component/hook but no file exports it', fix: <>A component-like tag matches no host element, no import, and no <code>.guitkx</code> export (and isn&apos;t a near-miss of one). Create/export the component and import it, or fix the name.</> },
   { code: 'GUITKX2308', sev: 'Error', title: 'Import crosses the project boundary', fix: <>The specifier resolves above <code>res://</code> (a <code>../</code> chain or a <code>~/</code> root that escapes the project). Imports are project-scoped in v1 — keep the target inside <code>res://</code>.</> },
-  { code: 'GUITKX2309', sev: 'Error', title: 'Import after the first declaration', fix: <>Imports are preamble-only. Move the <code>import</code> line above the first <code>component</code> / <code>hook</code> / <code>module</code>.</> },
+  { code: 'GUITKX2309', sev: 'Error', title: 'Import after the first declaration', fix: <>Imports are preamble-only. Move the <code>import</code> line above the first declaration.</> },
+]
+
+/* ── Declaration & export diagnostics (GUITKX2320–2327, 0.11.0) ──────── */
+const declarationRows: DiagRow[] = [
+  { code: 'GUITKX2320', sev: 'Warning', title: 'Deprecated wrapper keyword', fix: <>A <code>component</code> / <code>hook</code> / <code>module</code> wrapper keyword (pre-0.11 syntax). It still compiles for this deprecation window — one warning per declaration — and is removed in a later minor. Run the codemod: <code>godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_11_0.gd</code>.</> },
+  { code: 'GUITKX2321', sev: 'Error', title: 'use_* callable returns RUIVNode', fix: <>A <code>use_</code>-prefixed callable is classified as a hook, but its return annotation is <code>RUIVNode</code> — did you mean a component? Rename it PascalCase without the prefix (component), or change the return type (hook).</> },
+  { code: 'GUITKX2322', sev: 'Hint', title: 'Reserved — not emitted by the Godot leg', fix: <>The family code for a value-export type-inference failure. GDScript is dynamically typed, so it cannot fire here; the number is reserved for cross-family alignment and never emitted.</> },
+  { code: 'GUITKX2323', sev: 'Error', title: 'Export of a non-declaration', fix: <><code>export default Name</code> or <code>export {'{ a, b }'}</code> names something that is not a top-level declaration in this file. Fix the name, or declare it.</> },
+  { code: 'GUITKX2324', sev: 'Error', title: 'Duplicate export', fix: <>The name is already exported (e.g. an inline <code>export</code> prefix plus an <code>export {'{ … }'}</code> list entry). Remove one.</> },
+  { code: 'GUITKX2325', sev: 'Error', title: 'Import alias collision', fix: <>An import alias (<code>as local</code>, a namespace <code>* as X</code>, or a default binding) collides with an in-file declaration or another import. Rename the alias.</> },
+  { code: 'GUITKX2326', sev: 'Error', title: 'No default export in the target', fix: <><code>import X from &quot;./x&quot;</code> requires the target to declare <code>export default</code>. Add one there, or switch to the suggested named import (<code>import {'{ X }'} from &quot;./x&quot;</code>).</> },
+  { code: 'GUITKX2327', sev: 'Error', title: 'Duplicate export default', fix: <>A file may mark at most one declaration as its default. Remove the extra <code>export default</code> line.</> },
 ]
 
 /* ── Language-server diagnostics (GUITKX0105, GUITKX0109) ────────────── */
@@ -136,8 +148,8 @@ export const UitkxDiagnosticsPage: FC = () => (
       Structural &amp; Semantic Diagnostics
     </Typography>
     <Typography variant="body2" paragraph>
-      Emitted after parsing, when validating the component / hook / module
-      structure and the reconciliation keys.
+      Emitted after parsing, when validating the file&apos;s declarations and the
+      reconciliation keys.
     </Typography>
     <DiagTable rows={structuralRows} />
     <Typography variant="body2" paragraph sx={{ mt: 1 }}>
@@ -159,6 +171,24 @@ export const UitkxDiagnosticsPage: FC = () => (
       migration codemod.
     </Typography>
     <DiagTable rows={importRows} />
+
+    {/* ── Declaration & Export Diagnostics ──────────────────────────────── */}
+    <Typography variant="h5" component="h2" sx={Styles.section}>
+      Declaration &amp; Export Diagnostics (0.11.0)
+    </Typography>
+    <Typography variant="body2" paragraph>
+      The <code>2320–2327</code> band, added with the ES-modules release: plain
+      signature-classified declarations, value exports, and the full import
+      surface (rename / namespace / default / export lists).
+    </Typography>
+    <DiagTable rows={declarationRows} />
+    <Typography variant="body2" paragraph sx={{ mt: 1 }}>
+      <strong>GUITKX2203</strong> (<em>hook missing the <code>use_</code> naming prefix</em>) is
+      retired as of 0.11.0 — without wrapper keywords the <code>use_</code> prefix <em>is</em> the
+      classification, so a helper without it is simply a util and warrants no warning. The number
+      stays reserved and is never reused; during the deprecation window it still fires only on
+      deprecated <code>hook</code> wrapper declarations.
+    </Typography>
 
     {/* ── Language-Server Diagnostics ───────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>

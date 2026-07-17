@@ -15,13 +15,13 @@ import Styles from './UitkxReferencePage.style'
 const DIRECTIVE_HEADER_EXAMPLE = `@class_name MyButton
 @uss "res://ui/theme.tres"
 
-component MyButton(label: String = "Click") {
+export MyButton(label: String = "Click") -> RUIVNode {
   return (
     <Button text={ label } onPressed={ func(): print("clicked") } />
   )
 }`
 
-const FUNCTION_STYLE_EXAMPLE = `component Counter(label: String = "Count") {
+const FUNCTION_STYLE_EXAMPLE = `Counter(label: String = "Count") -> RUIVNode {
   var s = useState(0)
   var count = s[0]
   return (
@@ -58,7 +58,7 @@ const CONTROL_FLOW_EXAMPLE = `<VBoxContainer>
   }
 </VBoxContainer>`
 
-const EARLY_RETURN_EXAMPLE = `component StatusPanel(ready: bool = false) {
+const EARLY_RETURN_EXAMPLE = `StatusPanel(ready: bool = false) -> RUIVNode {
   if not ready:
     return ( <Label text="Loading…" /> )
   return (
@@ -68,7 +68,7 @@ const EARLY_RETURN_EXAMPLE = `component StatusPanel(ready: bool = false) {
   )
 }`
 
-const PROP_SPREAD_EXAMPLE = `component Toolbar(cfg: Dictionary = {}) {
+const PROP_SPREAD_EXAMPLE = `Toolbar(cfg: Dictionary = {}) -> RUIVNode {
   var base := { "text": "Save", "disabled": false }
 
   return (
@@ -115,40 +115,57 @@ export const UitkxReferencePage: FC = () => (
       Declarations
     </Typography>
     <Typography variant="body2" paragraph>
-      A <code>.guitkx</code> file is a sequence of declarations of three kinds (one per file is the
-      recommended convention; several may share a file since 0.10). Each becomes a static function
-      (or set of functions) on the generated class. Prefix a declaration with <code>export</code> to
-      make it importable from other files — without it the declaration is file-private (see the
-      Imports &amp; Exports page).
+      A <code>.guitkx</code> file is a module: a sequence of <strong>plain top-level
+      declarations</strong>, several per file in any mix. There are no wrapper keywords (0.11.0) —
+      what a declaration <em>is</em> is classified from its <strong>signature</strong> alone. Each
+      becomes a static member of the generated class. Prefix a declaration with{' '}
+      <code>export</code> to make it importable from other files — without it the declaration is
+      file-private. A top-level <code>{'export { a, b }'}</code> line exports in-file declarations
+      after the fact, and <code>export default Name</code> marks at most one declaration as the
+      file&apos;s default (see the Imports &amp; Exports page).
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
         <TableHead>
           <TableRow>
-            <TableCell>Keyword</TableCell>
-            <TableCell>Syntax</TableCell>
-            <TableCell>Purpose</TableCell>
+            <TableCell>You write</TableCell>
+            <TableCell>It is</TableCell>
+            <TableCell>Because</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           <TableRow>
-            <TableCell><code>component</code></TableCell>
-            <TableCell><code>component Name(param: Type = default) {'{ … }'}</code></TableCell>
-            <TableCell>A UI component. Compiles to <code>static func render(props, children)</code>.</TableCell>
+            <TableCell><code>Name(params) -&gt; RUIVNode {'{ … }'}</code></TableCell>
+            <TableCell><strong>Component</strong> — compiles to <code>static func render(props, children)</code></TableCell>
+            <TableCell>the <code>-&gt; RUIVNode</code> return annotation <em>is</em> the classification (PascalCase name enforced, <code>GUITKX2100</code>)</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><code>hook</code></TableCell>
-            <TableCell><code>hook use_thing(args) -&gt; Type {'{ … }'}</code></TableCell>
-            <TableCell>A reusable custom hook — top-level in its own file, or grouped inside a <code>module</code> block.</TableCell>
+            <TableCell><code>use_name(params) [-&gt; T] {'{ … }'}</code></TableCell>
+            <TableCell><strong>Hook</strong> — reusable state logic (may call <code>Hooks.*</code>)</TableCell>
+            <TableCell>the <code>use_</code> prefix</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><code>module</code></TableCell>
-            <TableCell><code>module Name {'{ … }'}</code></TableCell>
-            <TableCell>A container for styles, types, utilities, and hooks.</TableCell>
+            <TableCell><code>name(params) [-&gt; T] {'{ … }'}</code></TableCell>
+            <TableCell><strong>Util</strong> — a plain helper function</TableCell>
+            <TableCell>any other callable</TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell><code>name := expr</code> / <code>name: Type = expr</code> / <code>name = expr</code></TableCell>
+            <TableCell><strong>Value</strong> — compiles to <code>static var</code>; treat as a constant</TableCell>
+            <TableCell>the <code>=</code> after the name</TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </TableContainer>
+    <Typography variant="body2" paragraph sx={{ mt: 1 }}>
+      Two consequences worth internalizing: a component <strong>must</strong> annotate{' '}
+      <code>-&gt; RUIVNode</code> (a PascalCase callable without it is a util and its{' '}
+      <code>{'<Tag>'}</code> stops resolving), and a <code>use_</code>-prefixed callable that
+      returns <code>RUIVNode</code> is the cross-guard error <code>GUITKX2321</code> (&quot;did you
+      mean a component?&quot;). The pre-0.11 <code>component</code> / <code>hook</code> /{' '}
+      <code>module</code> wrapper keywords still compile for one deprecation window with warning{' '}
+      <code>GUITKX2320</code> — run the 0.11.0 codemod (see Migrations).
+    </Typography>
 
     {/* ── Preamble Directives ──────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
@@ -171,12 +188,12 @@ export const UitkxReferencePage: FC = () => (
           <TableRow>
             <TableCell><code>import</code></TableCell>
             <TableCell><code>import {'{ Name, … }'} from &quot;./file&quot;</code></TableCell>
-            <TableCell>Bring another file&apos;s <code>export</code>ed declarations into scope (0.10.0). Specifiers are extensionless: <code>./</code> / <code>../</code> relative, or <code>~/</code> from the config <code>root</code>. Named imports only. See the Imports &amp; Exports page.</TableCell>
+            <TableCell>Bring another file&apos;s <code>export</code>ed declarations into scope. Specifiers are extensionless: <code>./</code> / <code>../</code> relative, or <code>~/</code> from the config <code>root</code>. All ES forms since 0.11.0 — named (<code>{'{ a, b as c }'}</code>), namespace (<code>* as X</code>), and default. See the Imports &amp; Exports page.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>@class_name</code></TableCell>
             <TableCell><code>@class_name MyButton</code></TableCell>
-            <TableCell>Optional override for the generated GDScript <code>class_name</code> (defaults to the first exported declaration&apos;s name, else the first declaration&apos;s) — rarely needed; mainly for a name collision with a hand-written class.</TableCell>
+            <TableCell>Optional override for the generated GDScript <code>class_name</code> (defaults to the first exported declaration&apos;s name, else the first declaration&apos;s) — the binding / interop escape hatch, rarely needed: a name collision with a hand-written class, or keeping a hoisted pre-0.11 <code>module</code>&apos;s dotted callers (<code>M.member(...)</code>) working.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>@uss</code></TableCell>
@@ -193,9 +210,9 @@ export const UitkxReferencePage: FC = () => (
       Function-Style Components
     </Typography>
     <Typography variant="body2" paragraph>
-      Components use a <code>component Name {'{ … }'}</code> syntax with optional typed parameters.
-      Parameters are read from the <code>props</code> dictionary in the generated{' '}
-      <code>render</code> method (with the declared default when a prop is absent).
+      A component is a plain declaration whose signature ends in <code>-&gt; RUIVNode</code>, with
+      optional typed parameters. Parameters are read from the <code>props</code> dictionary in the
+      generated <code>render</code> method (with the declared default when a prop is absent).
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
@@ -208,11 +225,11 @@ export const UitkxReferencePage: FC = () => (
         <TableBody>
           <TableRow>
             <TableCell>Declaration</TableCell>
-            <TableCell><code>component Name() {'{ … }'}</code></TableCell>
+            <TableCell><code>Name() -&gt; RUIVNode {'{ … }'}</code></TableCell>
           </TableRow>
           <TableRow>
             <TableCell>With parameters</TableCell>
-            <TableCell><code>component Name(label: String = "default") {'{ … }'}</code></TableCell>
+            <TableCell><code>Name(label: String = "default") -&gt; RUIVNode {'{ … }'}</code></TableCell>
           </TableRow>
           <TableRow>
             <TableCell>Setup code</TableCell>
@@ -455,30 +472,33 @@ export const UitkxReferencePage: FC = () => (
       time. Elements with no spread keep the plain dictionary-literal fast path unchanged.
     </Typography>
 
-    {/* ── Modules & Hooks ────────────────────────────────────────────── */}
+    {/* ── Hooks, Utils & Values ──────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
-      Modules & Hooks
+      Hooks, Utils &amp; Values
     </Typography>
     <Typography variant="body2" paragraph>
-      Reusable logic lives in a <code>module</code>. Inside it, use the <code>hook</code> keyword to
-      declare custom hooks (which may call built-in hooks via <code>Hooks.*</code>), plus static
-      constants and helper functions. When a module's name matches a component, it extends that
-      component's generated class. See the <strong>Companion Files</strong> page for the full model.
+      Reusable logic is just more top-level declarations — a file <em>is</em> a module. Custom
+      hooks are <code>use_</code>-prefixed callables (which may call built-in hooks via{' '}
+      <code>Hooks.*</code>), utils are any other callable, and values hold constants and style
+      dictionaries. <code>@class_name</code> pins the file&apos;s binding when you need the dotted{' '}
+      <code>PlayerCard.member</code> form. See the <strong>Files &amp; Modules</strong> page for
+      the full model.
     </Typography>
-    <CodeBlock language="jsx" code={`module PlayerCard {
-  const HEALTH_GREEN := Color(0.2, 0.8, 0.3)
+    <CodeBlock language="jsx" code={`@class_name PlayerCard
 
-  static func format_health(current: int, max: int) -> String:
-    return "%d / %d HP" % [current, max]
+export HEALTH_GREEN := Color(0.2, 0.8, 0.3)
 
-  hook use_flash(active: bool) -> bool {
-    var s = Hooks.useState(false)
-    Hooks.useEffect(func():
-      s[1].call(active)
-      return Callable()
-    , [active])
-    return s[0]
-  }
+export format_health(current: int, max: int) -> String {
+  return "%d / %d HP" % [current, max]
+}
+
+export use_flash(active: bool) -> bool {
+  var s = Hooks.useState(false)
+  Hooks.useEffect(func():
+    s[1].call(active)
+    return Callable()
+  , [active])
+  return s[0]
 }`} />
 
     {/* ── Rules & Gotchas ────────────────────────────────────────────── */}
@@ -486,7 +506,8 @@ export const UitkxReferencePage: FC = () => (
       Rules & Gotchas
     </Typography>
     <Typography component="ul" variant="body2">
-      <li><code>@class_name</code> and <code>@uss</code> must appear before the declaration keyword.</li>
+      <li><code>@class_name</code> and <code>@uss</code> must appear in the preamble, before the first declaration.</li>
+      <li>A component must annotate <code>-&gt; RUIVNode</code> — that annotation is what classifies it as a component; a <code>use_</code> prefix classifies a hook (a <code>use_*</code> callable returning <code>RUIVNode</code> is <code>GUITKX2321</code>).</li>
       <li>Hook calls must be unconditional at component top level — not inside a directive body (<code>@if</code>, <code>@for</code>, <code>@case</code>, etc.), or it&apos;s <code>GUITKX2104</code>.</li>
       <li>A directive body is a code block: GDScript prep statements followed by <code>return ( {'<markup>'} )</code>, nesting recursively. The pre-0.7 bare-markup form is a compile error (<code>GUITKX2103</code>).</li>
       <li>Direct children of <code>@for</code> need a <code>key</code> attribute for stable reconciliation.</li>
