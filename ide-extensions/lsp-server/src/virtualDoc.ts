@@ -532,18 +532,28 @@ function indentDepth(l: string, unit: number): number {
 // unmapped header inserts, so the length-preserving source map is unaffected -- imported names never
 // red-squiggle in a migrated file, and imports stay OPTIONAL syntax (no strict diagnostics here).
 function declareImportStubs(ctx: Ctx): void {
-  const importRe = /^[ \t]*import[ \t]*\{([^}]*)\}[ \t]*from/gm;
   const seen = new Set<string>();
+  const add = (nm: string): void => {
+    if (/^[A-Za-z_]\w*$/.test(nm) && !seen.has(nm)) {
+      seen.add(nm);
+      ctx.gen += `static var ${nm}\n`;
+    }
+  };
+  // named clauses (a `remote as local` rename binds the LOCAL name -- E-08)
+  const importRe = /^[ \t]*import[ \t]*\{([^}]*)\}[ \t]*from/gm;
   let m: RegExpExecArray | null;
   while ((m = importRe.exec(ctx.src)) !== null) {
     for (const raw of m[1].split(",")) {
-      const nm = raw.trim();
-      if (/^[A-Za-z_]\w*$/.test(nm) && !seen.has(nm)) {
-        seen.add(nm);
-        ctx.gen += `static var ${nm}\n`;
-      }
+      const clause = raw.trim();
+      const asM = /^[A-Za-z_]\w*[ \t]+as[ \t]+([A-Za-z_]\w*)$/.exec(clause);
+      add(asM ? asM[1] : clause);
     }
   }
+  // `* as X` namespace + bare default locals (G-05): both bind one identifier.
+  const nsRe = /^[ \t]*import[ \t]*\*[ \t]*as[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
+  while ((m = nsRe.exec(ctx.src)) !== null) add(m[1]);
+  const defRe = /^[ \t]*import[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
+  while ((m = defRe.exec(ctx.src)) !== null) add(m[1]);
 }
 
 function declareHookStubs(ctx: Ctx): void {

@@ -58,26 +58,74 @@ var _map: GuitkxSourceMap = null
 var _counter: int = 0
 
 ## Build the virtual doc for `src`: { "text": String, "map": GuitkxSourceMap }.
+## ES-modules leg (mirrors virtualDoc.ts buildVirtualDoc): a file is a SEQUENCE of declarations
+## — walk and emit EVERY top-level decl. The FIRST component keeps the bare `render` name;
+## later components emit under their decl names (guitkx.gd _compile_mixed); hooks/utils emit
+## under their real names; values emit as mapped `static var`s.
 static func build(src: String) -> Dictionary:
 	var b := GuitkxVirtualDoc.new()
 	b._src = src
 	b._gen = "extends RefCounted\n"
 	b._map = MapScript.new()
-	# Recover from a misspelled header keyword (`comssponent Foo {`) so embedded GDScript is still
-	# analyzed instead of emitting an empty class — the whole-file-goes-dark bug. [declScan]
-	var decl: Dictionary = Compiler._find_decl(src, 0)
-	if str(decl.get("kind", "")) == "":
-		var near: Dictionary = Compiler._nearest_decl_keyword(src, 0)
-		if near.has("word"):
-			decl = { "kind": near["kw"], "at": near["at"] }
-	if str(decl.get("kind", "")) == "":
+	var first: Dictionary = Compiler._find_decl(src, 0)
+	if str(first.get("kind", "")) == "":
 		return { "text": b._gen, "map": b._map }
 	b._declare_hook_stubs()
-	if str(decl["kind"]) == "module":
-		b._emit_module_members(int(decl["at"]))
-	else:
-		b._emit_decl_func(str(decl["kind"]), int(decl["at"]), "")
+	var i := 0
+	var first_comp := true
+	var n := src.length()
+	while i < n:
+		var d: Dictionary = Compiler._find_decl(src, i)
+		if str(d.get("kind", "")) == "":
+			break
+		var kind := str(d["kind"])
+		var nxt := -1
+		var plain: bool = not bool(d.get("deprecated", true))
+		if kind == "module":
+			b._emit_module_members(int(d["at"]))
+			var mb := b._read_decl_body(int(d["at"]))
+			nxt = (int(mb["start"]) + str(mb["text"]).length() + 1) if not mb.is_empty() else -1
+		elif kind == "component":
+			b._emit_decl_func("component", int(d["at"]), "" if first_comp else "_%d" % b._counter, d)
+			if not first_comp:
+				b._counter += 1
+			first_comp = false
+			var cb := b._read_decl_body(int(d["body_open"]) if plain else int(d["at"]))
+			nxt = (int(cb["start"]) + str(cb["text"]).length() + 1) if not cb.is_empty() else -1
+		elif kind == "hook" or kind == "util":
+			b._emit_decl_func("hook", int(d["at"]), "_%d" % b._counter, d)
+			b._counter += 1
+			var hb := b._read_decl_body(int(d["body_open"]) if plain else int(d["at"]))
+			nxt = (int(hb["start"]) + str(hb["text"]).length() + 1) if not hb.is_empty() else -1
+		elif kind == "value":
+			b._emit_value_decl(d)
+			nxt = Compiler._value_end(src, int(d["value_start"]))
+		elif kind == "export_list" or kind == "export_default":
+			nxt = int(d.get("list_end", -1))
+		if nxt == -1 or nxt <= i:
+			break
+		i = nxt
 	return { "text": b._gen, "map": b._map }
+
+## E-01 value declaration -> `static var <name>[: Type] = <initializer>`, initializer spliced
+## VERBATIM and source-mapped (mirrors virtualDoc.ts emitValueDecl).
+func _emit_value_decl(d: Dictionary) -> void:
+	var name := str(d.get("name", ""))
+	if name == "" or not d.has("value_start"):
+		return
+	var vs := int(d["value_start"])
+	var ve: int = Compiler._value_end(_src, vs)
+	if ve == -1:
+		return
+	var typed := ": %s" % str(d.get("type_text", "")) if (str(d.get("eq_style", "")) == "typed" and str(d.get("type_text", "")) != "") else ""
+	var eq := " := " if str(d.get("eq_style", "")) == "infer" else " = "
+	var raw := _src.substr(vs, ve - vs)
+	var text := raw.strip_edges()
+	_gen += "static var %s%s%s" % [name, typed, eq]
+	var gs := _gen.length()
+	_gen += text
+	_map.add_span(vs + (raw.length() - raw.lstrip(" \t\n\r").length()), gs, text.length())
+	_gen += "\n"
 
 # One module member = one static func (mirrors emitModuleMembers). Suffixes keep sibling names
 # unique; a top-level component/hook keeps the bare `render`/real name.
@@ -99,8 +147,11 @@ func _emit_module_members(module_at: int) -> void:
 			_counter += 1
 		i = (int(b["start"]) + str(b["text"]).length() + 1) if not b.is_empty() else int(d["at"]) + 1
 
-func _emit_decl_func(kind: String, at: int, suffix: String) -> void:
-	var body := _read_decl_body(at)
+func _emit_decl_func(kind: String, at: int, suffix: String, d: Dictionary = {}) -> void:
+	# Plain (E-01) rows anchor at the NAME and carry their own body_open; the keyword-anchored
+	# readers below expect a keyword at `at`, so plain rows feed them their real anchors.
+	var plain: bool = not d.is_empty() and not bool(d.get("deprecated", true))
+	var body := _read_decl_body(int(d["body_open"]) if plain and d.has("body_open") else at)
 
 	if kind == "hook":
 		if body.is_empty():
@@ -108,7 +159,7 @@ func _emit_decl_func(kind: String, at: int, suffix: String) -> void:
 		# Emitted under its REAL declared name, exactly like the compiler: a sibling module member
 		# legally calls it bare. Params are spliced VERBATIM and mapped (a hook body reads its
 		# params). The `-> Hint` survives like the compiler's _ret_suffix (tuple hints dropped).
-		var name := _read_decl_name(at)
+		var name := str(d.get("name", "")) if plain else _read_decl_name(at)
 		var params := _read_params_span(at)
 		_gen += "static func %s(" % (name if name != "" else "__hook%s" % suffix)
 		if not params.is_empty() and str(params["text"]).strip_edges() != "":
@@ -125,7 +176,7 @@ func _emit_decl_func(kind: String, at: int, suffix: String) -> void:
 	# real names — mirror both, so a sibling expr referencing a member component resolves.
 	var comp_name := "render"
 	if suffix != "":
-		var declared := _read_decl_name(at)
+		var declared := str(d.get("name", "")) if plain else _read_decl_name(at)
 		comp_name = declared if declared != "" else "render%s" % suffix
 	_gen += "static func %s(props: Dictionary, children: Array) -> RUIVNode:\n" % comp_name
 	if body.is_empty():

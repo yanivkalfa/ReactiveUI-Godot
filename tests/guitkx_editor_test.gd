@@ -1270,6 +1270,33 @@ func _test_virtual_doc() -> void:
 	var hgen := str((VD.build(hsrc) as Dictionary)["text"])
 	_ok(hgen.contains("static func useThing(a: int, b := 2):"), "hook keeps name+params; tuple hint dropped")
 
+	# ES-modules (0.11.0): a plain multi-decl file emits EVERY top-level decl -- first component
+	# as render, later ones under their names, hooks/utils real names, values as mapped static var.
+	var multi := "export w := { \"a\": 1 }
+export fmt(x: int) -> String {
+	return str(x)
+}
+export use_t() -> int {
+	return 1
+}
+export Foo() -> RUIVNode {
+	return (
+		<Label />
+	)
+}
+Bar() -> RUIVNode {
+	return (
+		<Label />
+	)
+}
+"
+	var mgen := str((VD.build(multi) as Dictionary)["text"])
+	_ok(mgen.contains("static var w := { \"a\": 1 }"), "value decl emits as mapped static var (got %s)" % mgen)
+	_ok(mgen.contains("static func fmt(x: int)"), "util emits under its real name")
+	_ok(mgen.contains("static func use_t("), "plain hook emits under its real name")
+	_ok(mgen.contains("static func render(props: Dictionary, children: Array) -> RUIVNode:"), "first plain component emits render")
+	_ok(mgen.contains("static func Bar(props: Dictionary, children: Array) -> RUIVNode:"), "second plain component emits under its decl name")
+
 	# Markup nested inside an expression neutralizes to length-preserving null padding.
 	var n := VD._neutralize_markup("open and <PanelContainer/> ")
 	_ok(n.length() == "open and <PanelContainer/> ".length() and n.contains("null") and not n.contains("<Panel"),
