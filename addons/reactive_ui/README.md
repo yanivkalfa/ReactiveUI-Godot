@@ -3,7 +3,7 @@
 React-style reactive UI for Godot 4, in plain GDScript: function components, hooks
 (`useState` / `useEffect` / `useMemo` / …), a fiber reconciler with keyed reconciliation and
 bailouts, a router, typed styling — and the **`.guitkx`** JSX-like markup language with
-**ES-module-style imports** (`import { StatusChip } from "./status_chip"` / `export component …`)
+**ES-module semantics** (`import { StatusChip } from "./status_chip"`, `import * as Hud`, `export default`, plain signature-classified declarations)
 that compiles to plain `.gd` at save time and hot-reloads running games (Fast Refresh with
 hook-state preservation).
 
@@ -31,7 +31,7 @@ Requires **Godot 4.4+** (tested on 4.7).
 Create `hello.guitkx` anywhere in your project:
 
 ```
-component Hello {
+Hello() -> RUIVNode {
   var count = useState(0)
   return (
     <VBoxContainer style={ {"separation": 8} }>
@@ -58,7 +58,7 @@ strict, and the error tells you the exact import to add):
 ```
 import { Hello } from "./hello"
 
-export component Screen {
+export Screen() -> RUIVNode {
   return ( <PanelContainer><Hello /></PanelContainer> )
 }
 ```
@@ -66,7 +66,7 @@ export component Screen {
 Migrating a pre-0.10 project is one idempotent command (ships with the addon):
 
 ```
-godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_10_0.gd
+godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_11_0.gd
 ```
 
 ## What's in the box

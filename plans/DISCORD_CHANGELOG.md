@@ -1,3 +1,18 @@
+## [0.11.0] - 2026-07-18
+
+**ES modules land: a file IS a module.** The `component` / `hook` / `module` wrapper keywords are gone (deprecated for one minor) -- a declaration is classified by its SIGNATURE alone: `Name(p) -> RUIVNode {}` is a component, `use_x(p) {}` a hook, any other callable a util, and `name := expr` a **value export** (new -- files can finally export plain constants). Files hold as many declarations as you like.
+
+**The full ES import surface** joins the 0.10.0 named imports: `import { a as b }` renames, `import * as X` namespaces, `import X from` default imports + `export default Name`, and deferred `export { a, b }` lists. Component references stay lazy (cycles legal); value/util/hook/namespace imports stay eager (a cycle is still the hard GUITKX2306 error, chain printed).
+
+**One command migrates a whole project** (idempotent -- run it twice, the second reports 0):
+```
+godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_11_0.gd
+```
+Old `module M { ... }` files hoist their members to top level and keep their identity via `@class_name M`; module importers flip to `import * as M`. Until you run it, wrapper syntax keeps compiling byte-identically with one GUITKX2320 warning per declaration. GUITKX2203 (the `use_` naming warning) retires with the wrappers -- the prefix IS the classification now. Full guide: **MIGRATION-0.11.md**.
+
+Update to **Reactive UI 0.11.0** + **Reactive UI Editor 0.9.0** (Godot), and **GUITKX 0.11.0** (VS Code + VS 2022) -- the IDE mirrors classify the new grammar live (highlighting, outline, diagnostics, go-to-def through renames/namespaces/defaults).
+
+---
 ## [0.10.2] - 2026-07-16
 
 **A cleanup release: `GUITKX0103` is retired, and the demos/docs finally practice what they preach.** Since 0.10.0 a `.guitkx` file's generated `class_name` has been *inferred* — `@class_name` override, else the first exported declaration, else the first declaration — rather than required to match the filename. The old "component X differs from file name Y" warning outlived the convention it was protecting; it's gone now (the diagnostic number stays reserved, never reused).

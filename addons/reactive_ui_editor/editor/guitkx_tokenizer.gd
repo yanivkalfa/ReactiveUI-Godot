@@ -67,8 +67,11 @@ const KIND := {
 }
 
 # GDScript + .guitkx declaration/control keywords (appear in setup blocks and @directives).
+# ES-modules leg: `export`/`import`/`default` join the set (deferred export lists, default
+# imports/exports); the wrapper trio stays highlighted for the deprecation window.
 const KEYWORDS := {
 	"component": true, "hook": true, "module": true,
+	"export": true, "import": true, "default": true, "from": true,
 	"func": true, "var": true, "const": true, "enum": true, "signal": true, "class": true,
 	"class_name": true, "extends": true, "static": true, "return": true, "pass": true,
 	"break": true, "continue": true, "await": true, "yield": true, "super": true, "self": true,

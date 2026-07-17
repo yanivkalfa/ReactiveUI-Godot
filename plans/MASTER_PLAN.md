@@ -31,7 +31,7 @@ release.
 |---|---|---|---|---|
 | 2.1 | **Unity imports leg (leg 3)** — port the frozen import/export contract to `.uitkx` (`UITKX2300–2309`, same corpus mirror + `corpus-hash.mjs` gate) | not started (by design) | starts only after the 0.10.0 PR merges (campaign order: Unreal → Godot → Unity) | family master plan (Unreal repo) |
 | 2.2 | **Re-exports** (`export { X } from "./x"`) — the imports fast-follow, family-wide (frozen decision: not v1) | designed-out of v1 | family-level go; implement in all three legs together | IMPORT_EXPORT_PLAN §1 (archived) |
-| 2.3 | **`@class_name` grammar removal + generated-registry privacy end-state** — GDScript's flat global class registry is the one leg where the override is a namespace substitute (Unreal/Unity have real namespaces); the Godot leg retired 0103 emission and the redundant demo usages (0.10.2) but kept the directive itself as the escape hatch | directive kept, emission-only cleanup done | family decision — decide alongside re-exports (§2.2) with the Unity leg 3 | CLASSNAME_CLEANUP_PLAN (archived) |
+| 2.3 | **`@class_name` grammar removal + generated-registry privacy end-state** — GDScript's flat global class registry is the one leg where the override is a namespace substitute (Unreal/Unity have real namespaces); the Godot leg retired 0103 emission and the redundant demo usages (0.10.2) but kept the directive itself as the escape hatch | DECIDED: directive KEPT (escape hatch + module-migration binding tool — the 0.11.0 codemod pins every hoisted module's identity with it) | removal revisited post-campaign, owner-triggered | CLASSNAME_CLEANUP_PLAN (archived) + ES_MODULES_EXECUTION_PLAN (archived) |
 
 ## 3. Feature work (library)
 
@@ -69,6 +69,7 @@ Everything below is **done or superseded** — record, not work. Full per-plan n
 | Archived plan | Outcome |
 |---|---|
 | `IMPORT_EXPORT_PLAN.md` | 0.10.0 imports leg — all milestones executed, tree migrated, green |
+| `ES_MODULES_EXECUTION_PLAN.md` | 0.11.0 ES-modules leg (Layer 2) — plain signature-classified declarations, value exports, full ES import surface, codemod-modernized tree; family corpus pin pending (Unreal leg in flight) |
 | `IMPORTS_LEG_BUGHUNT.md` | 18 verified bugs — all fixed with regression tests |
 | `NAMING_LOYALTY_PROPOSAL.md` | 0.9.0 naming loyalty — approved, executed, shipped (PR #70) |
 | `FINAL_AUDIT_GODOT_FINDINGS.md` | G-01…G-23 fixed (G-09 hatch → §4.5 here) |
