@@ -189,14 +189,17 @@ component AppLayout() {
   )
 }
 
-# A deep descendant reads the ref and portals into it.
+# A deep descendant reads the ref and portals into it (V.portal has no markup
+# tag yet, so it rides an embedded { expr } in the markup return).
 component Tooltip() {
   var overlay_root = useContext("overlay_root")
   if overlay_root == null or overlay_root["current"] == null:
     return null
-  return V.portal(overlay_root["current"], [
-    V.Label({ "text": "I render into the shared overlay root" }),
-  ])
+  return (
+    { V.portal(overlay_root["current"], [
+        V.Label({ "text": "I render into the shared overlay root" }),
+      ]) }
+  )
 }`} />
     </Box>
 

@@ -3,8 +3,8 @@
  *
  * The machine-readable data (props, signals, events, factory, godotClass) comes
  * from `hostElements.ts` (injected at build time). This file supplies the
- * *human* layer: a short blurb, a realistic `.guitkx` usage snippet, an optional
- * GDScript snippet, a nav group, and search keywords.
+ * *human* layer: a short blurb, a realistic `.guitkx` usage snippet, a nav group,
+ * and search keywords.
  *
  * Snippets use loyal-to-Godot event names — on + PascalCase(signal): onPressed / onToggled / onValueChanged / onTextSubmitted / ….
  * Where a bundled demo under examples/demos exercises the control, the snippet is
@@ -18,8 +18,6 @@ export interface HostContent {
   blurb: string
   /** A realistic `.guitkx` usage snippet using on + PascalCase(signal) event names. */
   guitkx: string
-  /** Optional GDScript (factory-call) equivalent. */
-  gd?: string
   /** Sidebar grouping. */
   group: HostGroup
   /** Search keywords. */
@@ -189,10 +187,6 @@ export const HOST_CONTENT: Record<string, HostContent> = {
     blurb:
       'A clickable button (Godot Button). Fires `onPressed` when pressed. Combine it with `useState` to build controlled, interactive UI. This is the workhorse of the counter demo.',
     guitkx: `<Button text="  +1  " onPressed={ func(): s[1].call(func(c): return c + 1) } />`,
-    gd: `V.Button({
-  "text": "  +1  ",
-  "onPressed": func(): s[1].call(func(c): return c + 1),
-})`,
     group: 'basic',
     keywords: ['button', 'click', 'press', 'action', 'onPressed'],
   },
@@ -256,11 +250,6 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   placeholder_text="Type something…"
   onTextChanged={ func(t): s[1].call(t) }
 />`,
-    gd: `V.LineEdit({
-  "text": s[0],
-  "placeholder_text": "Type something…",
-  "onTextChanged": func(t): s[1].call(t),
-})`,
     group: 'basic',
     keywords: ['lineedit', 'input', 'text field', 'textbox', 'onTextChanged', 'onTextSubmitted'],
   },
@@ -309,12 +298,6 @@ export const HOST_CONTENT: Record<string, HostContent> = {
   onValueChanged={ func(x): v[1].call(x) }
   style={ {"min_width": 220} }
 />`,
-    gd: `V.HSlider({
-  "min_value": 0, "max_value": 100,
-  "value": v[0],
-  "onValueChanged": func(x): v[1].call(x),
-  "style": {"min_width": 220},
-})`,
     group: 'basic',
     keywords: ['hslider', 'slider', 'range', 'drag', 'value', 'onValueChanged'],
   },

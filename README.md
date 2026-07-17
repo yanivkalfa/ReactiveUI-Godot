@@ -30,7 +30,7 @@ component Counter {
 > A fiber reconciler with bailout + keyed reconciliation, **23 hooks** plus a full
 > React-Router-style **router** (with its own **17 hooks**), **signals**, **Suspense**, a
 > three-layer **style** system, declarative **item-model** controls, media/animation, a
-> custom-drawing hatch, and **~71 `V.*` factories** (element factories named exactly after the Godot classes they create). `.guitkx` gets you React-parity markup — early
+> custom-drawing hatch, and an **open element vocabulary named exactly after the Godot classes** (any instantiable `Node` class is a valid tag). `.guitkx` gets you React-parity markup — early
 > returns, prop spread, context handles, control-flow directives — plus **Fast Refresh** (hot
 > reload with hook state preserved) and editor tooling in three places: natively inside Godot, in
 > VS Code, and in Visual Studio 2022.
@@ -134,9 +134,6 @@ You never learn a second vocabulary (migrating from 0.8? — [MIGRATION-0.9.md](
   against ClassDB at compile time), so the entire official Control set works from markup.
   `<Panel>` is Godot's `Panel`. Engine names are reserved — a project component that shadows one
   gets a compile warning.
-- **`V.*` factories match tags verbatim** — `V.Button(...)`, `V.VBoxContainer(...)`; only
-  structural, non-engine factories stay lowercase (`fc`, `h`, `text`, `fragment`, `portal`,
-  `suspense`, the router set). `V.h("AnyClassName", …)` remains the generic escape.
 - **Props are the exact Godot property names** — set verbatim on the node.
 - **Events are the native signal name with an `on` marker** — `on` + PascalCase(signal):
   `onPressed` → `pressed`, `onValueChanged` → `value_changed`, `onGuiInput` → `gui_input` —
@@ -167,8 +164,9 @@ export component Panel(level: int = 1) {
 - **`export`** makes a declaration reachable across files; without it a declaration is
   file-private. A file may hold **several** declarations; its binding (`class_name`) is the
   `@class_name` override, else the first exported declaration.
-- **Component cycles are legal** (component imports stay lazy through `V.comp`); **value cycles**
-  (hooks/modules — eager `const` preloads) are a compile error that prints the chain.
+- **Component cycles are legal** (component imports resolve lazily, by path, at first render);
+  **value cycles** (hooks/modules — eager `const` preloads) are a compile error that prints the
+  chain.
 - **Migrating an existing project is one command** — idempotent, re-runnable, leaves hand-written
   `class_name` scripts alone (they stay ambient, no import needed):
 
@@ -283,7 +281,7 @@ add/remove/reorder instead of rebuild):
 
 ### Item models
 
-`<ItemList>` / `<Tree>` / `<TabBar>` / `<OptionButton>` (and `PopupMenu`, via `V.h`) take a
+`<ItemList>` / `<Tree>` / `<TabBar>` / `<OptionButton>` / `<PopupMenu>` take a
 declarative `items={ [...] }` prop and reconcile rows **by item identity** (selection/expansion
 preserved across renders). Wire changes with the normal `on*` event props. Register adapters for
 your own controls via `RUIHost.register_item_adapter(...)`.

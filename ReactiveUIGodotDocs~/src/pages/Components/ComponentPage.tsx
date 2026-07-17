@@ -149,7 +149,7 @@ export const ComponentPage: FC<{ tag: string }> = ({ tag }) => {
           {element.tag}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-          <code>{element.factory}</code> ({element.godotClass})
+          Godot class: <code>{element.godotClass}</code>
         </Typography>
       </Box>
 
@@ -165,14 +165,6 @@ export const ComponentPage: FC<{ tag: string }> = ({ tag }) => {
             Usage
           </Typography>
           <CodeBlock language="jsx" code={content.guitkx} />
-          {content.gd && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1, opacity: 0.7 }}>
-                GDScript (factory call)
-              </Typography>
-              <CodeBlock language="python" code={content.gd} />
-            </Box>
-          )}
         </Box>
       )}
 
@@ -199,8 +191,7 @@ export const ComponentPage: FC<{ tag: string }> = ({ tag }) => {
           <Chip label={`${element.props.length} total`} size="small" variant="outlined" />
         </Box>
         <Typography variant="body2" paragraph sx={{ opacity: 0.7 }}>
-          Property names are the Godot names (snake_case), set as attributes in markup or keys in a
-          factory call.
+          Property names are the Godot names (snake_case), set as attributes in markup.
         </Typography>
 
         {ownProps.length > 0 && <PropsTable entries={ownProps} />}

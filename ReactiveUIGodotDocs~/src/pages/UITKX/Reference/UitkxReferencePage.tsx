@@ -451,9 +451,8 @@ export const UitkxReferencePage: FC = () => (
     </Typography>
     <CodeBlock language="jsx" code={PROP_SPREAD_EXAMPLE} />
     <Typography variant="body2" paragraph sx={{ mt: 1 }}>
-      A spread compiles to <code>V._spread_all([...])</code>, which merges the ordered segments into a
-      single props <code>Dictionary</code> at render time. Elements with no spread keep the plain
-      dictionary-literal fast path unchanged.
+      A spread merges the ordered segments into a single props <code>Dictionary</code> at render
+      time. Elements with no spread keep the plain dictionary-literal fast path unchanged.
     </Typography>
 
     {/* ── Modules & Hooks ────────────────────────────────────────────── */}

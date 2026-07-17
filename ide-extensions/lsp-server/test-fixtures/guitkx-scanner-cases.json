@@ -257,6 +257,29 @@
       "name": "empty import list is GUITKX0303",
       "input": "import { } from \"./X\"\ncomponent Foo {\n\treturn ( <Spacer /> );\n}\n",
       "expect": { "diags": ["GUITKX0303"] }
+    },
+    {
+      "name": "wave G: early returns — multiple markup returns accepted (last top-level anchors)",
+      "input": "component Multi {\n\tif (true) {\n\t\treturn ( <TextBlock Text=\"big\" /> );\n\t}\n\treturn ( <Spacer /> );\n}\n",
+      "expect": {
+        "components": [{ "name": "Multi", "exported": false }],
+        "diags": [],
+        "noError": true
+      }
+    },
+    {
+      "name": "wave G: every return window parses per-span — a bad EARLY window still diagnoses",
+      "input": "component MultiBad {\n\tif (true) {\n\t\treturn ( <TextBlock Text=\"a\" /> <Spacer /> );\n\t}\n\treturn ( <Spacer /> );\n}\n",
+      "expect": { "diags": ["GUITKX0108"] }
+    },
+    {
+      "name": "S4/markup-everywhere (family): markup as a value scans clean — assignment + paren boundaries",
+      "input": "component ValueMarkup {\n\tx = (<VerticalBox>\n\t\t<Spacer />\n\t</VerticalBox>);\n\ty = <Spacer />;\n\treturn (\n\t\t<Border />\n\t);\n}\n",
+      "expect": {
+        "components": [{ "name": "ValueMarkup", "exported": false }],
+        "diags": [],
+        "noError": true
+      }
     }
   ],
   "fileScanLeg": [
