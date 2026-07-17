@@ -2325,6 +2325,17 @@ func _test_es_modules_imports() -> void:
 	var r2322 := RUIGuitkx.compile("export v9 := Time.get_ticks_msec()\nA5() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "m")
 	_check_true(not _has_code(r2322, "GUITKX2322"), "divergence (a): 2322 is never emitted by the Godot leg")
 
+	# G-10 matrix: a WRAPPER decl + NEW import forms in one file -- imports are orthogonal to the
+	# window; the file compiles with 2320 on the wrapper only.
+	var wnew := "import * as Hud from \"./hud\"
+component WOld {
+	return ( <Label text={Hud.fmt(3)}/> )
+}
+"
+	var rwn := RUIGuitkx.compile(wnew, "wold", [], {}, "res://tests/__bh_tmp/es/wold.guitkx", "res://")
+	_check_true(bool(rwn["ok"]), "G-10 matrix: wrapper decl + namespace import compiles (got %s)" % str(rwn.get("diagnostics", [])))
+	_check_true(_has_code(rwn, "GUITKX2320") and (rwn["gd"] as String).contains("const Hud = preload"), "G-10 matrix: warns on the wrapper only; the ns import lowers normally")
+
 	# Runtime proof: mount the all-forms importer and check the rendered values flow end to end.
 	var app_script = load("res://tests/__bh_tmp/es/app.gd")
 	_check_true(app_script != null, "G-05 runtime: importer .gd loads")
