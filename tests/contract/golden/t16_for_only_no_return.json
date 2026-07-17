@@ -5,6 +5,12 @@
 			"len": 0,
 			"off": -1,
 			"severity": 0
+		},
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
 		}
 	],
 	"markup": [],

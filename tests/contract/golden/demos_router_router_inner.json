@@ -1,5 +1,12 @@
 {
-	"diagnostics": [],
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 29,
+			"severity": 1
+		}
+	],
 	"markup": [
 		{
 			"error": "",

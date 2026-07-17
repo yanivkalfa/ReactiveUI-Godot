@@ -64,6 +64,7 @@ func _run() -> void:
 	_test_bughunt_fixes()
 	_test_0103_retired()
 	_test_2107_walk_order()
+	_test_es_modules_declarations()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -1471,9 +1472,12 @@ func _test_diagnostics() -> void:
 	var lk_src := "component LK(items: Array = []) {\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t@for (it in items) { return ( <Label text={ it } /> ) }\n\t\t</VBoxContainer>\n\t)\n}\n"
 	var lk := RUIGuitkx.compile(lk_src, "LK")
 	_check_diag_at(lk, "GUITKX0106", lk_src, "<Label text={ it }", "keyless-loop-child")
-	# a clean component emits no warnings
-	var clean := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
-	_check_true(clean["ok"] and (clean["diagnostics"] as Array).is_empty(), "clean component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+	# a clean PLAIN component emits no warnings; the equivalent WRAPPER form gets exactly the G-10
+	# deprecation warning (2320) and nothing else.
+	var clean := RUIGuitkx.compile("Clean() -> RUIVNode {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
+	_check_true(clean["ok"] and (clean["diagnostics"] as Array).is_empty(), "clean plain component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+	var clean_wrapper := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
+	_check_true(clean_wrapper["ok"] and (clean_wrapper["diagnostics"] as Array).size() == 1 and _has_code(clean_wrapper, "GUITKX2320"), "G-10: clean wrapper component gets exactly one 2320 deprecation warning (got %s)" % str(clean_wrapper["diagnostics"]))
 
 func _test_loop_single_root() -> void:
 	# BUG-V3: a @for/@while body with >1 sibling root is a hard error (single-root; parity Unity UITKX0108)
@@ -1503,11 +1507,21 @@ func _test_decl_validation() -> void:
 	# a valid @class_name is accepted, and a trailing comment on the directive line is tolerated
 	var okcn := RUIGuitkx.compile("@class_name MyThing  # ok\ncomponent X() { return ( <Label /> ) }\n", "X")
 	_check_true(okcn["ok"], "valid @class_name accepted (got %s)" % str(okcn["diagnostics"]))
-	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint, anchored at the typo'd word
-	var typo_src := "componeent X() { return ( <Label /> ) }\n"
+	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint, anchored at the typo'd
+	# word -- but only when NO valid declaration exists anywhere in the file. Under E-01's
+	# signature-only classification a misspelled keyword followed by something that itself LOOKS
+	# like a plain decl is no longer ambiguous: "componeent X() { ... }" now parses as invalid
+	# content ("componeent") before a real plain util declaration ("X"), which is the more precise
+	# diagnostic (there is no guarantee the author meant "component" specifically).
+	var typo_src := "componeent Foo\n"
 	var typo := RUIGuitkx.compile(typo_src, "X")
 	_check_true(not typo["ok"] and str(_diag(typo, "GUITKX2101").get("message", "")).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
 	_check_diag_at(typo, "GUITKX2101", typo_src, "componeent", "misspelled keyword")
+	# E-01: the same typo immediately followed by a callable shape is invalid CONTENT before a real
+	# (plain util) declaration, not a did-you-mean -- "X" alone is legal new-style syntax.
+	var typo_shadowed_src := "componeent X() { return ( <Label /> ) }\n"
+	var typo_shadowed := RUIGuitkx.compile(typo_shadowed_src, "X")
+	_check_true(not typo_shadowed["ok"] and _has_code(typo_shadowed, "GUITKX2105") and not _has_code(typo_shadowed, "GUITKX2101"), "E-01: a typo shadowed by a real trailing decl is 2105, not 2101 (got %s)" % str(typo_shadowed["diagnostics"]))
 	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
 	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
 	_check_true(not badtag["ok"] and _has_code(badtag, "GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
@@ -2133,3 +2147,79 @@ func _check_true(cond: bool, msg: String) -> void:
 func _fail(msg: String) -> void:
 	print("[guitkx_test] FAIL: ", msg)
 	_failed = true
+
+## ES-modules Layer 2 (E-01..E-05, E-10 slice): plain, signature-classified declarations
+## (component/hook/util/value) alongside the deprecated wrapper keywords. Import-surface
+## extensions (E-06..E-09) are a separate, not-yet-landed chunk of this leg -- not covered here.
+func _test_es_modules_declarations() -> void:
+	# E-01: a plain component (`-> RUIVNode` annotation, PascalCase) compiles clean, no 2320.
+	var comp := RUIGuitkx.compile("Foo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "Foo")
+	_check_true(comp["ok"] and (comp["diagnostics"] as Array).is_empty(), "ES: plain component compiles with no diagnostics (got %s)" % str(comp.get("diagnostics", [])))
+	_check_true((comp["gd"] as String).contains("static func render("), "ES: sole plain component emits render")
+
+	# E-01/T2.6: a plain component still enforces PascalCase (the existing 2100, reused).
+	var comp_lc := RUIGuitkx.compile("foo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "foo")
+	_check_true(not comp_lc["ok"] and _has_code(comp_lc, "GUITKX2100"), "ES: plain component name must be PascalCase (got %s)" % str(comp_lc["diagnostics"]))
+
+	# E-02 cross-guard: `use_`-prefixed + `-> RUIVNode` is 2321, not a silent component/2100 double-hit.
+	var xguard := RUIGuitkx.compile("use_foo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "use_foo")
+	_check_true(not xguard["ok"] and _has_code(xguard, "GUITKX2321") and not _has_code(xguard, "GUITKX2100"), "E-02: use_-prefixed + RUIVNode is 2321 only (got %s)" % str(xguard["diagnostics"]))
+
+	# E-01: a `use_`-prefixed callable with no `-> RUIVNode` is a hook -- emits under its own name
+	# (no `render` aliasing; that only applies to components).
+	var hook := RUIGuitkx.compile("use_count(start: int) -> int {\n\treturn start\n}\n", "use_count")
+	_check_true(hook["ok"] and (hook["diagnostics"] as Array).is_empty(), "ES: plain hook compiles clean (got %s)" % str(hook.get("diagnostics", [])))
+	_check_true((hook["gd"] as String).contains("static func use_count(") and not (hook["gd"] as String).contains("static func render("), "ES: lone plain hook emits under its own name, no render")
+
+	# E-01: anything else (no use_ prefix, no RUIVNode return) is a util.
+	var util := RUIGuitkx.compile("format_score(score: int) -> String {\n\treturn \"Score: %d\" % score\n}\n", "format_score")
+	_check_true(util["ok"] and (util["diagnostics"] as Array).is_empty(), "ES: plain util compiles clean (got %s)" % str(util.get("diagnostics", [])))
+	_check_true((util["gd"] as String).contains("static func format_score(") and (util["gd"] as String).contains("\"kind\": \"util\""), "ES: util emits under its own name with kind util in __RUI_DECLS")
+
+	# E-04/E-05: the three value spellings all emit `static var`, never `const`.
+	var vals := RUIGuitkx.compile("export MAX_ITEMS: int = 5\nrow_style := { \"a\": 1 }\ntheme = { \"b\": 2 }\n", "vals")
+	_check_true(vals["ok"] and (vals["diagnostics"] as Array).is_empty(), "ES: value decls compile clean (got %s)" % str(vals.get("diagnostics", [])))
+	var vgd: String = vals["gd"]
+	_check_true(vgd.contains("static var MAX_ITEMS: int = 5") and vgd.contains("static var row_style := { \"a\": 1 }") and vgd.contains("static var theme = { \"b\": 2 }"), "ES: value decls preserve their source spelling (=, :=, : Type =) (got %s)" % vgd)
+	_check_true(not vgd.contains("const MAX_ITEMS") and not vgd.contains("const row_style") and not vgd.contains("const theme"), "E-05: value exports never emit `const` (got %s)" % vgd)
+	_check_true(vgd.contains("\"kind\": \"value\""), "ES: __RUI_DECLS records the value kind")
+
+	# G-10: a mixed file with ONE wrapper decl + ONE plain decl is legal; only the wrapper decl warns.
+	var mix := RUIGuitkx.compile("component A() {\n\treturn ( <Label /> )\n}\nB() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "mix")
+	_check_true(mix["ok"], "G-10: wrapper + plain mix in one file compiles (got %s)" % str(mix.get("diagnostics", [])))
+	var warns2320 := (mix["diagnostics"] as Array).filter(func(d): return str(d.get("code", "")) == "GUITKX2320")
+	_check_true(warns2320.size() == 1, "G-10: exactly one 2320 warning fires, for the wrapper decl only (got %s)" % str(mix["diagnostics"]))
+
+	# A module's members stay WRAPPER-ONLY (E-01 has no plain `module` equivalent) -- a plain decl
+	# inside a module body is invalid content (2105), not misread as a nested module (2504).
+	var modplain := RUIGuitkx.compile("module M {\n\tfoo() { }\n}\n", "modplain")
+	_check_true(not modplain["ok"] and _has_code(modplain, "GUITKX2105") and not _has_code(modplain, "GUITKX2504"), "ES: a plain decl inside a module body is 2105, not a false nested-module 2504 (got %s)" % str(modplain["diagnostics"]))
+
+	# Runtime: a plain component isn't just shape-plausible GDScript -- load it and mount it for
+	# real (mirrors _test_runtime's wrapper-component pattern).
+	var rsrc := "Box2Plain(label: String = \"hi\") -> RUIVNode {\n" + \
+		"\tvar upper = label.to_upper()\n" + \
+		"\tvar tag = \"[\" + upper + \"]\"\n" + \
+		"\treturn (\n" + \
+		"\t\t<VBoxContainer>\n" + \
+		"\t\t\t<Label text={ tag } />\n" + \
+		"\t\t\t<Button text=\"go\" />\n" + \
+		"\t\t</VBoxContainer>\n" + \
+		"\t)\n}\n"
+	var rr := RUIGuitkx.compile(rsrc, "Box2Plain")
+	_check_true(rr["ok"], "ES runtime: plain component compiles (got %s)" % str(rr.get("diagnostics", [])))
+	if rr["ok"]:
+		var rgd: String = (rr["gd"] as String).replace("class_name Box2Plain\n", "")
+		var rpath := "user://__guitkx_box2plain.gd"
+		var rf := FileAccess.open(rpath, FileAccess.WRITE)
+		rf.store_string(rgd)
+		rf.close()
+		var rscript = load(rpath)
+		_check_true(rscript != null, "ES runtime: generated .gd loads as a script")
+		var rc := Control.new()
+		root.add_child(rc)
+		var rapp := ReactiveRoot.create(rc, V.fc(rscript.render, { "label": "world" }))
+		var rlbl := _find_first(rc, "Label")
+		_check_true(rlbl != null and rlbl.text == "[WORLD]", "ES runtime: plain component renders and its setup-derived value binds (got %s)" % str(rlbl.text if rlbl != null else "<none>"))
+		rapp.unmount()
+		rc.queue_free()
