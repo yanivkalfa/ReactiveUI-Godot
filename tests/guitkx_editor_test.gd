@@ -505,6 +505,39 @@ func _test_rich_hover() -> void:
 	PluginScript.cleanup_moved_guitkx(mv_src)
 	_ok(not FileAccess.file_exists(mv_gd), "old-name .gd removed synchronously on move")
 	_ok(not FileAccess.file_exists(mv_src + ".diags.json"), "old-name sidecar removed on move")
+	# M4.3 (ES-modules, file=module): renames are MORE load-bearing with eager value exports --
+	# a renamed VALUE file must drop its outputs the same way (no ghost class_name survives),
+	# and an importer still holding the old specifier gets GUITKX2300 on its next compile.
+	var val_src := "res://tests/__editor_test_val.guitkx"
+	var fval := FileAccess.open(val_src, FileAccess.WRITE)
+	fval.store_string("export tmp_val_w: int = 7
+")
+	fval.close()
+	RUIGuitkxCodegen.compile_file(val_src)
+	var val_gd: String = RUIGuitkxCodegen.gd_path_for(val_src)
+	_ok(FileAccess.file_exists(val_gd), "value-export fixture compiled its .gd")
+	var val_dst := "res://tests/__editor_test_val2.guitkx"
+	DirAccess.rename_absolute(ProjectSettings.globalize_path(val_src), ProjectSettings.globalize_path(val_dst))
+	PluginScript.cleanup_moved_guitkx(val_src)
+	_ok(not FileAccess.file_exists(val_gd), "renamed value file drops its old .gd (no ghost class)")
+	var val_imp := "res://tests/__editor_test_valimp.guitkx"
+	var fvi := FileAccess.open(val_imp, FileAccess.WRITE)
+	fvi.store_string("import { tmp_val_w } from \"./__editor_test_val\"
+export ValImp() -> RUIVNode {
+	return ( <Label text={str(tmp_val_w)}/> )
+}
+")
+	fvi.close()
+	var vres: Dictionary = RUIGuitkxCodegen.compile_file(val_imp)
+	var v2300 := false
+	for vd in (vres.get("diagnostics", []) as Array):
+		if vd is Dictionary and str((vd as Dictionary).get("code", "")) == "GUITKX2300":
+			v2300 = true
+	_ok(v2300, "importer of the OLD specifier gets GUITKX2300, not a silent stale preload")
+	for vjunk in [val_dst, val_dst + ".diags.json", RUIGuitkxCodegen.gd_path_for(val_dst), val_imp, val_imp + ".diags.json", RUIGuitkxCodegen.gd_path_for(val_imp), val_src + ".diags.json", val_gd + ".uid"]:
+		if FileAccess.file_exists(str(vjunk)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(vjunk)))
+
 	# Hand-written .gd safety: a non-generated file under the old name must survive.
 	var hw_src := "res://tests/__editor_test_hw.guitkx"
 	var hw_gd := "res://tests/__editor_test_hw.gd"
