@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.11.1] — Unreleased
 
+### Changed — BREAKING: GUITKX2304 (unused import) is now an ERROR
+
+Severity bump, owner-directed and family-wide (Unity/Unreal match): an unused imported
+binding — named, `* as`, default, or any part of a combined import — now **fails the
+compile** like every other import diagnostic, in the build sweep, the editor addon, and
+the IDE extensions alike. Builds that carried unused imports as warnings must delete
+(or use) them. The promotion is safe from false positives: the "used" reference scan
+now over-approximates harder — every identifier outside the import statements counts,
+string/comment/markup-text mentions included — so a firing 2304 means the binding truly
+appears nowhere. (The previous GDScript-lexis scan could be derailed by markup text: an
+apostrophe in "don't" or a literal `#` opened a phantom string/comment that swallowed a
+real `{expr}` reference later on the same line — a false 2304 that would have been an
+error-tier build breaker; fixed before the flip and pinned by test.) Findings anchor on
+the whole binding token (alias offset + length) in every form.
+
 ### Added
 
 - **ES combined import forms**: `import Def, { a, b as c } from "./file"` and

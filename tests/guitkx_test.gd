@@ -1403,10 +1403,12 @@ func _test_imports_m3() -> void:
 	var r5 := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\nimport { StatusChip } from \"./status_chip\"\ncomponent A() { return ( <StatusChip /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
 	_check_true(_has_code(r5, "GUITKX2303"), "M3: duplicate import -> 2303")
 
-	# 2304 (warning): imported but never referenced.
+	# 2304: imported but never referenced. ERROR tier since 0.11.1 (owner directive, family-wide):
+	# consistent with the other import diagnostics, so an unused import fails the compile (T1.1).
 	var r6 := RUIGuitkx.compile("import { StatusChip } from \"./status_chip\"\ncomponent A() { return ( <Label /> ) }\n", "a", [], {}, dir + "/a.guitkx", "res://")
-	_check_true(_has_code(r6, "GUITKX2304"), "M3: unused import -> 2304 (warning)")
-	_check_true(int(_diag(r6, "GUITKX2304").get("severity", -9)) == GDiag.WARNING, "M3: 2304 is a warning")
+	_check_true(_has_code(r6, "GUITKX2304"), "M3: unused import -> 2304")
+	_check_true(int(_diag(r6, "GUITKX2304").get("severity", -9)) == GDiag.ERROR, "M3: 2304 is error-tier (0.11.1 severity bump)")
+	_check_true(not bool(r6["ok"]), "M3: an unused import fails the compile under the error tier")
 
 	# resolve_specifier: ./ ../ ~/ forms + extensionless.
 	var sc := Resolve.resolve_specifier("./status_chip", dir + "/panel.guitkx", "res://")
@@ -2491,6 +2493,31 @@ func _test_es_combined_imports() -> void:
 	var run_star_part := RUIGuitkx.compile("import usedD, * as UnusedU from \"./utils\"\nexport A6() -> RUIVNode {\n\treturn ( <Label text={str(usedD())}/> )\n}\n", "a6", [], {}, "res://tests/__bh_tmp/esc/a6.guitkx", "res://")
 	_check_true(_has_code(run_star_part, "GUITKX2304"), "2304: unused STAR part of a combined import is flagged (got %s)" % str(run_star_part.get("diagnostics", [])))
 	_check_true(str(_diag(run_star_part, "GUITKX2304").get("message", "")).contains("UnusedU"), "2304 names the unused star alias, not the used default")
+
+	# 2304 SPANS (F5 round 3): every finding squiggles the WHOLE binding token -- the parser
+	# tracks ns_at/def_at, so star/default/combined parts anchor on the alias, alias-length long.
+	var span_src := "import unusedDef, { get_something } from \"./utils\"\nexport A7s() -> RUIVNode {\n\treturn ( <Label text={str(get_something())}/> )\n}\n"
+	var r_span := RUIGuitkx.compile(span_src, "a7s", [], {}, "res://tests/__bh_tmp/esc/a7s.guitkx", "res://")
+	var d_span := _diag(r_span, "GUITKX2304")
+	_check_true(int(d_span.get("offset", -1)) == span_src.find("unusedDef") and int(d_span.get("length", 0)) == "unusedDef".length(), "2304 spans the whole default token (got off %s len %s)" % [str(d_span.get("offset")), str(d_span.get("length"))])
+	var span_src2 := "import * as UnusedNs2 from \"./utils\"\nexport A8s() -> RUIVNode {\n\treturn ( <Label /> )\n}\n"
+	var r_span2 := RUIGuitkx.compile(span_src2, "a8s", [], {}, "res://tests/__bh_tmp/esc/a8s.guitkx", "res://")
+	var d_span2 := _diag(r_span2, "GUITKX2304")
+	_check_true(int(d_span2.get("offset", -1)) == span_src2.find("UnusedNs2") and int(d_span2.get("length", 0)) == "UnusedNs2".length(), "2304 spans the whole star-alias token (got off %s len %s)" % [str(d_span2.get("offset")), str(d_span2.get("length"))])
+
+	# ERROR-TIER PRECONDITION (F5 round 3, the Unity interpolation-hole analog): the reference
+	# scan used GDScript lexis over the WHOLE file, so markup TEXT could derail it -- an
+	# apostrophe in markup text ("don't") opened a phantom string that swallowed a following
+	# {expr} hole on the same line, and a binding used ONLY there false-flagged unused. Under the
+	# error tier that is a build breaker; the scan now counts every identifier outside import
+	# statements, string/comment mentions included (over-approximating "used" harder is the safe
+	# direction for an error-tier check).
+	var gap := "import { get_something } from \"./utils\"\nexport GapC() -> RUIVNode {\n\treturn (\n\t\t<VBoxContainer>don't <Label text={str(get_something())}/></VBoxContainer>\n\t)\n}\n"
+	var r_gap := RUIGuitkx.compile(gap, "gapc", [], {}, "res://tests/__bh_tmp/esc/gapc.guitkx", "res://")
+	_check_true(not _has_code(r_gap, "GUITKX2304"), "a reference after an apostrophe in markup text still counts as a use (got %s)" % str(r_gap.get("diagnostics", [])))
+	var gap2 := "import { get_something } from \"./utils\"\nexport GapD() -> RUIVNode {\n\treturn (\n\t\t<VBoxContainer>Score #1 <Label text={str(get_something())}/></VBoxContainer>\n\t)\n}\n"
+	var r_gap2 := RUIGuitkx.compile(gap2, "gapd", [], {}, "res://tests/__bh_tmp/esc/gapd.guitkx", "res://")
+	_check_true(not _has_code(r_gap2, "GUITKX2304"), "a reference after a literal `#` in markup text still counts as a use (got %s)" % str(r_gap2.get("diagnostics", [])))
 
 ## M4 re-verification (ES-modules leg): the two-pass write-all-then-check-all must survive the
 ## NEW eager symbols. `a_imp` namespace-imports `z_vals` -- lexicographic pass-1 order compiles

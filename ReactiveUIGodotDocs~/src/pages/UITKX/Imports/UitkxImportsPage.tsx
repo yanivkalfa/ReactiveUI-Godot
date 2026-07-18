@@ -165,7 +165,7 @@ export const UitkxImportsPage: FC = () => (
             ['GUITKX2301', 'Name is not exported by the target — add `export`'],
             ['GUITKX2302', 'Name is not declared in the target file'],
             ['GUITKX2303', 'Duplicate import of the same name'],
-            ['GUITKX2304', 'Unused import (warning)'],
+            ['GUITKX2304', 'Unused import (an error since 0.11.1)'],
             ['GUITKX2305', 'Referenced but not imported — add the import'],
             ['GUITKX2306', 'Value-import cycle (prints the chain)'],
             ['GUITKX2307', 'Used like a component/hook but no file exports it'],

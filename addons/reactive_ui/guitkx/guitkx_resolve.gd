@@ -158,7 +158,7 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 			else:
 				seen[nsn] = spec
 				if used.is_valid() and not bool(used.call(nsn)):
-					diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nsn, ns_at, nsn.length()))
+					diags.append(D.make("GUITKX2304", D.ERROR, "unused import `%s`" % nsn, ns_at, nsn.length()))
 				values.append({ "name": nsn, "gd": res["gd"], "member": "", "kind": "namespace" })
 		# E-07 default form: binds the target's `export default` decl; lowers per that decl's KIND.
 		var defn := str(imp.get("def", ""))
@@ -173,7 +173,7 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 					diags.append(D.make("GUITKX2326", D.ERROR, "%s has no default export -- use a named import: import { %s } from \"%s\"" % [str(res["guitkx"]).get_file(), str(table["binding"]), spec], def_at, defn.length()))
 				else:
 					if used.is_valid() and not bool(used.call(defn)):
-						diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % defn, def_at, defn.length()))
+						diags.append(D.make("GUITKX2304", D.ERROR, "unused import `%s`" % defn, def_at, defn.length()))
 					var dd: Dictionary = decls[tgt_default]
 					match str(dd["kind"]):
 						"component":
@@ -205,7 +205,7 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 				continue
 			# 2304: imported but never referenced in the body (by its LOCAL name).
 			if used.is_valid() and not bool(used.call(nm)):
-				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nm, at, nm.length()))
+				diags.append(D.make("GUITKX2304", D.ERROR, "unused import `%s`" % nm, at, nm.length()))
 			match str(d["kind"]):
 				"component":
 					comps[nm] = { "gd": res["gd"], "func": d["func"] }

@@ -81,13 +81,13 @@ const structuralRows: DiagRow[] = [
 
 /* ── Import diagnostics (GUITKX2300–2309, 0.10.0) ────────────────────── */
 // The family-frozen import block, shared verbatim (modulo prefix) with ReactiveUI for
-// Unreal (UETKX23xx) and Unity (UITKX23xx). Only 2304 is a warning.
+// Unreal (UETKX23xx) and Unity (UITKX23xx). All error-tier since 0.11.1 (2304 was a warning).
 const importRows: DiagRow[] = [
   { code: 'GUITKX2300', sev: 'Error', title: 'Unknown import specifier', fix: <>No <code>.guitkx</code> file exists at the specifier&apos;s path. Specifiers are extensionless and relative (<code>./</code>, <code>../</code>) or root-aliased (<code>~/</code>); <code>res://</code> / <code>uid://</code> are not valid import specifiers. Check the path and the <code>root</code> key in <code>guitkx.config.json</code>.</> },
   { code: 'GUITKX2301', sev: 'Error', title: 'Not exported by the target', fix: <>The name is declared in the target file but not marked <code>export</code> — file-private declarations are unreachable cross-file. Add <code>export</code> to its declaration.</> },
   { code: 'GUITKX2302', sev: 'Error', title: 'Not declared in the target', fix: <>The target file has no declaration with this name. Check the spelling, or import it from the file that actually declares it.</> },
   { code: 'GUITKX2303', sev: 'Error', title: 'Duplicate import', fix: <>The same name is imported twice (possibly from two different files). Remove one.</> },
-  { code: 'GUITKX2304', sev: 'Warning', title: 'Unused import', fix: <>The imported name is never referenced in this file. Remove the import (or use it).</> },
+  { code: 'GUITKX2304', sev: 'Error', title: 'Unused import', fix: <>The imported name is never referenced in this file. Remove the import (or use it). An error since 0.11.1 (was a warning), consistent with the other import diagnostics.</> },
   { code: 'GUITKX2305', sev: 'Error', title: 'Referenced but not imported', fix: <>Cross-file resolution is strict — the message contains the exact <code>import {'{ X }'} from &quot;…&quot;</code> line to add. Hand-written <code>class_name</code> scripts are ambient and never need an import.</> },
   { code: 'GUITKX2306', sev: 'Error', title: 'Value-import cycle', fix: <>Values, utils, hooks, and <code>* as</code> namespace imports are eager <code>const</code> preloads, so an import cycle among them is a load-order error (the message prints the chain). Break the chain, or restructure so the cyclic edge is a <em>component</em> reference — component imports are lazy and may cycle freely.</> },
   { code: 'GUITKX2307', sev: 'Error', title: 'Used like a component/hook but no file exports it', fix: <>A component-like tag matches no host element, no import, and no <code>.guitkx</code> export (and isn&apos;t a near-miss of one). Create/export the component and import it, or fix the name.</> },

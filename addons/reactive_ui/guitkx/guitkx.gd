@@ -941,27 +941,42 @@ static func _rewrite_bare_names(src: String, aliases: Dictionary, calls_only: bo
 	return out
 
 ## True if identifier `nm` is referenced anywhere in `source` OUTSIDE import statements — the
-## drive for the unused-import warning (GUITKX2304). Lexer-aware enough to skip strings/comments.
-## Every identifier occurrence counts as a reference (bare value refs like `style={container}`
-## included — over-approximating "used" is the right direction for a warning-tier check). Import
-## statements are skipped WHOLE via the canonical import_end walk: the old skip only understood
-## the braced form, so a `* as X` / default / combined import's own binding self-counted on its
-## import line and an unused one was never flagged (field wave, 0.11.1).
+## drive for the unused-import error (GUITKX2304). Every identifier occurrence counts as a
+## reference (bare value refs like `style={container}` included), scanned over the RAW source:
+## string and comment contents count too. That is deliberate over-approximation, and it is the
+## error-tier safety precondition (0.11.1 severity bump) — the previous GDScript-lexis skip
+## derailed on MARKUP text (an apostrophe in "don't" opened a phantom string, a literal `#`
+## opened a phantom comment, each swallowing a real `{expr}` reference later on the line), so a
+## used binding could false-flag unused, which as an ERROR breaks a correct build. A comment or
+## string mention keeping an import "alive" merely misses a cleanup hint; over-approximating
+## harder is the only safe direction. Import statements are still skipped WHOLE (canonical
+## import_end walk; line-anchored so an `import` inside a string/comment never triggers the
+## skip) — a binding must not self-count on its own import line.
 static func _name_referenced(source: String, nm: String) -> bool:
 	var n := source.length()
 	var i := 0
 	while i < n:
-		var k := L.skip_noncode(source, i)
-		if k != i:
-			i = k
-			continue
-		if L.keyword_at(source, i, "import"):
+		if L.keyword_at(source, i, "import") and _line_lead_is_ws(source, i):
 			i = import_end(source, i)
 			continue
 		if L.keyword_at(source, i, nm):
 			return true
 		i += 1
 	return false
+
+# True when everything between `i`'s line start and `i` is spaces/tabs — the shape of a real
+# preamble import statement (imports are line-anchored; a mid-line `import` is string/comment
+# content or a 2309 error, never a statement this scan should leap over).
+static func _line_lead_is_ws(source: String, i: int) -> bool:
+	var j := i - 1
+	while j >= 0:
+		var c := source.unicode_at(j)
+		if c == 10:
+			return true
+		if c != 32 and c != 9:
+			return false
+		j -= 1
+	return true
 
 ## Enumerate EVERY top-level declaration from `from` (0.10.0 mixed-decl §6.1). Each entry mirrors
 ## `_find_decl` (kind, at, export, start) plus name/name_at and `next` (index just past the decl's

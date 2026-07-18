@@ -53,7 +53,7 @@ you're done.
 | `GUITKX2305` | a cross-file reference the codemod's scan missed (e.g. a name built dynamically) | add the import line printed in the message |
 | `GUITKX2301` | you removed `export` from something another file still imports | re-add `export`, or remove the stale import |
 | `GUITKX2306` | two hook/module files import each other | break the chain, or make the cyclic edge a component reference (those may cycle) |
-| `GUITKX2304` (warning) | an import the codemod added is no longer used | delete the line |
+| `GUITKX2304` (warning then; an ERROR since 0.11.1) | an import the codemod added is no longer used | delete the line |
 
 The IDE tooling (VS Code / VS 2022 `0.10.0`, editor addon `0.8.0`) treats imports as optional
 syntax — an un-migrated project stays green in the editor until you run the codemod.
