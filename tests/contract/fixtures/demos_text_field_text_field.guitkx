@@ -1,0 +1,15 @@
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export DemoTextField() -> RUIVNode {
+  var s = useState("")
+  return (
+    <DemoBox title="Text Field — controlled input">
+      <LineEdit
+        text={ s[0] }
+        placeholder_text="Type something…"
+        onTextChanged={ func(t): s[1].call(t) }
+        style={ {"min_width": 280} } />
+      <Label text={ "You typed: \"%s\"  (%d chars)" % [s[0], s[0].length()] } />
+    </DemoBox>
+  )
+}

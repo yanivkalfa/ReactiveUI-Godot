@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":201,\"attrs\":[{\"at\":214,\"end\":286,\"kind\":\"str\",\"name\":\"text\",\"value\":\"   ● this label reads the accent straight from the context handle\",\"vat\":220},{\"at\":293,\"end\":320,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": c}\",\"vat\":301}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 326,
+			"start": 196
+		}
+	]
+}

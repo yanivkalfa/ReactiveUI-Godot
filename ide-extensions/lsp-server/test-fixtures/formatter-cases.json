@@ -1,0 +1,97 @@
+[
+  {
+    "expected": "component Counter(start: int = 0) {\n  var s = useState(start)\n  return (\n    <VBox>\n      <Label text={ s[0] } />\n      <Button text=\"+1\" on_pressed={ inc } />\n    </VBox>\n  )\n}\n",
+    "input": "component  Counter( start: int = 0 ){\n\tvar s = useState(start)\n\treturn (\n<VBox>\n<Label text={s[0]}/>\n<Button text=\"+1\" on_pressed={inc}/>\n</VBox>\n)\n}\n",
+    "name": "counter"
+  },
+  {
+    "expected": "component Btn {\n  return (\n    <Button text=\"Click\" disabled flat={ true } on_pressed={ go } />\n  )\n}\n",
+    "input": "component Btn(){\nreturn (\n<Button text=\"Click\" disabled flat={true} on_pressed={go}/>\n)\n}\n",
+    "name": "attrs"
+  },
+  {
+    "expected": "component Status(state:int) {\n  return (\n    <VBox>\n      @if (state == 0) {\n        return (\n          <Label text=\"idle\" />\n        )\n      } @elif (state == 1) {\n        return (\n          <Label text=\"run\" />\n        )\n      } @else {\n        return (\n          <Label text=\"done\" />\n        )\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component Status(state:int){\nreturn (\n<VBox>\n@if (state == 0) { return (<Label text=\"idle\"/>) } @elif (state == 1) { return (<Label text=\"run\"/>) } @else { return (<Label text=\"done\"/>) }\n</VBox>\n)\n}\n",
+    "name": "if_elif_else"
+  },
+  {
+    "expected": "component L(items:Array) {\n  return (\n    <VBox>\n      @for (it in items) {\n        return (\n          <Label text={ str(it) } key={ it } />\n        )\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component L(items:Array){\nreturn (\n<VBox>\n@for (it in items) { return (<Label text={str(it)} key={it}/>) }\n</VBox>\n)\n}\n",
+    "name": "for_loop"
+  },
+  {
+    "expected": "component M(x:int) {\n  return (\n    <VBox>\n      @match (x) {\n        @case (0) {\n          return (\n            <Label text=\"zero\" />\n          )\n        }\n        @default {\n          return (\n            <Label text=\"other\" />\n          )\n        }\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component M(x:int){\nreturn (\n<VBox>\n@match (x) { @case (0) { return (<Label text=\"zero\"/>) } @default { return (<Label text=\"other\"/>) } }\n</VBox>\n)\n}\n",
+    "name": "match"
+  },
+  {
+    "expected": "component P(items:Array) {\n  return (\n    <VBox>\n      @for (it in items) {\n        var label := \"row %s\" % it\n        if it == null:\n        return null\n        return (\n          <Label key={ str(it) } text={ label } />\n        )\n      }\n    </VBox>\n  )\n}\n",
+    "input": "component P(items:Array){\nreturn (\n<VBox>\n@for (it in items) {\nvar label := \"row %s\" % it\nif it == null:\nreturn null\nreturn (<Label key={str(it)} text={label}/>)\n}\n</VBox>\n)\n}\n",
+    "name": "body_prep_code"
+  },
+  {
+    "expected": "component F {\n  return (\n    <>\n      <Label text=\"a\" />\n      <Label text=\"b\" />\n    </>\n  )\n}\n",
+    "input": "component F(){\nreturn (\n<>\n<Label text=\"a\"/>\n<Label text=\"b\"/>\n</>\n)\n}\n",
+    "name": "fragment"
+  },
+  {
+    "expected": "hook use_counter(start:int) {\n  var s = useState(start)\n  return s\n}\n",
+    "input": "hook use_counter( start:int ){\n\tvar s = useState(start)\n\treturn s\n}\n",
+    "name": "hook"
+  },
+  {
+    "expected": "module Widgets {\n  component A {\n    return (\n      <Label text=\"a\" />\n    )\n  }\n\n  component B {\n    return (\n      <A />\n    )\n  }\n}\n",
+    "input": "module Widgets {\ncomponent A(){ return (<Label text=\"a\"/>) }\ncomponent B(){ return (<A/>) }\n}\n",
+    "name": "module"
+  },
+  {
+    "expected": "module Docs {\n  ## builds the thing.\n  ## second line.\n  hook use_built(n: int) -> Dictionary {\n    var s = useState(n)\n    return { \"v\": s }\n  }\n\n  ## renders it.\n  component Shown {\n    return (\n      <Label text=\"x\" />\n    )\n  }\n}\n",
+    "input": "module Docs {\n## builds the thing.\n## second line.\nhook use_built( n: int ) -> Dictionary {\n\tvar s = useState(n)\n\treturn { \"v\": s }\n}\n\n## renders it.\ncomponent Shown(){ return (<Label text=\"x\"/>) }\n}\n",
+    "name": "module_docs_and_hint"
+  },
+  {
+    "expected": "@class_name Fancy\n\ncomponent Card(title:String) {\n  return (\n    <Panel>\n      <Label text={ title } />\n    </Panel>\n  )\n}\n",
+    "input": "@class_name Fancy\ncomponent Card(title:String){\nreturn (\n<Panel>\n<Label text={title}/>\n</Panel>\n)\n}\n",
+    "name": "classname"
+  },
+  {
+    "expected": "hook use_thing(n: int) -> Array {\n  var s = useState(n)\n  return s\n}\n",
+    "input": "hook use_thing( n: int ) -> Array {\n\tvar s = useState(n)\n\treturn s\n}\n",
+    "name": "hook_return_hint"
+  },
+  {
+    "expected": "component G(show: bool) {\n  if not show:\n    return null\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
+    "input": "component G(show: bool) {\n\tif not show:\n\t\treturn null\n\treturn (<Label text=\"x\" />)\n}\n",
+    "name": "guard_return_null"
+  },
+  {
+    "expected": "component Mix {\n  var a = useState(0)\n  var toggle = func():\n    a[1].call(1)\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
+    "input": "component Mix() {\n\tvar a = useState(0)\n\tvar toggle = func():\n\t    a[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
+    "name": "setup_mixed_indent"
+  },
+  {
+    "expected": "component Out {\n  var a = useState(0)\n  var b = 1\n  if a[0]:\n    b += 1\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
+    "input": "component Out() {\n\tvar a = useState(0)\nvar b = 1\n\tif a[0]:\n\t\tb += 1\n\treturn (<Label text=\"x\" />)\n}\n",
+    "name": "setup_outlier_indent"
+  },
+  {
+    "expected": "component Cmt {\n    # over-indented note\n  var a = useState(0)\n  if a[0]:\n    a[1].call(1)\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
+    "input": "component Cmt() {\n\t\t# over-indented note\n\tvar a = useState(0)\n\tif a[0]:\n\t\ta[1].call(1)\n\treturn (<Label text=\"x\" />)\n}\n",
+    "name": "setup_comment_anchor"
+  },
+  {
+    "expected": "component X {\n  var msg := \"\"\"\nline1\n  keep  two  spaces\n\t\ttabbed line\n\"\"\"\n  return (\n    <Label text=\"x\" />\n  )\n}\n",
+    "input": "component X {\n\tvar msg := \"\"\"\nline1\n  keep  two  spaces\n\t\ttabbed line\n\"\"\"\n\treturn (\n\t\t<Label text=\"x\" />\n\t)\n}\n",
+    "name": "triple_quoted_string_interior_preserved"
+  },
+  {
+    "expected": "component Y {\n  @if (true) {\n    var a := 1\n\n    var b := 2\n    return ( <Label text=\"y\" /> )\n  }\n  return (\n    <Label text=\"z\" />\n  )\n}\n",
+    "input": "component Y {\n\t@if (true) {\n\t\tvar a := 1\n\n\t\tvar b := 2\n\t\treturn ( <Label text=\"y\" /> )\n\t}\n\treturn ( <Label text=\"z\" /> )\n}\n",
+    "name": "interior_blank_line_in_directive_body_preserved"
+  },
+  {
+    "expected": "component Z {\n  var msg := '''\nfirst\n  two  spaces  here\n'''\n  return (\n    <Label text=\"z\" />\n  )\n}\n",
+    "input": "component Z {\n\tvar msg := '''\nfirst\n  two  spaces  here\n'''\n\treturn (\n\t\t<Label text=\"z\" />\n\t)\n}\n",
+    "name": "triple_single_quoted_string_interior_preserved"
+  }
+]

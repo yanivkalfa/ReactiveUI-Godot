@@ -1,0 +1,16 @@
+import { DemoBailoutChild } from "./bailout_child"
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export DemoBailout() -> RUIVNode {
+  var n = useState(0)
+  return (
+    <DemoBox title="Bailout — unchanged children skip re-render">
+      <Label text={ "Parent state: %d" % n[0] } />
+      <Button text="Re-render parent" onPressed={ func(): n[1].call(n[0] + 1) } />
+      <Label
+        text="The child's props never change → its render count stays flat:"
+        style={ {"font_color": Color(0.7, 0.7, 0.7)} } />
+      <DemoBailoutChild label="static" />
+    </DemoBox>
+  )
+}

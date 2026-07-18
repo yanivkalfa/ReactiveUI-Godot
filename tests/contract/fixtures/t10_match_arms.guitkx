@@ -1,0 +1,23 @@
+component X(v: int = 0) {
+  return (
+    <VBoxContainer>
+      @match (v) {
+        @case (0) {
+          return (
+            <Label text="zero" />
+          )
+        }
+        @case (1) {
+          return (
+            <Label text="one" />
+          )
+        }
+        @default {
+          return (
+            <Label text="many" />
+          )
+        }
+      }
+    </VBoxContainer>
+  )
+}

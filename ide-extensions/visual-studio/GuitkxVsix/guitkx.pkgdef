@@ -1,0 +1,12 @@
+// Registers the GUITKX TextMate grammar with Visual Studio. VS sources colorization from TextMate
+// (never from LSP), so this is required even though the language server provides everything else.
+[$RootKey$\TextMate\Repositories]
+"ReactiveUIGuitkx"="$PackageFolder$\Syntaxes"
+
+// Declarative Language Configuration (row 20, comment toggle) -- keyed by the grammar's own TextMate
+// scope name (source.guitkx, from Syntaxes\guitkx.tmLanguage.json's "scopeName"), NOT the "guitkx"
+// MEF content-type name; VS's TextMate integration keys everything off scope name. Comments-only by
+// design: brackets/auto-close are covered separately by the native IBraceCompletionDefaultProvider
+// (GuitkxBraceCompletion.cs) to avoid two mechanisms both trying to auto-close the same pairs.
+[$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]
+"source.guitkx"="$PackageFolder$\language-configuration.json"

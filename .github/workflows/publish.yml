@@ -1,0 +1,620 @@
+name: Publish
+
+# Single manual "Publish" workflow, mirroring ReactiveUIToolKit's publish.yml: one Run-workflow
+# button publishes EVERYTHING whose version changed. Each job reads its OWN version, SKIPS if the
+# matching tag already exists, and tags + uploads on success -- so re-running is idempotent and a job
+# only ships when its artifact was bumped:
+#   - release-addon   -> Godot addon: zip addons/reactive_ui + GitHub release, gated on `v<plugin.cfg>`
+#   - publish-vscode  -> VS Code extension: VS Marketplace + Open VSX, gated on `vscode-v<package.json>`
+#   - publish-vs2022  -> VS 2022 extension: VsixPublisher, gated on `vs2022-v<vsixmanifest>`
+#
+# Secrets required (Settings > Secrets and variables > Actions):
+#   VSCE_PAT             Azure DevOps PAT (Marketplace > Manage) for the VS Code Marketplace
+#   OVSX_TOKEN           open-vsx.org access token
+#   VS_MARKETPLACE_TOKEN Azure DevOps PAT for the Visual Studio Marketplace (VS2022)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════════
+  # Documentation site — build ReactiveUIGodotDocs~ and push dist/ to the `documentations`
+  # branch (GitHub Pages serves that branch, root). Runs every dispatch (not version-gated), so a
+  # docs-only change redeploys. One-time setup: Settings > Pages > Deploy from branch > documentations / root.
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: ReactiveUIGodotDocs~
+        run: npm ci
+
+      - name: Build
+        working-directory: ReactiveUIGodotDocs~
+        run: npm run build
+
+      - name: Deploy to documentations branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git worktree add --force _docs_branch documentations 2>/dev/null || {
+            git branch documentations
+            git worktree add _docs_branch documentations
+          }
+
+          find _docs_branch -mindepth 1 -not -path '*/.git/*' -not -name '.git' -delete
+          cp -r ReactiveUIGodotDocs~/dist/* _docs_branch/
+          touch _docs_branch/.nojekyll   # serve Vite's _-prefixed/asset files verbatim (no Jekyll)
+
+          cd _docs_branch
+          git add -A
+          git diff --cached --quiet && echo "No docs changes to deploy" && exit 0
+          git commit -m "docs update"
+          git push origin documentations
+
+          cd ..
+          git worktree remove _docs_branch
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Godot addon — zip addons/reactive_ui + GitHub release, publishes only if version changed
+  # ════════════════════════════════════════════════════════════════════════════
+  release-addon:
+    name: Package addon + GitHub release (idempotent)
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read addon version from plugin.cfg
+        id: ver
+        run: |
+          VER=$(grep -oP '^version="\K[^"]+' addons/reactive_ui/plugin.cfg | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+          echo "Addon version: $VER"
+
+      - name: Skip if tag already exists
+        id: check
+        run: |
+          if git rev-parse "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.ver.outputs.tag }} already exists — nothing to publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run headless tests before releasing
+        if: steps.check.outputs.exists == 'false'
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: "4.7.0"
+          use-dotnet: false
+          include-templates: false
+
+      - name: Verify tests pass
+        if: steps.check.outputs.exists == 'false'
+        # Scan BEFORE the build: guitkx_build's two-pass parse gate needs the global class cache
+        # on a fresh clone (same fix as test.yml -- Publish #48 failed here with 49x "Identifier
+        # V not declared"). The second scan registers the generated .gd for the suites.
+        run: |
+          godot --headless --path . --editor --quit || true
+          godot --headless --path . --script res://tests/guitkx_build.gd
+          godot --headless --path . --editor --quit || true
+          godot --headless --path . --script res://tests/core_test.gd
+          godot --headless --path . --script res://tests/style_test.gd
+          godot --headless --path . --script res://tests/router_match_test.gd
+          godot --headless --path . --script res://tests/router_spine_test.gd
+          godot --headless --path . --script res://tests/update_test.gd
+          godot --headless --path . --script res://tests/demos_test.gd
+          godot --headless --path . --script res://tests/guitkx_test.gd
+          godot --headless --path . --script res://tests/hmr_test.gd
+          godot --headless --path . --script res://tests/guitkx_lsp_test.gd
+          godot --headless --path . --script res://tests/guitkx_editor_test.gd
+
+      - name: Package the addon (only addons/reactive_ui ships)
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p dist
+          zip -r "dist/reactive_ui-${{ steps.ver.outputs.version }}.zip" addons/reactive_ui -x '*/.git*'
+
+      - name: Create + push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Reactive UI ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          files: dist/reactive_ui-${{ steps.ver.outputs.version }}.zip
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Classic Godot Asset Library — post a version "edit" for each new addon release.
+  # The AL is deprecated but still serves every Godot ≤4.6 editor in-app, and it is the only
+  # venue with a publishing API today; the NEW Asset Store (store.godotengine.org, 4.7+) needs a
+  # manual version-add in the publisher dashboard (~2 min) until it ships an API — see
+  # plans/ASSET_STORE_PLAN.md. A job (not an `on: release` workflow) because the release above
+  # is created with GITHUB_TOKEN, whose events never trigger other workflows.
+  # INERT until armed: set repo VARIABLE ASSETLIB_ASSET_ID (from the approved listing's URL)
+  # and SECRETS ASSETLIB_USERNAME / ASSETLIB_PASSWORD. Edits are moderated server-side.
+  # ════════════════════════════════════════════════════════════════════════════
+  assetlib-update:
+    name: Classic Asset Library edit (inert until armed)
+    needs: release-addon
+    if: needs.release-addon.outputs.exists == 'false' && vars.ASSETLIB_ASSET_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize the asset template for this release
+        run: |
+          sed -e 's|{{ version }}|${{ needs.release-addon.outputs.version }}|g' \
+              -e 's|{{ commit }}|${{ github.sha }}|g' \
+              .asset-template.json.hb > .asset-template.resolved.json.hb
+          cat .asset-template.resolved.json.hb
+
+      - name: Post the version edit to the classic Asset Library
+        uses: deep-entertainment/godot-asset-lib-action@v0.6.0
+        with:
+          username: ${{ secrets.ASSETLIB_USERNAME }}
+          password: ${{ secrets.ASSETLIB_PASSWORD }}
+          assetId: ${{ vars.ASSETLIB_ASSET_ID }}
+          assetTemplate: .asset-template.resolved.json.hb
+
+      - name: New Asset Store reminder (no API yet)
+        run: echo "::notice title=Godot Asset Store::Classic AL edit posted for ${{ needs.release-addon.outputs.tag }}. The NEW store (store.godotengine.org) still needs its manual version-add in the publisher dashboard."
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Godot EDITOR addon (reactive_ui_editor) — zip + GitHub release, tag editor-v<ver>.
+  # Independent versioning from the runtime addon; the zip carries its own LICENSE. Since 0.6.1
+  # the zip BUNDLES the reactive_ui_analyzer GDExtension (fetched, version-pinned, from the
+  # gdscript-analyzer release) next to the editor folder — one download = the full experience.
+  # This zip is the store artifact for BOTH stores: the new store takes the upload directly; the
+  # classic AL takes it via the "Custom" download provider (a plain Download Commit cannot ship
+  # this addon — export-ignore strips it from git archives).
+  # ════════════════════════════════════════════════════════════════════════════
+  release-editor-addon:
+    name: Package editor addon + GitHub release (idempotent)
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read editor addon version from plugin.cfg
+        id: ver
+        run: |
+          VER=$(grep -oP '^version="\K[^"]+' addons/reactive_ui_editor/plugin.cfg | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=editor-v$VER" >> "$GITHUB_OUTPUT"
+          echo "Editor addon version: $VER"
+
+      - name: Skip if tag already exists
+        id: check
+        run: |
+          if git rev-parse "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.ver.outputs.tag }} already exists — nothing to publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bundle the native analyzer (pinned) next to the editor addon
+        if: steps.check.outputs.exists == 'false'
+        id: analyzer
+        env:
+          # The analyzer version this editor release ships. Bump it (plus the editor patch
+          # version) to roll a newer analyzer out to Godot users; the binaries are built and
+          # released by the gdscript-analyzer repo's release-gdext workflow.
+          ANALYZER_VERSION: "0.6.1"
+        run: |
+          curl -fsSL -o analyzer.zip \
+            "https://github.com/yanivkalfa/gdscript-analyzer/releases/download/v${ANALYZER_VERSION}/reactive-ui-analyzer-${ANALYZER_VERSION}.zip"
+          rm -rf addons/reactive_ui_analyzer
+          unzip -o analyzer.zip -d .
+          # Refuse to ship a partial bundle: the descriptor and EVERY platform binary must exist.
+          for f in \
+            addons/reactive_ui_analyzer/gdscript_analyzer.gdextension \
+            addons/reactive_ui_analyzer/bin/gdscript_gdext.windows.x86_64.dll \
+            addons/reactive_ui_analyzer/bin/libgdscript_gdext.linux.x86_64.so \
+            addons/reactive_ui_analyzer/bin/libgdscript_gdext.linux.arm64.so \
+            addons/reactive_ui_analyzer/bin/libgdscript_gdext.macos.universal.dylib; do
+            [ -f "$f" ] || { echo "::error::analyzer bundle incomplete: missing $f"; exit 1; }
+          done
+          echo "version=${ANALYZER_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Godot for the editor-addon suites
+        if: steps.check.outputs.exists == 'false'
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: "4.7.0"
+          use-dotnet: false
+          include-templates: false
+
+      - name: Verify editor-addon tests pass (against the bundle — analyzer loads on linux)
+        if: steps.check.outputs.exists == 'false'
+        # Same scan-before-build order as test.yml / the addon job above (Publish #48 capture).
+        run: |
+          godot --headless --path . --editor --quit || true
+          godot --headless --path . --script res://tests/guitkx_build.gd
+          godot --headless --path . --editor --quit || true
+          godot --headless --path . --script res://tests/guitkx_lsp_test.gd
+          godot --headless --path . --script res://tests/guitkx_editor_test.gd
+
+      - name: Package the editor addon + bundled analyzer (LICENSEs are inside each folder)
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p dist
+          zip -r "dist/reactive_ui_editor-${{ steps.ver.outputs.version }}.zip" \
+            addons/reactive_ui_editor addons/reactive_ui_analyzer -x '*/.git*'
+
+      - name: Extract this version's changelog section for the release body
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          awk '/^## \[/{n++} n==1' addons/reactive_ui_editor/CHANGELOG.md > dist/release-body.md
+          echo "" >> dist/release-body.md
+          echo "_Requires the [Reactive UI](https://github.com/yanivkalfa/ReactiveUI-Godot) addon (see the release notes for the minimum version)._" >> dist/release-body.md
+          echo "" >> dist/release-body.md
+          echo "_Bundles the native analyzer (\`addons/reactive_ui_analyzer\`) ${{ steps.analyzer.outputs.version }} — Windows x86_64, Linux x86_64/arm64, macOS universal. Exclude that folder from game export presets; macOS users see its README for the one-line de-quarantine._" >> dist/release-body.md
+
+      - name: Create + push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Reactive UI Editor ${{ steps.ver.outputs.version }}
+          body_path: dist/release-body.md
+          files: dist/reactive_ui_editor-${{ steps.ver.outputs.version }}.zip
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Classic Asset Library — post a version "edit" for each new EDITOR release.
+  # Same pattern as assetlib-update above, with one difference: the editor listing uses
+  # the "Custom" download provider (a Download Commit cannot ship this addon — export-ignore
+  # strips it from git archives), so the edit carries the release-zip URL in download_commit,
+  # exactly as the AL submit form does. Runs only when release-editor-addon actually tagged
+  # a NEW version this dispatch.
+  # INERT until armed: set repo VARIABLE ASSETLIB_EDITOR_ASSET_ID (the numeric id from the
+  # approved listing's URL). ASSETLIB_USERNAME / ASSETLIB_PASSWORD secrets are shared with
+  # the runtime job. Edits are moderated server-side.
+  # ════════════════════════════════════════════════════════════════════════════
+  assetlib-editor-update:
+    name: Classic Asset Library edit — editor (inert until armed)
+    needs: release-editor-addon
+    if: needs.release-editor-addon.outputs.exists == 'false' && vars.ASSETLIB_EDITOR_ASSET_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize the editor asset template for this release
+        run: |
+          sed -e 's|{{ version }}|${{ needs.release-editor-addon.outputs.version }}|g' \
+              .asset-template-editor.json.hb > .asset-template-editor.resolved.json.hb
+          cat .asset-template-editor.resolved.json.hb
+
+      - name: Post the version edit to the classic Asset Library
+        uses: deep-entertainment/godot-asset-lib-action@v0.6.0
+        with:
+          username: ${{ secrets.ASSETLIB_USERNAME }}
+          password: ${{ secrets.ASSETLIB_PASSWORD }}
+          assetId: ${{ vars.ASSETLIB_EDITOR_ASSET_ID }}
+          assetTemplate: .asset-template-editor.resolved.json.hb
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # VS Code extension — VS Marketplace + Open VSX, publishes only if version changed
+  # ════════════════════════════════════════════════════════════════════════════
+  publish-vscode:
+    runs-on: ubuntu-latest
+    # One platform-specific .vsix per platform that has a published @gdscript-analyzer/core-<triple>
+    # native addon. The bundled server is a native napi addon, so the .vsix can't be universal — each
+    # leg installs the target's binary, bundles only that one (scripts/bundle-server.js --target), and
+    # `vsce package --target`s a platform-specific package. (alpine/musl join once the analyzer's napi
+    # matrix publishes those triples — see gdscript-analyzer release-napi.yml.)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: win32-x64, napi: core-win32-x64-msvc }
+          - { target: win32-arm64, napi: core-win32-arm64-msvc }
+          - { target: linux-x64, napi: core-linux-x64-gnu }
+          - { target: linux-arm64, napi: core-linux-arm64-gnu }
+          - { target: darwin-x64, napi: core-darwin-x64 }
+          - { target: darwin-arm64, napi: core-darwin-arm64 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if version already published
+        id: check
+        run: |
+          VERSION=$(node -p "require('./ide-extensions/vscode/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Per-target gate: each platform's .vsix is published independently, so the idempotency
+          # check must be per-target too. A single shared "vscode-v$VERSION" tag would let ONE leg's
+          # success (e.g. linux-x64, the runner's own platform) block re-publishing the other five
+          # on a re-run — exactly the partial-publish trap that stranded 5 platforms once.
+          if git tag --list "vscode-v$VERSION-${{ matrix.target }}" | grep -q .; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::VS Code extension v$VERSION (${{ matrix.target }}) already published — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build language server
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/lsp-server
+        run: npm ci && npm run build
+
+      - name: Fetch the ${{ matrix.target }} analyzer binary
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/lsp-server
+        run: |
+          # npm only installs the runner's own optional dep; fetch the target's binary explicitly,
+          # pinned to the resolved @gdscript-analyzer/core version so loader + addon always match.
+          ANALYZER_VER=$(node -p "require('@gdscript-analyzer/core/package.json').version")
+          PKG="@gdscript-analyzer/${{ matrix.napi }}"
+          # `npm i` rejects a cross-target native package with EBADPLATFORM on this linux runner, and
+          # npm's --os/--cpu overrides do NOT bypass it for a direct install. `npm pack` just downloads
+          # the tarball (no platform check), so we unpack it into node_modules ourselves — the same
+          # layout `npm i` would produce, so the loader + bundle-server.js find the binary.
+          echo "Fetching ${PKG}@${ANALYZER_VER} via npm pack"
+          TGZ=$(npm pack "${PKG}@${ANALYZER_VER}" 2>/dev/null | tail -1)
+          DEST="node_modules/${PKG}"
+          mkdir -p "$DEST"
+          tar -xzf "$TGZ" -C "$DEST" --strip-components=1
+          rm -f "$TGZ"
+          ls "$DEST"/*.node || { echo "::error::no .node binary fetched into $DEST"; exit 1; }
+
+      - name: Generate CHANGELOG.md from centralized changelog
+        if: steps.check.outputs.skip == 'false'
+        run: node ide-extensions/scripts/changelog.mjs extract --ide vscode --out ide-extensions/vscode/CHANGELOG.md
+
+      - name: Generate README.md from centralized changelog
+        if: steps.check.outputs.skip == 'false'
+        run: node ide-extensions/scripts/changelog.mjs extract-overview --ide vscode --template ide-extensions/vscode/readme-template.md --out ide-extensions/vscode/README.md
+
+      - name: Install + build extension
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/vscode
+        run: npm ci && npm run build
+
+      - name: Bundle server (target) + package platform-specific VSIX
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/vscode
+        run: |
+          node scripts/bundle-server.js --target ${{ matrix.target }}
+          npx --yes @vscode/vsce package --target ${{ matrix.target }} -o "guitkx-${{ matrix.target }}.vsix"
+
+      - name: Publish to VS Marketplace
+        id: publish-vsce
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --packagePath "guitkx-${{ matrix.target }}.vsix" --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        id: publish-ovsx
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ide-extensions/vscode
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        run: npx --yes ovsx publish "guitkx-${{ matrix.target }}.vsix" -p "$OVSX_TOKEN"
+        continue-on-error: true
+
+      - name: Tag published target
+        # Each leg tags ONLY its own target (vscode-v<version>-<target>) on its own publish success,
+        # so the per-target gate above can re-publish exactly the platforms that failed without
+        # re-publishing (and erroring on) the ones already on the marketplace.
+        if: steps.check.outputs.skip == 'false' && steps.publish-vsce.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="vscode-v${{ steps.check.outputs.version }}-${{ matrix.target }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Upload VSIX artifact
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: guitkx-vscode-${{ steps.check.outputs.version }}-${{ matrix.target }}
+          path: ide-extensions/vscode/guitkx-${{ matrix.target }}.vsix
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Visual Studio 2022 extension — publishes only if version changed
+  # ════════════════════════════════════════════════════════════════════════════
+  publish-vs2022:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if version already published
+        id: check
+        shell: pwsh
+        run: |
+          [xml]$manifest = Get-Content "ide-extensions/visual-studio/GuitkxVsix/source.extension.vsixmanifest"
+          $version = $manifest.PackageManifest.Metadata.Identity.Version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          if (git tag --list "vs2022-v$version") {
+            echo "skip=true" >> $env:GITHUB_OUTPUT
+            echo "::notice::VS 2022 extension v$version already published — skipping"
+          } else {
+            echo "skip=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Setup Node.js
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build + bundle language server (+ Node runtime) into the VSIX
+        if: steps.check.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          Push-Location ide-extensions/lsp-server
+          npm ci; npm run build
+          Pop-Location
+          Push-Location ide-extensions/vscode
+          npm ci; node scripts/bundle-server.js
+          Pop-Location
+          Copy-Item -Recurse -Force ide-extensions/vscode/server ide-extensions/visual-studio/GuitkxVsix/server
+          # Bundle a Node runtime so the VSIX is self-contained (no Node on the user's PATH).
+          & ide-extensions/visual-studio/GuitkxVsix/fetch-node.ps1
+
+      - name: Generate overview.md from centralized changelog
+        if: steps.check.outputs.skip == 'false'
+        shell: pwsh
+        run: node ide-extensions/scripts/changelog.mjs extract-overview --ide vs2022 --template ide-extensions/visual-studio/GuitkxVsix/overview-template.md --out ide-extensions/visual-studio/GuitkxVsix/overview.md
+
+      - name: Build VSIX
+        if: steps.check.outputs.skip == 'false'
+        shell: cmd
+        working-directory: ide-extensions/visual-studio/GuitkxVsix
+        run: |
+          set "VSWHERE=C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL echo ERROR: No Visual Studio with MSBuild found via vswhere & exit /b 1
+          echo Using Visual Studio at "%VSINSTALL%"
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo
+          msbuild GuitkxVsix.csproj -t:Restore -p:Configuration=Release -v:minimal
+          msbuild GuitkxVsix.csproj -t:Build -p:Configuration=Release -p:DeployExtension=false -v:minimal
+          msbuild GuitkxVsix.csproj -t:CreateVsixContainer -p:Configuration=Release -p:DeployExtension=false -v:minimal
+
+      - name: Verify VSIX contains the language server
+        if: steps.check.outputs.skip == 'false'
+        shell: pwsh
+        working-directory: ide-extensions/visual-studio/GuitkxVsix
+        run: |
+          $vsix = Get-ChildItem -Recurse -Filter "*.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $vsix) { Write-Error "No VSIX found after build"; exit 1 }
+          $zip = $vsix.FullName -replace '\.vsix$', '.zip'
+          $tmp = Join-Path $env:TEMP 'vsix-verify'
+          try {
+            Copy-Item $vsix.FullName $zip -Force
+            if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+            Expand-Archive $zip $tmp -Force
+            $server = Get-ChildItem $tmp -Recurse -Filter "server.js" | Where-Object { $_.Directory.Name -eq 'server' }
+            if (-not $server) {
+              Write-Host "::error::VSIX is missing server/server.js! Contents:"
+              Get-ChildItem $tmp -Recurse | ForEach-Object { Write-Host $_.FullName }
+              exit 1
+            }
+            $node = Get-ChildItem $tmp -Recurse -Filter "node.exe" | Where-Object { $_.Directory.Name -eq 'server' }
+            if (-not $node) {
+              Write-Host "::error::VSIX is missing the bundled server/node.exe (fetch-node.ps1 did not run or the download failed)."
+              exit 1
+            }
+            Write-Host "Verified: VSIX contains $($server.FullName) + bundled node.exe ($([math]::Round($node.Length/1MB,1)) MB)"
+          } finally {
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Locate VSIX
+        if: steps.check.outputs.skip == 'false'
+        id: find_vsix
+        shell: pwsh
+        working-directory: ide-extensions/visual-studio/GuitkxVsix
+        run: |
+          $candidates = @("bin\Release\GuitkxVsix.vsix", "bin\Release\net472\GuitkxVsix.vsix", "GuitkxVsix.vsix")
+          $found = $null
+          foreach ($c in $candidates) { if (Test-Path $c) { $found = (Resolve-Path $c).Path; break } }
+          if (-not $found) {
+            $vsix = Get-ChildItem -Recurse -Filter "*.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($vsix) { $found = $vsix.FullName }
+          }
+          if (-not $found) { Write-Host "::error::No .vsix found"; Get-ChildItem -Recurse bin | Format-Table FullName; exit 1 }
+          Write-Host "Found VSIX: $found"
+          echo "VSIX_PATH=$found" >> $env:GITHUB_OUTPUT
+
+      - name: Publish to VS Marketplace
+        id: publish
+        if: steps.check.outputs.skip == 'false'
+        shell: pwsh
+        working-directory: ide-extensions/visual-studio/GuitkxVsix
+        env:
+          MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+        run: |
+          $pub = Get-ChildItem -Path "$env:USERPROFILE\.nuget\packages\microsoft.vssdk.buildtools" -Recurse -Filter "VsixPublisher.exe" |
+                 Where-Object { $_.DirectoryName -match 'tools[\\/]vssdk[\\/]bin$' } |
+                 Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $pub) { Write-Host "::error::VsixPublisher.exe not found in NuGet cache"; exit 1 }
+          $output = & $pub.FullName publish `
+            -payload "${{ steps.find_vsix.outputs.VSIX_PATH }}" `
+            -publishManifest publishManifest.json `
+            -personalAccessToken $env:MARKETPLACE_TOKEN 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          Write-Host $output
+          if ($output -match 'Uploaded') {
+            Write-Host "Marketplace upload confirmed"
+            $global:LASTEXITCODE = 0; exit 0   # VsixPublisher can crash on telemetry shutdown after a successful upload
+          } elseif ($exitCode -ne 0) {
+            Write-Host "::error::VsixPublisher failed (exit $exitCode) with no upload confirmation"; exit $exitCode
+          } else {
+            Write-Host "::warning::VsixPublisher exited cleanly but no upload confirmation found"
+          }
+
+      - name: Tag published version
+        if: steps.check.outputs.skip == 'false' && steps.publish.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "vs2022-v${{ steps.check.outputs.version }}"
+          git push origin "vs2022-v${{ steps.check.outputs.version }}"
+
+      - name: Upload VSIX artifact
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: guitkx-vs2022-${{ steps.check.outputs.version }}
+          path: ${{ steps.find_vsix.outputs.VSIX_PATH }}

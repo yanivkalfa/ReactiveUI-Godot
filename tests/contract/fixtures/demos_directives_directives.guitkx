@@ -1,0 +1,64 @@
+@uss "res://examples/demos/directives/directives_theme.tres"
+export DemoDirectives(items: Array = ["alpha", "beta"], mode: int = 1) -> RUIVNode {
+  # setup is plain GDScript -- its comments use `#` as usual
+  var count = useState(items.size())
+  var style_base = { "modulate": Color(1, 1, 1) }
+  return (
+    <VBoxContainer>
+      // markup line comment
+      /* markup block
+			   comment */
+      <!-- html-style comment -->
+      <Label {/* attr-list comment */} text="every directive lives here" />
+      @if (mode == 1) {
+        return (
+          <Label text="one" />
+        )
+      } @elif (mode == 2) {
+        return (
+          <Label text="two" />
+        )
+      } @else {
+        return (
+          <Label text="other" />
+        )
+      }
+      @for (it in items) {
+        return (
+          <Label key={ str(it) } text={ str(it) } />
+        )
+      }
+      @for (i in 3) {
+        return (
+          <Fragment key={ str(i) }>
+            <Label text={ "row %d" % i } />
+          </Fragment>
+        )
+      }
+      @while (false) {
+        return (
+          <Label key="never" text="unreached" />
+        )
+      }
+      @match (mode) {
+        @case (1) {
+          return (
+            <Label text="case one" />
+          )
+        }
+        @case (2) {
+          return (
+            <Label text="case two" />
+          )
+        }
+        @default {
+          return (
+            <Label text="default" />
+          )
+        }
+      }
+      <VBoxContainer {...style_base} key="spread-key" />
+      { count[0] }
+    </VBoxContainer>
+  )
+}

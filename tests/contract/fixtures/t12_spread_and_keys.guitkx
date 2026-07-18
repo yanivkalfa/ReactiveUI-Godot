@@ -1,0 +1,8 @@
+component X(extra: Dictionary = {}) {
+  return (
+    <VBoxContainer>
+      <Label {...extra} key={ "k1" } text="s" />
+      <Label key={ "k1" } text="t" />
+    </VBoxContainer>
+  )
+}

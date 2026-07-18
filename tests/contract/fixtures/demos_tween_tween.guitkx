@@ -1,0 +1,22 @@
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export DemoTween() -> RUIVNode {
+  var box_ref = useRef(null)
+  var n = useState(0)
+  useTween(box_ref, "modulate", Color(1, 1, 1, 1), 0.5, [n[0]])
+  var pulse = func():
+    if box_ref["current"] != null:
+      box_ref["current"].modulate = Color(1, 1, 1, 0.0)
+    n[1].call(n[0] + 1)
+  return (
+    <DemoBox title="useTween — animate a node via Godot's Tween">
+      <Button text="Pulse (fade in)" onPressed={ pulse } />
+      <PanelContainer
+        ref={ box_ref }
+        style={ {"bg_color": Color(0.3, 0.6, 0.9), "corner_radius_all": 8, "custom_minimum_size": Vector2(220, 90), "content_margin_all": 12} }
+      >
+        <Label text="I fade in on every pulse" style={ {"font_color": Color.WHITE} } />
+      </PanelContainer>
+    </DemoBox>
+  )
+}

@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0104",
+			"len": 12,
+			"off": 131,
+			"severity": 0
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":53,\"attrs\":[],\"children\":[{\"at\":75,\"attrs\":[{\"at\":82,\"end\":92,\"kind\":\"spread\",\"name\":\"\",\"value\":\"extra\",\"vat\":86},{\"at\":93,\"end\":105,\"kind\":\"expr\",\"name\":\"key\",\"value\":\"\\\"k1\\\"\",\"vat\":99},{\"at\":106,\"end\":114,\"kind\":\"str\",\"name\":\"text\",\"value\":\"s\",\"vat\":112}],\"children\":[],\"line\":4,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":124,\"attrs\":[{\"at\":131,\"end\":143,\"kind\":\"expr\",\"name\":\"key\",\"value\":\"\\\"k1\\\"\",\"vat\":137},{\"at\":144,\"end\":152,\"kind\":\"str\",\"name\":\"text\",\"value\":\"t\",\"vat\":150}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
+		}
+	],
+	"ok": false,
+	"windows": [
+		{
+			"end": 179,
+			"start": 48
+		}
+	]
+}

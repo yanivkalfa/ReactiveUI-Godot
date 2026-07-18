@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0111",
+			"len": 2,
+			"off": 24,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":57,\"attrs\":[],\"children\":[{\"at\":79,\"attrs\":[],\"children\":[{\"at\":98,\"attrs\":[{\"at\":105,\"end\":113,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":111}],\"children\":[],\"line\":5,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":125,\"attrs\":[{\"at\":132,\"end\":140,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":138}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"}],\"named\":\"Fragment\",\"t\":\"frag\"},{\"at\":168,\"body_at\":183,\"body_markup\":\"\\n        return (\\n          <Fragment key={ str(i) }>\\n            <Label text={ str(i) } />\\n          </Fragment>\\n        )\\n      \",\"header\":\"i in 3\",\"t\":\"for\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 338,
+			"start": 52
+		}
+	]
+}

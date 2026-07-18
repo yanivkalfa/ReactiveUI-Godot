@@ -1,0 +1,25 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":41,\"attrs\":[],\"children\":[{\"at\":63,\"cases\":[{\"body_at\":95,\"body_markup\":\"\\n          return (\\n            <Label text=\\\"zero\\\" />\\n          )\\n        \",\"value\":\"0\"},{\"body_at\":190,\"body_markup\":\"\\n          return (\\n            <Label text=\\\"one\\\" />\\n          )\\n        \",\"value\":\"1\"}],\"default_body\":\"\\n          return (\\n            <Label text=\\\"many\\\" />\\n          )\\n        \",\"default_body_at\":283,\"subject\":\"v\",\"t\":\"match\"}],\"line\":3,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 390,
+			"start": 36
+		}
+	]
+}

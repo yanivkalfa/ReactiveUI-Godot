@@ -1,0 +1,25 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":36,\"raw\":\"// leading note\",\"t\":\"comment\"},{\"at\":56,\"attrs\":[],\"children\":[{\"at\":78,\"raw\":\"/* block\\n\\t\\t\\t   note */\",\"t\":\"comment\"},{\"at\":107,\"attrs\":[{\"at\":114,\"end\":131,\"kind\":\"comment\",\"name\":\"\",\"value\":\"{/* attr note */}\",\"vat\":-1},{\"at\":132,\"end\":140,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":138}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":150,\"raw\":\"<!-- html-style -->\",\"t\":\"comment\"},{\"at\":176,\"branches\":[{\"body_at\":188,\"body_markup\":\"\\n        return ( // inside a body\\n\\t\\t\\t\\t<Label text=\\\"b\\\" /> )\\n      \",\"cond\":\"true\"}],\"else_body\":null,\"else_body_at\":-1,\"t\":\"if\"}],\"line\":4,\"t\":\"el\",\"tag\":\"VBoxContainer\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 279,
+			"start": 31
+		}
+	]
+}

@@ -1,0 +1,286 @@
+import * as DoomGameScreenHooks from "./doom_game_screen.hooks"
+import { DoomHUD } from "./doom_hud"
+import { DoomMinimap } from "./doom_minimap"
+
+export DoomGameScreen(restart_version: int = 0,
+  level: int = 1,
+  difficulty: int = 1,
+  on_exit: Callable = Callable(),
+  on_next_level: Callable = Callable()) -> RUIVNode {
+  # Phase 2+ (plans/DOOM_GAME_GUITKX_PORT_PLAN.md): live game loop via
+  # DoomGameScreenHooks.use_doom_game -- the .guitkx hook-file port of the
+  # original's useDoomGame. view_ref lets the hook reach get_tree() once
+  # this root Control is mounted (plan §1.2). Phase 4/5 add the HUD, minimap,
+  # weapon/flash overlays, pickup message, and game-over/victory overlays.
+  var view_ref = useRef(null)
+  var doom = DoomGameScreenHooks.use_doom_game(view_ref, level, difficulty)
+  var state = doom["state"]
+
+  # Restart-on-prop-change: a bumped restart_version replays the same level from
+  # the menu or the Restart button, re-seeding the running game. 1:1 with the
+  # Unity DoomGameScreen useRef prevVersion compare.
+  var prev_ver = useRef(restart_version)
+  if prev_ver["current"] != restart_version:
+    prev_ver["current"] = restart_version
+    doom["restart"].call()
+
+  var weapon_texs = DoomTextures.weapons()
+  var sky_tex = DoomTextures.sky()
+
+  var sky_atlas = func() -> AtlasTexture:
+    var sky_w: float = sky_tex.get_width()
+    var window_w: float = sky_w * (DoomTypes.C.HALF_FOV * 2.0) / TAU
+    var u: float = fmod((state.player.angle / TAU) * sky_w, sky_w)
+    if u < 0.0:
+      u += sky_w
+    var atlas := AtlasTexture.new()
+    atlas.atlas = sky_tex
+    atlas.region = Rect2(u, 0, window_w, sky_tex.get_height())
+    return atlas
+
+  var extra_entries = DoomGameScreenLogic.build_extra_seg_list(state)
+  var tracer_entries = DoomGameScreenLogic.build_tracer_list(state)
+  # One z-indexed container for the whole world: bands, walls, segs, sprites -- each carrying
+  # its own q.z_index so Godot's canvas sort orders them. See build_world_geometry.
+  var world_quads = DoomGameScreenLogic.build_world_geometry(state)
+
+  var sky_h = DoomTypes.C.VIEWPORT_H * 0.5 + state.player.pitch + state.player.view_shift_px
+  var horizon_y = DoomTypes.C.VIEWPORT_H * 0.5 + state.player.pitch
+
+  # Weapon / flash / message overlay values (Unity DoomGameScreen.uitkx lines 26-28, 315-373).
+  var hurt_alpha = state.player.hurt_flash * 0.6
+  var pickup_alpha = state.player.pickup_flash * 0.35
+  var muzzle_alpha = 1.0 if state.player.muzzle_flash > 0.0 else 0.0
+  var gun_x = (DoomTypes.C.VIEWPORT_W - 256) * 0.5 + sin(state.player.bob_t) * 6.0
+  var gun_y = DoomTypes.C.VIEWPORT_H - 192 + 10.0 - absf(sin(state.player.bob_t)) * 6.0
+
+  var overlay_bg = Color(0.0, 0.0, 0.0, 0.7)
+  var white = Color(1.0, 1.0, 1.0, 1.0)
+
+  return (
+    <VBoxContainer mouse_filter={ Control.MOUSE_FILTER_IGNORE } style={ {"separation": 0} }>
+      // ── 3D viewport ──
+      <Control
+        ref={ view_ref }
+        mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+        style={ {"custom_minimum_size": Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H), "clip_contents": true, "texture_filter": CanvasItem.TEXTURE_FILTER_NEAREST} }
+      >
+        // Sky
+        <TextureRect
+          key="sky"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(0, 0) }
+          size={ Vector2(DoomTypes.C.VIEWPORT_W, sky_h) }
+          texture={ sky_atlas.call() }
+          stretch_mode={ TextureRect.STRETCH_SCALE }
+          style={ {"z_index": DoomGameScreenLogic.BACKDROP_Z} } />
+        // Floor backstop.
+        <ColorRect
+          key="floor_backstop"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(0, horizon_y) }
+          size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+          color={ Color(0.34, 0.29, 0.22, 1.0) }
+          style={ {"z_index": DoomGameScreenLogic.BACKDROP_Z} } />
+        // WORLD -- ceiling/floor bands, terminal walls, portal/stair segs, AND actor sprites,
+        // ALL in ONE container. Each quad carries its own q.z_index and Godot's native canvas
+        // sort orders them -- NO GDScript sort, and the list stays in stable build order so the
+        // reconciler only rewrites changed props. The container itself sits at a negative
+        // WORLD_GROUP_Z; z_as_relative rides every child down below the HUD -- which stays at the
+        // default z of 0 -- so no world quad can leak over the crosshair / minimap / gun. Uniform
+        // TextureRect + unkeyed = slot reuse with no type churn as the count shifts each frame.
+        <Control
+          key="world_group"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          style={ {"z_index": DoomGameScreenLogic.WORLD_GROUP_Z} }
+        >
+          @for (q in world_quads) {
+            return (
+              <TextureRect
+                key={ q.key }
+                mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+                position={ Vector2(q.x, q.y) }
+                size={ Vector2(q.w, q.h) }
+                texture={ q.texture }
+                stretch_mode={ TextureRect.STRETCH_SCALE }
+                expand_mode={ TextureRect.EXPAND_IGNORE_SIZE }
+                style={ {"z_index": q.z_index, "modulate": q.modulate, "self_modulate": q.self_modulate, "material": q.material} } />
+            )
+          }
+        </Control>
+        // Riser rim chalk-lines, painted on top of the geometry.
+        <Control key="xrim_group" mouse_filter={ Control.MOUSE_FILTER_IGNORE }>
+          @for (ex in extra_entries) {
+            var ecol = ex.seg
+            var reh = ecol.bot_px - ecol.top_px
+            var not_riser = not ecol.is_riser
+            if not_riser or reh < 1.0:
+              return null
+            return (
+              <ColorRect
+                mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+                position={ Vector2(ex.col_index * DoomTypes.C.STRIP_W, ecol.top_px) }
+                size={ Vector2(DoomTypes.C.STRIP_W + 2.0, 2.0) }
+                color={ Color(0.95, 0.85, 0.55, 1.0) } />
+            )
+          }
+        </Control>
+        // Actor sprites are folded into world_quads above -- same container, SOLID z-band, so
+        // they depth-rank against walls per column. See build_world_geometry.
+        // Hitscan tracer streaks -- unkeyed slot reconcile for the same reason.
+        <Control key="tracer_group" mouse_filter={ Control.MOUSE_FILTER_IGNORE }>
+          @for (tr in tracer_entries) {
+            var tcg = 0.55 if tr.color_idx == 1 else 0.92
+            var tcb = 0.25 if tr.color_idx == 1 else 0.45
+            return (
+              <ColorRect
+                mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+                position={ Vector2(tr.left, tr.top) }
+                size={ Vector2(tr.length, DoomTypes.C.TRACER_THICKNESS_PX) }
+                color={ Color(1.0, tcg, tcb, tr.alpha) }
+                style={ {"rotation": deg_to_rad(tr.angle_deg), "pivot_offset": Vector2(0.0, DoomTypes.C.TRACER_THICKNESS_PX * 0.5)} } />
+            )
+          }
+        </Control>
+        // Weapon sprite (bobbing gun hand).
+        <TextureRect
+          key="weapon"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(gun_x, gun_y) }
+          size={ Vector2(256, 192) }
+          texture={ weapon_texs[state.player.weapon] }
+          stretch_mode={ TextureRect.STRETCH_SCALE } />
+        // Muzzle flash (weapons[7], faded by muzzle_alpha).
+        <TextureRect
+          key="muzzle"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(gun_x, gun_y) }
+          size={ Vector2(256, 192) }
+          texture={ weapon_texs[7] }
+          stretch_mode={ TextureRect.STRETCH_SCALE }
+          style={ {"modulate": Color(1.0, 1.0, 1.0, muzzle_alpha)} } />
+        // Crosshair.
+        <ColorRect
+          key="crosshair"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(DoomTypes.C.VIEWPORT_W * 0.5 - 4.0, DoomTypes.C.VIEWPORT_H * 0.5 - 4.0) }
+          size={ Vector2(8.0, 8.0) }
+          color={ Color(0.95, 0.95, 0.5, 0.7) }
+          style={ {"corner_radius_all": 4} } />
+        // Hurt flash overlay.
+        <ColorRect
+          key="hurt_flash"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(0, 0) }
+          size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+          color={ Color(0.85, 0.05, 0.05, hurt_alpha) } />
+        // Pickup flash overlay.
+        <ColorRect
+          key="pickup_flash"
+          mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+          position={ Vector2(0, 0) }
+          size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+          color={ Color(0.95, 0.85, 0.2, pickup_alpha) } />
+        // Pickup / status message.
+        @if (state.player.message_timer > 0.0) {
+          return (
+            <Label
+              key="msg"
+              mouse_filter={ Control.MOUSE_FILTER_IGNORE }
+              position={ Vector2(0, 12) }
+              size={ Vector2(DoomTypes.C.VIEWPORT_W, 20) }
+              text={ state.player.message_text }
+              horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
+              style={ {"font_color": Color(0.95, 0.85, 0.40, 1.0), "font_size": 14} } />
+          )
+        }
+        // Minimap.
+        <DoomMinimap state={ state } />
+        // Game-over overlay.
+        @if (state.game_over) {
+          return (
+            <PanelContainer
+              key="gameover"
+              position={ Vector2(0, 0) }
+              size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+              style={ {"bg_color": overlay_bg} }
+            >
+              <CenterContainer
+                position={ Vector2(0, 0) }
+                size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+              >
+                <VBoxContainer style={ {"separation": 16} }>
+                  <Label
+                    text="YOU DIED"
+                    horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
+                    style={ {"font_size": 64, "font_color": Color(0.95, 0.15, 0.10, 1.0)} } />
+                  <HBoxContainer style={ {"separation": 12} }>
+                    <Button
+                      text="Restart"
+                      onPressed={ func(): doom["restart"].call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
+                    <Button
+                      text="Main Menu"
+                      onPressed={ func(): on_exit.call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
+                  </HBoxContainer>
+                </VBoxContainer>
+              </CenterContainer>
+            </PanelContainer>
+          )
+        }
+        // Victory overlay.
+        @if (state.victory) {
+          return (
+            <PanelContainer
+              key="victory"
+              position={ Vector2(0, 0) }
+              size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+              style={ {"bg_color": overlay_bg} }
+            >
+              <CenterContainer
+                position={ Vector2(0, 0) }
+                size={ Vector2(DoomTypes.C.VIEWPORT_W, DoomTypes.C.VIEWPORT_H) }
+              >
+                <VBoxContainer style={ {"separation": 12} }>
+                  <Label
+                    text="LEVEL COMPLETE"
+                    horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
+                    style={ {"font_size": 48, "font_color": Color(0.4, 0.95, 0.4, 1.0)} } />
+                  <Label
+                    text={ "Kills: " + str(state.kill_count) + " / " + str(state.kill_total) + "    Score: " + str(state.score) }
+                    horizontal_alignment={ HORIZONTAL_ALIGNMENT_CENTER }
+                    style={ {"font_size": 18, "font_color": white} } />
+                  <HBoxContainer style={ {"separation": 12} }>
+                    <Button
+                      text={ "Next Level" if level < 6 else "Finish" }
+                      onPressed={ func(): on_next_level.call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
+                    <Button
+                      text="Main Menu"
+                      onPressed={ func(): on_exit.call() }
+                      style={ {"font_size": 18, "custom_minimum_size": Vector2(140, 44)} } />
+                  </HBoxContainer>
+                </VBoxContainer>
+              </CenterContainer>
+            </PanelContainer>
+          )
+        }
+      </Control>
+      // ── HUD ──
+      <DoomHUD
+        health={ state.player.health }
+        armor={ state.player.armor }
+        armor_class={ state.player.armor_class }
+        weapon={ state.player.weapon }
+        ammo={ state.player.ammo }
+        owned_weapons={ state.player.owned_weapons }
+        keys={ state.player.keys }
+        score={ state.score }
+        kill_count={ state.kill_count }
+        kill_total={ state.kill_total }
+        map_name={ state.map.name }
+        face_state={ state.player.face_state } />
+    </VBoxContainer>
+  )
+}

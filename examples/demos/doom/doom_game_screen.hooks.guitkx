@@ -1,0 +1,109 @@
+## Faithful port of the Unity ReactiveUIToolKit `DoomGame` sample's
+## `DoomGameScreen.hooks.uitkx` (`useDoomGame`). Input capture itself lives in
+## doom_bootstrap.gd + doom_input_state.gd (plan §1.5 -- .guitkx
+## components/hooks are plain functions, they can't override Godot's input
+## virtual methods) -- this hook only consumes that shared state once per
+## tick. The game-loop cadence mirrors examples/demos/stress_test's own
+## get_tree().process_frame-in-useEffect idiom (plan §1.2) rather than the
+## original's manual 16ms UI-Toolkit scheduler, since this library's
+## reconciler already coalesces multiple setState calls to one render per
+## frame. process_frame (NOT physics_frame): the original's `.Every(16)` is a
+## once-per-rendered-frame throttle with a real-time-clock dt, so process_frame
+## is its faithful analogue. physics_frame was wrong -- Godot sub-steps it
+## (running the tick multiple times per rendered frame to hold a fixed 60Hz
+## when frames are slow), and since dt here is real-clock-based, those extra
+## sub-steps re-run the full ~18ms cast_frame for near-zero added movement --
+## a compounding waste that made a slow frame much slower.
+##
+## Returns { state, restart } -- the original's onKeyDown/onPointerMove/
+## onButtonDown/onButtonUp callables aren't needed here since the
+## bootstrap script owns raw input capture directly (plan §1.5).
+@class_name DoomGameScreenHooks
+
+export use_doom_game(view_ref: Dictionary, level: int, difficulty: int) -> Dictionary {
+  var initial_state = Hooks.useMemo(func(): return GameLogic.new_game(level, difficulty), [level, difficulty])
+  var state_pair = Hooks.useState(initial_state)
+  var state_ref = Hooks.useRef(initial_state)
+  var last_time_ref = Hooks.useRef(-1.0)
+
+  # `view_ref["current"]` isn't populated until AFTER the first commit --
+  # same "target must be mounted first" gotcha examples/demos/portal works
+  # around, and the same fix: a mount-flag effect (deps=[]) that flips
+  # `mounted` true, with the real connect-effect depending on THAT instead
+  # of `deps=[]` directly, so it re-fires once the ref is guaranteed set.
+  # Without this the tick loop silently never connects at all -- found via
+  # a headless integration check that verified state actually changes
+  # across ticks (not just "renders without crashing").
+  var mounted_pair = Hooks.useState(false)
+  var mount_eff := func():
+    mounted_pair[1].call(true)
+    return Callable()
+  Hooks.useEffect(mount_eff, [])
+
+  var restart = func():
+    var fresh = GameLogic.new_game(level, difficulty)
+    state_ref["current"] = fresh
+    last_time_ref["current"] = -1.0
+    DoomInputState.shared.reset()
+    state_pair[1].call(fresh)
+    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+  var setup := func():
+    if not mounted_pair[0]:
+      return Callable()
+    var view: Control = view_ref["current"]
+    if view == null or not view.is_inside_tree():
+      return Callable()
+    var tree := view.get_tree()
+
+    var tick_fn := func():
+      var now: float = Time.get_ticks_msec() / 1000.0
+      if last_time_ref["current"] < 0.0:
+        last_time_ref["current"] = now
+        return
+      var dt: float = minf(now - last_time_ref["current"], 0.05)
+      last_time_ref["current"] = now
+
+      var in_state := DoomInputState.shared
+      var cmd := DoomTypes.InputCmd.new()
+      cmd.forward = in_state.forward
+      cmd.back = in_state.back
+      cmd.strafe_left = in_state.strafe_left
+      cmd.strafe_right = in_state.strafe_right
+      cmd.turn_left = in_state.turn_left
+      cmd.run = in_state.run
+      cmd.jump = in_state.jump
+      cmd.crouch = in_state.crouch
+      cmd.attack = in_state.attack
+      cmd.use = in_state.pending_use
+      cmd.weapon_switch = in_state.pending_weapon_switch
+      cmd.yaw_delta = in_state.pending_yaw
+      cmd.pitch_delta = in_state.pending_pitch
+      in_state.pending_use = false
+      in_state.pending_weapon_switch = 0
+      in_state.pending_yaw = 0.0
+      in_state.pending_pitch = 0.0
+
+      var s = state_ref["current"]
+      GameLogic.tick(s, dt, cmd)
+      # GameLogic.tick mutates `s` in place (matching the original's `ref
+      # GameState`); Hooks.useState's setter bails on a reference-equal
+      # value, so the setter needs a fresh top-level identity every tick
+      # to detect the change -- see GameState.snapshot() (doom_types.gd).
+      state_pair[1].call(s.snapshot())
+      # Death/victory overlays release the cursor so their buttons are clickable;
+      # normal play keeps click-to-(re)capture armed for the bootstrap.
+      in_state.allow_capture = not (s.game_over or s.victory)
+      if s.game_over or s.victory:
+        if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+          Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+    tree.process_frame.connect(tick_fn)
+    return func():
+      if is_instance_valid(view) and view.is_inside_tree():
+        tree.process_frame.disconnect(tick_fn)
+  Hooks.useEffect(setup, [mounted_pair[0]])
+
+  return {"state": state_pair[0], "restart": restart}
+}
+

@@ -1,0 +1,3 @@
+comssponent X() {
+	return ( <Label /> )
+}

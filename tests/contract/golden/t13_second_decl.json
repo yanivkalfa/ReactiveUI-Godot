@@ -1,0 +1,41 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 59,
+			"severity": 1
+		}
+	],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":33,\"attrs\":[{\"at\":40,\"end\":48,\"kind\":\"str\",\"name\":\"text\",\"value\":\"a\",\"vat\":46}],\"children\":[],\"line\":3,\"t\":\"el\",\"tag\":\"Label\"}]"
+		},
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":90,\"attrs\":[{\"at\":97,\"end\":105,\"kind\":\"str\",\"name\":\"text\",\"value\":\"b\",\"vat\":103}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 54,
+			"start": 28
+		},
+		{
+			"end": 109,
+			"start": 89
+		}
+	]
+}

@@ -1,0 +1,18 @@
+{
+	"diagnostics": [],
+	"markup": [
+		{
+			"error": "",
+			"error_at": -1,
+			"error_code": "",
+			"tree": "[{\"at\":609,\"attrs\":[{\"at\":618,\"end\":652,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Todo — keyed list + events\",\"vat\":625}],\"children\":[{\"at\":660,\"attrs\":[{\"at\":675,\"end\":702,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 8}\",\"vat\":683}],\"children\":[{\"at\":712,\"attrs\":[{\"at\":732,\"end\":748,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"text[0]\",\"vat\":739},{\"at\":759,\"end\":787,\"kind\":\"str\",\"name\":\"placeholder_text\",\"value\":\"New todo…\",\"vat\":777},{\"at\":798,\"end\":840,\"kind\":\"expr\",\"name\":\"onTextChanged\",\"value\":\"func(t): text[1].call(t)\",\"vat\":814},{\"at\":851,\"end\":891,\"kind\":\"expr\",\"name\":\"onTextSubmitted\",\"value\":\"func(_t): add.call()\",\"vat\":869},{\"at\":902,\"end\":963,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"size_flags_horizontal\\\": Control.SIZE_EXPAND_FILL}\",\"vat\":910}],\"children\":[],\"line\":25,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":975,\"attrs\":[{\"at\":983,\"end\":993,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Add\",\"vat\":989},{\"at\":994,\"end\":1026,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"func(): add.call()\",\"vat\":1006}],\"children\":[],\"line\":31,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":24,\"t\":\"el\",\"tag\":\"HBoxContainer\"},{\"at\":1059,\"attrs\":[{\"at\":1074,\"end\":1156,\"kind\":\"expr\",\"name\":\"text\",\"value\":\"\\\"%d item(s) — keys preserve row identity on add/remove\\\" % items[0].size()\",\"vat\":1081},{\"at\":1165,\"end\":1211,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":1173}],\"children\":[],\"line\":33,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":1221,\"attrs\":[{\"at\":1236,\"end\":1263,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"separation\\\": 4}\",\"vat\":1244}],\"children\":[{\"at\":1273,\"body_at\":1296,\"body_markup\":\"\\n          return (\\n            <DemoTodoRow key={ it[\\\"id\\\"] } item={ it } onRemove={ remove } />\\n          )\\n        \",\"header\":\"it in items[0]\",\"t\":\"for\"}],\"line\":36,\"t\":\"el\",\"tag\":\"VBoxContainer\"}],\"line\":23,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+		}
+	],
+	"ok": true,
+	"windows": [
+		{
+			"end": 1455,
+			"start": 604
+		}
+	]
+}

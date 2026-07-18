@@ -1,0 +1,31 @@
+{
+	"diagnostics": [
+		{
+			"code": "GUITKX2320",
+			"len": 9,
+			"off": 0,
+			"severity": 1
+		},
+		{
+			"code": "GUITKX0300",
+			"len": 1,
+			"off": 26,
+			"severity": 0
+		}
+	],
+	"markup": [
+		{
+			"error": "GUITKX0300: tag name cannot start with a digit (<9foo>)",
+			"error_at": 26,
+			"error_code": "GUITKX0300",
+			"tree": "[]"
+		}
+	],
+	"ok": false,
+	"windows": [
+		{
+			"end": 34,
+			"start": 25
+		}
+	]
+}

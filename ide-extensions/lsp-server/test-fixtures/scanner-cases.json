@@ -1,0 +1,55 @@
+{
+  "comment": "Shared corpus asserting the GDScript lexer (guitkx_lexer.gd) and the TS scanner (scanner.ts) stay byte-identical. Each case: skip_noncode(input, at) == skipExpected. Run by both tests/guitkx_test.gd and ide-extensions/lsp-server core.test.ts.",
+  "skipNoncode": [
+    { "input": "\"abc\"x", "at": 0, "expect": 5 },
+    { "input": "'abc'x", "at": 0, "expect": 5 },
+    { "input": "# a comment\nx", "at": 0, "expect": 11 },
+    { "input": "\"\"\"triple\"\"\"z", "at": 0, "expect": 12 },
+    { "input": "r\"raw\"", "at": 0, "expect": 6 },
+    { "input": "&\"name\"", "at": 0, "expect": 7 },
+    { "input": "^\"path\"", "at": 0, "expect": 7 },
+    { "input": "$\"a/b\"", "at": 0, "expect": 6 },
+    { "input": "%\"u\"", "at": 0, "expect": 4 },
+    { "input": "R\"x\"", "at": 0, "expect": 0 },
+    { "input": "a%\"f\"", "at": 1, "expect": 1 },
+    { "input": "b&\"x\"", "at": 1, "expect": 1 },
+    { "input": "value^2", "at": 5, "expect": 5 },
+    { "input": "abc", "at": 0, "expect": 0 },
+    { "input": "\"esc\\\"x\"y", "at": 0, "expect": 8 }
+  ],
+  "findMatching": [
+    { "input": "( a + b )", "at": 0, "expect": 8 },
+    { "input": "{ \"a\": [1, 2] }", "at": 0, "expect": 14 },
+    { "input": "( \"}\" )", "at": 0, "expect": 6 },
+    { "input": "{ a # ) \n }", "at": 0, "expect": 10 }
+  ],
+  "skipNoncodeMarkup": [
+    { "input": "# not a comment", "at": 0, "expect": 0 },
+    { "input": "// comment\nx", "at": 0, "expect": 10 },
+    { "input": "/* block */x", "at": 0, "expect": 11 },
+    { "input": "<!-- hi -->x", "at": 0, "expect": 11 },
+    { "input": "\"abc\"x", "at": 0, "expect": 5 },
+    { "input": "r\"raw\"", "at": 0, "expect": 0 }
+  ],
+  "findMatchingMarkup": [
+    { "input": "{ <Label text=\"x\"/> # }", "at": 0, "expect": 22 },
+    { "input": "{\n\t<Label text=\"y\"/>\n\t// TODO: revisit }\n\t<Label text=\"z\"/>\n}", "at": 0, "expect": 60 },
+    { "input": "{ @if (a) { <A/> } @else { <B/> } }", "at": 0, "expect": 34 },
+    { "input": "{ @case (1) { <A/> } @default { <B/> } }", "at": 0, "expect": 39 },
+    { "input": "{ <!-- } --> <A/> }", "at": 0, "expect": 18 },
+    { "input": "{ <A prop=\"#FF0000\"/> }", "at": 0, "expect": 22 },
+    { "input": "{ /* ( */ <A/> }", "at": 0, "expect": 15 },
+    { "input": "{ @if (x) { return ( <label>Score #3</label> ) } }", "at": 0, "expect": 49 },
+    { "input": "{ @if (x) { return <label>Score #3</label> } }", "at": 0, "expect": 45 },
+
+    { "comment": "G-23: prelude #/## comments scan as code -- delimiters inside them are inert",
+      "input": "{\n\t# a (open\n\t# b) close\n\tvar x = 1\n\treturn (\n\t\tX\n\t)\n}", "at": 0, "expect": 53 },
+    { "input": "{\n\t## doc (split\n\t## over) lines\n\treturn ( <X/> )\n}", "at": 0, "expect": 50 },
+    { "input": "{\n\t# early return (see docs\n\tvar a = 1\n\treturn ( <X/> )\n}", "at": 0, "expect": 56 },
+    { "input": "{\n\t# note { weird\n\treturn ( <X/> )\n}", "at": 0, "expect": 35 },
+    { "input": "{\n\tvar arr = [\n\t\t1, # note ( paren\n\t\t2,\n\t]\n\treturn ( <X/> )\n}", "at": 0, "expect": 60 },
+    { "comment": "G-23 guards: MARKUP windows keep # literal even on prelude-classified lines; // markup comments unchanged",
+      "input": "{\n\tvar x = 1\n\treturn ( <Label>Score #3</Label> )\n}", "at": 0, "expect": 49 },
+    { "input": "{\n\t<A/>\n\t// note (open\n\t// close) here\n\t<B/>\n}", "at": 0, "expect": 45 }
+  ]
+}

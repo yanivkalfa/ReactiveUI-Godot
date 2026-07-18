@@ -1,0 +1,15 @@
+import { DemoBox } from "~/examples/demos/demo_box"
+
+export DemoCounter() -> RUIVNode {
+  var s = useState(0)
+  return (
+    <DemoBox title="Counter — useState">
+      <Label text={ "Count: %d" % s[0] } style={ {"font_size": 28} } />
+      <HBoxContainer style={ {"separation": 8} }>
+        <Button text="  −1  " onPressed={ func(): s[1].call(s[0] - 1) } />
+        <Button text="  +1  " onPressed={ func(): s[1].call(func(c): return c + 1) } />
+        <Button text=" Reset " onPressed={ func(): s[1].call(0) } />
+      </HBoxContainer>
+    </DemoBox>
+  )
+}
