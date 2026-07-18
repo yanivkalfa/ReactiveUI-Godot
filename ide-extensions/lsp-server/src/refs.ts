@@ -61,3 +61,75 @@ export function isTagBoundary(text: string, ltIndex: number): boolean {
   // operand-closers: a value ending in ) ] } " ' before `<` makes `<` a comparison (e.g. dict `}` < X)
   return !(c === ")" || c === "]" || c === "}" || c === '"' || c === "'");
 }
+
+export interface ClauseRef {
+  start: number;
+  end: number;
+}
+
+// REMOTE-name occurrences of `name` inside named import clauses whose specifier satisfies
+// `specMatches` — the tokens a project-wide rename of the declaration must rewrite (E-08: for a
+// `remote as local` clause only the remote half moves; the local alias and its uses stay). A plain
+// `Name` clause is its own remote, so renaming it also renames the local binding — consistent,
+// because the tag references in that file are rewritten by the same rename pass. Namespace
+// (`* as X`) and default (`import X from`) clauses carry no remote NAME and never match.
+export function scanImportClauseRefs(text: string, name: string, specMatches: (spec: string) => boolean): ClauseRef[] {
+  const out: ClauseRef[] = [];
+  const re = /import[ \t]*\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (!specMatches(m[2])) continue;
+    const bodyStart = m.index + m[0].indexOf("{") + 1;
+    const body = m[1];
+    // Clause walk with offsets: `remote [as local]` per comma-separated entry.
+    let p = 0;
+    while (p < body.length) {
+      while (p < body.length && /[\s,]/.test(body[p])) p++;
+      const rs = p;
+      while (p < body.length && isIdent(body[p])) p++;
+      if (p === rs) {
+        p++;
+        continue;
+      }
+      const remote = body.slice(rs, p);
+      // optional `as local`
+      let q = p;
+      while (q < body.length && /[ \t]/.test(body[q])) q++;
+      if (body.startsWith("as", q) && !isIdent(body[q + 2] ?? "")) {
+        q += 2;
+        while (q < body.length && /[ \t]/.test(body[q])) q++;
+        while (q < body.length && isIdent(body[q])) q++;
+        p = q;
+      }
+      if (remote === name) out.push({ start: bodyStart + rs, end: bodyStart + rs + remote.length });
+    }
+  }
+  return out;
+}
+
+// Occurrences of `name` in the declaring file's E-07/E-09 export markers (`export default Name`,
+// `export { a, Name, b }`) — these tokens must rename in lockstep with the declaration.
+export function scanExportMarkerRefs(text: string, name: string): ClauseRef[] {
+  const out: ClauseRef[] = [];
+  const defRe = /^[ \t]*export[ \t]+default[ \t]+([A-Za-z_]\w*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = defRe.exec(text)) !== null) {
+    if (m[1] === name) {
+      const s = m.index + m[0].length - m[1].length;
+      out.push({ start: s, end: s + name.length });
+    }
+  }
+  const listRe = /^[ \t]*export[ \t]*\{([^}]*)\}/gm;
+  while ((m = listRe.exec(text)) !== null) {
+    const bodyStart = m.index + m[0].indexOf("{") + 1;
+    const body = m[1];
+    let p = 0;
+    while (p < body.length) {
+      while (p < body.length && /[\s,]/.test(body[p])) p++;
+      const s = p;
+      while (p < body.length && isIdent(body[p])) p++;
+      if (p > s && body.slice(s, p) === name) out.push({ start: bodyStart + s, end: bodyStart + p });
+    }
+  }
+  return out;
+}

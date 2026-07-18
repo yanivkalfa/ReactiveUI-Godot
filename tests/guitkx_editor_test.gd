@@ -749,6 +749,39 @@ func _test_refs_and_rename() -> void:
 		and not new_b.contains("<RefsWidget/"), "usages renamed (decoy substring excluded)")
 	_ok(new_b.contains("RefsWidgetFake_not_a_tag"), "comparison decoy untouched")
 
+	# ES-modules rename depth (E-07/E-08/E-09): import-clause REMOTE halves + export markers
+	# rewrite in lockstep; a rename-import LOCAL alias and its uses stay untouched.
+	var c_path := "res://tests/__refs_c.guitkx"
+	var d_path := "res://tests/__refs_d.guitkx"
+	var c_src := "export RefsChip() -> RUIVNode {
+	return ( <Label /> )
+}
+export { RefsChip }
+export default RefsChip
+"
+	var d_src := "import { RefsChip as RBadge } from \"./__refs_c\"
+export RefsUser() -> RUIVNode {
+	return ( <RBadge /> )
+}
+"
+	for pair2 in [[c_path, c_src], [d_path, d_src]]:
+		var f2 := FileAccess.open(pair2[0], FileAccess.WRITE)
+		f2.store_string(pair2[1])
+		f2.close()
+	GuitkxWorkspace.rescan()
+	var plan2: Dictionary = Refs.rename_edits("RefsChip", "RefsGem")
+	_ok(bool(plan2.get("ok")), "rename plan through an as-import accepted")
+	var edits2: Dictionary = plan2.get("edits", {})
+	var new_c: String = Refs.apply_edits_to_text(c_src, edits2.get(c_path, []), "RefsGem")
+	var new_d: String = Refs.apply_edits_to_text(d_src, edits2.get(d_path, []), "RefsGem")
+	_ok(new_c.contains("export RefsGem() -> RUIVNode") and new_c.contains("export { RefsGem }") and new_c.contains("export default RefsGem"), "decl + list marker + default marker renamed (got %s)" % new_c)
+	_ok(new_d.contains("import { RefsGem as RBadge }"), "clause REMOTE half renamed (got %s)" % new_d)
+	_ok(new_d.contains("<RBadge />"), "the local alias and its tag use stay untouched")
+	for p2 in [c_path, d_path]:
+		if FileAccess.file_exists(str(p2)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p2)))
+	GuitkxWorkspace.rescan()
+
 	# G27: hooks resolve to core/hooks.gd through the widget's lookup path.
 	var ce: CodeEdit = CodeEditScript.new()
 	var got: Array = []

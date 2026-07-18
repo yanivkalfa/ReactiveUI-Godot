@@ -1194,3 +1194,25 @@ test("T4.6 e2e: the engine-defaults profile keeps UNSAFE_* silent (core 0.6+)", 
   const codes = az.diagnosticsAt(uri, src).map((d) => d.code);
   assert.ok(!codes.includes("UNSAFE_METHOD_ACCESS"), `Godot ships UNSAFE_* as ignore -- so do we: ${codes}`);
 });
+
+// ES-modules rename depth: import clauses (incl. the REMOTE half of `remote as local` renames)
+// and the declaring file's export markers rewrite in lockstep with a declaration rename.
+test("rename: import-clause remote halves + export markers rewrite (E-08/E-07/E-09)", () => {
+  const { scanImportClauseRefs, scanExportMarkerRefs } = require("../refs");
+  const app = 'import { Chip, Icon as Glyph } from "./chip"\nimport { Chip as Badge } from "./chip"\nimport { Chip } from "./other"\n';
+  const hits = scanImportClauseRefs(app, "Chip", (spec: string) => spec === "./chip");
+  assert.equal(hits.length, 2, "both ./chip clauses hit; the ./other clause (different file) does not");
+  for (const h of hits) assert.equal(app.slice(h.start, h.end), "Chip", "each hit lands exactly on the remote token");
+  // `Icon as Glyph` — renaming Icon hits the remote, never the local alias.
+  const iconHits = scanImportClauseRefs(app, "Icon", () => true);
+  assert.equal(iconHits.length, 1);
+  assert.equal(app.slice(iconHits[0].start, iconHits[0].end), "Icon");
+  const glyphHits = scanImportClauseRefs(app, "Glyph", () => true);
+  assert.equal(glyphHits.length, 0, "the local alias is not a remote reference");
+  // Export markers in the declaring file.
+  const decl = 'Chip() -> RUIVNode {\n\treturn ( <Label /> )\n}\nexport { Chip, other }\nexport default Chip\n';
+  const marks = scanExportMarkerRefs(decl, "Chip");
+  assert.equal(marks.length, 2, "list entry + default marker both rewrite");
+  for (const h of marks) assert.equal(decl.slice(h.start, h.end), "Chip");
+  assert.equal(scanExportMarkerRefs(decl, "other").length, 1, "sibling list entries match independently");
+});
