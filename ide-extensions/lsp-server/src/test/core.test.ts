@@ -1216,3 +1216,26 @@ test("rename: import-clause remote halves + export markers rewrite (E-08/E-07/E-
   for (const h of marks) assert.equal(decl.slice(h.start, h.end), "Chip");
   assert.equal(scanExportMarkerRefs(decl, "other").length, 1, "sibling list entries match independently");
 });
+
+// Audit regression: the @class_name preamble scan is ORDER-AGNOSTIC (0.10.0 rule) — an @uss/@theme
+// line BEFORE @class_name must not abort the scan at the directive word (the plain-decl break).
+test("readClassName survives @uss before @class_name (order-agnostic preamble)", () => {
+  const src = '@uss "res://theme.tres"\n@class_name Themed\nT() -> RUIVNode {\n\treturn ( <Label /> )\n}\n';
+  const d = scanDeclarations(src);
+  assert.deepEqual(d.map((x) => x.binding), ["Themed"], JSON.stringify(d));
+});
+
+// G-05 clause navigation: importAt resolves every clause shape; a rename clause navigates by its
+// REMOTE name (the declaration that exists in the target file).
+test("importAt covers named/rename/namespace/default clause shapes", () => {
+  const { importAt } = require("../importNav");
+  const src = 'import { a, b as c } from "./x"\nimport * as NS from "./y"\nimport Def from "./z"\n';
+  const onA = importAt(src, src.indexOf("a,"));
+  assert.deepEqual({ kind: onA?.kind, name: onA?.name, spec: onA?.spec }, { kind: "name", name: "a", spec: "./x" });
+  const onRename = importAt(src, src.indexOf("b as"));
+  assert.equal(onRename?.name, "b", "a rename clause navigates to the REMOTE declaration");
+  const onNs = importAt(src, src.indexOf("NS"));
+  assert.deepEqual({ kind: onNs?.kind, spec: onNs?.spec }, { kind: "spec", spec: "./y" });
+  const onDef = importAt(src, src.indexOf("Def"));
+  assert.deepEqual({ kind: onDef?.kind, spec: onDef?.spec }, { kind: "spec", spec: "./z" });
+});

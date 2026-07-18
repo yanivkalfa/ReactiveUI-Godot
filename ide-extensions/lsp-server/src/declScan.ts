@@ -296,7 +296,9 @@ function skipWs(src: string, i: number): number {
 export function valueEnd(src: string, from: number): number {
   const n = src.length;
   let j = from;
-  while (j < n && (src[j] === " " || src[j] === "\t")) j++;
+  // Leading ws INCLUDING newlines, mirroring guitkx.gd _skip_ws_only — an initializer opening on
+  // the next line still brace-matches (audit Note B: the two sides must agree on this edge).
+  while (j < n && (src[j] === " " || src[j] === "\t" || src[j] === "\n" || src[j] === "\r")) j++;
   if (j >= n) return j;
   const c = src[j];
   if (c === "{" || c === "[" || c === "(") {

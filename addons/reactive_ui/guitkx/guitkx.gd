@@ -360,6 +360,16 @@ static func compile(source: String, basename: String = "Component", known_compon
 	# Bare top-level hook + value/util imports: one deduped `const __RUI_IMP_<hash> = preload(path)`
 	# per target + lexer-aware rewrites (hooks by call site, values/utils by free identifier —
 	# BH-06 generalized; see _lower_alias_imports for why the naive const lowering can't work).
+	# GATE (audit find): a LOCAL declaration shadowing an alias-lowered import (`var speed = 10`
+	# over `import { speed }`) cannot be lowered by a text rewrite -- it would either corrupt the
+	# binder line or silently re-point in-scope references at the import. Scope analysis is out of
+	# scope for the lowering, so shadowing is a loud GUITKX2325 collision instead.
+	if r.get("ok", false) and (not import_hooks.is_empty() or not import_bares.is_empty()):
+		for sh in _binder_shadows(str(r["gd"]), import_hooks + import_bares):
+			diags.append(D.make("GUITKX2325", D.ERROR, "import alias `%s` collides with a declaration in this file -- rename the import" % str((sh as Dictionary)["name"]), int((sh as Dictionary)["at"]), str((sh as Dictionary)["name"]).length()))
+	if r.get("ok", false) and D.has_error(diags):
+		r["ok"] = false
+		r["gd"] = ""
 	if r.get("ok", false) and (not import_hooks.is_empty() or not import_bares.is_empty()):
 		r["gd"] = _lower_alias_imports(str(r["gd"]), import_hooks, import_bares)
 	# The preamble's declared imports ride along on every result (ok or not) so the codegen sidecar
@@ -777,6 +787,42 @@ static func _insert_after_banner(gd: String, block: String) -> String:
 	if rest.begins_with("\n"):
 		return head + "\n" + block + rest.substr(1)   # keep the one blank line after the banner
 	return head + block + rest
+
+## Binder-position occurrences of alias-lowered import locals in emitted GDScript: a `var`/
+## `const`/`for` keyword whose bound identifier IS one of the locals. Emitted-side scan so
+## component params (destructured as `var <name> = props.get(...)`) are covered too. Returns
+## [{ name, at }] with `at` = the import's local-name offset in the SOURCE (the squiggle anchor).
+static func _binder_shadows(gd: String, entries: Array) -> Array:
+	var locals := {}
+	for en in entries:
+		locals[str((en as Dictionary)["name"])] = int((en as Dictionary).get("at", -1))
+	var out: Array = []
+	var hit := {}
+	var i := 0
+	var n := gd.length()
+	while i < n:
+		var k := L.skip_noncode(gd, i)
+		if k != i:
+			i = k
+			continue
+		var kw := ""
+		for w in ["var", "const", "for"]:
+			if L.keyword_at(gd, i, str(w)):
+				kw = str(w)
+				break
+		if kw == "":
+			i += 1
+			continue
+		var j := _skip_ws_only(gd, i + kw.length())
+		var s := j
+		while j < n and L._is_ident_code(gd.unicode_at(j)):
+			j += 1
+		var nm := gd.substr(s, j - s)
+		if locals.has(nm) and not hit.has(nm):
+			hit[nm] = true
+			out.append({ "name": nm, "at": int(locals[nm]) })
+		i = j if j > i else i + 1
+	return out
 
 ## Lower bare top-level hook + value/util imports (§6.4 + E-05/E-08): one deduped
 ## `const __RUI_IMP_<hash> = preload(<gd>)` per target file, then rewrite each imported name's

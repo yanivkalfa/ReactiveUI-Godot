@@ -193,12 +193,12 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 				"component":
 					comps[defn] = { "gd": res["gd"], "func": dd["func"] }
 				"hook":
-					hooks.append({ "name": defn, "remote": tgt_default, "gd": res["gd"] })
+					hooks.append({ "name": defn, "remote": tgt_default, "gd": res["gd"], "at": def_at })
 				"module":
 					var dmember := "" if tgt_default == str(table["binding"]) else tgt_default
 					values.append({ "name": defn, "gd": res["gd"], "member": dmember, "kind": "module" })
 				_:
-					bares.append({ "name": defn, "remote": tgt_default, "gd": res["gd"] })
+					bares.append({ "name": defn, "remote": tgt_default, "gd": res["gd"], "at": def_at })
 			continue
 		for nm_entry in (imp["names"] as Array):
 			var nm := str(nm_entry["name"])                        # LOCAL binding name
@@ -226,7 +226,7 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 					comps[nm] = { "gd": res["gd"], "func": d["func"] }
 				"hook":
 					# a top-level hook is a static func, called bare -- aliased const + call rewrite.
-					hooks.append({ "name": nm, "remote": remote, "gd": res["gd"] })
+					hooks.append({ "name": nm, "remote": remote, "gd": res["gd"], "at": at })
 				"module":
 					# module -> a value preload used as `Name.member(...)`. A binding member (the file's
 					# own name) is the whole script; a non-binding module member is an inner class on it.
@@ -235,7 +235,7 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 				_:
 					# value/util (E-05): data / plain static func -- aliased const + free-ref rewrite
 					# (a `const local = preload(gd).static_var` is NOT a constant expression).
-					bares.append({ "name": nm, "remote": remote, "gd": res["gd"] })
+					bares.append({ "name": nm, "remote": remote, "gd": res["gd"], "at": at })
 	return { "comps": comps, "values": values, "hooks": hooks, "bares": bares, "diags": diags }
 
 ## Names from `referenceable` (name -> anything) actually USED in `src` as a markup tag (`<Name`) or

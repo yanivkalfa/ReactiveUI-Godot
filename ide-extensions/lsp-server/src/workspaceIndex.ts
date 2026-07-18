@@ -158,6 +158,15 @@ function readClassName(src: string): ClassNameRef | null {
       i = le;
       continue;
     }
+    if (src[i] === "@") {
+      // Any other @-directive line (@uss/@theme) — skip it whole, keeping the scan ORDER-AGNOSTIC
+      // (the 0.10.0 rule: @class_name may sit before or after other preamble lines). Without this,
+      // the plain-decl break below fired on the directive WORD and a trailing @class_name was lost.
+      let le2 = src.indexOf("\n", i);
+      if (le2 === -1) le2 = n;
+      i = le2;
+      continue;
+    }
     if (isIdent(src[i]) && (i === 0 || !isIdent(src[i - 1]))) break; // a plain E-01 decl head
     i++;
   }

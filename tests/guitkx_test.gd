@@ -2336,6 +2336,26 @@ component WOld {
 	_check_true(bool(rwn["ok"]), "G-10 matrix: wrapper decl + namespace import compiles (got %s)" % str(rwn.get("diagnostics", [])))
 	_check_true(_has_code(rwn, "GUITKX2320") and (rwn["gd"] as String).contains("const Hud = preload"), "G-10 matrix: warns on the wrapper only; the ns import lowers normally")
 
+	# Audit find: a LOCAL declaration shadowing an alias-lowered import is a loud 2325, never a
+	# silent mis-lowering (the text rewrite cannot do scope analysis -- `var speed = 10` over an
+	# imported `speed` would re-point in-scope refs at the import).
+	var shadow := "import { panel_w } from \"./hud\"
+export Sh() -> RUIVNode {
+	var panel_w = 10
+	return ( <Label text={str(panel_w)}/> )
+}
+"
+	var rsh := RUIGuitkx.compile(shadow, "sh", [], {}, "res://tests/__bh_tmp/es/sh.guitkx", "res://")
+	_check_true(not bool(rsh["ok"]) and _has_code(rsh, "GUITKX2325"), "a local var shadowing an imported value is 2325, not silent corruption (got %s)" % str(rsh.get("diagnostics", [])))
+	# A component PARAM shadowing an imported value hits the same gate (params destructure to var).
+	var pshadow := "import { panel_w } from \"./hud\"
+export Sp(panel_w: int = 1) -> RUIVNode {
+	return ( <Label text={str(panel_w)}/> )
+}
+"
+	var rps := RUIGuitkx.compile(pshadow, "sp", [], {}, "res://tests/__bh_tmp/es/sp.guitkx", "res://")
+	_check_true(not bool(rps["ok"]) and _has_code(rps, "GUITKX2325"), "a param shadowing an imported value is 2325 too (got %s)" % str(rps.get("diagnostics", [])))
+
 	# Runtime proof: mount the all-forms importer and check the rendered values flow end to end.
 	var app_script = load("res://tests/__bh_tmp/es/app.gd")
 	_check_true(app_script != null, "G-05 runtime: importer .gd loads")
