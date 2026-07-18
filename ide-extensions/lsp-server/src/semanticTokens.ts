@@ -157,8 +157,10 @@ export function isBodyBrace(src: string, bi: number): boolean {
   if (w === "else" || w === "default") return true;
   if (w.length > 0) {
     // `-> Type {` — the word before `{` is the TYPE of a plain-decl return annotation (E-01).
+    // Whitespace INCLUDING newlines, mirroring guitkx_context.gd's _is_ws (a body `{` may open
+    // on the line after the annotation).
     let ka = s;
-    while (ka >= 0 && /[ \t]/.test(src[ka])) ka--;
+    while (ka >= 0 && /[ \t\r\n]/.test(src[ka])) ka--;
     if (ka >= 1 && src[ka] === ">" && src[ka - 1] === "-") return true;
     // a decl name with no params: `component X {` / `hook use_x {` / `module M {`
     let k = s;

@@ -1926,7 +1926,9 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 	# by compile()'s apply_export_markers pass and emit nothing of their own.
 	decls = decls.filter(func(dm): return str(dm["kind"]) != "export_list" and str(dm["kind"]) != "export_default")
 	if decls.is_empty():
-		diags.append(D.make("GUITKX2101", D.ERROR, "no declarations found (export markers alone declare nothing)"))
+		# Family-registered 2101 wording (§4 gates any rewording on family registration -- the
+		# marker-only condition reuses the registered string rather than minting a variant).
+		diags.append(D.make("GUITKX2101", D.ERROR, "no `component`, `hook`, or `module` declaration found"))
 		return { "ok": false, "gd": "", "diagnostics": diags }
 	# 2. Duplicate top-level names collide in one script -> GUITKX2505.
 	var seen := {}

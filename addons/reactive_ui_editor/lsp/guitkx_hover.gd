@@ -87,7 +87,20 @@ static func _tag_hover(word: String) -> String:
 		return GuitkxSchema.hover_for_tag(word)
 	if GuitkxWorkspace.is_component(word):
 		var e := GuitkxWorkspace.lookup(word)
-		return "**`<%s>`** — user component (`%s`). Ctrl-click to open its declaration." % [word, (e.get("path", "") as String).get_file()]
+		# M7.1 kind-aware hover: kind + export/default badges from the declaring file's decl
+		# table (cached per source hash -- RUIGuitkxResolve.decl_table).
+		var badge := "user component"
+		var epath := str(e.get("path", ""))
+		if epath != "":
+			var tbl: Dictionary = RUIGuitkxResolve.decl_table(epath)
+			var dd = (tbl["decls"] as Dictionary).get(str(e.get("name", word)))
+			if dd is Dictionary:
+				badge = "user %s" % str((dd as Dictionary)["kind"])
+				if bool((dd as Dictionary)["export"]):
+					badge += ", exported"
+			if str(tbl.get("default", "")) == str(e.get("name", word)):
+				badge += ", default export"
+		return "**`<%s>`** — %s (`%s`). Ctrl-click to open its declaration." % [word, badge, epath.get_file()]
 	return ""
 
 ## The full identifier spanning `offset` (expands both directions over identifier chars).

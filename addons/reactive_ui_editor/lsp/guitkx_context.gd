@@ -188,13 +188,15 @@ static func _is_body_brace(text: String, brace_pos: int) -> bool:
 		k -= 1
 	if k >= 1 and text.unicode_at(k) == 62 and text.unicode_at(k - 1) == 45:   # '>' after '-'
 		return true
-	# `module Name {`
+	# `component X {` / `hook use_x {` / `module Name {` -- the paren-less wrapper decl headers
+	# (window syntax). MIRROR: semanticTokens.ts isBodyBrace checks the same three keywords.
 	while j >= 0 and _is_ws(text.unicode_at(j)):
 		j -= 1
 	var pend := j + 1
 	while j >= 0 and _is_ident_char(text.unicode_at(j)):
 		j -= 1
-	if text.substr(j + 1, pend - j - 1) == "module":
+	var kw := text.substr(j + 1, pend - j - 1)
+	if kw == "component" or kw == "hook" or kw == "module":
 		return true
 	# Paramless plain decl `Name {` / `export Name {`: the identifier chain before the `{` starts
 	# at the beginning of its line (a top-level declaration header).

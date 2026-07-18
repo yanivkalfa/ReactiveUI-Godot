@@ -31,6 +31,7 @@ func _initialize() -> void:
 		["wave2_completion", _test_wave2_completion],
 		["comment_toggle", _test_comment_toggle],
 		["refs_and_rename", _test_refs_and_rename],
+		["es_editor_intelligence", _test_es_editor_intelligence],
 		["multifile", _test_multifile],
 		["outline", _test_outline],
 		["replace", _test_replace],
@@ -906,6 +907,61 @@ func _test_outline() -> void:
 
 # W5/G24 — find-bar replace: step replaces the selected match, All is one undo step and
 # terminates even when the replacement contains the query.
+# ES-modules audit regressions: (a) a PLAIN-declared buffer-local sibling component is a legal
+# tag in the live unknown-tag scan (the wrapper-only _local_decls regex false-flagged it);
+# (b) namespace-member completion after `X.`; (c) kind-aware hover badges.
+func _test_es_editor_intelligence() -> void:
+	const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
+	const Completion := preload("res://addons/reactive_ui_editor/lsp/guitkx_completion.gd")
+	const Hover := preload("res://addons/reactive_ui_editor/lsp/guitkx_hover.gd")
+	# (a) plain sibling used as a tag in the SAME buffer -- no GUITKX0105.
+	var buf := "Chip2() -> RUIVNode {
+	return ( <Label /> )
+}
+export Shell2() -> RUIVNode {
+	return ( <Chip2 /> )
+}
+"
+	var diags: Array = ScanDiags.unknown_tags(buf, [])
+	_ok(diags.is_empty(), "plain buffer-local sibling tag is known to the live scan (got %s)" % str(diags))
+	# (b) `Hud.` completion offers the target file's exported decls, kind-tagged.
+	var hud_p := "res://tests/__es_ed_hud.guitkx"
+	var fh := FileAccess.open(hud_p, FileAccess.WRITE)
+	fh.store_string("export panel_w: int = 320
+export fmt(x: int) -> String {
+	return str(x)
+}
+priv_v := 1
+")
+	fh.close()
+	var app_p := "res://tests/__es_ed_app.guitkx"
+	var app_src := "import * as Hud from \"./__es_ed_hud\"
+export A2() -> RUIVNode {
+	return ( <Label text={str(Hud.)}/> )
+}
+"
+	var caret := app_src.find("Hud.") + 4
+	var items: Array = Completion.for_caret(app_src, caret, app_p)
+	var names: Array = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("panel_w") and names.has("fmt"), "ns-member completion offers exported decls (got %s)" % str(names))
+	_ok(not names.has("priv_v"), "file-private decls are NOT offered")
+	# (c) kind-aware hover badge for an indexed component incl. export/default.
+	var chip_p := "res://tests/__es_ed_chip.guitkx"
+	var fc2 := FileAccess.open(chip_p, FileAccess.WRITE)
+	fc2.store_string("export EsChipX() -> RUIVNode {
+	return ( <Label /> )
+}
+export default EsChipX
+")
+	fc2.close()
+	GuitkxWorkspace.rescan()
+	var h := str(Hover._tag_hover("EsChipX"))
+	_ok(h.contains("user component") and h.contains("exported") and h.contains("default export"), "hover carries kind + export + default badges (got %s)" % h)
+	for pth in [hud_p, app_p, chip_p]:
+		if FileAccess.file_exists(str(pth)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(pth)))
+	GuitkxWorkspace.rescan()
+
 func _test_replace() -> void:
 	const FindBar := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
 	var ce: CodeEdit = CodeEditScript.new()

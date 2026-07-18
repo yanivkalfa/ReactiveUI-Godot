@@ -409,7 +409,7 @@ func _request_code_completion(_force: bool) -> void:
 		return
 	var text := get_text()
 	var off := GuitkxContext.offset_of(text, get_caret_line(), get_caret_column())
-	var items := GuitkxCompletion.for_caret(text, off)
+	var items := GuitkxCompletion.for_caret(text, off, file_path)
 	var seen := {}
 	for it in items:
 		seen[str(it["display"])] = true
