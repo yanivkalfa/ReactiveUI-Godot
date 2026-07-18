@@ -1,8 +1,9 @@
-@class_name DemoStress
-
 ## Ported from uitkx Samples/Components/StressTest. N bouncing boxes, ALL re-rendered
 ## every frame via keyed reconciliation, measuring avg FPS — the real throughput test.
-component DemoStress {
+import { DemoBox } from "~/examples/demos/demo_box"
+import * as DemoStressHooks from "./stress_test.hooks"
+
+export DemoStress() -> RUIVNode {
   var box_count = useState(300)
   var duration = useState(10.0)
   var count_text = useState("300")

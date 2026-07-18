@@ -45,6 +45,9 @@ no TCP connection, works fully offline.
 
 ## Changelog
 
+### [0.11.0] - 2026-07-18
+- ES modules 0.11.0 (rides the library 0.11.0 — see MIGRATION-0.11.md): plain, signature-classified declarations replace the `component`/`hook`/`module` wrapper keywords — `Name(p) -> RUIVNode {}` is a component, `use_x(p) {}` a hook, any other callable a util, `name := expr` a value export — and the import surface grows to the full ES set (`{ a as b }` renames, `* as X` namespaces, default imports/exports, deferred `export { … }` lists). Highlighting, the tokenizer, the workspace/declaration index, outline, live header diagnostics, markup windows, and the virtual-doc analyzer all classify the plain forms; wrapper syntax keeps working for the deprecation window with a live GUITKX2320 warning, and the new 232x diagnostics (2321 cross-guard, 2323–2327 export/import-marker errors) surface live. The TextMate grammar and schema teach the new forms; `as`/`default`/`from` join the keyword faces.
+
 ### [0.10.3] - 2026-07-16
 - Requirements corrected on both marketplace pages: there is nothing to install — VS Code runs the language server on its own built-in Node runtime, and the VS2022 VSIX bundles a Node runtime of its own. The "Node.js on your PATH" requirement was a stale pre-bundling claim.
 

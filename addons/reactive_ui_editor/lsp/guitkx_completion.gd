@@ -26,7 +26,9 @@ const BUILTIN_MEMBERS := {
 }
 
 ## Array of { kind:String, insert:String, display:String } for the caret at char `offset` in `text`.
-static func for_caret(text: String, offset: int) -> Array:
+## `path` (optional) is the buffer's own .guitkx path -- it lets the embedded tier resolve
+## relative import specifiers for namespace-member completion (M7.1).
+static func for_caret(text: String, offset: int, path: String = "") -> Array:
 	var ctx := GuitkxContext.classify(text, offset)
 	match ctx["kind"]:
 		GuitkxContext.KIND_TAG:
@@ -40,7 +42,7 @@ static func for_caret(text: String, offset: int) -> Array:
 		GuitkxContext.KIND_DIRECTIVE:
 			return _directives(true)
 		GuitkxContext.KIND_EMBEDDED:
-			return _embedded(text, offset)
+			return _embedded(text, offset, path)
 	return []
 
 static func _item(kind: String, insert: String, display := "") -> Dictionary:
@@ -103,7 +105,7 @@ static func _attr_values(tag: String, attr: String) -> Array:
 
 ## Embedded/setup completion without the analyzer (G7/G8): `<Type>.` builtin constants and the
 ## built-in hook names. The full type-aware layer arrives with the native analyzer (M3).
-static func _embedded(text: String, offset: int) -> Array:
+static func _embedded(text: String, offset: int, path: String = "") -> Array:
 	var line_start := 0 if offset <= 0 else text.rfind("\n", offset - 1) + 1
 	var before := text.substr(line_start, offset - line_start)
 	var re := RegEx.new()
@@ -114,6 +116,30 @@ static func _embedded(text: String, offset: int) -> Array:
 		for member in BUILTIN_MEMBERS[m.get_string(1)]:
 			out.append(_item(MEMBER, str(member)))
 		return out
+	# M7.1: `X.` where X is an import local bound to a whole FILE (`import * as X` namespace, or
+	# a module-style named import) -- offer the target's EXPORTED declaration names, kind-tagged.
+	if m != null and path != "":
+		var qual := m.get_string(1)
+		var root: String = RUIGuitkxConfig.root_for(path)
+		for im in RUIGuitkx.scan_imports(text):
+			var binds_file := str(im.get("ns", "")) == qual
+			if not binds_file:
+				for nm2 in (im.get("names", []) as Array):
+					if str((nm2 as Dictionary)["name"]) == qual:
+						binds_file = true   # module-style named import: qualified access is its shape
+			if not binds_file:
+				continue
+			var res: Dictionary = RUIGuitkxResolve.resolve_specifier(str(im["spec"]), path, root)
+			if not bool(res.get("ok", false)):
+				continue
+			var tbl: Dictionary = RUIGuitkxResolve.decl_table(str(res["guitkx"]))
+			var out_ns: Array = []
+			for dn in (tbl["decls"] as Dictionary):
+				var dd := (tbl["decls"] as Dictionary)[dn] as Dictionary
+				if bool(dd["export"]):
+					out_ns.append(_item(MEMBER, str(dn), "%s (%s)" % [str(dn), str(dd["kind"])]))
+			if not out_ns.is_empty():
+				return out_ns
 	# Hook names while typing `use…` (Ctrl+Space; letters aren't auto-trigger prefixes).
 	var w := ""
 	var i := before.length() - 1

@@ -1,6 +1,6 @@
 import { DemoBox } from "~/examples/demos/demo_box"
 
-export component DemoPortal {
+export DemoPortal() -> RUIVNode {
   var show = useState(true)
   var mounted = useState(false)
   var target = useRef(null)

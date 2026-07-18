@@ -90,7 +90,6 @@ var _last_compile_ms := 0.0     # drives the adaptive debounce (P1)
 # still-broken file.
 var _format_fallback_warned: Dictionary = {}
 
-static var _decl_probe: RegEx = null
 
 func _init() -> void:
 	name = "ReactiveUITK"
@@ -269,6 +268,10 @@ func _refresh_outline() -> void:
 				glyph = "▣"
 			"func":
 				glyph = "·"
+			"value":
+				glyph = "="
+			"util":
+				glyph = "ƒ"
 		item.set_text(0, "%s %s" % [glyph, str(e.get("name", ""))])
 		item.set_metadata(0, int(e.get("offset", 0)))
 
@@ -756,16 +759,22 @@ func _apply_unreachable_dim(text: String) -> void:
 ## The identity the compiler checks the declared name against (GUITKX0103). A pathless scratch
 ## buffer derives it from its own first declaration — the literal "Component" fallback used to
 ## self-report a spurious name-mismatch on every unsaved buffer (parity plan D4).
+## ES-modules leg: plain declarations have no keyword for a regex to anchor on, so the probe is
+## the compiler's own scan (wrapper + plain forms alike).
 func _basename(text: String = "") -> String:
 	if not _current_path.is_empty():
 		return _current_path.get_file().get_basename()
-	if _decl_probe == null:
-		_decl_probe = RegEx.new()
-		_decl_probe.compile("(?m)^[ \\t]*(?:component|hook|module)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
-	var m := _decl_probe.search(text)
-	if m != null:
-		return m.get_string(1)
-	return "Component"
+	var d: Dictionary = RUIGuitkx._find_decl(text, 0)
+	var nm := ""
+	if str(d.get("kind", "")) != "":
+		if bool(d.get("deprecated", false)):
+			# wrapper row: `at` is the keyword -- the name follows it.
+			var rows: Array = RUIGuitkx._enumerate_decls(text, 0)
+			if not rows.is_empty():
+				nm = str((rows[0] as Dictionary).get("name", ""))
+		else:
+			nm = str(d.get("name", ""))
+	return nm if nm != "" else "Component"
 
 ## --- Toolbar actions ---
 

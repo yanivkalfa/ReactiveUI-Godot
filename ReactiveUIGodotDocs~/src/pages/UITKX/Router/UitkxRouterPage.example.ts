@@ -1,4 +1,4 @@
-export const UITKX_ROUTER_EXAMPLE = `component RouterDemo() {
+export const UITKX_ROUTER_EXAMPLE = `RouterDemo() -> RUIVNode {
   var navigate = RUIRouter.useNavigate()
   var search = RUIRouter.useSearchParams()   // [query, setter]
 
@@ -45,7 +45,7 @@ export const UITKX_ROUTER_EXAMPLE = `component RouterDemo() {
   )
 }`
 
-export const UITKX_ROUTER_LAYOUT_EXAMPLE = `component UsersLayout() {
+export const UITKX_ROUTER_LAYOUT_EXAMPLE = `UsersLayout() -> RUIVNode {
   return (
     <VBoxContainer style={ {"separation": 8} }>
       <Label text="Users header" />
@@ -55,7 +55,7 @@ export const UITKX_ROUTER_LAYOUT_EXAMPLE = `component UsersLayout() {
   )
 }`
 
-export const UITKX_ROUTER_DETAILS_EXAMPLE = `component UserDetails() {
+export const UITKX_ROUTER_DETAILS_EXAMPLE = `UserDetails() -> RUIVNode {
   var params = RUIRouter.useParams()       // { "id": "42", ... }
   var matches = RUIRouter.useMatches()     // breadcrumb chain (root -> current)
   return (

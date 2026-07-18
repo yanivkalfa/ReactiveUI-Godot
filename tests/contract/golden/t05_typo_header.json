@@ -1,8 +1,8 @@
 {
 	"diagnostics": [
 		{
-			"code": "GUITKX2101",
-			"len": 11,
+			"code": "GUITKX2105",
+			"len": 12,
 			"off": 0,
 			"severity": 0
 		}

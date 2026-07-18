@@ -64,6 +64,10 @@ func _run() -> void:
 	_test_bughunt_fixes()
 	_test_0103_retired()
 	_test_2107_walk_order()
+	_test_es_modules_declarations()
+	_test_es_modules_imports()
+	_test_es_modules_m4_ordering()
+	_test_es_formatter()
 	if _failed:
 		print("[guitkx_test] FAILED")
 		quit(1)
@@ -971,8 +975,13 @@ func _test_imports_m1() -> void:
 	_check_true(not r_nf["ok"], "M1: import without `from` fails")
 	_check_true(_has_code(r_nf, "GUITKX0300"), "M1: missing `from` -> GUITKX0300")
 
-	var no_brace := "import A from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
-	_check_true(_has_code(RUIGuitkx.compile(no_brace, "C"), "GUITKX0300"), "M1: missing `{ }` -> GUITKX0300")
+	# G-05 (ES-modules leg, supersedes the 0.10.0 named-only lock): `import A from "./x"` is now
+	# the DEFAULT-import form and parses clean; a truly headless caller leaves it inert.
+	var default_form := "import A from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	var r_df := RUIGuitkx.compile(default_form, "C")
+	_check_true(not _has_code(r_df, "GUITKX0300"), "G-05: default-import form parses (got %s)" % str(r_df.get("diagnostics", [])))
+	var no_clause := "import from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
+	_check_true(_has_code(RUIGuitkx.compile(no_clause, "C"), "GUITKX0300"), "M1: import with no clause -> GUITKX0300")
 
 	var empty_braces := "import { } from \"./x\"\ncomponent C() { return ( <Label /> ) }\n"
 	_check_true(_has_code(RUIGuitkx.compile(empty_braces, "C"), "GUITKX0300"), "M1: empty `{ }` -> GUITKX0300")
@@ -1471,9 +1480,12 @@ func _test_diagnostics() -> void:
 	var lk_src := "component LK(items: Array = []) {\n\treturn (\n\t\t<VBoxContainer>\n\t\t\t@for (it in items) { return ( <Label text={ it } /> ) }\n\t\t</VBoxContainer>\n\t)\n}\n"
 	var lk := RUIGuitkx.compile(lk_src, "LK")
 	_check_diag_at(lk, "GUITKX0106", lk_src, "<Label text={ it }", "keyless-loop-child")
-	# a clean component emits no warnings
-	var clean := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
-	_check_true(clean["ok"] and (clean["diagnostics"] as Array).is_empty(), "clean component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+	# a clean PLAIN component emits no warnings; the equivalent WRAPPER form gets exactly the G-10
+	# deprecation warning (2320) and nothing else.
+	var clean := RUIGuitkx.compile("Clean() -> RUIVNode {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
+	_check_true(clean["ok"] and (clean["diagnostics"] as Array).is_empty(), "clean plain component has no diagnostics (got %s)" % str(clean["diagnostics"]))
+	var clean_wrapper := RUIGuitkx.compile("component Clean() {\n\tvar a = useState(0)\n\treturn ( <Label text={ str(a[0]) } /> )\n}\n", "Clean")
+	_check_true(clean_wrapper["ok"] and (clean_wrapper["diagnostics"] as Array).size() == 1 and _has_code(clean_wrapper, "GUITKX2320"), "G-10: clean wrapper component gets exactly one 2320 deprecation warning (got %s)" % str(clean_wrapper["diagnostics"]))
 
 func _test_loop_single_root() -> void:
 	# BUG-V3: a @for/@while body with >1 sibling root is a hard error (single-root; parity Unity UITKX0108)
@@ -1503,11 +1515,21 @@ func _test_decl_validation() -> void:
 	# a valid @class_name is accepted, and a trailing comment on the directive line is tolerated
 	var okcn := RUIGuitkx.compile("@class_name MyThing  # ok\ncomponent X() { return ( <Label /> ) }\n", "X")
 	_check_true(okcn["ok"], "valid @class_name accepted (got %s)" % str(okcn["diagnostics"]))
-	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint, anchored at the typo'd word
-	var typo_src := "componeent X() { return ( <Label /> ) }\n"
+	# BUG-V1: a misspelled declaration keyword yields a did-you-mean hint, anchored at the typo'd
+	# word -- but only when NO valid declaration exists anywhere in the file. Under E-01's
+	# signature-only classification a misspelled keyword followed by something that itself LOOKS
+	# like a plain decl is no longer ambiguous: "componeent X() { ... }" now parses as invalid
+	# content ("componeent") before a real plain util declaration ("X"), which is the more precise
+	# diagnostic (there is no guarantee the author meant "component" specifically).
+	var typo_src := "componeent Foo\n"
 	var typo := RUIGuitkx.compile(typo_src, "X")
 	_check_true(not typo["ok"] and str(_diag(typo, "GUITKX2101").get("message", "")).contains("did you mean 'component'"), "misspelled keyword suggests component (got %s)" % str(typo["diagnostics"]))
 	_check_diag_at(typo, "GUITKX2101", typo_src, "componeent", "misspelled keyword")
+	# E-01: the same typo immediately followed by a callable shape is invalid CONTENT before a real
+	# (plain util) declaration, not a did-you-mean -- "X" alone is legal new-style syntax.
+	var typo_shadowed_src := "componeent X() { return ( <Label /> ) }\n"
+	var typo_shadowed := RUIGuitkx.compile(typo_shadowed_src, "X")
+	_check_true(not typo_shadowed["ok"] and _has_code(typo_shadowed, "GUITKX2105") and not _has_code(typo_shadowed, "GUITKX2101"), "E-01: a typo shadowed by a real trailing decl is 2105, not 2101 (got %s)" % str(typo_shadowed["diagnostics"]))
 	# BUG-V4: a space after `<` is an invalid tag name, not a silent fragment
 	var badtag := RUIGuitkx.compile("component B() {\n\treturn ( <  a> )\n}\n", "B")
 	_check_true(not badtag["ok"] and _has_code(badtag, "GUITKX0300"), "invalid tag name rejected (got %s)" % str(badtag["diagnostics"]))
@@ -2133,3 +2155,286 @@ func _check_true(cond: bool, msg: String) -> void:
 func _fail(msg: String) -> void:
 	print("[guitkx_test] FAIL: ", msg)
 	_failed = true
+
+## ES-modules Layer 2 (E-01..E-05, E-10 slice): plain, signature-classified declarations
+## (component/hook/util/value) alongside the deprecated wrapper keywords. Import-surface
+## extensions (E-06..E-09) are a separate, not-yet-landed chunk of this leg -- not covered here.
+func _test_es_modules_declarations() -> void:
+	# E-01: a plain component (`-> RUIVNode` annotation, PascalCase) compiles clean, no 2320.
+	var comp := RUIGuitkx.compile("Foo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "Foo")
+	_check_true(comp["ok"] and (comp["diagnostics"] as Array).is_empty(), "ES: plain component compiles with no diagnostics (got %s)" % str(comp.get("diagnostics", [])))
+	_check_true((comp["gd"] as String).contains("static func render("), "ES: sole plain component emits render")
+
+	# E-01/T2.6: a plain component still enforces PascalCase (the existing 2100, reused).
+	var comp_lc := RUIGuitkx.compile("foo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "foo")
+	_check_true(not comp_lc["ok"] and _has_code(comp_lc, "GUITKX2100"), "ES: plain component name must be PascalCase (got %s)" % str(comp_lc["diagnostics"]))
+
+	# E-02 cross-guard: `use_`-prefixed + `-> RUIVNode` is 2321, not a silent component/2100 double-hit.
+	var xguard := RUIGuitkx.compile("use_foo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "use_foo")
+	_check_true(not xguard["ok"] and _has_code(xguard, "GUITKX2321") and not _has_code(xguard, "GUITKX2100"), "E-02: use_-prefixed + RUIVNode is 2321 only (got %s)" % str(xguard["diagnostics"]))
+
+	# E-01: a `use_`-prefixed callable with no `-> RUIVNode` is a hook -- emits under its own name
+	# (no `render` aliasing; that only applies to components).
+	var hook := RUIGuitkx.compile("use_count(start: int) -> int {\n\treturn start\n}\n", "use_count")
+	_check_true(hook["ok"] and (hook["diagnostics"] as Array).is_empty(), "ES: plain hook compiles clean (got %s)" % str(hook.get("diagnostics", [])))
+	_check_true((hook["gd"] as String).contains("static func use_count(") and not (hook["gd"] as String).contains("static func render("), "ES: lone plain hook emits under its own name, no render")
+
+	# E-01: anything else (no use_ prefix, no RUIVNode return) is a util.
+	var util := RUIGuitkx.compile("format_score(score: int) -> String {\n\treturn \"Score: %d\" % score\n}\n", "format_score")
+	_check_true(util["ok"] and (util["diagnostics"] as Array).is_empty(), "ES: plain util compiles clean (got %s)" % str(util.get("diagnostics", [])))
+	_check_true((util["gd"] as String).contains("static func format_score(") and (util["gd"] as String).contains("\"kind\": \"util\""), "ES: util emits under its own name with kind util in __RUI_DECLS")
+
+	# E-04/E-05: the three value spellings all emit `static var`, never `const`.
+	var vals := RUIGuitkx.compile("export MAX_ITEMS: int = 5\nrow_style := { \"a\": 1 }\ntheme = { \"b\": 2 }\n", "vals")
+	_check_true(vals["ok"] and (vals["diagnostics"] as Array).is_empty(), "ES: value decls compile clean (got %s)" % str(vals.get("diagnostics", [])))
+	var vgd: String = vals["gd"]
+	_check_true(vgd.contains("static var MAX_ITEMS: int = 5") and vgd.contains("static var row_style := { \"a\": 1 }") and vgd.contains("static var theme = { \"b\": 2 }"), "ES: value decls preserve their source spelling (=, :=, : Type =) (got %s)" % vgd)
+	_check_true(not vgd.contains("const MAX_ITEMS") and not vgd.contains("const row_style") and not vgd.contains("const theme"), "E-05: value exports never emit `const` (got %s)" % vgd)
+	_check_true(vgd.contains("\"kind\": \"value\""), "ES: __RUI_DECLS records the value kind")
+
+	# G-10: a mixed file with ONE wrapper decl + ONE plain decl is legal; only the wrapper decl warns.
+	var mix := RUIGuitkx.compile("component A() {\n\treturn ( <Label /> )\n}\nB() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "mix")
+	_check_true(mix["ok"], "G-10: wrapper + plain mix in one file compiles (got %s)" % str(mix.get("diagnostics", [])))
+	var warns2320 := (mix["diagnostics"] as Array).filter(func(d): return str(d.get("code", "")) == "GUITKX2320")
+	_check_true(warns2320.size() == 1, "G-10: exactly one 2320 warning fires, for the wrapper decl only (got %s)" % str(mix["diagnostics"]))
+
+	# A module's members stay WRAPPER-ONLY (E-01 has no plain `module` equivalent) -- a plain decl
+	# inside a module body is invalid content (2105), not misread as a nested module (2504).
+	var modplain := RUIGuitkx.compile("module M {\n\tfoo() { }\n}\n", "modplain")
+	_check_true(not modplain["ok"] and _has_code(modplain, "GUITKX2105") and not _has_code(modplain, "GUITKX2504"), "ES: a plain decl inside a module body is 2105, not a false nested-module 2504 (got %s)" % str(modplain["diagnostics"]))
+
+	# Runtime: a plain component isn't just shape-plausible GDScript -- load it and mount it for
+	# real (mirrors _test_runtime's wrapper-component pattern).
+	var rsrc := "Box2Plain(label: String = \"hi\") -> RUIVNode {\n" + \
+		"\tvar upper = label.to_upper()\n" + \
+		"\tvar tag = \"[\" + upper + \"]\"\n" + \
+		"\treturn (\n" + \
+		"\t\t<VBoxContainer>\n" + \
+		"\t\t\t<Label text={ tag } />\n" + \
+		"\t\t\t<Button text=\"go\" />\n" + \
+		"\t\t</VBoxContainer>\n" + \
+		"\t)\n}\n"
+	var rr := RUIGuitkx.compile(rsrc, "Box2Plain")
+	_check_true(rr["ok"], "ES runtime: plain component compiles (got %s)" % str(rr.get("diagnostics", [])))
+	if rr["ok"]:
+		var rgd: String = (rr["gd"] as String).replace("class_name Box2Plain\n", "")
+		var rpath := "user://__guitkx_box2plain.gd"
+		var rf := FileAccess.open(rpath, FileAccess.WRITE)
+		rf.store_string(rgd)
+		rf.close()
+		var rscript = load(rpath)
+		_check_true(rscript != null, "ES runtime: generated .gd loads as a script")
+		var rc := Control.new()
+		root.add_child(rc)
+		var rapp := ReactiveRoot.create(rc, V.fc(rscript.render, { "label": "world" }))
+		var rlbl := _find_first(rc, "Label")
+		_check_true(rlbl != null and rlbl.text == "[WORLD]", "ES runtime: plain component renders and its setup-derived value binds (got %s)" % str(rlbl.text if rlbl != null else "<none>"))
+		rapp.unmount()
+		rc.queue_free()
+
+## ES-modules Layer 2 import surface (G-05/E-06..E-09): rename, namespace, default imports,
+## deferred export lists, the new diagnostics (2323-2327, 2325, 2326), the alias-rewrite value
+## lowering (probe-forced: `const x = preload(gd).static_var` is not a constant expression), and
+## __RUI_DEFAULT emission. Cross-file fixtures live under the .gdignore'd __bh_tmp root.
+func _test_es_modules_imports() -> void:
+	const Resolve := preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+	# Target: a plain-syntax file with values, a util, a hook, components, a default.
+	var hud := "export panel_w: int = 320\n" + \
+		"export accent := { \"modulate\": Color(1, 0, 0) }\n" + \
+		"export fmt(x: int) -> String {\n\treturn \"[%d]\" % x\n}\n" + \
+		"export use_tick(start: int) -> int {\n\treturn start\n}\n" + \
+		"export Chip(label: String) -> RUIVNode {\n\treturn ( <Label text={label}/> )\n}\n" + \
+		"Panel(title: String) -> RUIVNode {\n\treturn ( <Label text={title}/> )\n}\n" + \
+		"export default Panel\n"
+	var hud_path := _bh_writefile_at("res://tests/__bh_tmp/es/hud", hud)
+	Codegen.compile_file(hud_path)
+	var hud_gd := FileAccess.get_file_as_string("res://tests/__bh_tmp/es/hud.gd")
+	_check_true(hud_gd.contains("const __RUI_DEFAULT := \"Panel\""), "E-07: __RUI_DEFAULT emitted (got header %s)" % hud_gd.substr(0, 200))
+	_check_true(hud_gd.contains("static var panel_w: int = 320"), "E-05: typed value emits static var")
+	# The default mark counts as exported (M1.3): Panel joins the export table.
+	var htbl := Resolve.decl_table(hud_path)
+	_check_true(str(htbl["default"]) == "Panel", "E-07: decl_table carries the default")
+	_check_true(bool((htbl["decls"]["Panel"] as Dictionary)["export"]), "E-07: default-marked decl reads as exported")
+	# exports_of/default_of agree; export_hash moves when the default flips.
+	_check_true(Codegen.default_of(hud) == "Panel", "E-07: default_of reads the marker")
+	var eh_with := Codegen.export_hash(Codegen.exports_of(hud), Codegen.default_of(hud))
+	var hud_nodef := hud.replace("export default Panel\n", "")
+	var eh_without := Codegen.export_hash(Codegen.exports_of(hud_nodef), Codegen.default_of(hud_nodef))
+	_check_true(eh_with != eh_without, "E-07: a default flip moves export_hash (reverse-edge staleness)")
+
+	# Importer exercising EVERY form at once: named value, renamed util, bare hook, named component,
+	# namespace, default component.
+	var app := "import { panel_w, fmt as fmt_x, use_tick, Chip as Badge } from \"./hud\"\n" + \
+		"import * as Hud from \"./hud\"\n" + \
+		"import Root from \"./hud\"\n\n" + \
+		"export App() -> RUIVNode {\n" + \
+		"\tvar t = use_tick(panel_w)\n" + \
+		"\tvar s = fmt_x(t) + Hud.fmt(2)\n" + \
+		"\treturn (\n\t\t<VBoxContainer>\n\t\t\t<Badge label={s}/>\n\t\t\t<Root title=\"hi\"/>\n\t\t</VBoxContainer>\n\t)\n}\n"
+	var app_path := _bh_writefile_at("res://tests/__bh_tmp/es/app", app)
+	var ar := Codegen.compile_file(app_path)
+	_check_true(bool(ar["ok"]), "G-05: all-forms importer compiles (%s)" % str(ar.get("diagnostics", [])))
+	var app_gd := FileAccess.get_file_as_string("res://tests/__bh_tmp/es/app.gd")
+	_check_true(app_gd.contains("const Hud = preload"), "E-06: namespace lowers to ONE whole-script const")
+	_check_true(app_gd.contains(".panel_w") and app_gd.contains("__RUI_IMP_"), "E-05: named value ref rewritten onto the alias const")
+	_check_true(app_gd.contains(".fmt("), "E-08: renamed util call addresses the REMOTE name")
+	_check_true(not app_gd.contains("fmt_x("), "E-08: the local alias never survives into the .gd")
+	# Chip is hud's RENDER component (the binding decl is a value, so the first exported component
+	# emits `render` -- E-10), so the renamed tag lowers to the func-less V.comp(gd) form; the
+	# local alias `Badge` itself must never leak into the output.
+	_check_true(not app_gd.contains("Badge"), "E-08: renamed component's local alias never survives into the .gd")
+	_check_true(app_gd.contains("\"Panel\""), "E-07: default component resolves AT COMPILE TIME to its decl func")
+	_check_true(not app_gd.contains("const Root = preload"), "E-07/G-08: default COMPONENT import stays lazy (no eager preload)")
+	_check_true(Codegen.gd_source_parses(app_gd), "G-05: the all-forms importer's .gd PARSES")
+
+	# 2326: default-importing a file with no default.
+	var nodef_path := _bh_writefile_at("res://tests/__bh_tmp/es/nodef", "export Only() -> RUIVNode {\n\treturn ( <Label /> )\n}\n")
+	Codegen.compile_file(nodef_path)
+	var r2326 := RUIGuitkx.compile("import X from \"./nodef\"\nexport App2() -> RUIVNode {\n\treturn ( <X /> )\n}\n", "app2", [], {}, "res://tests/__bh_tmp/es/app2.guitkx", "res://")
+	_check_true(_has_code(r2326, "GUITKX2326"), "E-07: no default export -> 2326 (got %s)" % str(r2326.get("diagnostics", [])))
+	_check_true(str(_diag(r2326, "GUITKX2326").get("message", "")).contains("import { Only }"), "2326 suggests the named-import fix using the target's binding")
+
+	# 2301/2302 anchor on the REMOTE name of a rename clause.
+	var r2302 := RUIGuitkx.compile("import { nope as ok } from \"./hud\"\nexport App3() -> RUIVNode {\n\treturn ( <Label text={str(ok)}/> )\n}\n", "app3", [], {}, "res://tests/__bh_tmp/es/app3.guitkx", "res://")
+	_check_true(_has_code(r2302, "GUITKX2302"), "E-08: unknown REMOTE in a rename -> 2302 (got %s)" % str(r2302.get("diagnostics", [])))
+
+	# 2323/2324/2327: export-marker validation.
+	var r2323 := RUIGuitkx.compile("export { ghost }\nexport A9() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "m")
+	_check_true(_has_code(r2323, "GUITKX2323"), "E-09: listing a non-decl -> 2323 (got %s)" % str(r2323.get("diagnostics", [])))
+	var r2324 := RUIGuitkx.compile("export a_val := 1\nexport { a_val }\nA8() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "m")
+	_check_true(_has_code(r2324, "GUITKX2324"), "E-09: double export -> 2324 (got %s)" % str(r2324.get("diagnostics", [])))
+	var r2327 := RUIGuitkx.compile("A7() -> RUIVNode {\n\treturn ( <Label /> )\n}\nexport default A7\nexport default A7\n", "m")
+	_check_true(_has_code(r2327, "GUITKX2327"), "E-07: duplicate default -> 2327 (got %s)" % str(r2327.get("diagnostics", [])))
+	# export { } list marks a decl exported for the BINDING (first-exported rule).
+	var listed := "val_x := 1\nexport { val_x }\nA6() -> RUIVNode {\n\treturn ( <Label /> )\n}\n"
+	_check_true(Codegen._binding_name(listed) == "val_x", "E-09: a list-exported decl wins the first-exported binding (got %s)" % Codegen._binding_name(listed))
+
+	# 2325: alias collisions (vs decl, vs another import).
+	var r2325a := RUIGuitkx.compile("import { fmt as Clash } from \"./hud\"\nexport Clash() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "c1", [], {}, "res://tests/__bh_tmp/es/c1.guitkx", "res://")
+	_check_true(_has_code(r2325a, "GUITKX2325"), "E-08: alias vs in-file decl -> 2325 (got %s)" % str(r2325a.get("diagnostics", [])))
+	var r2325b := RUIGuitkx.compile("import { fmt as Two } from \"./hud\"\nimport * as Two from \"./hud\"\nexport C2() -> RUIVNode {\n\treturn ( <Label text={Two.fmt(1)}/> )\n}\n", "c2", [], {}, "res://tests/__bh_tmp/es/c2.guitkx", "res://")
+	_check_true(_has_code(r2325b, "GUITKX2325"), "E-08: alias vs another import -> 2325 (got %s)" % str(r2325b.get("diagnostics", [])))
+
+	# 2306: a namespace import is a VALUE edge -- a ns-import cycle errors with the chain.
+	var cyc_a := _bh_writefile_at("res://tests/__bh_tmp/es/cyc_a", "import * as B from \"./cyc_b\"\nexport a_v := 1\nexport CA() -> RUIVNode {\n\treturn ( <Label text={str(B.b_v)}/> )\n}\n")
+	var _cyc_b := _bh_writefile_at("res://tests/__bh_tmp/es/cyc_b", "import * as A from \"./cyc_a\"\nexport b_v := 2\nexport CB() -> RUIVNode {\n\treturn ( <Label text={str(A.a_v)}/> )\n}\n")
+	var chain := Resolve.value_cycle(cyc_a, func(p: String) -> Array: return Codegen._value_import_edges(p, {}))
+	_check_true(chain.contains("cyc_a.guitkx") and chain.contains("cyc_b.guitkx"), "E-06: namespace imports join the 2306 DFS (chain: %s)" % chain)
+
+	# 2322 NEVER fires on this leg (family divergence (a)): `:=` and plain `=` values are always legal.
+	var r2322 := RUIGuitkx.compile("export v9 := Time.get_ticks_msec()\nA5() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "m")
+	_check_true(not _has_code(r2322, "GUITKX2322"), "divergence (a): 2322 is never emitted by the Godot leg")
+
+	# G-10 matrix: a WRAPPER decl + NEW import forms in one file -- imports are orthogonal to the
+	# window; the file compiles with 2320 on the wrapper only.
+	var wnew := "import * as Hud from \"./hud\"
+component WOld {
+	return ( <Label text={Hud.fmt(3)}/> )
+}
+"
+	var rwn := RUIGuitkx.compile(wnew, "wold", [], {}, "res://tests/__bh_tmp/es/wold.guitkx", "res://")
+	_check_true(bool(rwn["ok"]), "G-10 matrix: wrapper decl + namespace import compiles (got %s)" % str(rwn.get("diagnostics", [])))
+	_check_true(_has_code(rwn, "GUITKX2320") and (rwn["gd"] as String).contains("const Hud = preload"), "G-10 matrix: warns on the wrapper only; the ns import lowers normally")
+
+	# Audit find: a LOCAL declaration shadowing an alias-lowered import is a loud 2325, never a
+	# silent mis-lowering (the text rewrite cannot do scope analysis -- `var speed = 10` over an
+	# imported `speed` would re-point in-scope refs at the import).
+	var shadow := "import { panel_w } from \"./hud\"
+export Sh() -> RUIVNode {
+	var panel_w = 10
+	return ( <Label text={str(panel_w)}/> )
+}
+"
+	var rsh := RUIGuitkx.compile(shadow, "sh", [], {}, "res://tests/__bh_tmp/es/sh.guitkx", "res://")
+	_check_true(not bool(rsh["ok"]) and _has_code(rsh, "GUITKX2325"), "a local var shadowing an imported value is 2325, not silent corruption (got %s)" % str(rsh.get("diagnostics", [])))
+	# A component PARAM shadowing an imported value hits the same gate (params destructure to var).
+	var pshadow := "import { panel_w } from \"./hud\"
+export Sp(panel_w: int = 1) -> RUIVNode {
+	return ( <Label text={str(panel_w)}/> )
+}
+"
+	var rps := RUIGuitkx.compile(pshadow, "sp", [], {}, "res://tests/__bh_tmp/es/sp.guitkx", "res://")
+	_check_true(not bool(rps["ok"]) and _has_code(rps, "GUITKX2325"), "a param shadowing an imported value is 2325 too (got %s)" % str(rps.get("diagnostics", [])))
+
+	# Runtime proof: mount the all-forms importer and check the rendered values flow end to end.
+	var app_script = load("res://tests/__bh_tmp/es/app.gd")
+	_check_true(app_script != null, "G-05 runtime: importer .gd loads")
+	if app_script != null:
+		var rc2 := Control.new()
+		root.add_child(rc2)
+		var rapp2 := ReactiveRoot.create(rc2, V.fc(app_script.render, {}))
+		var lbl2 := _find_first(rc2, "Label")
+		_check_true(lbl2 != null and lbl2.text == "[320][2]", "G-05 runtime: value+util+hook+ns imports all resolve (got %s)" % str(lbl2.text if lbl2 != null else "<none>"))
+		rapp2.unmount()
+		rc2.queue_free()
+
+## M4 re-verification (ES-modules leg): the two-pass write-all-then-check-all must survive the
+## NEW eager symbols. `a_imp` namespace-imports `z_vals` -- lexicographic pass-1 order compiles
+## the importer FIRST (its preload target .gd doesn't exist yet); pass 2 must heal it. A
+## deliberately-broken value initializer must still be caught by the counted parse gate (gd_ok
+## false -> guitkx_build exits 1). Fixtures live OUTSIDE the .gdignore'd __bh_tmp root (compile_all
+## honors .gdignore), in their own __es_m4_tmp dir, cleaned up at the end.
+func _test_es_modules_m4_ordering() -> void:
+	var dir := "res://tests/__es_m4_tmp"
+	DirAccess.make_dir_recursive_absolute(dir)
+	_imp_write(dir + "/a_imp.guitkx", "import * as Z from \"./z_vals\"\nexport AImp() -> RUIVNode {\n\treturn ( <Label text={str(Z.zw)}/> )\n}\n")
+	_imp_write(dir + "/z_vals.guitkx", "export zw: int = 9\n")
+	var r := Codegen.compile_all(dir)
+	var by_path := {}
+	for c in (r["compiled"] as Array):
+		by_path[str(c["path"])] = c
+	_check_true(by_path.has(dir + "/a_imp.guitkx") and bool((by_path[dir + "/a_imp.guitkx"] as Dictionary)["gd_ok"]), "M4.1: importer compiled BEFORE its value target still passes pass-2 (two-pass heal)")
+	_check_true(by_path.has(dir + "/z_vals.guitkx") and bool((by_path[dir + "/z_vals.guitkx"] as Dictionary)["gd_ok"]), "M4.1: the value target itself parses")
+	# Break the value initializer -> the emitted static var references an unknown identifier ->
+	# pass 2 must reject it (this is exactly what makes guitkx_build's counted gate exit 1).
+	_imp_write(dir + "/z_vals.guitkx", "export zw: int = nonexistent_fn_xyz()\n")
+	var r2 := Codegen.compile_all(dir)
+	var broken_ok := true
+	for c2 in (r2["compiled"] as Array):
+		if str(c2["path"]) == dir + "/z_vals.guitkx":
+			broken_ok = bool(c2["gd_ok"])
+	_check_true(not broken_ok, "M4.1: a broken value initializer FAILS the counted parse gate (gd_ok=false)")
+	# M4.2: flipping a value's export status recompiles importers in the SAME sweep
+	# (export_hash + _reverse_edge_stale). Restore, sweep to settle, then flip.
+	_imp_write(dir + "/z_vals.guitkx", "export zw: int = 9\n")
+	Codegen.compile_all(dir)
+	_imp_write(dir + "/z_vals.guitkx", "zw: int = 9\nexport zw2: int = 10\n")
+	var r3 := Codegen.compile_all(dir)
+	var recompiled := {}
+	for c3 in (r3["compiled"] as Array):
+		recompiled[str(c3["path"])] = true
+	_check_true(recompiled.has(dir + "/a_imp.guitkx"), "M4.2: an export-table change forces the importer stale in the SAME sweep")
+	_bh_rm_tree(dir)
+
+## ES-modules formatter coverage (M1.6): plain decls of all four kinds + markers format
+## canonically and IDEMPOTENTLY; wrapper files keep their shipped formatting byte-stable.
+func _test_es_formatter() -> void:
+	const Fmt := preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var o := { "indentStyle": "tab" }
+	# Plain component: header keeps the -> RUIVNode annotation (it IS the classification).
+	var pc := "export   Foo( a: int )   -> RUIVNode {\n\tvar b = a\n\treturn (\n\t\t<Label text={str(b)}/>\n\t)\n}\n"
+	var r1: Dictionary = Fmt.format(pc, o)
+	_check_true(bool(r1["ok"]) and (r1["text"] as String).contains("export Foo(a: int) -> RUIVNode {"), "ES fmt: plain component header canonical (got %s)" % str(r1["text"]))
+	var r1b: Dictionary = Fmt.format(str(r1["text"]), o)
+	_check_true(str(r1b["text"]) == str(r1["text"]), "ES fmt: plain component idempotent")
+	# Plain hook + util.
+	var ph := "use_x( a:int )->int {\n\treturn a\n}\n"
+	var r2: Dictionary = Fmt.format(ph, o)
+	_check_true((r2["text"] as String).begins_with("use_x(a:int) -> int {"), "ES fmt: plain hook header canonical (got %s)" % str(r2["text"]))
+	_check_true(str(Fmt.format(str(r2["text"]), o)["text"]) == str(r2["text"]), "ES fmt: plain hook idempotent")
+	# Value decls: one line, spelling preserved.
+	var pv := "export   w   :=   { \"a\": 1 }\n"
+	var r3: Dictionary = Fmt.format(pv, o)
+	_check_true((r3["text"] as String).begins_with("export w := { \"a\": 1 }"), "ES fmt: value := canonical one-liner (got %s)" % str(r3["text"]))
+	_check_true(str(Fmt.format(str(r3["text"]), o)["text"]) == str(r3["text"]), "ES fmt: value idempotent")
+	# Markers.
+	var ml := "export {  a ,  b }\na := 1\nb := 2\n"
+	var r4: Dictionary = Fmt.format(ml, o)
+	_check_true((r4["text"] as String).begins_with("export { a, b }"), "ES fmt: export list canonical (got %s)" % str(r4["text"]))
+	var md := "export default   Foo\nFoo() -> RUIVNode {\n\treturn ( <Label /> )\n}\n"
+	var r5: Dictionary = Fmt.format(md, o)
+	_check_true((r5["text"] as String).begins_with("export default Foo"), "ES fmt: export default canonical (got %s)" % str(r5["text"]))
+	# Wrapper file byte-stability: an already-canonical wrapper component round-trips unchanged.
+	var wf := "component Keep {\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var r6: Dictionary = Fmt.format(wf, o)
+	_check_true(str(r6["text"]) == wf, "ES fmt: canonical wrapper file stays byte-identical (window stability)")

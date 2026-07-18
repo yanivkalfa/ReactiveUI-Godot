@@ -1,6 +1,6 @@
-@class_name DemoSlicing
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoSlicing {
+export DemoSlicing() -> RUIVNode {
   var sliced = useState(RUIConfig.time_slicing)
   var rev = useState(0)
   var toggle = func():

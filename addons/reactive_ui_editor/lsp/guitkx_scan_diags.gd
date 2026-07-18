@@ -73,12 +73,21 @@ static func unknown_tags(text: String, known: Array) -> Array:
 		i = k
 	return out
 
-## Declaration names in THIS buffer (module-local components are legal tags before any save).
+## Declaration names in THIS buffer (buffer-local components are legal tags before any save).
+## ES-modules leg: declarations are SIGNATURE-classified — plain forms have no keyword for a
+## regex to find, so the whitelist consumes the compiler's own scan (the same swap
+## guitkx_workspace.gd got; M1.4: never leave a wrapper-only regex behind). Wrapper module
+## MEMBERS still need a member regex — they live inside a module body the top-level scan does
+## not enter (window syntax only; the codemod hoists them).
 static func _local_decls(text: String) -> Array:
 	var out: Array = []
-	var re := RegEx.new()
-	re.compile("(?m)^[ \\t]*(?:component|module)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
-	for m in re.search_all(text):
+	for dm in (RUIGuitkx.analyzed_decls(text, 0)["decls"] as Array):
+		var nm := str(dm["name"])
+		if nm != "":
+			out.append(nm)
+	var mem := RegEx.new()
+	mem.compile("(?m)^[ \\t]+(?:export[ \\t]+)?component[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")
+	for m in mem.search_all(text):
 		out.append(m.get_string(1))
 	var cn := RegEx.new()
 	cn.compile("(?m)^[ \\t]*@class_name[ \\t]+([A-Za-z_][A-Za-z0-9_]*)")

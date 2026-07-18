@@ -1,6 +1,6 @@
-@class_name DemoStyling
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoStyling {
+export DemoStyling() -> RUIVNode {
   return (
     <DemoBox title="Styling — StyleBoxFlat + theme channels">
       <PanelContainer style={ DemoStylingStyle.PANEL }>

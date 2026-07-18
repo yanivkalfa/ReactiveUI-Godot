@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_fast_refresh_preserves_state()
 	_test_signature_change_resets_state()
 	_test_module_change_rerenders_globally()
+	_test_value_change_rerenders_no_reset()
 	_test_error_isolation_and_recovery()
 	_test_empty_read_held()
 	_test_uncached_path_skipped()
@@ -47,6 +48,22 @@ func _test_injector_dedupe() -> void:
 	# _has_const_decl is line-anchored: a mid-line mention of the name is NOT a declaration.
 	_check_true(RUIHmr_._has_const_decl("const Foo = 1\n", "Foo"), "injector: _has_const_decl matches a real const line")
 	_check_true(not RUIHmr_._has_const_decl("var x = Foo\n", "Foo"), "injector: _has_const_decl ignores a usage site")
+	# M5.2 (ES-modules leg): generated files now hold `static var <name>` VALUE declarations --
+	# splicing a `const X` above a same-named `static var X` is a duplicate declaration =
+	# reload ERR_PARSE_ERROR. The skip covers both spellings.
+	_check_true(RUIHmr_._has_const_decl("static var Foo := 1\n", "Foo"), "injector: _has_const_decl matches a static var value decl")
+	var with_static := "class_name Panel\nextends RefCounted\nstatic var HudHooks := 1\nstatic func render():\n\treturn HudHooks\n"
+	_check_true(RUIHmr_._inject_unregistered_bindings(with_static, bindings) == with_static, "M5.2: injector skips a name already static-var-declared (no duplicate)")
+	# ES-modules: a mixed file whose only eager decl is a VALUE (or util) classifies as
+	# module-like for refresh purposes -- its importers consumed it eagerly.
+	var val_mixed := GDScript.new()
+	val_mixed.source_code = "extends RefCounted\nconst __RUI_DECLS := { \"C\": { \"kind\": \"component\", \"sig\": \"\", \"export\": true }, \"w\": { \"kind\": \"value\", \"export\": true } }\nconst __RUI_KIND := \"mixed\"\nconst __RUI_HOOK_SIG := \"\"\nstatic var w := 1\nstatic func render(_p, _c): return null\n"
+	val_mixed.reload()
+	_check_true(RUIHmr_._is_module(val_mixed), "M5.1: a mixed file with a VALUE decl drives importer refresh (kind value)")
+	var util_mixed := GDScript.new()
+	util_mixed.source_code = "extends RefCounted\nconst __RUI_DECLS := { \"fmt\": { \"kind\": \"util\", \"export\": true } }\nconst __RUI_KIND := \"mixed\"\nconst __RUI_HOOK_SIG := \"\"\nstatic func fmt(): return 1\n"
+	util_mixed.reload()
+	_check_true(RUIHmr_._is_module(util_mixed), "M5.1: a util-only mixed file drives importer refresh (kind util)")
 
 	# BH-15: a MIXED file (component + a hook/module) is classified _is_module==true (its value decl
 	# drives a global/targeted refresh) YET its render component's __RUI_HOOK_SIG must still be compared
@@ -205,6 +222,42 @@ func _test_module_change_rerenders_globally() -> void:
 	_check_true(int(b.renders) == sib_before + 1,
 		"global refresh re-ran the sibling too: %d == %d+1" % [int(b.renders), sib_before])
 	_check_true(int(res["refreshed"]) >= 3, "all function fibers marked (parent+a+b), got %s" % str(res))
+	_teardown(m)
+
+## ES-modules M5.3: a VALUE-decl file edit re-renders consumers through the same eager-dep path
+## as a module change, and resets NO hook state (the value file has no hook signature of its own;
+## the consumer's __RUI_HOOK_SIG is untouched).
+func _test_value_change_rerenders_no_reset() -> void:
+	var ap := DIR + "/counter_v.gd"
+	var bp := DIR + "/sib_v.gd"
+	var vp := DIR + "/vals_v.gd"
+	_write(ap, _counter_src("v1", "useState"))
+	_write(bp, _sibling_src("sib-v"))
+	# The ES-modules value-file shape: __RUI_DECLS with a value kind + a static var.
+	_write(vp, "extends RefCounted
+const __RUI_DECLS := { \"w\": { \"kind\": \"value\", \"export\": true } }
+const __RUI_KIND := \"mixed\"
+const __RUI_HOOK_SIG := \"\"
+static var w := 1
+")
+	var a: GDScript = load(ap)
+	var b: GDScript = load(bp)
+	var vv: GDScript = load(vp)
+	assert(vv != null)
+	var m := _mount(a, b)
+	_click_plus(m["root"], m["rec"])   # state: counter at 1
+	var sib_before: int = b.renders
+	_write(vp, "extends RefCounted
+const __RUI_DECLS := { \"w\": { \"kind\": \"value\", \"export\": true } }
+const __RUI_KIND := \"mixed\"
+const __RUI_HOOK_SIG := \"\"
+static var w := 2
+")
+	var res: Dictionary = RUIHmr_.apply([vp])
+	_check_true(bool(res["global"]), "value file with no known importers falls back to global refresh (got %s)" % str(res))
+	_check_true(int(res["reset"]) == 0, "a value edit resets NO hook state (got %s)" % str(res))
+	_check_true(int(b.renders) == sib_before + 1, "consumers re-rendered (%d == %d+1)" % [int(b.renders), sib_before])
+	_check_true("v1-1" in _labels_text(m["root"]), "counter STATE survived the value edit (got %s)" % str(_labels_text(m["root"])))
 	_teardown(m)
 
 func _test_error_isolation_and_recovery() -> void:

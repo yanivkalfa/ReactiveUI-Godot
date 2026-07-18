@@ -131,10 +131,10 @@ export const HmrPage: FC = () => (
       </Alert>
     </Section>
 
-    <Section title="Companion & Module Files">
+    <Section title="Hook, Util & Value Files">
       <List sx={Styles.list}>
         <ListItem disablePadding>
-          <ListItemText primary={<><strong>Hook files</strong> (e.g. <code>MyComponent.hooks.guitkx</code>) and <strong>modules</strong> reload the same way — but since any component may call them, a module change triggers a <em>global</em> re-render (every mounted component re-runs, state preserved).</>} />
+          <ListItemText primary={<><strong>Files of hooks, utils, or values</strong> (e.g. <code>MyComponent.hooks.guitkx</code>) reload the same way — but since any component may call into them, such a change triggers a <em>global</em> re-render (every mounted component re-runs, state preserved).</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<><strong>New components</strong> just work: the sweep compiles them, and a running game picks them up the first time something renders them (never-loaded scripts are read fresh from disk).</>} />

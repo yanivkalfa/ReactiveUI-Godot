@@ -1,6 +1,6 @@
 import { DemoBox } from "~/examples/demos/demo_box"
 
-export component DemoControls {
+export DemoControls() -> RUIVNode {
   var v = useState(40.0)
   return (
     <DemoBox title="Controls — a slice of the 60-control set">

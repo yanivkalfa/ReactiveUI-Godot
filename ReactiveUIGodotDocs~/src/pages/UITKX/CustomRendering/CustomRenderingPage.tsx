@@ -137,21 +137,21 @@ export const CustomRenderingPage: FC = () => (
       <CodeBlock language="gdscript" code={CUSTOM_RENDERING_PAINTER_EXAMPLE} />
     </Box>
 
-    {/* ── Companion file best practice ─────────────────────────── */}
+    {/* ── Helper file best practice ────────────────────────────── */}
     <Box sx={styles.section}>
       <Typography variant="h5" component="h2" gutterBottom>
-        Keep draw bodies in a companion module
+        Keep draw bodies in a helper file
       </Typography>
       <Typography variant="body1" paragraph>
         The example above calls <code>DrawHelpers.polygon</code> rather than
-        inlining a multi-statement lambda. Keeping draw bodies in a{' '}
-        <code>module {'{ }'}</code> companion (a sibling{' '}
-        <code>.style.guitkx</code> / <code>.utils.guitkx</code>, or a plain{' '}
-        <code>.gd</code>) is the recommended pattern: the markup stays a simple
-        single-expression lambda, the draw code gets full editor tooling, and the{' '}
-        <code>.guitkx</code> file formats cleanly. Each function just needs to
-        match <code>func(canvas: CanvasItem)</code> (plus any extra arguments you
-        close over).
+        inlining a multi-statement lambda. Keeping draw bodies as exported utils
+        in a sibling <code>.guitkx</code> helper file (imported with{' '}
+        <code>import * as DrawHelpers from &quot;./draw_helpers&quot;</code>, or a
+        plain <code>.gd</code>) is the recommended pattern: the markup stays a
+        simple single-expression lambda, the draw code gets full editor tooling,
+        and the <code>.guitkx</code> file formats cleanly. Each function just
+        needs to match <code>func(canvas: CanvasItem)</code> (plus any extra
+        arguments you close over).
       </Typography>
       <CodeBlock language="gdscript" code={CUSTOM_RENDERING_HELPERS_EXAMPLE} />
     </Box>

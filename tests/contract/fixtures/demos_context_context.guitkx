@@ -1,6 +1,7 @@
-@class_name DemoContext
+import { DemoBox } from "~/examples/demos/demo_box"
+import { DemoContextConsumer } from "./context_consumer"
 
-component DemoContext {
+export DemoContext() -> RUIVNode {
   var accent = useState(Color(0.3, 0.6, 1.0))
   Hooks.provideContext("accent", accent[0])
   return (

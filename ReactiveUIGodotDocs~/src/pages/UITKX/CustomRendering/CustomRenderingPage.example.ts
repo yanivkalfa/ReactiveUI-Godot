@@ -2,43 +2,47 @@
 /*  Custom Rendering page — draw_fn + redraw_key, real GDScript        */
 /* ------------------------------------------------------------------ */
 
-// A companion module holding the draw bodies. Keeping them out of the markup
-// lets the .guitkx use simple single-expression lambdas. Each draw body is a
-// func(canvas: CanvasItem) that issues Godot's draw_* calls.
-export const CUSTOM_RENDERING_HELPERS_EXAMPLE = `@class_name DrawHelpers
+// A helper file holding the draw bodies as plain top-level utils. Keeping them
+// out of the markup lets the .guitkx use simple single-expression lambdas. Each
+// draw body is a func(canvas: CanvasItem) that issues Godot's draw_* calls.
+export const CUSTOM_RENDERING_HELPERS_EXAMPLE = `# draw_helpers.guitkx — a file IS a module; @class_name names its binding.
+@class_name DrawHelpers
 
-module {
-  # Vector drawing: an N-sided polygon outline, centered in the node's rect.
-  static func polygon(canvas: CanvasItem, sides: int) -> void:
-    var r: Vector2 = canvas.size
-    var cx := r.x * 0.5
-    var cy := r.y * 0.5
-    var radius := min(cx, cy) - 8.0
-    var n := max(3, sides)
-    var pts := PackedVector2Array()
-    for i in n + 1:
-      var a := float(i) / n * TAU - PI * 0.5
-      pts.append(Vector2(cx + cos(a) * radius, cy + sin(a) * radius))
-    canvas.draw_polyline(pts, Color.CYAN, 3.0)
+# Vector drawing: an N-sided polygon outline, centered in the node's rect.
+export polygon(canvas: CanvasItem, sides: int) -> void {
+  var r: Vector2 = canvas.size
+  var cx := r.x * 0.5
+  var cy := r.y * 0.5
+  var radius := min(cx, cy) - 8.0
+  var n := max(3, sides)
+  var pts := PackedVector2Array()
+  for i in n + 1:
+    var a := float(i) / n * TAU - PI * 0.5
+    pts.append(Vector2(cx + cos(a) * radius, cy + sin(a) * radius))
+  canvas.draw_polyline(pts, Color.CYAN, 3.0)
+}
 
-  # A solid tinted quad inset 8px from the edges.
-  static func quad(canvas: CanvasItem, tint: Color) -> void:
-    var r: Vector2 = canvas.size
-    canvas.draw_rect(Rect2(8, 8, r.x - 16, r.y - 16), tint, true)
+# A solid tinted quad inset 8px from the edges.
+export quad(canvas: CanvasItem, tint: Color) -> void {
+  var r: Vector2 = canvas.size
+  canvas.draw_rect(Rect2(8, 8, r.x - 16, r.y - 16), tint, true)
+}
 
-  # A stable target that scribbles a fresh random polyline every repaint, so a
-  # redraw_key bump visibly redraws even though the callback is unchanged.
-  static func scatter(canvas: CanvasItem) -> void:
-    var r: Vector2 = canvas.size
-    var pts := PackedVector2Array()
-    for i in 17:
-      pts.append(Vector2(randf() * r.x, randf() * r.y))
-    canvas.draw_polyline(pts, Color(0.3, 0.9, 1.0), 2.0)
+# A stable target that scribbles a fresh random polyline every repaint, so a
+# redraw_key bump visibly redraws even though the callback is unchanged.
+export scatter(canvas: CanvasItem) -> void {
+  var r: Vector2 = canvas.size
+  var pts := PackedVector2Array()
+  for i in 17:
+    pts.append(Vector2(randf() * r.x, randf() * r.y))
+  canvas.draw_polyline(pts, Color(0.3, 0.9, 1.0), 2.0)
 }`
 
 // Vector drawing driven by component state. A fresh inline lambda each render
 // is a new callable, so the node repaints whenever its owner re-renders.
-export const CUSTOM_RENDERING_PAINTER_EXAMPLE = `component PolygonCanvas() {
+export const CUSTOM_RENDERING_PAINTER_EXAMPLE = `import * as DrawHelpers from "./draw_helpers"
+
+PolygonCanvas() -> RUIVNode {
   var sides = useState(3)
 
   return (
@@ -52,7 +56,9 @@ export const CUSTOM_RENDERING_PAINTER_EXAMPLE = `component PolygonCanvas() {
 }`
 
 // Drawing that depends on state, toggled by a button.
-export const CUSTOM_RENDERING_RAW_MESH_EXAMPLE = `component QuadCanvas() {
+export const CUSTOM_RENDERING_RAW_MESH_EXAMPLE = `import * as DrawHelpers from "./draw_helpers"
+
+QuadCanvas() -> RUIVNode {
   var blue = useState(true)
 
   return (
@@ -65,7 +71,9 @@ export const CUSTOM_RENDERING_RAW_MESH_EXAMPLE = `component QuadCanvas() {
 }`
 
 // Stable callback + redraw_key: repaint on demand WITHOUT changing the callback.
-export const CUSTOM_RENDERING_REDRAW_KEY_EXAMPLE = `component ScatterCanvas() {
+export const CUSTOM_RENDERING_REDRAW_KEY_EXAMPLE = `import * as DrawHelpers from "./draw_helpers"
+
+ScatterCanvas() -> RUIVNode {
   var tick = useState(0)
 
   // A stable callable: its identity never changes between renders, so the node

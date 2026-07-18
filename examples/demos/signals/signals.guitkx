@@ -1,7 +1,7 @@
 import { DemoBox } from "~/examples/demos/demo_box"
 import { DemoSignalsDisplay } from "./signals_display"
 
-export component DemoSignals {
+export DemoSignals() -> RUIVNode {
   return (
     <DemoBox title="Signals — shared state, no prop drilling">
       <Label

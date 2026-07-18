@@ -4,6 +4,54 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] — 2026-07-18
+
+**ES modules: a file IS a module.** The family-wide Layer-2 redesign lands: plain,
+signature-classified declarations replace the `component` / `hook` / `module` wrapper
+keywords, value exports arrive, and the import surface grows to the full ES set. One
+codemod migrates a whole project; the old syntax keeps compiling for this minor with a
+deprecation warning and is removed in a later minor. See **MIGRATION-0.11.md**.
+
+- **Plain declarations, classified by signature alone**: `Name(p) -> RUIVNode {}` is a
+  component (the annotation IS the classification; PascalCase enforced), `use_x(p) {}` a
+  hook, any other callable a util, and `name := expr` / `name: T = expr` / `name = expr`
+  a value (emitted as `static var` — GDScript cannot verify const-foldability at parse
+  time; treat imported values as constants). A `use_`-prefixed callable returning
+  `RUIVNode` is the new cross-guard error **GUITKX2321**.
+- **Value exports** are new everywhere (no prior `.guitkx` surface could export a plain
+  constant). They are eager preload edges: value-import cycles stay the hard error
+  GUITKX2306; component references stay lazy (`V.comp`) and may cycle.
+- **Full ES import surface** (supersedes 0.10.0 named-only): `import { a as b }` renames
+  (diagnostics validate the REMOTE name), `import * as X` namespaces (one eager preload;
+  members as `X.name`; component tags via `X.` not yet), `import X from` defaults
+  (resolved at compile time to the target's `export default` decl, lowered per kind),
+  deferred `export { a, b }` lists and `export default Name`. Re-exports stay deferred.
+  New diagnostics **GUITKX2323–2327** (undeclared marker name, duplicate export, import
+  alias collision, no default export, duplicate default); **GUITKX2322** is registered to
+  its family meaning but never emitted by this leg (dynamically-typed dialect).
+- **Deprecation window (one minor)**: wrapper declarations still compile through the
+  byte-frozen legacy paths with one **GUITKX2320** warning per decl. **GUITKX2203**
+  (hook-naming warning) retires with them — under signature classification the `use_`
+  prefix IS what makes a hook, so a helper without it is simply a util. The codemod
+  `dev/migrate_0_11_0.gd` rewrites a whole project (idempotent): wrappers to plain
+  declarations, modules hoisted to top level (+`@class_name M` so binding/global identity
+  survives — the escape hatch doing its job; it stays, permanently), and module importers
+  flipped to `import * as M`. All 49 bundled demos are modernized with it.
+- Generated mixed files gain `const __RUI_DEFAULT := "<name>"` (the default-export mark)
+  and `__RUI_DECLS` rows now carry the `value`/`util` kinds; the diagnostics sidecar is
+  schema v4 (exports rows with the new kinds + the file-level `default`, both covered by
+  the reverse-edge staleness hash). Fast Refresh treats value/util changes exactly like
+  hook/module changes (targeted importer refresh, no state reset on a value edit), and
+  the HMR const-injector now also skips `static var` declarations.
+- Fixed: a dot-preceded identifier (`X.entries(`) counted as a free reference of
+  `entries` in the canonical reference scan — a member access is a use of the QUALIFIER
+  only. Latent since 0.10.0; surfaced by module hoisting (spurious self-imports on the
+  codemod's second run).
+- Editor addon + IDE mirrors moved off wrapper-keyword regexes onto the compiler's own
+  declaration scan (workspace index, outline, live header diagnostics, markup windows,
+  virtual docs, formatter, TextMate grammar, schema); the t05 typo-header contract
+  fixture is PROMOTED from pending — both sides now classify it identically.
+
 ## [0.10.2] — 2026-07-16
 
 **`GUITKX0103` retired; demos and docs now model pure imports/exports.** Since 0.10.0 a

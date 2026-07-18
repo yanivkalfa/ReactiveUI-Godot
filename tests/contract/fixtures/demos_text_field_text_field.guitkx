@@ -1,6 +1,6 @@
-@class_name DemoTextField
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoTextField {
+export DemoTextField() -> RUIVNode {
   var s = useState("")
   return (
     <DemoBox title="Text Field — controlled input">

@@ -12,7 +12,7 @@ the last and patches only what changed on the real Godot node tree. State lives 
 saving a `.guitkx` while your game runs under F5 hot-reloads it in place (**Fast Refresh**).
 
 ```
-component Counter {
+Counter() -> RUIVNode {
 	var s = useState(0)
 	return (
 		<VBoxContainer style={ {"separation": 8} }>
@@ -77,7 +77,7 @@ Requires **Godot 4.4+** (the compiler core uses 4.3+ engine APIs and the editor 
 2. Write your first component as a `.guitkx` file, e.g. `res://ui/counter.guitkx`:
 
 ```
-component Counter {
+Counter() -> RUIVNode {
 	var s = useState(0)
 	return (
 		<VBoxContainer>
@@ -89,7 +89,8 @@ component Counter {
 ```
 
 Saving it compiles a sibling `res://ui/counter.gd` (git-ignore this — it's generated) with a real
-Godot `class_name` — `Counter`, inferred from the declaration — so you can reference it like any
+Godot `class_name` — `Counter`, inferred from the declaration (a component is any callable that
+annotates `-> RUIVNode`; the annotation IS the classification) — so you can reference it like any
 other class. An `@class_name` directive can override that name; it's rarely needed.
 
 3. Mount it from a plain `.gd` script — this one bootstrap point is the only place raw GDScript is
@@ -151,7 +152,7 @@ import line to add (migrating from 0.9? — [MIGRATION-0.10.md](MIGRATION-0.10.m
 import { StatusChip } from "./status_chip"
 import { HudHooks } from "~/ui/hud.hooks"
 
-export component Panel(level: int = 1) {
+export Panel(level: int = 1) -> RUIVNode {
   var blink = HudHooks.use_blink(0.5)
   return ( <PanelContainer><StatusChip level={level} /></PanelContainer> )
 }
@@ -160,7 +161,10 @@ export component Panel(level: int = 1) {
 - **Specifiers** are relative (`./`, `../`) or root-aliased (`~/` — the project UI source root, set
   by a `"root"` key in the nearest `guitkx.config.json`, default `res://`), always **extensionless**.
   `res://`/`uid://` are not valid import specifiers (they stay valid in `@uss`/`@theme` asset
-  positions, which also accept `~/`). **Named imports only** — no default, no `import *`.
+  positions, which also accept `~/`). The full ES surface (0.11.0): named imports,
+  `import { remote as local }` renames, `import * as X` namespaces (members via `X.name`;
+  component tags via `X.` not yet), `import X from` defaults + `export default Name`, and
+  deferred `export { a, b }` lists. Re-exports (`export { a } from`) stay out for now.
 - **`export`** makes a declaration reachable across files; without it a declaration is
   file-private. A file may hold **several** declarations; its binding (`class_name`) is the
   `@class_name` override, else the first exported declaration.
@@ -171,7 +175,7 @@ export component Panel(level: int = 1) {
   `class_name` scripts alone (they stay ambient, no import needed):
 
   ```bash
-  godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_10_0.gd
+  godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_11_0.gd
   ```
 
 Import mistakes surface as **`GUITKX2300`–`GUITKX2309`** (unresolved specifier, not exported,
@@ -221,7 +225,7 @@ code plus `return ( <markup> )`**, and nest recursively — the same model as Re
 can also appear **early**, guarding on a condition, not just as the final statement:
 
 ```
-component Panel(ready: bool = false) {
+Panel(ready: bool = false) -> RUIVNode {
 	if not ready:
 		return ( <Label text="loading" /> )
 	return ( <VBoxContainer>…</VBoxContainer> )
@@ -231,7 +235,7 @@ component Panel(ready: bool = false) {
 ### Prop spread & context
 
 ```
-component Card {
+Card() -> RUIVNode {
 	var shared = { "custom_minimum_size": Vector2(140, 0), "text": "shared" }
 	return ( <Button {...shared} onPressed={ handle } /> )
 }
@@ -299,15 +303,15 @@ Draw directly onto any host element — the Godot analogue of Unity's `OnGenerat
 reads the latest callback, so a fresh closure each render never re-subscribes — it repaints only
 when the callback identity **or** `redraw_key` changes.
 
-### Companion files
+### Files are modules
 
-A `hook use_thing() { ... }` or a `module Name { component A {...} hook use_b() {...} }`
-declaration groups reusable logic into its own `.guitkx` file, compiled the same way — this is
-still `.guitkx`, not raw GDScript. Consumers reach it through an explicit
-[import](#imports--exports-0100) (`import { Name } from "./file.hooks"`). Since 0.10.0 a single
-file may also hold several declarations, so the layout is a **convention**, not a rule — the
-recommended shape stays one `component` per file, sub-components as sibling files, `module` for
-shared hooks. See the docs site's Companion Files page.
+A file is a module (0.11.0): it may hold any mix of top-level declarations — components, hooks,
+utils, and plain **value exports** (`export MAX_ITEMS: int = 5`, compiled to `static var`; treat
+them as constants). `export` is the only visibility mechanism; an un-exported declaration is
+file-private. Shared logic lives in its own `.guitkx` file (`use_thing() { ... }`, `fmt(x) {
+... }`) and consumers import it — named (`import { use_thing } from "./file.hooks"`) or as a
+namespace (`import * as Hud from "./hud"`, members via `Hud.fmt(...)`). See the docs site's
+Files & Modules page.
 
 ### Where `V.*` still shows up
 
@@ -317,7 +321,7 @@ classes, so they're not tags; you reach them via `V.*` inside an embedded `{ exp
 inside your `.guitkx` file, just not as a `<Tag>`:
 
 ```
-component App {
+App() -> RUIVNode {
 	return (
 		<VBoxContainer>
 			{ V.suspense({ "fallback": V.fc(Spinner.render), "ready_signal": ready }, [V.fc(Content.render)]) }

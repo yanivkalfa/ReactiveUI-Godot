@@ -2,7 +2,7 @@
 ## are read off state.player / state at the call site and passed in as props.
 import { DoomFace } from "./doom_face"
 
-export component DoomHUD(
+export DoomHUD(
   health: int = 100,
   armor: int = 0,
   armor_class: int = 0,
@@ -15,7 +15,7 @@ export component DoomHUD(
   kill_total: int = 0,
   map_name: String = "",
   face_state: int = 0
-) {
+) -> RUIVNode {
   var bar_bg = Color(0.12, 0.10, 0.08, 1.0)
   var panel_bg = Color(0.20, 0.16, 0.10, 1.0)
   var top_border = Color(0.85, 0.55, 0.20, 1.0)

@@ -2,20 +2,61 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "GUITKX",
   "scopeName": "source.guitkx",
-  "fileTypes": ["guitkx"],
+  "fileTypes": [
+    "guitkx"
+  ],
   "patterns": [
-    { "include": "#preamble-directive" },
-    { "include": "#component-declaration" },
-    { "include": "#hook-declaration" },
-    { "include": "#module-declaration" },
-    { "include": "#gd-line-comment" },
-    { "include": "#html-comment" },
-    { "include": "#return-keyword" },
-    { "include": "#control-flow-with-expression" },
-    { "include": "#control-flow-keyword" },
-    { "include": "#tag-self-closing" },
-    { "include": "#tag-close" },
-    { "include": "#tag-open" },
+    {
+      "include": "#preamble-directive"
+    },
+    {
+      "include": "#import-statement"
+    },
+    {
+      "include": "#export-marker"
+    },
+    {
+      "include": "#plain-component-declaration"
+    },
+    {
+      "include": "#plain-callable-declaration"
+    },
+    {
+      "include": "#value-declaration"
+    },
+    {
+      "include": "#component-declaration"
+    },
+    {
+      "include": "#hook-declaration"
+    },
+    {
+      "include": "#module-declaration"
+    },
+    {
+      "include": "#gd-line-comment"
+    },
+    {
+      "include": "#html-comment"
+    },
+    {
+      "include": "#return-keyword"
+    },
+    {
+      "include": "#control-flow-with-expression"
+    },
+    {
+      "include": "#control-flow-keyword"
+    },
+    {
+      "include": "#tag-self-closing"
+    },
+    {
+      "include": "#tag-close"
+    },
+    {
+      "include": "#tag-open"
+    },
     {
       "comment": "Fallback: GDScript expression-content for setup bodies and free-standing code. Last so specific rules win.",
       "include": "#code-block-body"
@@ -26,51 +67,112 @@
       "name": "comment.block.guitkx",
       "begin": "<!--",
       "end": "-->",
-      "beginCaptures": { "0": { "name": "punctuation.definition.comment.guitkx" } },
-      "endCaptures": { "0": { "name": "punctuation.definition.comment.guitkx" } }
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.guitkx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.guitkx"
+        }
+      }
     },
     "preamble-directive": {
       "comment": "Preamble: @class_name X, @uss \"path\"",
       "name": "meta.directive.guitkx",
       "match": "^(@)(class_name|uss)\\b(.*)$",
       "captures": {
-        "1": { "name": "keyword.other.directive.guitkx" },
-        "2": { "name": "keyword.other.directive.guitkx" },
-        "3": { "name": "entity.name.type.guitkx" }
+        "1": {
+          "name": "keyword.other.directive.guitkx"
+        },
+        "2": {
+          "name": "keyword.other.directive.guitkx"
+        },
+        "3": {
+          "name": "entity.name.type.guitkx"
+        }
       }
     },
     "component-declaration": {
       "comment": "component Name { or component Name(params) {",
       "name": "meta.component.guitkx",
-      "match": "^(\\s*)(component)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s*\\([^)]*\\))?(\\s*\\{)?\\s*$",
+      "match": "^(\\s*)(?:(export)\\s+)?(component)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s*\\([^)]*\\))?(\\s*\\{)?\\s*$",
       "captures": {
-        "2": { "name": "keyword.other.directive.guitkx" },
-        "3": { "name": "entity.name.type.guitkx" },
-        "4": { "patterns": [ { "include": "#expression-content" } ] },
-        "5": { "name": "punctuation.section.block.begin.guitkx" }
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "keyword.other.directive.guitkx"
+        },
+        "4": {
+          "name": "entity.name.type.guitkx"
+        },
+        "5": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        },
+        "6": {
+          "name": "punctuation.section.block.begin.guitkx"
+        }
       }
     },
     "hook-declaration": {
       "comment": "hook use_name(params) -> ReturnHint {",
       "name": "meta.hook.guitkx",
-      "match": "^(\\s*)(hook)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\([^)]*\\))?\\s*(?:(->)\\s*([^{]+?))?\\s*(\\{)?\\s*$",
+      "match": "^(\\s*)(?:(export)\\s+)?(hook)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\([^)]*\\))?\\s*(?:(->)\\s*([^{]+?))?\\s*(\\{)?\\s*$",
       "captures": {
-        "2": { "name": "keyword.other.hook.guitkx" },
-        "3": { "name": "entity.name.function.guitkx" },
-        "4": { "patterns": [ { "include": "#expression-content" } ] },
-        "5": { "name": "keyword.operator.arrow.guitkx" },
-        "6": { "patterns": [ { "include": "#expression-content" } ] },
-        "7": { "name": "punctuation.section.block.begin.guitkx" }
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "keyword.other.hook.guitkx"
+        },
+        "4": {
+          "name": "entity.name.function.guitkx"
+        },
+        "5": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        },
+        "6": {
+          "name": "keyword.operator.arrow.guitkx"
+        },
+        "7": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        },
+        "8": {
+          "name": "punctuation.section.block.begin.guitkx"
+        }
       }
     },
     "module-declaration": {
       "comment": "module Name {",
       "name": "meta.module.guitkx",
-      "match": "^(\\s*)(module)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s*\\{)?\\s*$",
+      "match": "^(\\s*)(?:(export)\\s+)?(module)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s*\\{)?\\s*$",
       "captures": {
-        "2": { "name": "keyword.other.module.guitkx" },
-        "3": { "name": "entity.name.type.guitkx" },
-        "4": { "name": "punctuation.section.block.begin.guitkx" }
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "keyword.other.module.guitkx"
+        },
+        "4": {
+          "name": "entity.name.type.guitkx"
+        },
+        "5": {
+          "name": "punctuation.section.block.begin.guitkx"
+        }
       }
     },
     "return-keyword": {
@@ -84,20 +186,38 @@
       "begin": "(@)(if|elif|for|while|match|case)\\b\\s*(\\()",
       "end": "(\\))",
       "beginCaptures": {
-        "1": { "name": "keyword.control.guitkx" },
-        "2": { "name": "keyword.control.guitkx" },
-        "3": { "name": "punctuation.section.group.begin.guitkx" }
+        "1": {
+          "name": "keyword.control.guitkx"
+        },
+        "2": {
+          "name": "keyword.control.guitkx"
+        },
+        "3": {
+          "name": "punctuation.section.group.begin.guitkx"
+        }
       },
-      "endCaptures": { "1": { "name": "punctuation.section.group.end.guitkx" } },
-      "patterns": [ { "include": "#expression-content" } ]
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.section.group.end.guitkx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression-content"
+        }
+      ]
     },
     "control-flow-keyword": {
       "comment": "@else and @default (no expression)",
       "name": "meta.control.guitkx",
       "match": "(@)(else|default)\\b",
       "captures": {
-        "1": { "name": "keyword.control.guitkx" },
-        "2": { "name": "keyword.control.guitkx" }
+        "1": {
+          "name": "keyword.control.guitkx"
+        },
+        "2": {
+          "name": "keyword.control.guitkx"
+        }
       }
     },
     "tag-self-closing": {
@@ -105,19 +225,37 @@
       "begin": "(<)([A-Za-z][A-Za-z0-9_]*)",
       "end": "(/>|(?<![=!<])>)",
       "beginCaptures": {
-        "1": { "name": "punctuation.definition.tag.begin.guitkx" },
-        "2": { "name": "entity.name.type.guitkx" }
+        "1": {
+          "name": "punctuation.definition.tag.begin.guitkx"
+        },
+        "2": {
+          "name": "entity.name.type.guitkx"
+        }
       },
-      "endCaptures": { "1": { "name": "punctuation.definition.tag.end.guitkx" } },
-      "patterns": [ { "include": "#tag-attributes" } ]
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.guitkx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#tag-attributes"
+        }
+      ]
     },
     "tag-close": {
       "name": "meta.tag.close.guitkx",
       "match": "(</)(\\w*)(>)",
       "captures": {
-        "1": { "name": "punctuation.definition.tag.begin.guitkx" },
-        "2": { "name": "entity.name.type.guitkx" },
-        "3": { "name": "punctuation.definition.tag.end.guitkx" }
+        "1": {
+          "name": "punctuation.definition.tag.begin.guitkx"
+        },
+        "2": {
+          "name": "entity.name.type.guitkx"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.guitkx"
+        }
       }
     },
     "tag-open": {
@@ -125,19 +263,41 @@
       "begin": "(<)([A-Za-z][A-Za-z0-9_]*)",
       "end": "((?<![=!<])>)",
       "beginCaptures": {
-        "1": { "name": "punctuation.definition.tag.begin.guitkx" },
-        "2": { "name": "entity.name.type.guitkx" }
+        "1": {
+          "name": "punctuation.definition.tag.begin.guitkx"
+        },
+        "2": {
+          "name": "entity.name.type.guitkx"
+        }
       },
-      "endCaptures": { "1": { "name": "punctuation.definition.tag.end.guitkx" } },
-      "patterns": [ { "include": "#tag-attributes" } ]
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.guitkx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#tag-attributes"
+        }
+      ]
     },
     "tag-attributes": {
       "patterns": [
-        { "include": "#attribute-event" },
-        { "include": "#attribute-key" },
-        { "include": "#attribute-value-string" },
-        { "include": "#attribute-value-expression" },
-        { "include": "#attribute-boolean-shorthand" }
+        {
+          "include": "#attribute-event"
+        },
+        {
+          "include": "#attribute-key"
+        },
+        {
+          "include": "#attribute-value-string"
+        },
+        {
+          "include": "#attribute-value-expression"
+        },
+        {
+          "include": "#attribute-boolean-shorthand"
+        }
       ]
     },
     "attribute-event": {
@@ -153,15 +313,32 @@
       "name": "string.quoted.double.guitkx",
       "begin": "\"",
       "end": "\"",
-      "patterns": [ { "name": "constant.character.escape.guitkx", "match": "\\\\." } ]
+      "patterns": [
+        {
+          "name": "constant.character.escape.guitkx",
+          "match": "\\\\."
+        }
+      ]
     },
     "attribute-value-expression": {
       "comment": "{ ... } immediately after = — embedded GDScript expression",
       "begin": "(?<==)\\{",
       "end": "\\}",
-      "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.guitkx" } },
-      "endCaptures": { "0": { "name": "punctuation.section.embedded.end.guitkx" } },
-      "patterns": [ { "include": "#expression-content" } ]
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.guitkx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.guitkx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression-content"
+        }
+      ]
     },
     "attribute-boolean-shorthand": {
       "name": "entity.other.attribute-name.guitkx",
@@ -170,36 +347,78 @@
     "brace-expression": {
       "begin": "\\{",
       "end": "\\}",
-      "patterns": [ { "include": "#expression-content" } ]
+      "patterns": [
+        {
+          "include": "#expression-content"
+        }
+      ]
     },
     "paren-expression": {
       "begin": "\\(",
       "end": "\\)",
       "patterns": [
-        { "include": "#control-flow-with-expression" },
-        { "include": "#control-flow-keyword" },
-        { "include": "#tag-self-closing" },
-        { "include": "#tag-close" },
-        { "include": "#tag-open" },
-        { "include": "#brace-expression" },
-        { "include": "#expression-content" }
+        {
+          "include": "#control-flow-with-expression"
+        },
+        {
+          "include": "#control-flow-keyword"
+        },
+        {
+          "include": "#tag-self-closing"
+        },
+        {
+          "include": "#tag-close"
+        },
+        {
+          "include": "#tag-open"
+        },
+        {
+          "include": "#brace-expression"
+        },
+        {
+          "include": "#expression-content"
+        }
       ]
     },
     "expression-content": {
       "comment": "GDScript expression tokens — strings first, then keywords, types, numbers, operators, calls, identifiers",
       "patterns": [
-        { "include": "#gd-line-comment" },
-        { "include": "#triple-quoted-string" },
-        { "include": "#double-quoted-string" },
-        { "include": "#single-quoted-string" },
-        { "include": "#gd-keywords" },
-        { "include": "#gd-type-name" },
-        { "include": "#numeric-literal" },
-        { "include": "#gd-operator" },
-        { "include": "#brace-expression" },
-        { "include": "#paren-expression" },
-        { "include": "#function-call" },
-        { "include": "#identifier" }
+        {
+          "include": "#gd-line-comment"
+        },
+        {
+          "include": "#triple-quoted-string"
+        },
+        {
+          "include": "#double-quoted-string"
+        },
+        {
+          "include": "#single-quoted-string"
+        },
+        {
+          "include": "#gd-keywords"
+        },
+        {
+          "include": "#gd-type-name"
+        },
+        {
+          "include": "#numeric-literal"
+        },
+        {
+          "include": "#gd-operator"
+        },
+        {
+          "include": "#brace-expression"
+        },
+        {
+          "include": "#paren-expression"
+        },
+        {
+          "include": "#function-call"
+        },
+        {
+          "include": "#identifier"
+        }
       ]
     },
     "triple-quoted-string": {
@@ -211,13 +430,23 @@
       "name": "string.quoted.double.guitkx",
       "begin": "[r&^$%]?\"(?!\"\")",
       "end": "\"",
-      "patterns": [ { "name": "constant.character.escape.guitkx", "match": "\\\\." } ]
+      "patterns": [
+        {
+          "name": "constant.character.escape.guitkx",
+          "match": "\\\\."
+        }
+      ]
     },
     "single-quoted-string": {
       "name": "string.quoted.single.guitkx",
       "begin": "[r&^$%]?'",
       "end": "'",
-      "patterns": [ { "name": "constant.character.escape.guitkx", "match": "\\\\." } ]
+      "patterns": [
+        {
+          "name": "constant.character.escape.guitkx",
+          "match": "\\\\."
+        }
+      ]
     },
     "gd-keywords": {
       "comment": "GDScript keywords + built-in literals/types",
@@ -241,7 +470,11 @@
     "function-call": {
       "comment": "name immediately followed by ( — a call",
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()",
-      "captures": { "1": { "name": "entity.name.function.guitkx" } }
+      "captures": {
+        "1": {
+          "name": "entity.name.function.guitkx"
+        }
+      }
     },
     "identifier": {
       "name": "variable.other.guitkx",
@@ -255,17 +488,186 @@
     "code-block-body": {
       "comment": "Control-flow / setup bodies — full expression tokens PLUS embedded markup",
       "patterns": [
-        { "include": "#return-keyword" },
-        { "include": "#gd-line-comment" },
-        { "include": "#control-flow-with-expression" },
-        { "include": "#control-flow-keyword" },
-        { "include": "#html-comment" },
-        { "include": "#tag-self-closing" },
-        { "include": "#tag-close" },
-        { "include": "#tag-open" },
-        { "include": "#brace-expression" },
-        { "include": "#expression-content" }
+        {
+          "include": "#return-keyword"
+        },
+        {
+          "include": "#gd-line-comment"
+        },
+        {
+          "include": "#control-flow-with-expression"
+        },
+        {
+          "include": "#control-flow-keyword"
+        },
+        {
+          "include": "#html-comment"
+        },
+        {
+          "include": "#tag-self-closing"
+        },
+        {
+          "include": "#tag-close"
+        },
+        {
+          "include": "#tag-open"
+        },
+        {
+          "include": "#brace-expression"
+        },
+        {
+          "include": "#expression-content"
+        }
       ]
+    },
+    "import-statement": {
+      "comment": "G-05 import forms: named (+ renames), namespace, default. Specifiers are extensionless ./ ../ ~/ strings.",
+      "name": "meta.import.guitkx",
+      "match": "^(\\s*)(import)\\s*(?:(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)|(\\{[^}]*\\})|([A-Za-z_][A-Za-z0-9_]*))\\s*(from)\\s*(\"[^\"]*\"|'[^']*')\\s*$",
+      "captures": {
+        "2": {
+          "name": "keyword.control.import.guitkx"
+        },
+        "3": {
+          "name": "keyword.operator.guitkx"
+        },
+        "4": {
+          "name": "keyword.control.import.guitkx"
+        },
+        "5": {
+          "name": "entity.name.type.guitkx"
+        },
+        "6": {
+          "patterns": [
+            {
+              "match": "\\b(as)\\b",
+              "name": "keyword.control.import.guitkx"
+            },
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_]*",
+              "name": "variable.other.guitkx"
+            }
+          ]
+        },
+        "7": {
+          "name": "entity.name.type.guitkx"
+        },
+        "8": {
+          "name": "keyword.control.import.guitkx"
+        },
+        "9": {
+          "name": "string.quoted.guitkx"
+        }
+      }
+    },
+    "export-marker": {
+      "comment": "E-07/E-09 top-level export markers: export default Name / export { a, b }",
+      "name": "meta.export.guitkx",
+      "match": "^(\\s*)(export)\\s+(?:(default)\\s+([A-Za-z_][A-Za-z0-9_]*)|(\\{[^}]*\\}))\\s*$",
+      "captures": {
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "4": {
+          "name": "entity.name.type.guitkx"
+        },
+        "5": {
+          "patterns": [
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_]*",
+              "name": "variable.other.guitkx"
+            }
+          ]
+        }
+      }
+    },
+    "plain-component-declaration": {
+      "comment": "E-01 plain component: [export] Name[(params)] -> RUIVNode {  (the annotation IS the classification)",
+      "name": "meta.component.guitkx",
+      "match": "^(\\s*)(?:(export)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(\\([^)]*\\))?\\s*(->)\\s*(RUIVNode)\\s*(\\{)?\\s*$",
+      "captures": {
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "entity.name.type.guitkx"
+        },
+        "4": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        },
+        "5": {
+          "name": "keyword.operator.arrow.guitkx"
+        },
+        "6": {
+          "name": "support.type.guitkx"
+        },
+        "7": {
+          "name": "punctuation.section.block.begin.guitkx"
+        }
+      }
+    },
+    "plain-callable-declaration": {
+      "comment": "E-01 plain hook/util: [export] name(params) [-> Type] {  (use_ prefix = hook, else util)",
+      "name": "meta.function.guitkx",
+      "match": "^(\\s*)(?:(export)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(\\([^)]*\\))\\s*(?:(->)\\s*([^{]+?))?\\s*(\\{)?\\s*$",
+      "captures": {
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "entity.name.function.guitkx"
+        },
+        "4": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        },
+        "5": {
+          "name": "keyword.operator.arrow.guitkx"
+        },
+        "6": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        },
+        "7": {
+          "name": "punctuation.section.block.begin.guitkx"
+        }
+      }
+    },
+    "value-declaration": {
+      "comment": "E-01 value declaration: [export] name := expr | name: Type = expr | name = expr",
+      "name": "meta.value.guitkx",
+      "match": "^(\\s*)(?:(export)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*((?::=)|(?::\\s*[A-Za-z_][A-Za-z0-9_\\[\\]]*\\s*=)|(?:=(?!=)))(.*)$",
+      "captures": {
+        "2": {
+          "name": "keyword.control.export.guitkx"
+        },
+        "3": {
+          "name": "variable.other.constant.guitkx"
+        },
+        "4": {
+          "name": "keyword.operator.assignment.guitkx"
+        },
+        "5": {
+          "patterns": [
+            {
+              "include": "#expression-content"
+            }
+          ]
+        }
+      }
     }
   }
 }

@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":60,\"attrs\":[{\"at\":69,\"end\":88,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Hello World\",\"vat\":76}],\"children\":[{\"at\":96,\"attrs\":[{\"at\":103,\"end\":134,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Hello, reactive Godot! 👋\",\"vat\":109},{\"at\":135,\"end\":162,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 20}\",\"vat\":143}],\"children\":[],\"line\":6,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":172,\"attrs\":[{\"at\":187,\"end\":284,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Every demo here is a .guitkx component — JSX-like markup compiled to a GDScript render fn.\",\"vat\":193},{\"at\":293,\"end\":339,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":301}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":5,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":102,\"attrs\":[{\"at\":111,\"end\":130,\"kind\":\"str\",\"name\":\"title\",\"value\":\"Hello World\",\"vat\":118}],\"children\":[{\"at\":138,\"attrs\":[{\"at\":145,\"end\":176,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Hello, reactive Godot! 👋\",\"vat\":151},{\"at\":177,\"end\":204,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_size\\\": 20}\",\"vat\":185}],\"children\":[],\"line\":7,\"t\":\"el\",\"tag\":\"Label\"},{\"at\":214,\"attrs\":[{\"at\":229,\"end\":326,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Every demo here is a .guitkx component — JSX-like markup compiled to a GDScript render fn.\",\"vat\":235},{\"at\":335,\"end\":381,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"font_color\\\": Color(0.7, 0.7, 0.7)}\",\"vat\":343}],\"children\":[],\"line\":8,\"t\":\"el\",\"tag\":\"Label\"}],\"line\":6,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 360,
-			"start": 55
+			"end": 402,
+			"start": 97
 		}
 	]
 }

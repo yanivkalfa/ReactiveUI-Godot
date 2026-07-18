@@ -1,6 +1,7 @@
-@class_name DemoKeyed
+import { DemoBox } from "~/examples/demos/demo_box"
+import { DemoKeyedTile } from "./keyed_tile"
 
-component DemoKeyed {
+export DemoKeyed() -> RUIVNode {
   var items = useState(["A", "B", "C", "D", "E"])
   var shuffle = func():
     var arr: Array = items[0].duplicate()

@@ -6,7 +6,7 @@
 
 import { parseMarkup, MarkupNode, Attr } from "./markup";
 import { skipNoncode, findMatching, findMatchingMarkup, keywordAt, isIdent } from "./scanner";
-import { findDecl } from "./declScan";
+import { findDecl, FoundDecl, declBodyOf, valueEnd } from "./declScan";
 import { findElementEnd, markupAt } from "./jsxScan";
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
@@ -65,7 +65,12 @@ function formatOrVerbatim(source: string, o: FmtOptions): { text: string; fellBa
   // nothing but whitespace + the @class_name line. Leading comments or stray text are preserved
   // byte-for-byte -- Format Document must never delete user content (it used to eat file-header
   // comments whole).
-  const pre = source.slice(0, decl.at);
+  // Plain (E-01) rows anchor at the NAME with any `export ` prefix before it -- slice at `start`
+  // and re-emit the prefix; wrapper rows keep the shipped `at` slice (mirror guitkx_formatter.gd).
+  const isPlain = decl.deprecated === false;
+  const preEnd = isPlain ? (decl.start ?? decl.at) : decl.at;
+  const expPrefix = isPlain && decl.export ? "export " : "";
+  const pre = source.slice(0, preEnd);
   const preCanonical = pre.replace(/@class_name[^\n]*/, "").trim() === "";
   let out = "";
   if (!preCanonical) out += pre;
@@ -73,17 +78,56 @@ function formatOrVerbatim(source: string, o: FmtOptions): { text: string; fellBa
   let declEnd = -1;
   switch (decl.kind) {
     case "component": {
-      const pc = parseComponentAt(source, decl.at);
-      if (!pc.ok) return { text: source, fellBack: true };
-      out += fmtComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
-      declEnd = pc.next;
+      if (isPlain) {
+        const pc = parseComponentBody(source, decl.name ?? "", decl.params ?? "", decl.bodyOpen ?? -1);
+        if (!pc.ok) return { text: source, fellBack: true };
+        out += expPrefix + fmtPlainComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
+        declEnd = pc.next;
+      } else {
+        const pc = parseComponentAt(source, decl.at);
+        if (!pc.ok) return { text: source, fellBack: true };
+        out += fmtComponent(pc.name, pc.params, pc.setup, pc.nodes, o);
+        declEnd = pc.next;
+      }
       break;
     }
-    case "hook": {
-      const ph = parseHookAt(source, decl.at);
-      if (!ph.ok) return { text: source, fellBack: true };
-      out += fmtHook(ph.name, ph.params, ph.body, o, ph.ret);
-      declEnd = ph.next;
+    case "hook":
+    case "util": {
+      if (isPlain) {
+        const bo = decl.bodyOpen ?? -1;
+        const close = bo === -1 ? -1 : findMatching(source, bo);
+        if (close === -1) return { text: source, fellBack: true };
+        out += expPrefix + fmtPlainCallable(decl.name ?? "", decl.params ?? "", source.slice(bo + 1, close), o, decl.ret ?? "");
+        declEnd = close + 1;
+      } else {
+        const ph = parseHookAt(source, decl.at);
+        if (!ph.ok) return { text: source, fellBack: true };
+        out += fmtHook(ph.name, ph.params, ph.body, o, ph.ret);
+        declEnd = ph.next;
+      }
+      break;
+    }
+    case "value": {
+      // E-01 value decl: canonical one-liner; the initializer slice stays VERBATIM.
+      const vend = valueEnd(source, decl.valueStart ?? -1);
+      if (vend === -1) return { text: source, fellBack: true };
+      const vexpr = source.slice(decl.valueStart ?? 0, vend).trim();
+      const eq = decl.eqStyle === "infer" ? " := " : decl.eqStyle === "typed" ? `: ${decl.typeText ?? ""} = ` : " = ";
+      out += `${expPrefix}${decl.name ?? ""}${eq}${vexpr}
+`;
+      declEnd = vend;
+      break;
+    }
+    case "export_list": {
+      out += `export { ${(decl.listNames ?? []).map((x) => x.name).join(", ")} }
+`;
+      declEnd = decl.listEnd ?? -1;
+      break;
+    }
+    case "export_default": {
+      out += `export default ${decl.name ?? ""}
+`;
+      declEnd = decl.listEnd ?? -1;
       break;
     }
     case "module": {
@@ -133,6 +177,40 @@ function fmtComponent(name: string, params: string, setup: string, nodes: Markup
 function fmtHook(name: string, params: string, body: string, o: FmtOptions, retHint = ""): string {
   const hint = retHint.trim() === "" ? "" : ` -> ${retHint.trim()}`;
   let out = `hook ${name}${fmtParams(params)}${hint} {\n`;
+  const fb = fmtSetup(body, 1, o);
+  if (fb !== "") {
+    if (hasLeadingBlank(body)) out += "\n";
+    out += fb;
+    if (hasTrailingBlank(body)) out += "\n";
+  }
+  out += "}\n";
+  return out;
+}
+
+// E-01 plain component: identical body emission with the keywordless header (the -> RUIVNode
+// annotation IS the classification -- never dropped). Mirrors guitkx_formatter.gd.
+function fmtPlainComponent(name: string, params: string, setup: string, nodes: MarkupNode[], o: FmtOptions): string {
+  let out = `${name}(${params.trim()}) -> RUIVNode {\n`;
+  const fs2 = fmtSetup(setup, 1, o);
+  if (fs2 !== "") {
+    if (hasLeadingBlank(setup)) out += "\n";
+    out += fs2;
+    if (hasTrailingBlank(setup)) out += "\n";
+  }
+  out += pad(1, o) + "return (\n";
+  for (const nd of nodes) {
+    if (nd == null) continue;
+    out += fmtNode(nd, 2, o);
+  }
+  out += pad(1, o) + ")\n";
+  out += "}\n";
+  return out;
+}
+
+// E-01 plain hook/util: `name(params)[ -> T] {` + the body.
+function fmtPlainCallable(name: string, params: string, body: string, o: FmtOptions, retHint = ""): string {
+  const hint = retHint.trim() === "" ? "" : ` -> ${retHint.trim()}`;
+  let out = `${name}(${params.trim()})${hint} {\n`;
   const fb = fmtSetup(body, 1, o);
   if (fb !== "") {
     if (hasLeadingBlank(body)) out += "\n";
@@ -815,11 +893,18 @@ function parseComponentAt(src: string, at: number): CompParse {
   }
   i = skipWsOnly(src, i);
   if (src[i] !== "{") return fail;
+  return parseComponentBody(src, name, params, i);
+}
+
+// The shared body tail (from the component body's ): split + markup parse. Reached from the
+// wrapper walk above AND directly for plain E-01 components (which carry their own bodyOpen).
+function parseComponentBody(src: string, name: string, params: string, bodyOpen: number): CompParse {
+  const fail: CompParse = { ok: false, name, params, setup: "", setupStart: bodyOpen, setupEnd: bodyOpen, markupStart: bodyOpen, markupEnd: bodyOpen, nodes: [], next: bodyOpen };
   // G-01: a component's body mixes GDScript setup with a markup return -- see scanner.ts
   // findMatchingMarkup's docstring (mirrors guitkx.gd _parse_component_at).
-  const bclose = findMatchingMarkup(src, i);
+  const bclose = findMatchingMarkup(src, bodyOpen);
   if (bclose === -1) return fail;
-  const bodyStart = i + 1;
+  const bodyStart = bodyOpen + 1;
   const split = splitReturn(src, bodyStart, bclose);
   if (!split || split === "unclosed") return fail;
   const setup = src.slice(bodyStart, split.setupEnd);
@@ -888,7 +973,7 @@ export function unreachableRegions(src: string): { start: number; end: number }[
       if (d.kind === "component") {
         // Phase C: an UNCONDITIONAL early markup return makes everything after it dead, including
         // the final return -- the dim anchor moves to it (mirrors guitkx.gd's 0107 `dead_from`).
-        const b = declBody(src, d.at);
+        const b = declBodyOf(src, d, findMatchingMarkup);
         const firstTop = b ? splitReturnEx(src, b.start, b.close).early.find((e) => e.top) : undefined;
         if (b && firstTop) {
           const r = realSpan(src, firstTop.stop, b.close);
@@ -896,15 +981,20 @@ export function unreachableRegions(src: string): { start: number; end: number }[
           i = b.close + 1;
           continue;
         }
-        const pc = parseComponentAt(src, d.at);
+        const pc = d.deprecated === false ? parseComponentBody(src, d.name ?? "", d.params ?? "", d.bodyOpen ?? -1) : parseComponentAt(src, d.at);
         if (pc.ok) {
           const r = realSpan(src, pc.markupEnd + 1, pc.next - 1); // (markupEnd = `)`, next-1 = body `}`)
           if (r) out.push(r);
           i = pc.next;
         } else i = d.at + 9;
-      } else if (d.kind === "hook") {
-        const ph = parseHookAt(src, d.at);
-        i = ph.ok ? ph.next : d.at + 4;
+      } else if (d.kind === "hook" || d.kind === "util") {
+        const b = declBodyOf(src, d, findMatchingMarkup);
+        i = b ? b.close + 1 : d.at + 4;
+      } else if (d.kind === "value") {
+        const ve = valueEnd(src, d.valueStart ?? -1);
+        i = ve !== -1 ? ve : d.at + 1;
+      } else if (d.kind === "export_list" || d.kind === "export_default") {
+        i = d.listEnd ?? d.at + 1;
       } else if (d.kind === "module") {
         const body = moduleBodyAt(src, d.at);
         if (body) {
@@ -954,7 +1044,7 @@ export function markupWindows(src: string): { start: number; end: number }[] {
       const d = findDecl(src, i, true); // recover from a typo'd header so analysis still runs
       if (d.kind === "" || d.at >= to) break;
       if (d.kind === "component") {
-        const b = declBody(src, d.at);
+        const b = declBodyOf(src, d, findMatchingMarkup);
         if (b) {
           const ex = splitReturnEx(src, b.start, b.close);
           // Phase C: EARLY markup returns are windows too (in source order, before the final one)
@@ -965,9 +1055,14 @@ export function markupWindows(src: string): { start: number; end: number }[] {
           if (split && split !== "unclosed" && split.markupEnd > split.markupStart) wins.push({ start: split.markupStart, end: split.markupEnd });
           i = b.close + 1;
         } else i = d.at + 1;
-      } else if (d.kind === "hook") {
-        const ph = parseHookAt(src, d.at);
-        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "hook" || d.kind === "util") {
+        const b2 = declBodyOf(src, d, findMatchingMarkup);
+        i = b2 ? b2.close + 1 : d.at + 1;
+      } else if (d.kind === "value") {
+        const ve = valueEnd(src, d.valueStart ?? -1);
+        i = ve !== -1 ? ve : d.at + 1;
+      } else if (d.kind === "export_list" || d.kind === "export_default") {
+        i = d.listEnd ?? d.at + 1;
       } else if (d.kind === "module") {
         const body = moduleBodyAt(src, d.at);
         if (body) {
@@ -997,14 +1092,19 @@ export function missingReturnComponents(src: string): { start: number; end: numb
       const d = findDecl(src, i, true);
       if (d.kind === "" || d.at >= to) break;
       if (d.kind === "component") {
-        const b = declBody(src, d.at);
+        const b = declBodyOf(src, d, findMatchingMarkup);
         if (b) {
           if (splitReturn(src, b.start, b.close) === null) out.push(declHead(src, d.at));
           i = b.close + 1;
         } else i = d.at + 1;
-      } else if (d.kind === "hook") {
-        const ph = parseHookAt(src, d.at);
-        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "hook" || d.kind === "util") {
+        const b2 = declBodyOf(src, d, findMatchingMarkup);
+        i = b2 ? b2.close + 1 : d.at + 1;
+      } else if (d.kind === "value") {
+        const ve = valueEnd(src, d.valueStart ?? -1);
+        i = ve !== -1 ? ve : d.at + 1;
+      } else if (d.kind === "export_list" || d.kind === "export_default") {
+        i = d.listEnd ?? d.at + 1;
       } else if (d.kind === "module") {
         const body = moduleBodyAt(src, d.at);
         if (body) {
@@ -1029,14 +1129,19 @@ export function unclosedReturns(src: string): { start: number; end: number }[] {
       const d = findDecl(src, i, true);
       if (d.kind === "" || d.at >= to) break;
       if (d.kind === "component") {
-        const b = declBody(src, d.at);
+        const b = declBodyOf(src, d, findMatchingMarkup);
         if (b) {
           if (splitReturn(src, b.start, b.close) === "unclosed") out.push(declHead(src, d.at));
           i = b.close + 1;
         } else i = d.at + 1;
-      } else if (d.kind === "hook") {
-        const ph = parseHookAt(src, d.at);
-        i = ph.ok ? ph.next : d.at + 1;
+      } else if (d.kind === "hook" || d.kind === "util") {
+        const b2 = declBodyOf(src, d, findMatchingMarkup);
+        i = b2 ? b2.close + 1 : d.at + 1;
+      } else if (d.kind === "value") {
+        const ve = valueEnd(src, d.valueStart ?? -1);
+        i = ve !== -1 ? ve : d.at + 1;
+      } else if (d.kind === "export_list" || d.kind === "export_default") {
+        i = d.listEnd ?? d.at + 1;
       } else if (d.kind === "module") {
         const body = moduleBodyAt(src, d.at);
         if (body) {
@@ -1108,19 +1213,26 @@ export function setupSpans(src: string): { start: number; end: number }[] {
       const d = findDecl(src, i, true);
       if (d.kind === "" || d.at >= to) break;
       if (d.kind === "component") {
-        const b = declBody(src, d.at);
+        const b = declBodyOf(src, d, findMatchingMarkup);
         if (b) {
           const split = splitReturn(src, b.start, b.close);
           const end = split && split !== "unclosed" ? split.setupEnd : b.close;
           if (end > b.start) out.push({ start: b.start, end });
           i = b.close + 1;
         } else i = d.at + 1;
-      } else if (d.kind === "hook") {
-        const ph = parseHookAt(src, d.at);
-        if (ph.ok) {
-          if (ph.bodyEnd > ph.bodyStart) out.push({ start: ph.bodyStart, end: ph.bodyEnd });
-          i = ph.next;
+      } else if (d.kind === "hook" || d.kind === "util") {
+        // Utils are validated exactly like hook bodies by the compiler (rules-of-hooks over any
+        // hook CALLS inside) -- the live scan covers them identically.
+        const b2 = declBodyOf(src, d, findMatchingMarkup);
+        if (b2) {
+          if (b2.close > b2.start) out.push({ start: b2.start, end: b2.close });
+          i = b2.close + 1;
         } else i = d.at + 1;
+      } else if (d.kind === "value") {
+        const ve = valueEnd(src, d.valueStart ?? -1);
+        i = ve !== -1 ? ve : d.at + 1;
+      } else if (d.kind === "export_list" || d.kind === "export_default") {
+        i = d.listEnd ?? d.at + 1;
       } else if (d.kind === "module") {
         const body = moduleBodyAt(src, d.at);
         if (body) {
@@ -1139,11 +1251,11 @@ export function setupSpans(src: string): { start: number; end: number }[] {
 export function embeddedRegions(src: string): { start: number; end: number }[] {
   const decl = findDecl(src, 0);
   if (decl.kind === "component") {
-    const pc = parseComponentAt(src, decl.at);
+    const pc = decl.deprecated === false ? parseComponentBody(src, decl.name ?? "", decl.params ?? "", decl.bodyOpen ?? -1) : parseComponentAt(src, decl.at);
     if (pc.ok && pc.setupEnd > pc.setupStart && src.slice(pc.setupStart, pc.setupEnd).trim() !== "") return [{ start: pc.setupStart, end: pc.setupEnd }];
-  } else if (decl.kind === "hook") {
-    const ph = parseHookAt(src, decl.at);
-    if (ph.ok && ph.bodyEnd > ph.bodyStart && src.slice(ph.bodyStart, ph.bodyEnd).trim() !== "") return [{ start: ph.bodyStart, end: ph.bodyEnd }];
+  } else if (decl.kind === "hook" || decl.kind === "util") {
+    const b = declBodyOf(src, decl, findMatchingMarkup);
+    if (b && b.close > b.start && src.slice(b.start, b.close).trim() !== "") return [{ start: b.start, end: b.close }];
   }
   return [];
 }

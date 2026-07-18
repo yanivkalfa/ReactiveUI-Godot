@@ -1,12 +1,12 @@
-import { DoomGameScreenHooks } from "./doom_game_screen.hooks"
+import * as DoomGameScreenHooks from "./doom_game_screen.hooks"
 import { DoomHUD } from "./doom_hud"
 import { DoomMinimap } from "./doom_minimap"
 
-export component DoomGameScreen(restart_version: int = 0,
+export DoomGameScreen(restart_version: int = 0,
   level: int = 1,
   difficulty: int = 1,
   on_exit: Callable = Callable(),
-  on_next_level: Callable = Callable()) {
+  on_next_level: Callable = Callable()) -> RUIVNode {
   # Phase 2+ (plans/DOOM_GAME_GUITKX_PORT_PLAN.md): live game loop via
   # DoomGameScreenHooks.use_doom_game -- the .guitkx hook-file port of the
   # original's useDoomGame. view_ref lets the hook reach get_tree() once

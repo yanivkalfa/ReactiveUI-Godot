@@ -44,8 +44,8 @@ import { importAt, resolveSpecifier } from "./importNav";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
-import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, guitkxVirtualLibText, normalizeUri } from "./workspaceIndex";
-import { scanTagRefs } from "./refs";
+import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, guitkxVirtualLibText, normalizeUri, pathToUri } from "./workspaceIndex";
+import { scanTagRefs, scanImportClauseRefs, scanExportMarkerRefs } from "./refs";
 import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
 import { cpToUtf16 } from "./codePoints";
@@ -1131,7 +1131,7 @@ function bindingUnderCursor(uri: string, src: string, offset: number): string | 
   const tag = componentTagAt(src, offset);
   if (tag) return tag;
   for (const e of index.entriesFor(uri)) {
-    if (e.kind === "hook") continue;
+    if (e.kind === "hook" || e.kind === "value" || e.kind === "util") continue;
     const onName = offset >= e.nameStart && offset <= e.nameEnd;
     const onOverride = e.classNameStart != null && e.classNameEnd != null && offset >= e.classNameStart && offset <= e.classNameEnd;
     if (onName || onOverride) return e.binding;
@@ -1421,6 +1421,11 @@ connection.onRenameRequest((params) => {
   if (!/^[A-Za-z_]\w*$/.test(newName)) return null;
   if (findTag(newName) || index.has(newName)) return null; // collide with a host tag or existing component
   const changes: { [uri: string]: TextEdit[] } = {};
+  // The declaring file(s) of this binding: import clauses resolving here rewrite their REMOTE
+  // halves (E-08 -- `Chip as Badge` becomes `New as Badge`; the local alias and its uses stay),
+  // and the declaring file's own export markers (`export default Name`, `export { Name }`)
+  // rename in lockstep.
+  const declUris = new Set(index.lookup(name).filter((e) => e.binding === name).map((e) => e.uri));
   for (const uri of index.uris()) {
     const text = textForUri(uri);
     if (!text) continue;
@@ -1432,6 +1437,13 @@ connection.onRenameRequest((params) => {
       edits.push({ range: { start: offsetToPos(text, s), end: offsetToPos(text, e) }, newText: newName });
     };
     for (const r of scanTagRefs(text, name)) add(r.start, r.end);
+    const fromFs = uriToProjectPath(uri);
+    const specMatches = (spec: string): boolean => {
+      const target = resolveSpecifier(spec, fromFs, projectPath);
+      return target != null && declUris.has(pathToUri(target));
+    };
+    for (const r of scanImportClauseRefs(text, name, specMatches)) add(r.start, r.end);
+    if (declUris.has(normalizeUri(uri))) for (const r of scanExportMarkerRefs(text, name)) add(r.start, r.end);
     for (const e of index.entriesFor(uri)) {
       if (e.binding !== name) continue;
       // Rewrite the decl-name token only when it IS the binding (no override, or `@class_name X` over

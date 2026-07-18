@@ -6,13 +6,16 @@
 // copy+rename never deletes a live declarant.
 
 import { skipNoncode, findMatching, findMatchingMarkup, keywordAt, isIdent } from "./scanner";
+import { findDecl, valueEnd, declBodyOf } from "./declScan";
 import { isTagBoundary } from "./refs";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 export interface DeclInfo {
-  kind: "component" | "hook" | "module" | "member";
-  kw: "component" | "hook" | "module"; // the declaration keyword itself (a member's kind erases it)
+  kind: "component" | "hook" | "module" | "member" | "value" | "util";
+  kw: "component" | "hook" | "module" | ""; // the wrapper keyword ("" = plain E-01 declaration)
+  deprecated?: boolean; // true = wrapper-keyword form (0.11.0 deprecation window)
+  crossGuard?: boolean; // plain decl: use_-prefixed AND -> RUIVNode (GUITKX2321)
   name: string;
   binding: string;
   module?: string;
@@ -40,63 +43,90 @@ export function scanDeclarations(src: string): DeclInfo[] {
 }
 
 function scanRange(src: string, start: number, end: number, override: ClassNameRef | null, mod: string | undefined): DeclInfo[] {
+  // ES-modules leg: declarations are SIGNATURE-classified (plain E-01 forms have no keyword), so
+  // the scan consumes the shared findDecl (declScan.ts -- the mirror of guitkx.gd _find_decl)
+  // instead of a keyword walk. Wrapper rows keep their keyword in `kw`; export markers
+  // (`export { ... }` / `export default X`) apply their marks onto the named decls, mirroring
+  // guitkx.gd apply_export_markers, and are not indexed themselves.
   const out: DeclInfo[] = [];
+  const listedNames: string[] = [];
+  const defaultNames: string[] = [];
   let i = start;
   let firstComponent = true;
   while (i < end) {
-    const k = skipNoncode(src, i);
-    if (k !== i) {
-      i = k;
+    const d = findDecl(src, i, false);
+    if (d.kind === "" || d.at >= end) break;
+    const wrapper = d.deprecated !== false;
+    if (d.kind === "export_list") {
+      for (const ln of d.listNames ?? []) listedNames.push(ln.name);
+      i = d.listEnd ?? d.at + 6;
       continue;
     }
-    // An optional `export` visibility prefix precedes a top-level declaration (0.10.0). Only treat it
-    // as a prefix when a decl keyword follows; otherwise fall through and let the scan walk past it.
-    let exported = false;
-    let kwPos = i;
-    if (!mod && keywordAt(src, i, "export")) {
-      const e = skipWs(src, i + 6);
-      if (keywordAt(src, e, "component") || keywordAt(src, e, "hook") || keywordAt(src, e, "module")) {
-        exported = true;
-        kwPos = e;
-      }
+    if (d.kind === "export_default") {
+      if (d.name) defaultNames.push(d.name);
+      i = d.listEnd ?? d.at + 6;
+      continue;
     }
-    let kw = "";
-    let kind: DeclInfo["kind"] | null = null;
-    if (keywordAt(src, kwPos, "component")) {
-      kw = "component";
-      kind = mod ? "member" : "component";
-    } else if (keywordAt(src, kwPos, "hook")) {
-      kw = "hook";
-      kind = mod ? "member" : "hook";
-    } else if (keywordAt(src, kwPos, "module")) {
-      kw = "module";
-      kind = "module";
-    }
-    if (kind) {
-      const declStart = kwPos;
-      const j = skipWs(src, kwPos + kw.length);
-      const nm = readIdent(src, j);
-      if (nm.text === "") {
-        i = j + 1;
-        continue;
-      }
-      const isComp = kw === "component";
-      const useOverride = isComp && !mod && firstComponent && override != null;
-      const binding = useOverride ? override!.text : nm.text;
-      if (isComp) firstComponent = false;
-      const body = readBody(src, nm.end, isComp);
-      const declEnd = body ? body.end + 1 : nm.end;
+    if (d.kind === "value") {
+      const ve = d.valueStart !== undefined ? valueEnd(src, d.valueStart) : -1;
+      const nmS = d.nameAt ?? d.at;
+      const nmE = nmS + (d.name ?? "").length;
       out.push({
-        kind, kw: kw as DeclInfo["kw"], name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
-        export: exported || undefined,
+        kind: "value", kw: "", deprecated: false, name: d.name ?? "", binding: d.name ?? "", module: mod,
+        nameStart: nmS, nameEnd: nmE, declStart: d.start ?? d.at, declEnd: ve !== -1 ? ve : nmE,
+        export: d.export || undefined,
+      });
+      i = ve !== -1 ? ve : nmE;
+      continue;
+    }
+    if (!wrapper) {
+      // Plain callable (component/hook/util).
+      const body = declBodyOf(src, d, findMatchingMarkup);
+      const nmS = d.nameAt ?? d.at;
+      const nmE = nmS + (d.name ?? "").length;
+      const isComp = d.kind === "component";
+      const useOverride = isComp && !mod && firstComponent && override != null;
+      if (isComp) firstComponent = false;
+      out.push({
+        kind: mod && (d.kind === "component" || d.kind === "hook") ? "member" : (d.kind as DeclInfo["kind"]),
+        kw: "", deprecated: false, crossGuard: d.crossGuard || undefined,
+        name: d.name ?? "", binding: useOverride ? override!.text : (d.name ?? ""), module: mod,
+        nameStart: nmS, nameEnd: nmE, declStart: d.start ?? d.at, declEnd: body ? body.close + 1 : nmE,
+        export: d.export || undefined,
         classNameStart: useOverride ? override!.start : undefined,
         classNameEnd: useOverride ? override!.end : undefined,
       });
-      if (kw === "module" && body) out.push(...scanRange(src, body.start, body.end, null, nm.text));
-      i = declEnd;
+      i = body ? body.close + 1 : nmE + 1;
       continue;
     }
-    i++;
+    // Wrapper row (deprecation window) -- the shipped walk shape.
+    const kw = d.kind as "component" | "hook" | "module";
+    const kind: DeclInfo["kind"] = kw === "module" ? "module" : mod ? "member" : kw;
+    const declStart = d.at;
+    const j = skipWs(src, d.at + kw.length);
+    const nm = readIdent(src, j);
+    if (nm.text === "") {
+      i = j + 1;
+      continue;
+    }
+    const isComp = kw === "component";
+    const useOverride = isComp && !mod && firstComponent && override != null;
+    const binding = useOverride ? override!.text : nm.text;
+    if (isComp) firstComponent = false;
+    const body = readBody(src, nm.end, isComp);
+    const declEnd = body ? body.end + 1 : nm.end;
+    out.push({
+      kind, kw, deprecated: true, name: nm.text, binding, module: mod, nameStart: nm.start, nameEnd: nm.end, declStart, declEnd,
+      export: d.export || undefined,
+      classNameStart: useOverride ? override!.start : undefined,
+      classNameEnd: useOverride ? override!.end : undefined,
+    });
+    if (kw === "module" && body) out.push(...scanRange(src, body.start, body.end, null, nm.text));
+    i = declEnd;
+  }
+  // Apply the E-07/E-09 export marks (a listed/defaulted decl reads as exported -- M1.3).
+  for (const d2 of out) {
+    if (!d2.module && (listedNames.includes(d2.name) || defaultNames.includes(d2.name))) d2.export = true;
   }
   return out;
 }
@@ -121,6 +151,23 @@ function readClassName(src: string): ClassNameRef | null {
       return id.text ? { text: id.text, start: id.start, end: id.end } : null;
     }
     if (keywordAt(src, i, "component") || keywordAt(src, i, "hook") || keywordAt(src, i, "module")) break;
+    if (keywordAt(src, i, "import")) {
+      // skip the whole import statement (its specifier string is skipped by skipNoncode above)
+      let le = src.indexOf("\n", i);
+      if (le === -1) le = n;
+      i = le;
+      continue;
+    }
+    if (src[i] === "@") {
+      // Any other @-directive line (@uss/@theme) — skip it whole, keeping the scan ORDER-AGNOSTIC
+      // (the 0.10.0 rule: @class_name may sit before or after other preamble lines). Without this,
+      // the plain-decl break below fired on the directive WORD and a trailing @class_name was lost.
+      let le2 = src.indexOf("\n", i);
+      if (le2 === -1) le2 = n;
+      i = le2;
+      continue;
+    }
+    if (isIdent(src[i]) && (i === 0 || !isIdent(src[i - 1]))) break; // a plain E-01 decl head
     i++;
   }
   return null;

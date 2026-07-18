@@ -1,9 +1,11 @@
-@class_name DemoEffectOrder
+import { DemoBox } from "~/examples/demos/demo_box"
+import { DemoEffectOrderRow } from "./effect_order_row"
 
-component DemoEffectOrder {
+export DemoEffectOrder() -> RUIVNode {
   var n = useState(3)
   var log = useState([])
   var append = func(msg): log[1].call(func(arr): return arr + [msg])
+
   return (
     <DemoBox title="Effect cleanup order — mount / unmount">
       <HBoxContainer style={ {"separation": 8} }>

@@ -1,4 +1,4 @@
-export const UITKX_SIGNALS_COMPONENT_EXAMPLE = `component SignalCounterDemo() {
+export const UITKX_SIGNALS_COMPONENT_EXAMPLE = `SignalCounterDemo() -> RUIVNode {
   // Read the PROCESS-WIDE signal registered under "demo.counter".
   // useSignalKey lazily creates one shared RUISignal per key, so every
   // component that reads the same key sees the same store.
@@ -22,12 +22,11 @@ export const UITKX_SIGNALS_COMPONENT_EXAMPLE = `component SignalCounterDemo() {
 export const UITKX_SIGNALS_INSTANCE_EXAMPLE = `@class_name PlayerHud
 
 # A signal is just a value store that lives OUTSIDE the component tree.
-# Create one anywhere and share the instance (e.g. an autoload or a static).
-module {
-  static var player := RUISignal.new({ "hp": 100, "name": "Rin" })
-}
+# A top-level value declaration compiles to a static var on the file's class;
+# un-exported it stays file-private. Share the instance however you like.
+player := RUISignal.new({ "hp": 100, "name": "Rin" })
 
-component PlayerHud() {
+PlayerHud() -> RUIVNode {
   // Subscribe with a SELECTOR: re-render only when the selected slice changes.
   // Editing name won't re-render this component; changing hp will.
   var hp = useSignal(PlayerHud.player, func(s): return s["hp"])

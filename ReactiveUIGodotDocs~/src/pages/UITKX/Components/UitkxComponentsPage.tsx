@@ -18,7 +18,7 @@ import {
 import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from '../../Components/ComponentPage.style'
 
-const COMPONENT_SAMPLE = `component ButtonShowcase() {
+const COMPONENT_SAMPLE = `ButtonShowcase() -> RUIVNode {
   var s = useState(true)
   return (
     <VBoxContainer style={ {"separation": 8} }>
@@ -38,7 +38,7 @@ const COMPONENT_SAMPLE = `component ButtonShowcase() {
 
 // V.*-only primitives (no markup tag) are reached via an embedded { expr } inside an
 // otherwise-normal .guitkx component — never as a fictitious <Tag>.
-const FRAMEWORK_EXAMPLE = `component App {
+const FRAMEWORK_EXAMPLE = `App() -> RUIVNode {
   var ready = useState(false)
   return (
     <VBoxContainer>

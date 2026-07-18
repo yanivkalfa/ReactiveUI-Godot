@@ -7,7 +7,7 @@
 // VERBATIM (length-preserving), so the offset SourceMap round-trips 1:1 and survives future rewrites.
 
 import { skipNoncode, skipString, findMatching, findMatchingMarkup, keywordAt } from "./scanner";
-import { findDecl } from "./declScan";
+import { findDecl, FoundDecl, valueEnd } from "./declScan";
 import { SourceMap } from "./sourceMap";
 import { neutralizeMarkup, neutralizeSetupMarkup } from "./jsxScan";
 
@@ -61,13 +61,62 @@ export function buildVirtualDoc(src: string): VirtualDoc {
   const ctx: Ctx = { src, gen: "extends RefCounted\n", map: new SourceMap(), counter: 0 };
   // Recover from a misspelled header keyword (`comssponent Foo {`) so embedded GDScript is still
   // analyzed instead of emitting an empty class — the whole-file-goes-dark bug. [declScan]
-  const decl = findDecl(src, 0, true);
-  if (decl.kind === "") return { text: ctx.gen, map: ctx.map };
+  const first = findDecl(src, 0, true);
+  if (first.kind === "") return { text: ctx.gen, map: ctx.map };
   declareImportStubs(ctx);
   declareHookStubs(ctx);
-  if (decl.kind === "module") emitModuleMembers(ctx, decl.at);
-  else emitDeclFunc(ctx, decl.kind, decl.at, "");
+  // ES-modules leg: a file is a SEQUENCE of declarations (mixed-decl since 0.10.0; the whole
+  // modernized tree is multi-decl) — walk and emit EVERY top-level decl, not just the first.
+  // The FIRST component keeps the bare `render` name (the compiler's binding-component rule is
+  // close enough for analysis); later components emit under their decl names, exactly like
+  // guitkx.gd _compile_mixed. Values emit as `static var` with their initializer MAPPED.
+  let i = 0;
+  let firstComp = true;
+  const n = src.length;
+  while (i < n) {
+    const d = findDecl(src, i, true);
+    if (d.kind === "") break;
+    let next = -1;
+    if (d.kind === "module") {
+      emitModuleMembers(ctx, d.at);
+      const mb = readDeclBody(ctx.src, d.at);
+      next = mb ? mb.start + mb.text.length + 1 : -1;
+    } else if (d.kind === "component") {
+      emitDeclFunc(ctx, "component", d.at, firstComp ? "" : `_${ctx.counter++}`, d);
+      firstComp = false;
+      const cb = readDeclBody(ctx.src, d.deprecated === false ? (d.bodyOpen ?? d.at) : d.at, true);
+      next = cb ? cb.start + cb.text.length + 1 : -1;
+    } else if (d.kind === "hook" || d.kind === "util") {
+      emitDeclFunc(ctx, "hook", d.at, `_${ctx.counter++}`, d);
+      const hb = readDeclBody(ctx.src, d.deprecated === false ? (d.bodyOpen ?? d.at) : d.at);
+      next = hb ? hb.start + hb.text.length + 1 : -1;
+    } else if (d.kind === "value") {
+      emitValueDecl(ctx, d);
+      next = d.valueStart !== undefined ? valueEnd(src, d.valueStart) : -1;
+    } else if (d.kind === "export_list" || d.kind === "export_default") {
+      next = d.listEnd ?? -1;
+    }
+    if (next === -1 || next <= i) break;
+    i = next;
+  }
   return { text: ctx.gen, map: ctx.map };
+}
+
+// E-01 value declaration -> `static var <name>[: Type] = <initializer>` with the initializer
+// spliced VERBATIM and source-mapped, so references inside it (imported consts, other values)
+// get real analysis; multi-line initializers copy through with their newlines.
+function emitValueDecl(ctx: Ctx, d: FoundDecl): void {
+  if (!d.name || d.valueStart === undefined) return;
+  const ve = valueEnd(ctx.src, d.valueStart);
+  if (ve === -1) return;
+  const typed = d.eqStyle === "typed" && d.typeText ? `: ${d.typeText}` : "";
+  const eq = d.eqStyle === "infer" ? " := " : typed !== "" ? " = " : " = ";
+  ctx.gen += `static var ${d.name}${typed}${eq}`;
+  const text = ctx.src.slice(d.valueStart, ve).trim();
+  const gs = ctx.gen.length;
+  ctx.gen += text;
+  ctx.map.addSpan(d.valueStart + (ctx.src.slice(d.valueStart, ve).length - ctx.src.slice(d.valueStart, ve).trimStart().length), gs, text.length);
+  ctx.gen += "\n";
 }
 
 // One module member = one static func. The module body used to be fed WHOLE through the component
@@ -84,13 +133,17 @@ function emitModuleMembers(ctx: Ctx, moduleAt: number): void {
     if (d.kind === "" || d.at >= to) break;
     const b = readDeclBody(ctx.src, d.at, d.kind === "component");
     if (d.kind === "module") emitModuleMembers(ctx, d.at);
-    else emitDeclFunc(ctx, d.kind, d.at, `_${ctx.counter++}`);
+    else if (d.kind === "component" || d.kind === "hook" || d.kind === "util") emitDeclFunc(ctx, d.kind === "component" ? "component" : "hook", d.at, `_${ctx.counter++}`, d);
     i = b ? b.start + b.text.length + 1 : d.at + 1;
   }
 }
 
-function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: string): void {
-  const body = readDeclBody(ctx.src, at, kind === "component");
+function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: string, d?: FoundDecl): void {
+  // Plain rows (E-01) carry their own name/body anchor; the keyword-anchored readers below expect
+  // a keyword at `at`, which a plain decl doesn't have -- feed them the name position (their
+  // "skip the keyword token" step then skips the NAME, so name reads use d.name instead).
+  const plain = d !== undefined && d.deprecated === false;
+  const body = readDeclBody(ctx.src, plain ? (d!.bodyOpen ?? at) : at, kind === "component");
 
   if (kind === "hook") {
     if (!body) return;
@@ -101,7 +154,7 @@ function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: 
     // mapped — a hook body reads its params, so without them in scope every read would be a false
     // UNDEFINED_IDENTIFIER (and hover/goto on one, dead). The `-> Hint` survives like the compiler's
     // _ret_suffix (tuple-style `-> (a, b)` is dropped — GDScript has no tuple type).
-    const name = readDeclName(ctx.src, at);
+    const name = plain ? (d!.name ?? "") : readDeclName(ctx.src, at);
     const params = readParamsSpan(ctx.src, at);
     ctx.gen += `static func ${name !== "" ? name : `__hook${suffix}`}(`;
     if (params && params.text.trim() !== "") {
@@ -120,7 +173,7 @@ function emitDeclFunc(ctx: Ctx, kind: "component" | "hook", at: number, suffix: 
   // A top-level component compiles to `static func render(...)` (guitkx.gd _emit); module member
   // components compile under their REAL names (`_emit_func(c["name"], ...)`) — mirror both, so a
   // sibling expr referencing a member component by name resolves instead of false-flagging.
-  const compName = suffix === "" ? "render" : readDeclName(ctx.src, at) || `render${suffix}`;
+  const compName = suffix === "" ? "render" : (plain ? (d!.name ?? "") : readDeclName(ctx.src, at)) || `render${suffix}`;
   ctx.gen += `static func ${compName}(props: Dictionary, children: Array) -> RUIVNode:\n`;
   if (!body) {
     ctx.gen += "\tpass\n";
@@ -479,18 +532,28 @@ function indentDepth(l: string, unit: number): number {
 // unmapped header inserts, so the length-preserving source map is unaffected -- imported names never
 // red-squiggle in a migrated file, and imports stay OPTIONAL syntax (no strict diagnostics here).
 function declareImportStubs(ctx: Ctx): void {
-  const importRe = /^[ \t]*import[ \t]*\{([^}]*)\}[ \t]*from/gm;
   const seen = new Set<string>();
+  const add = (nm: string): void => {
+    if (/^[A-Za-z_]\w*$/.test(nm) && !seen.has(nm)) {
+      seen.add(nm);
+      ctx.gen += `static var ${nm}\n`;
+    }
+  };
+  // named clauses (a `remote as local` rename binds the LOCAL name -- E-08)
+  const importRe = /^[ \t]*import[ \t]*\{([^}]*)\}[ \t]*from/gm;
   let m: RegExpExecArray | null;
   while ((m = importRe.exec(ctx.src)) !== null) {
     for (const raw of m[1].split(",")) {
-      const nm = raw.trim();
-      if (/^[A-Za-z_]\w*$/.test(nm) && !seen.has(nm)) {
-        seen.add(nm);
-        ctx.gen += `static var ${nm}\n`;
-      }
+      const clause = raw.trim();
+      const asM = /^[A-Za-z_]\w*[ \t]+as[ \t]+([A-Za-z_]\w*)$/.exec(clause);
+      add(asM ? asM[1] : clause);
     }
   }
+  // `* as X` namespace + bare default locals (G-05): both bind one identifier.
+  const nsRe = /^[ \t]*import[ \t]*\*[ \t]*as[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
+  while ((m = nsRe.exec(ctx.src)) !== null) add(m[1]);
+  const defRe = /^[ \t]*import[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
+  while ((m = defRe.exec(ctx.src)) !== null) add(m[1]);
 }
 
 function declareHookStubs(ctx: Ctx): void {

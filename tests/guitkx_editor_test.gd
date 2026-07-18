@@ -31,6 +31,7 @@ func _initialize() -> void:
 		["wave2_completion", _test_wave2_completion],
 		["comment_toggle", _test_comment_toggle],
 		["refs_and_rename", _test_refs_and_rename],
+		["es_editor_intelligence", _test_es_editor_intelligence],
 		["multifile", _test_multifile],
 		["outline", _test_outline],
 		["replace", _test_replace],
@@ -505,6 +506,39 @@ func _test_rich_hover() -> void:
 	PluginScript.cleanup_moved_guitkx(mv_src)
 	_ok(not FileAccess.file_exists(mv_gd), "old-name .gd removed synchronously on move")
 	_ok(not FileAccess.file_exists(mv_src + ".diags.json"), "old-name sidecar removed on move")
+	# M4.3 (ES-modules, file=module): renames are MORE load-bearing with eager value exports --
+	# a renamed VALUE file must drop its outputs the same way (no ghost class_name survives),
+	# and an importer still holding the old specifier gets GUITKX2300 on its next compile.
+	var val_src := "res://tests/__editor_test_val.guitkx"
+	var fval := FileAccess.open(val_src, FileAccess.WRITE)
+	fval.store_string("export tmp_val_w: int = 7
+")
+	fval.close()
+	RUIGuitkxCodegen.compile_file(val_src)
+	var val_gd: String = RUIGuitkxCodegen.gd_path_for(val_src)
+	_ok(FileAccess.file_exists(val_gd), "value-export fixture compiled its .gd")
+	var val_dst := "res://tests/__editor_test_val2.guitkx"
+	DirAccess.rename_absolute(ProjectSettings.globalize_path(val_src), ProjectSettings.globalize_path(val_dst))
+	PluginScript.cleanup_moved_guitkx(val_src)
+	_ok(not FileAccess.file_exists(val_gd), "renamed value file drops its old .gd (no ghost class)")
+	var val_imp := "res://tests/__editor_test_valimp.guitkx"
+	var fvi := FileAccess.open(val_imp, FileAccess.WRITE)
+	fvi.store_string("import { tmp_val_w } from \"./__editor_test_val\"
+export ValImp() -> RUIVNode {
+	return ( <Label text={str(tmp_val_w)}/> )
+}
+")
+	fvi.close()
+	var vres: Dictionary = RUIGuitkxCodegen.compile_file(val_imp)
+	var v2300 := false
+	for vd in (vres.get("diagnostics", []) as Array):
+		if vd is Dictionary and str((vd as Dictionary).get("code", "")) == "GUITKX2300":
+			v2300 = true
+	_ok(v2300, "importer of the OLD specifier gets GUITKX2300, not a silent stale preload")
+	for vjunk in [val_dst, val_dst + ".diags.json", RUIGuitkxCodegen.gd_path_for(val_dst), val_imp, val_imp + ".diags.json", RUIGuitkxCodegen.gd_path_for(val_imp), val_src + ".diags.json", val_gd + ".uid"]:
+		if FileAccess.file_exists(str(vjunk)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(vjunk)))
+
 	# Hand-written .gd safety: a non-generated file under the old name must survive.
 	var hw_src := "res://tests/__editor_test_hw.guitkx"
 	var hw_gd := "res://tests/__editor_test_hw.gd"
@@ -716,6 +750,39 @@ func _test_refs_and_rename() -> void:
 		and not new_b.contains("<RefsWidget/"), "usages renamed (decoy substring excluded)")
 	_ok(new_b.contains("RefsWidgetFake_not_a_tag"), "comparison decoy untouched")
 
+	# ES-modules rename depth (E-07/E-08/E-09): import-clause REMOTE halves + export markers
+	# rewrite in lockstep; a rename-import LOCAL alias and its uses stay untouched.
+	var c_path := "res://tests/__refs_c.guitkx"
+	var d_path := "res://tests/__refs_d.guitkx"
+	var c_src := "export RefsChip() -> RUIVNode {
+	return ( <Label /> )
+}
+export { RefsChip }
+export default RefsChip
+"
+	var d_src := "import { RefsChip as RBadge } from \"./__refs_c\"
+export RefsUser() -> RUIVNode {
+	return ( <RBadge /> )
+}
+"
+	for pair2 in [[c_path, c_src], [d_path, d_src]]:
+		var f2 := FileAccess.open(pair2[0], FileAccess.WRITE)
+		f2.store_string(pair2[1])
+		f2.close()
+	GuitkxWorkspace.rescan()
+	var plan2: Dictionary = Refs.rename_edits("RefsChip", "RefsGem")
+	_ok(bool(plan2.get("ok")), "rename plan through an as-import accepted")
+	var edits2: Dictionary = plan2.get("edits", {})
+	var new_c: String = Refs.apply_edits_to_text(c_src, edits2.get(c_path, []), "RefsGem")
+	var new_d: String = Refs.apply_edits_to_text(d_src, edits2.get(d_path, []), "RefsGem")
+	_ok(new_c.contains("export RefsGem() -> RUIVNode") and new_c.contains("export { RefsGem }") and new_c.contains("export default RefsGem"), "decl + list marker + default marker renamed (got %s)" % new_c)
+	_ok(new_d.contains("import { RefsGem as RBadge }"), "clause REMOTE half renamed (got %s)" % new_d)
+	_ok(new_d.contains("<RBadge />"), "the local alias and its tag use stay untouched")
+	for p2 in [c_path, d_path]:
+		if FileAccess.file_exists(str(p2)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p2)))
+	GuitkxWorkspace.rescan()
+
 	# G27: hooks resolve to core/hooks.gd through the widget's lookup path.
 	var ce: CodeEdit = CodeEditScript.new()
 	var got: Array = []
@@ -804,16 +871,18 @@ func _test_multifile() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(p)))
 	GuitkxWorkspace.rescan()
 
-# W5/G12 — document outline: pure declaration scan, offsets anchored at the NAME.
+# W5/G12 — document outline: the compiler's declaration scan, offsets anchored at the NAME.
+# ES-modules leg: the fixture uses REAL syntax (the outline consumes RUIGuitkx.analyzed_decls,
+# which parses actual declarations, not a keyword regex) and covers wrapper + plain forms.
 func _test_outline() -> void:
 	const Outline := preload("res://addons/reactive_ui_editor/lsp/guitkx_outline.gd")
-	var src := "hook useThing(x):\n\treturn x\n\nmodule Helpers\n\tfunc one():\n\t\tpass\n\tstatic func two():\n\t\tpass\n"
+	var src := "hook useThing(x) {\n\treturn x\n}\nmodule Helpers {\n\thook one() {\n\t\treturn 1\n\t}\n\thook two() {\n\t\treturn 2\n\t}\n}\n"
 	var entries: Array = Outline.outline_of(src)
-	_ok(entries.size() == 4, "outline lists hook + module + 2 member funcs")
+	_ok(entries.size() == 4, "outline lists hook + module + 2 member funcs (got %d)" % entries.size())
 	var names: Array = entries.map(func(e): return str((e as Dictionary).get("name", "")))
-	_ok(names == ["useThing", "Helpers", "one", "two"], "outline sorted by offset")
+	_ok(names == ["useThing", "Helpers", "one", "two"], "outline sorted by offset (got %s)" % str(names))
 	var kinds: Array = entries.map(func(e): return str((e as Dictionary).get("kind", "")))
-	_ok(kinds == ["hook", "module", "func", "func"], "outline kinds classified")
+	_ok(kinds == ["hook", "module", "func", "func"], "outline kinds classified (got %s)" % str(kinds))
 	var anchored := true
 	for e in entries:
 		var ed := e as Dictionary
@@ -828,9 +897,71 @@ func _test_outline() -> void:
 	_ok(str((centries[0] as Dictionary).get("name", "")) == "Foo", "component name listed")
 	_ok(Outline.outline_of("").is_empty(), "empty text -> empty outline")
 	_ok(Outline.outline_of("# just a comment\n").is_empty(), "no declarations -> empty outline")
+	# ES-modules: plain declarations outline with their signature-classified kinds + export flags.
+	var plain := "export w := 1\nexport fmt(x: int) -> String {\n\treturn str(x)\n}\nuse_t() -> int {\n\treturn 1\n}\nexport Foo() -> RUIVNode {\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var pentries: Array = Outline.outline_of(plain)
+	var pkinds: Array = pentries.map(func(e): return str((e as Dictionary).get("kind", "")))
+	_ok(pkinds == ["value", "util", "hook", "component"], "plain decls outline with E-01 kinds (got %s)" % str(pkinds))
+	var pexports: Array = pentries.map(func(e): return bool((e as Dictionary).get("export", false)))
+	_ok(pexports == [true, true, false, true], "outline carries export badges (got %s)" % str(pexports))
 
 # W5/G24 — find-bar replace: step replaces the selected match, All is one undo step and
 # terminates even when the replacement contains the query.
+# ES-modules audit regressions: (a) a PLAIN-declared buffer-local sibling component is a legal
+# tag in the live unknown-tag scan (the wrapper-only _local_decls regex false-flagged it);
+# (b) namespace-member completion after `X.`; (c) kind-aware hover badges.
+func _test_es_editor_intelligence() -> void:
+	const ScanDiags := preload("res://addons/reactive_ui_editor/lsp/guitkx_scan_diags.gd")
+	const Completion := preload("res://addons/reactive_ui_editor/lsp/guitkx_completion.gd")
+	const Hover := preload("res://addons/reactive_ui_editor/lsp/guitkx_hover.gd")
+	# (a) plain sibling used as a tag in the SAME buffer -- no GUITKX0105.
+	var buf := "Chip2() -> RUIVNode {
+	return ( <Label /> )
+}
+export Shell2() -> RUIVNode {
+	return ( <Chip2 /> )
+}
+"
+	var diags: Array = ScanDiags.unknown_tags(buf, [])
+	_ok(diags.is_empty(), "plain buffer-local sibling tag is known to the live scan (got %s)" % str(diags))
+	# (b) `Hud.` completion offers the target file's exported decls, kind-tagged.
+	var hud_p := "res://tests/__es_ed_hud.guitkx"
+	var fh := FileAccess.open(hud_p, FileAccess.WRITE)
+	fh.store_string("export panel_w: int = 320
+export fmt(x: int) -> String {
+	return str(x)
+}
+priv_v := 1
+")
+	fh.close()
+	var app_p := "res://tests/__es_ed_app.guitkx"
+	var app_src := "import * as Hud from \"./__es_ed_hud\"
+export A2() -> RUIVNode {
+	return ( <Label text={str(Hud.)}/> )
+}
+"
+	var caret := app_src.find("Hud.") + 4
+	var items: Array = Completion.for_caret(app_src, caret, app_p)
+	var names: Array = items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(names.has("panel_w") and names.has("fmt"), "ns-member completion offers exported decls (got %s)" % str(names))
+	_ok(not names.has("priv_v"), "file-private decls are NOT offered")
+	# (c) kind-aware hover badge for an indexed component incl. export/default.
+	var chip_p := "res://tests/__es_ed_chip.guitkx"
+	var fc2 := FileAccess.open(chip_p, FileAccess.WRITE)
+	fc2.store_string("export EsChipX() -> RUIVNode {
+	return ( <Label /> )
+}
+export default EsChipX
+")
+	fc2.close()
+	GuitkxWorkspace.rescan()
+	var h := str(Hover._tag_hover("EsChipX"))
+	_ok(h.contains("user component") and h.contains("exported") and h.contains("default export"), "hover carries kind + export + default badges (got %s)" % h)
+	for pth in [hud_p, app_p, chip_p]:
+		if FileAccess.file_exists(str(pth)):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(pth)))
+	GuitkxWorkspace.rescan()
+
 func _test_replace() -> void:
 	const FindBar := preload("res://addons/reactive_ui_editor/editor/guitkx_find_bar.gd")
 	var ce: CodeEdit = CodeEditScript.new()
@@ -1260,6 +1391,33 @@ func _test_virtual_doc() -> void:
 	var hsrc := "hook useThing(a: int, b := 2) -> (int, Callable) {\n\treturn [a, func(): pass]\n}\n"
 	var hgen := str((VD.build(hsrc) as Dictionary)["text"])
 	_ok(hgen.contains("static func useThing(a: int, b := 2):"), "hook keeps name+params; tuple hint dropped")
+
+	# ES-modules (0.11.0): a plain multi-decl file emits EVERY top-level decl -- first component
+	# as render, later ones under their names, hooks/utils real names, values as mapped static var.
+	var multi := "export w := { \"a\": 1 }
+export fmt(x: int) -> String {
+	return str(x)
+}
+export use_t() -> int {
+	return 1
+}
+export Foo() -> RUIVNode {
+	return (
+		<Label />
+	)
+}
+Bar() -> RUIVNode {
+	return (
+		<Label />
+	)
+}
+"
+	var mgen := str((VD.build(multi) as Dictionary)["text"])
+	_ok(mgen.contains("static var w := { \"a\": 1 }"), "value decl emits as mapped static var (got %s)" % mgen)
+	_ok(mgen.contains("static func fmt(x: int)"), "util emits under its real name")
+	_ok(mgen.contains("static func use_t("), "plain hook emits under its real name")
+	_ok(mgen.contains("static func render(props: Dictionary, children: Array) -> RUIVNode:"), "first plain component emits render")
+	_ok(mgen.contains("static func Bar(props: Dictionary, children: Array) -> RUIVNode:"), "second plain component emits under its decl name")
 
 	# Markup nested inside an expression neutralizes to length-preserving null padding.
 	var n := VD._neutralize_markup("open and <PanelContainer/> ")

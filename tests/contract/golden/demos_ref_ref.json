@@ -5,14 +5,14 @@
 			"error": "",
 			"error_at": -1,
 			"error_code": "",
-			"tree": "[{\"at\":186,\"attrs\":[{\"at\":195,\"end\":234,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useRef — imperative node access\",\"vat\":202}],\"children\":[{\"at\":242,\"attrs\":[{\"at\":260,\"end\":305,\"kind\":\"str\",\"name\":\"placeholder_text\",\"value\":\"focus me with the button →\",\"vat\":278},{\"at\":314,\"end\":331,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"input_ref\",\"vat\":320},{\"at\":340,\"end\":368,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 280}\",\"vat\":348}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":378,\"attrs\":[{\"at\":386,\"end\":408,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Focus the field\",\"vat\":392},{\"at\":409,\"end\":428,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"focus\",\"vat\":421}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":9,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
+			"tree": "[{\"at\":229,\"attrs\":[{\"at\":238,\"end\":277,\"kind\":\"str\",\"name\":\"title\",\"value\":\"useRef — imperative node access\",\"vat\":245}],\"children\":[{\"at\":285,\"attrs\":[{\"at\":303,\"end\":348,\"kind\":\"str\",\"name\":\"placeholder_text\",\"value\":\"focus me with the button →\",\"vat\":321},{\"at\":357,\"end\":374,\"kind\":\"expr\",\"name\":\"ref\",\"value\":\"input_ref\",\"vat\":363},{\"at\":383,\"end\":411,\"kind\":\"expr\",\"name\":\"style\",\"value\":\"{\\\"min_width\\\": 280}\",\"vat\":391}],\"children\":[],\"line\":10,\"t\":\"el\",\"tag\":\"LineEdit\"},{\"at\":421,\"attrs\":[{\"at\":429,\"end\":451,\"kind\":\"str\",\"name\":\"text\",\"value\":\"Focus the field\",\"vat\":435},{\"at\":452,\"end\":471,\"kind\":\"expr\",\"name\":\"onPressed\",\"value\":\"focus\",\"vat\":464}],\"children\":[],\"line\":14,\"t\":\"el\",\"tag\":\"Button\"}],\"line\":9,\"t\":\"el\",\"tag\":\"DemoBox\"}]"
 		}
 	],
 	"ok": true,
 	"windows": [
 		{
-			"end": 449,
-			"start": 181
+			"end": 492,
+			"start": 224
 		}
 	]
 }

@@ -1,6 +1,6 @@
-@class_name DemoCounter
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoCounter {
+export DemoCounter() -> RUIVNode {
   var s = useState(0)
   return (
     <DemoBox title="Counter — useState">

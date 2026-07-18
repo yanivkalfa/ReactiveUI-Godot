@@ -11,4 +11,6 @@ func _initialize() -> void:
 	print("[guitkx_migrate] scanned %d file(s), migrated %d" % [int(res["scanned"]), changed.size()])
 	for p in changed:
 		print("    migrated  %s" % p)
-	quit(0)
+	# CI tripwire: the committed tree must already BE migrated -- a non-zero count means someone
+	# committed pre-0.10 syntax (the runner just fixed it locally; commit the result).
+	quit(1 if changed.size() > 0 else 0)

@@ -1,6 +1,6 @@
-@class_name DemoFragment
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoFragment {
+export DemoFragment() -> RUIVNode {
   return (
     <DemoBox title="Fragment — group nodes without a wrapper">
       <Label text="A fragment inserts its children flat — no extra container node:" />

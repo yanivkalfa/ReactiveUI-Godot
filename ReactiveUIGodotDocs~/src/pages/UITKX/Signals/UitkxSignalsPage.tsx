@@ -85,7 +85,7 @@ export const UitkxSignalsPage: FC = () => (
       </List>
       <CodeBlock language="gdscript" code={UITKX_SIGNALS_COMPONENT_EXAMPLE} />
       <Typography variant="body1" paragraph sx={{ mt: 2 }}>
-        A standalone instance shared via a <code>module</code> static works the same way — and the
+        A standalone instance shared via a top-level value declaration works the same way — and the
         selector lets a component re-render only for the slice it cares about:
       </Typography>
       <CodeBlock language="gdscript" code={UITKX_SIGNALS_INSTANCE_EXAMPLE} />

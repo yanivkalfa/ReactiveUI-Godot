@@ -40,9 +40,10 @@ export function readSidecar(guitkxFsPath: string): Sidecar | null {
   try {
     const j = JSON.parse(readFileSync(guitkxFsPath + ".diags.json", "utf8"));
     if (typeof j.src_hash !== "number" || !Array.isArray(j.diagnostics)) return null;
-    // v2 and v3 share the structured-diagnostic shape (numeric severity, off/len positions); v3 only
-    // ADDS fields the LSP ignores here (exports/export_hash/imports — the compiler's staleness cache).
-    if (j.v === 2 || j.v === 3) {
+    // v2..v4 share the structured-diagnostic shape (numeric severity, off/len positions); v3/v4 only
+    // ADD fields the LSP ignores here (exports/export_hash/imports/default — the compiler's
+    // staleness cache + the ES-modules default-export mark).
+    if (j.v === 2 || j.v === 3 || j.v === 4) {
       const diagnostics: SidecarDiag[] = [];
       for (const d of j.diagnostics) {
         if (typeof d.code !== "string" || typeof d.message !== "string") continue;

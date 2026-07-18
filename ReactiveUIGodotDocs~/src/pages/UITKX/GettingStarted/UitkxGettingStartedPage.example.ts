@@ -1,6 +1,6 @@
 export const UITKX_INSTALL_URL = 'res://addons/reactive_ui/'
 
-export const UITKX_HELLO_WORLD_COMPONENT = `component HelloWorld() {
+export const UITKX_HELLO_WORLD_COMPONENT = `HelloWorld() -> RUIVNode {
   var s = useState(0)
   return (
     <VBoxContainer style={ {"separation": 8} }>

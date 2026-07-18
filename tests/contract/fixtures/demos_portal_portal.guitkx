@@ -1,6 +1,6 @@
-@class_name DemoPortal
+import { DemoBox } from "~/examples/demos/demo_box"
 
-component DemoPortal {
+export DemoPortal() -> RUIVNode {
   var show = useState(true)
   var mounted = useState(false)
   var target = useRef(null)
