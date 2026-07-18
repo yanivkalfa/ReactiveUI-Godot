@@ -16,8 +16,8 @@ const GUITKX_CONFIG = `{
   "root": "res://ui",
   "formatter": {
     "printWidth": 100,
-    "indentStyle": "tab",
-    "indentSize": 4,
+    "indentStyle": "space",
+    "indentSize": 2,
     "singleAttributePerLine": false,
     "insertSpaceBeforeSelfClose": true
   }
@@ -104,9 +104,10 @@ export const UitkxConfigPage: FC = () => (
     </Typography>
     <Typography variant="body2" paragraph>
       The extension automatically applies these editor defaults to{' '}
-      <code>.guitkx</code> files. Note that <code>.guitkx</code> is{' '}
-      <strong>tab-indented</strong> — the embedded GDScript requires tabs, and the
-      compiler emits tabs, so spaces are off by default.
+      <code>.guitkx</code> files. Canonical <code>.guitkx</code> formatting is{' '}
+      <strong>2-space indentation</strong> (Unity-exact, matching the shipped
+      samples); the compiler&apos;s reindent is depth-based, so tab-indented
+      sources still compile.
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
@@ -130,12 +131,12 @@ export const UitkxConfigPage: FC = () => (
           </TableRow>
           <TableRow>
             <TableCell><code>editor.insertSpaces</code></TableCell>
-            <TableCell><code>false</code></TableCell>
-            <TableCell>Tabs, not spaces — GDScript and the compiler use tabs</TableCell>
+            <TableCell><code>true</code></TableCell>
+            <TableCell>Spaces, matching the 2-space canonical indent</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>editor.tabSize</code></TableCell>
-            <TableCell><code>4</code></TableCell>
+            <TableCell><code>2</code></TableCell>
             <TableCell>Visual width of one indent level</TableCell>
           </TableRow>
           <TableRow>
@@ -146,7 +147,7 @@ export const UitkxConfigPage: FC = () => (
           <TableRow>
             <TableCell><code>editor.detectIndentation</code></TableCell>
             <TableCell><code>false</code></TableCell>
-            <TableCell>Do not override the tab default from file content</TableCell>
+            <TableCell>Do not override the 2-space default from file content</TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -199,17 +200,17 @@ export const UitkxConfigPage: FC = () => (
           </TableRow>
           <TableRow>
             <TableCell><code>indentStyle</code></TableCell>
-            <TableCell><code>"tab"</code></TableCell>
+            <TableCell><code>"space"</code></TableCell>
             <TableCell>
-              <code>"tab"</code> or <code>"space"</code>. Keep <code>"tab"</code>{' '}
-              unless you have a reason not to — GDScript and the compiler use
-              tabs, and a <code>"space"</code> markup indent can mix badly with
-              the embedded code&apos;s tabs.
+              <code>"space"</code> or <code>"tab"</code>. The 2-space default is
+              Unity-exact and matches the shipped samples; the compiler&apos;s
+              depth-based reindent keeps the embedded GDScript correct either
+              way.
             </TableCell>
           </TableRow>
           <TableRow>
             <TableCell><code>indentSize</code></TableCell>
-            <TableCell><code>4</code></TableCell>
+            <TableCell><code>2</code></TableCell>
             <TableCell>Spaces per level when <code>indentStyle</code> is <code>"space"</code> (ignored for tabs).</TableCell>
           </TableRow>
           <TableRow>

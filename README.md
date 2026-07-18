@@ -119,9 +119,9 @@ From here on, edit `counter.guitkx` while the game runs under F5 and watch it up
 
 ## Authoring in `.guitkx`
 
-A `.guitkx` file is a sequence of declarations — `component`s, `hook`s, and `module`s, in any mix
-(since 0.10.0; one per file remains the recommended convention — see
-[Companion files](#companion-files)). A component is GDScript **setup code** followed by exactly one
+A `.guitkx` file is a module (0.11.0): a sequence of plain, signature-classified declarations —
+components, hooks, utils, and values, in any mix (see
+[Files are modules](#files-are-modules)). A component is GDScript **setup code** followed by exactly one
 markup `return (...)`. Files reference each other through explicit
 [imports](#imports--exports-0100). Canonical formatting is **2-space indentation** (Unity-exact);
 the compiler and formatter both enforce it.
@@ -145,15 +145,15 @@ You never learn a second vocabulary (migrating from 0.8? — [MIGRATION-0.9.md](
 ### Imports & exports (0.10.0)
 
 Files say what they depend on, and cross-file resolution is **strict** — referencing another
-file's component/hook/module without importing it is a compile error that tells you the exact
+file's component/hook/util/value without importing it is a compile error that tells you the exact
 import line to add (migrating from 0.9? — [MIGRATION-0.10.md](MIGRATION-0.10.md)):
 
 ```guitkx
 import { StatusChip } from "./status_chip"
-import { HudHooks } from "~/ui/hud.hooks"
+import { use_blink } from "~/ui/hud.hooks"
 
 export Panel(level: int = 1) -> RUIVNode {
-  var blink = HudHooks.use_blink(0.5)
+  var blink = use_blink(0.5)
   return ( <PanelContainer><StatusChip level={level} /></PanelContainer> )
 }
 ```
@@ -169,8 +169,8 @@ export Panel(level: int = 1) -> RUIVNode {
   file-private. A file may hold **several** declarations; its binding (`class_name`) is the
   `@class_name` override, else the first exported declaration.
 - **Component cycles are legal** (component imports resolve lazily, by path, at first render);
-  **value cycles** (hooks/modules — eager `const` preloads) are a compile error that prints the
-  chain.
+  **value cycles** (hooks/utils/values — eager `const` preloads) are a compile error that prints
+  the chain.
 - **Migrating an existing project is one command** — idempotent, re-runnable, leaves hand-written
   `class_name` scripts alone (they stay ambient, no import needed):
 
@@ -180,7 +180,9 @@ export Panel(level: int = 1) -> RUIVNode {
 
 Import mistakes surface as **`GUITKX2300`–`GUITKX2309`** (unresolved specifier, not exported,
 not declared, duplicate, unused, not imported, value cycle, unexported reference, boundary
-crossing, misplaced import) — see the docs site's Imports page for the full table.
+crossing, misplaced import) plus the 0.11.0 export family **`GUITKX2320`–`GUITKX2327`**
+(deprecated wrapper keyword, cross-guards, export-list / default-export mistakes) — see the docs
+site's Imports page for the full table.
 
 ### Hooks
 
@@ -411,7 +413,7 @@ keep the classic `Foo.render` form.
 
 The compiler validates as it goes — rules of hooks, duplicate/unstable keys, unknown elements,
 directive-header grammar, import resolution, dangling/duplicate component references, asset paths,
-and more — **50 `GUITKX####` codes** in total, with "did you mean" hints where it can tell. See the
+and more — **58 `GUITKX####` codes** in total, with "did you mean" hints where it can tell. See the
 docs site's Diagnostics reference for the full table; `GUITKX2300`–`GUITKX2309` are the import
 family (shared across the ReactiveUI engines), `GUITKX2103` is the one you'll hit migrating pre-0.7
 `.guitkx` (directive bodies need `return ( <markup> )` now), and `GUITKX2106`/`GUITKX2107` guard
@@ -466,7 +468,7 @@ raw `V.*`/`Hooks.*` calls is not the intended day-to-day workflow — see
   every render — keep deps small/primitive where you can. (State/signal change-detection is
   identity-based already, matching React; only the deps-array comparison differs.)
 - **VS Code and VS 2022 ship together**: both extensions bundle the same `lsp-server` and are
-  version-locked to it (0.10.0), published in the same release window as the addon — if you update
+  version-locked to it (0.11.0), published in the same release window as the addon — if you update
   one, update the others.
 
 ## Roadmap

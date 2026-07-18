@@ -14,16 +14,17 @@ description: Create a new .guitkx component for ReactiveUI-Godot — file placem
   (`<name>.guitkx` → generated GDScript). You never write or edit that file; renames/moves in the
   FileSystem dock retarget it automatically. The repo gitignores generated siblings — they
   regenerate on open; exported games pick them up from disk.
-- `@class_name SomeName` at the top registers the component globally so any other `.guitkx` can
-  use `<SomeName />` without imports.
+- Cross-file references between `.guitkx` files require an import (`import { ScoreCard } from
+  "./score_card"` — resolution is strict since 0.10.0). `export` marks what other files may use;
+  an un-exported declaration is file-private. The generated class's `class_name` is inferred from
+  the first exported (else first) declaration; the `@class_name` directive is a rarely-needed
+  override for interop with hand-written GDScript.
 
 ## Anatomy (real syntax — from examples/demos)
 
 ```
-@class_name ScoreCard
-
 ## Doc comment: shows in editor hover for <ScoreCard>.
-component ScoreCard(title: String = "", max_score: int = 100) {
+export ScoreCard(title: String = "", max_score: int = 100) -> RUIVNode {
   var s = useState(0)                      # setup: plain GDScript lines before `return (`
   return (
     <DemoBox title={ title }>
@@ -39,7 +40,11 @@ component ScoreCard(title: String = "", max_score: int = 100) {
 ```
 
 Rules that matter:
-- **Props** are the component's parameter list — typed, with defaults: `component X(title: String = "")`.
+- **Declarations are plain and signature-classified (0.11.0)** — no `component`/`hook`/`module`
+  wrapper keywords. A callable annotated `-> RUIVNode` IS a component (PascalCase name enforced);
+  a `use_`-prefixed callable is a hook; `name := expr` / `name: T = expr` is a value; anything
+  else is a util. A file may mix several declarations.
+- **Props** are the component's parameter list — typed, with defaults: `X(title: String = "") -> RUIVNode`.
   Pass them as attributes: `<X title="hi" />` or `<X title={ expr } />`. Spread is supported: `{...obj}`.
 - **Hooks** are camelCase and return an indexable pair where stateful: `var s = useState(0)` →
   `s[0]` is the value, `s[1]` the setter Callable — call it `s[1].call(new_value)` (an updater
@@ -61,7 +66,7 @@ Rules that matter:
   class names (`<VBoxContainer>`, `<HBoxContainer>`, `<Label>`, `<Button>`, `<MarginContainer>`,
   `<PanelContainer>`, …) — any instantiable Godot Node class is a valid tag (open vocabulary).
 - Keyed lists: give siblings from loops a `key` attribute for stable reconciliation.
-- Tabs, not spaces (GDScript requirement; the formatter enforces it).
+- 2-space indentation (the canonical format — Unity-exact; the formatter enforces it).
 
 ## Checklist before calling it done
 

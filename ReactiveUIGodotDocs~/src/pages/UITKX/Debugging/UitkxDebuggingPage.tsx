@@ -111,9 +111,10 @@ export const UitkxDebuggingPage: FC = () => (
         be <code>ReactiveUITK.guitkx</code>.
       </li>
       <li>
-        <strong>Remember it is tab-indented</strong> — <code>.guitkx</code> uses
-        tabs by default. Drop a <code>guitkx.config.json</code> to change{' '}
-        <code>printWidth</code> or attribute wrapping (see the Configuration
+        <strong>Remember the canonical indent is 2 spaces</strong> —{' '}
+        <code>.guitkx</code> formats to 2-space indentation by default. Drop a{' '}
+        <code>guitkx.config.json</code> to change <code>indentStyle</code>,{' '}
+        <code>printWidth</code>, or attribute wrapping (see the Configuration
         reference).
       </li>
       <li>
