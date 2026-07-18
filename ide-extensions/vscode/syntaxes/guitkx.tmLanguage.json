@@ -521,23 +521,26 @@
       ]
     },
     "import-statement": {
-      "comment": "G-05 import forms: named (+ renames), namespace, default. Specifiers are extensionless ./ ../ ~/ strings.",
+      "comment": "G-05 import forms: named (+ renames), namespace, default, and the ES combined forms `import Def, { a as b } from` / `import Def, * as NS from` (0.11.1). Specifiers are extensionless ./ ../ ~/ strings.",
       "name": "meta.import.guitkx",
-      "match": "^(\\s*)(import)\\s*(?:(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)|(\\{[^}]*\\})|([A-Za-z_][A-Za-z0-9_]*))\\s*(from)\\s*(\"[^\"]*\"|'[^']*')\\s*$",
+      "match": "^(\\s*)(import)\\s*(?:([A-Za-z_][A-Za-z0-9_]*)\\s*,\\s*)?(?:(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)|(\\{[^}]*\\})|([A-Za-z_][A-Za-z0-9_]*))\\s*(from)\\s*(\"[^\"]*\"|'[^']*')\\s*$",
       "captures": {
         "2": {
           "name": "keyword.control.import.guitkx"
         },
         "3": {
-          "name": "keyword.operator.guitkx"
-        },
-        "4": {
-          "name": "keyword.control.import.guitkx"
-        },
-        "5": {
           "name": "entity.name.type.guitkx"
         },
+        "4": {
+          "name": "keyword.operator.guitkx"
+        },
+        "5": {
+          "name": "keyword.control.import.guitkx"
+        },
         "6": {
+          "name": "entity.name.type.guitkx"
+        },
+        "7": {
           "patterns": [
             {
               "match": "\\b(as)\\b",
@@ -549,13 +552,13 @@
             }
           ]
         },
-        "7": {
+        "8": {
           "name": "entity.name.type.guitkx"
         },
-        "8": {
+        "9": {
           "name": "keyword.control.import.guitkx"
         },
-        "9": {
+        "10": {
           "name": "string.quoted.guitkx"
         }
       }

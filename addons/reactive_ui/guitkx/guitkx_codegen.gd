@@ -380,28 +380,12 @@ static func _binding_name(src: String) -> String:
 			return str(dm["name"])
 	return str(decls[0]["name"])
 
-## Advance past an `import` statement starting at `i` (the `import` keyword). Brace-matched so a
-## multi-line `import { ... }` is consumed whole; falls back to end-of-line if the form is malformed.
+## Advance past an `import` statement starting at `i` (the `import` keyword). Delegates to the
+## canonical Compiler.import_end walk so every form — named (multi-line braces included), `* as`,
+## default, and the combined `import Def, { … }` / `import Def, * as X` — is consumed whole;
+## malformed forms fall back to the parse's recovery end (typically end-of-line).
 static func _skip_import_span(src: String, i: int) -> int:
-	var n := src.length()
-	var line_end := src.find("\n", i)
-	if line_end == -1:
-		line_end = n
-	var j := Compiler._skip_ws_and_comments(src, i + 6)
-	if j >= n or src[j] != "{":
-		return line_end
-	var bclose := Compiler.L.find_matching(src, j)
-	if bclose == -1:
-		return line_end
-	# past `}` -> `from` -> the specifier string's closing quote
-	var k := Compiler._skip_ws_and_comments(src, bclose + 1)
-	if not Compiler.L.keyword_at(src, k, "from"):
-		return maxi(line_end, bclose + 1)
-	k = Compiler._skip_ws_only(src, k + 4)   # ws-only: skip_noncode would leap the specifier string
-	if k >= n or (src[k] != "\"" and src[k] != "'"):
-		return maxi(line_end, k)
-	var qe := src.find(src[k], k + 1)
-	return maxi(line_end, (bclose + 1) if qe == -1 else (qe + 1))
+	return Compiler.import_end(src, i)
 
 ## B1 (0.6.0 field triage): one hold notice per environment-not-ready EPISODE, not one red line per
 ## file per sweep -- the per-file GUITKX2507 env_error result still records the hold for callers.
@@ -805,16 +789,16 @@ static func _value_import_edges(guitkx_path: String, sources: Dictionary) -> Arr
 		if not bool(res.get("ok", false)):
 			continue
 		var tbl := RGResolve.decl_table(str(res["guitkx"]))
+		# No exclusive branching — a combined import's namespace/default/named parts each
+		# contribute their value edge (the dict key dedupes).
 		if str(im.get("ns", "")) != "":
 			out[str(res["guitkx"])] = true
-			continue
 		if str(im.get("def", "")) != "":
 			var dflt := str(tbl.get("default", ""))
 			if dflt != "":
 				var dd = (tbl["decls"] as Dictionary).get(dflt)
 				if dd is Dictionary and str(dd["kind"]) != "component":
 					out[str(res["guitkx"])] = true
-			continue
 		for nm in (im["names"] as Array):
 			var remote := str((nm as Dictionary).get("remote", (nm as Dictionary).get("name", "")))
 			var d = (tbl["decls"] as Dictionary).get(remote)

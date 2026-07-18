@@ -25,7 +25,12 @@ import * as Hud from "./hud"
 
 # 4. Default — binds the target's \`export default\` declaration, resolved at
 #    compile time and lowered per its kind (a default component stays lazy).
-import Panel from "./score_panel"`
+import Panel from "./score_panel"
+
+# 5. Combined (0.11.1) — ONE declaration carrying the default binding PLUS the
+#    named or namespace surface, exactly as in ES.
+import Fallback, { fmt, Chip as Badge } from "./hud"
+import Fallback2, * as Hud2 from "./hud"`
 
 export const EXAMPLE_SPECIFIERS = `import { Card } from "./card"          # sibling file
 import { Panel } from "../shared/panel"  # relative, up a directory

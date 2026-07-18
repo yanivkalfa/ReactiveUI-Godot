@@ -114,24 +114,8 @@ static func _class_name_override(src: String) -> String:
 	return override
 
 static func _skip_import(src: String, i: int) -> int:
-	var n := src.length()
-	var le := src.find("\n", i)
-	if le == -1:
-		le = n
-	var j := Compiler._skip_ws_and_comments(src, i + 6)
-	if j >= n or src[j] != "{":
-		return le
-	var bc := Compiler.L.find_matching(src, j)
-	if bc == -1:
-		return le
-	var k := Compiler._skip_ws_only(src, bc + 1)
-	if Compiler.L.keyword_at(src, k, "from"):
-		k = Compiler._skip_ws_only(src, k + 4)
-		if k < n and (src[k] == "\"" or src[k] == "'"):
-			var qe := src.find(src[k], k + 1)
-			if qe != -1:
-				return maxi(le, qe + 1)
-	return maxi(le, bc + 1)
+	# Canonical full-form skip (named / `* as` / default / combined) — Compiler.import_end.
+	return Compiler.import_end(src, i)
 
 ## Resolve every import of one file into the emitter's lowering plan + the frozen import diagnostics.
 ## `imports` = RUIGuitkx.compile()'s parsed list; `used(name)->bool` reports whether a LOCAL name is
@@ -161,6 +145,9 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 			continue
 		var table := decl_table(str(res["guitkx"]))
 		var decls: Dictionary = table["decls"]
+		# NOTE: no exclusive branching below — a COMBINED import (`import Def, { a } from` /
+		# `import Def, * as X from`) carries default + named/namespace parts in ONE declaration
+		# and every part must yield its lowering (0.11.1 field wave; the LSP mirrors agree).
 		# E-06 namespace form: ONE eager whole-script preload; members resolve as script statics at
 		# runtime (`X.name`). A VALUE edge for 2306. No component tags via `X.` in v1.
 		var nsn := str(imp.get("ns", ""))
@@ -168,38 +155,36 @@ static func resolve_file_imports(imports: Array, from_guitkx: String, root: Stri
 			var ns_at := int(imp.get("ns_at", int(imp["at"])))
 			if seen.has(nsn):
 				diags.append(D.make("GUITKX2303", D.ERROR, "duplicate import of `%s` (already imported from %s)" % [nsn, seen[nsn]], ns_at, nsn.length()))
-				continue
-			seen[nsn] = spec
-			if used.is_valid() and not bool(used.call(nsn)):
-				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nsn, ns_at, nsn.length()))
-			values.append({ "name": nsn, "gd": res["gd"], "member": "", "kind": "namespace" })
-			continue
+			else:
+				seen[nsn] = spec
+				if used.is_valid() and not bool(used.call(nsn)):
+					diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % nsn, ns_at, nsn.length()))
+				values.append({ "name": nsn, "gd": res["gd"], "member": "", "kind": "namespace" })
 		# E-07 default form: binds the target's `export default` decl; lowers per that decl's KIND.
 		var defn := str(imp.get("def", ""))
 		if defn != "":
 			var def_at := int(imp.get("def_at", int(imp["at"])))
 			if seen.has(defn):
 				diags.append(D.make("GUITKX2303", D.ERROR, "duplicate import of `%s` (already imported from %s)" % [defn, seen[defn]], def_at, defn.length()))
-				continue
-			seen[defn] = spec
-			var tgt_default := str(table.get("default", ""))
-			if tgt_default == "":
-				diags.append(D.make("GUITKX2326", D.ERROR, "%s has no default export -- use a named import: import { %s } from \"%s\"" % [str(res["guitkx"]).get_file(), str(table["binding"]), spec], def_at, defn.length()))
-				continue
-			if used.is_valid() and not bool(used.call(defn)):
-				diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % defn, def_at, defn.length()))
-			var dd: Dictionary = decls[tgt_default]
-			match str(dd["kind"]):
-				"component":
-					comps[defn] = { "gd": res["gd"], "func": dd["func"] }
-				"hook":
-					hooks.append({ "name": defn, "remote": tgt_default, "gd": res["gd"], "at": def_at })
-				"module":
-					var dmember := "" if tgt_default == str(table["binding"]) else tgt_default
-					values.append({ "name": defn, "gd": res["gd"], "member": dmember, "kind": "module" })
-				_:
-					bares.append({ "name": defn, "remote": tgt_default, "gd": res["gd"], "at": def_at })
-			continue
+			else:
+				seen[defn] = spec
+				var tgt_default := str(table.get("default", ""))
+				if tgt_default == "":
+					diags.append(D.make("GUITKX2326", D.ERROR, "%s has no default export -- use a named import: import { %s } from \"%s\"" % [str(res["guitkx"]).get_file(), str(table["binding"]), spec], def_at, defn.length()))
+				else:
+					if used.is_valid() and not bool(used.call(defn)):
+						diags.append(D.make("GUITKX2304", D.WARNING, "unused import `%s`" % defn, def_at, defn.length()))
+					var dd: Dictionary = decls[tgt_default]
+					match str(dd["kind"]):
+						"component":
+							comps[defn] = { "gd": res["gd"], "func": dd["func"] }
+						"hook":
+							hooks.append({ "name": defn, "remote": tgt_default, "gd": res["gd"], "at": def_at })
+						"module":
+							var dmember := "" if tgt_default == str(table["binding"]) else tgt_default
+							values.append({ "name": defn, "gd": res["gd"], "member": dmember, "kind": "module" })
+						_:
+							bares.append({ "name": defn, "remote": tgt_default, "gd": res["gd"], "at": def_at })
 		for nm_entry in (imp["names"] as Array):
 			var nm := str(nm_entry["name"])                        # LOCAL binding name
 			var remote := str(nm_entry.get("remote", nm))           # exported name it resolves against (E-08)

@@ -12,14 +12,16 @@ export interface ImportHit {
   name?: string;
 }
 
-const IMPORT_RE = /import[ \t]*\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["']/g;
+// The optional COMBINED default binding (`import Def, { … } from` / `import Def, * as X from`,
+// 0.11.1): a leading identifier + comma may precede the named/namespace clause.
+const IMPORT_RE = /import[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*[ \t]*,[ \t]*)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["']/g;
 // G-05 (ES-modules leg): namespace + default clause shapes.
-const IMPORT_NS_RE = /import[ \t]*\*[ \t]*as[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]*["']([^"']+)["']/g;
+const IMPORT_NS_RE = /import[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*[ \t]*,[ \t]*)?\*[ \t]*as[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]*["']([^"']+)["']/g;
 const IMPORT_DEFAULT_RE = /import[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]*["']([^"']+)["']/g;
 
 /** If `offset` sits on an import specifier or an imported name, describe it; else null. Covers all
  *  G-05 clause shapes: named (with `remote as local` renames -- navigation targets the REMOTE
- *  declaration), `* as X` namespace, and bare default imports. */
+ *  declaration), `* as X` namespace, bare default imports, and the combined forms. */
 export function importAt(src: string, offset: number): ImportHit | null {
   IMPORT_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -46,6 +48,9 @@ export function importAt(src: string, offset: number): ImportHit | null {
       }
       return { kind: "spec", spec };
     }
+    // Anywhere else on the clause (the `import` keyword, a combined default binding) — the file
+    // itself is the navigation target, same as the namespace/default branches below.
+    if (offset >= m.index && offset <= m.index + m[0].length) return { kind: "spec", spec };
   }
   IMPORT_NS_RE.lastIndex = 0;
   while ((m = IMPORT_NS_RE.exec(src)) !== null) {
@@ -60,6 +65,45 @@ export function importAt(src: string, offset: number): ImportHit | null {
     if (offset >= m.index && offset <= m.index + m[0].length) return { kind: "spec", spec };
   }
   return null;
+}
+
+export interface ImportBraceContext {
+  /** The combined form's default binding (`import Def, { | }`), or null. */
+  def: string | null;
+  /** The line's `from "…"` specifier, or null while still untyped. */
+  spec: string | null;
+  /** Names already listed inside the braces — imported names AND their `as` aliases. */
+  already: string[];
+}
+
+/** The import-brace completion context at `offset` (a caret inside the `{ … }` of an import
+ *  line), or null. Line-shaped on purpose: while TYPING the list the import is malformed, so the
+ *  parsed-imports channel cannot see it. The prefix allows the COMBINED default binding
+ *  (`import Def, { | } from` — 0.11.1 field wave: a bare-`import` prefix check returned nothing
+ *  inside a combined form's braces). */
+export function importBraceAt(src: string, offset: number): ImportBraceContext | null {
+  const lineStart = src.lastIndexOf("\n", offset - 1) + 1;
+  let lineEnd = src.indexOf("\n", lineStart);
+  if (lineEnd === -1) lineEnd = src.length;
+  const line = src.slice(lineStart, lineEnd);
+  const col = offset - lineStart;
+  const braceOpen = line.indexOf("{");
+  if (braceOpen < 0 || col <= braceOpen) return null;
+  const prefix = /^[ \t]*import[ \t]*(?:([A-Za-z_][A-Za-z0-9_]*)[ \t]*,[ \t]*)?$/.exec(line.slice(0, braceOpen));
+  if (!prefix) return null;
+  const braceClose = line.indexOf("}", braceOpen);
+  const regionEnd = braceClose < 0 ? line.length : braceClose;
+  if (col > regionEnd) return null;
+  const specM = /from[ \t]*["']([^"']+)["']/.exec(line.slice(regionEnd));
+  const already: string[] = [];
+  for (const entry of line.slice(braceOpen + 1, regionEnd).split(",")) {
+    // Each entry may be aliased (`a as b`): the imported NAME must not be re-suggested, and the
+    // bound ALIAS would collide with a same-named export — track both.
+    for (const tok of entry.trim().split(/\s+/)) {
+      if (tok && tok !== "as") already.push(tok);
+    }
+  }
+  return { def: prefix[1] ?? null, spec: specM ? specM[1] : null, already };
 }
 
 /** The `~/` root directory for a file: the nearest guitkx.config.json's `"root"` (res:// mapped to

@@ -309,8 +309,18 @@ export function guitkxVirtualLibText(entries: IndexEntry[]): string | null {
     "",
   ];
   if (top.kind === "component") lines.push("static func render(...args): return null");
-  for (const m of entries.filter((e) => e.kind === "member")) {
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(m.name)) lines.push(`static func ${m.name}(...args): return null`);
+  // Every OTHER declaration mirrors the compiled .gd's statics — wrapper-module members AND the
+  // new-mode plain declarations (0.11.1 field wave: a member-only new-mode file mirrored an EMPTY
+  // class, so its exports never existed in the analysis while the real compiled .gd had them all;
+  // the Unity sibling shipped the same fix for its __Exports container). Values mirror as
+  // `static var` (data, not callable); callables stay variadic so arity checks can't false-fire.
+  const seen = new Set<string>([top.kind === "component" ? "render" : ""]);
+  for (const m of entries) {
+    if (m === top || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(m.name)) continue;
+    if (m.name === top.binding || seen.has(m.name)) continue;
+    seen.add(m.name);
+    if (m.kind === "value") lines.push(`static var ${m.name}`);
+    else lines.push(`static func ${m.name}(...args): return null`);
   }
   return lines.join("\n") + "\n";
 }

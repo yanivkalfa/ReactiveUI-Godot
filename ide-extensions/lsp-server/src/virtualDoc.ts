@@ -539,19 +539,26 @@ function declareImportStubs(ctx: Ctx): void {
       ctx.gen += `static var ${nm}\n`;
     }
   };
-  // named clauses (a `remote as local` rename binds the LOCAL name -- E-08)
-  const importRe = /^[ \t]*import[ \t]*\{([^}]*)\}[ \t]*from/gm;
+  // named clauses (a `remote as local` rename binds the LOCAL name -- E-08). The optional
+  // leading group is the COMBINED form's default binding (`import Def, { a } from`, 0.11.1
+  // field wave): every part of a combined declaration must yield its stub, or the imported
+  // name has no declaration in the analysis and the editor squiggles a clean build.
+  const importRe = /^[ \t]*import[ \t]*(?:([A-Za-z_]\w*)[ \t]*,[ \t]*)?\{([^}]*)\}[ \t]*from/gm;
   let m: RegExpExecArray | null;
   while ((m = importRe.exec(ctx.src)) !== null) {
-    for (const raw of m[1].split(",")) {
+    if (m[1]) add(m[1]);
+    for (const raw of m[2].split(",")) {
       const clause = raw.trim();
       const asM = /^[A-Za-z_]\w*[ \t]+as[ \t]+([A-Za-z_]\w*)$/.exec(clause);
       add(asM ? asM[1] : clause);
     }
   }
-  // `* as X` namespace + bare default locals (G-05): both bind one identifier.
-  const nsRe = /^[ \t]*import[ \t]*\*[ \t]*as[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
-  while ((m = nsRe.exec(ctx.src)) !== null) add(m[1]);
+  // `* as X` namespace (with the optional combined default) + bare default locals (G-05).
+  const nsRe = /^[ \t]*import[ \t]*(?:([A-Za-z_]\w*)[ \t]*,[ \t]*)?\*[ \t]*as[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
+  while ((m = nsRe.exec(ctx.src)) !== null) {
+    if (m[1]) add(m[1]);
+    add(m[2]);
+  }
   const defRe = /^[ \t]*import[ \t]+([A-Za-z_]\w*)[ \t]+from/gm;
   while ((m = defRe.exec(ctx.src)) !== null) add(m[1]);
 }

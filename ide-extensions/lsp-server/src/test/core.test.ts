@@ -1239,3 +1239,128 @@ test("importAt covers named/rename/namespace/default clause shapes", () => {
   const onDef = importAt(src, src.indexOf("Def"));
   assert.deepEqual({ kind: onDef?.kind, spec: onDef?.spec }, { kind: "spec", spec: "./z" });
 });
+
+// ── ES combined import forms + 0.11.1 field wave ────────────────────────────────────────────────
+
+// Combined `import Def, { … } from` / `import Def, * as NS from`: one declaration carrying the
+// default binding PLUS the named/namespace surface. Every consumer that used to treat the clause
+// shapes as mutually exclusive must see every part.
+
+test("importAt handles the combined clause shapes (0.11.1)", () => {
+  const { importAt } = require("../importNav");
+  const src = 'import isEven, { getSomething } from "./utils"\nimport D2, * as NS from "./more"\n';
+  const onName = importAt(src, src.indexOf("getSomething"));
+  assert.deepEqual({ kind: onName?.kind, name: onName?.name, spec: onName?.spec }, { kind: "name", name: "getSomething", spec: "./utils" });
+  const onDef = importAt(src, src.indexOf("isEven"));
+  assert.deepEqual({ kind: onDef?.kind, spec: onDef?.spec }, { kind: "spec", spec: "./utils" });
+  const onNs = importAt(src, src.indexOf("NS"));
+  assert.deepEqual({ kind: onNs?.kind, spec: onNs?.spec }, { kind: "spec", spec: "./more" });
+});
+
+test("buildVirtualDoc stubs EVERY part of a combined import (editor resolution, field wave)", () => {
+  const src =
+    'import isEven, { getSomething as fetch } from "./utils"\n' +
+    'import D2, * as NS from "./more"\n' +
+    "\nexport C() -> RUIVNode {\n\tvar a = fetch()\n\treturn ( <Label /> )\n}\n";
+  const { text } = buildVirtualDoc(src);
+  assert.ok(/static var isEven\b/.test(text), "combined default binding declared: " + text);
+  assert.ok(/static var fetch\b/.test(text), "renamed LOCAL of the named part declared");
+  assert.ok(/static var D2\b/.test(text), "combined default before `* as` declared");
+  assert.ok(/static var NS\b/.test(text), "star alias of the combined form declared");
+});
+
+test("scanImportClauseRefs sees named clauses inside a combined import", () => {
+  const { scanImportClauseRefs } = require("../refs");
+  const text = 'import Def, { fmt, Chip as Badge } from "./hud"\n';
+  const refs = scanImportClauseRefs(text, "Chip", () => true);
+  assert.equal(refs.length, 1, JSON.stringify(refs));
+  assert.equal(text.slice(refs[0].start, refs[0].end), "Chip");
+});
+
+test("importBraceAt arms the brace context for bare AND combined prefixes (field wave)", () => {
+  const { importBraceAt } = require("../importNav");
+  const bare = 'import { } from "./utils"\n';
+  const c1 = importBraceAt(bare, bare.indexOf("}"));
+  assert.ok(c1 && c1.def === null && c1.spec === "./utils", JSON.stringify(c1));
+  const combined = 'import isEven, {} from "./utils"\n';
+  const c2 = importBraceAt(combined, combined.indexOf("}"));
+  assert.ok(c2 && c2.def === "isEven" && c2.spec === "./utils", JSON.stringify(c2));
+  const listed = 'import isEven, { getSomething, a as b } from "./utils"\n';
+  const c3 = importBraceAt(listed, listed.indexOf("}") - 1);
+  assert.deepEqual(c3?.already, ["getSomething", "a", "b"], "names AND aliases join the exclusion set");
+  assert.equal(importBraceAt(combined, 3), null, "a caret before the brace is not the context");
+  const dict = "export C() -> RUIVNode {\n\tvar x = { }\n\treturn ( <Label /> )\n}\n";
+  assert.equal(importBraceAt(dict, dict.indexOf("{ }") + 1), null, "a GDScript dict brace is not an import list");
+});
+
+test("importBindingTokens colors imported bindings by the KIND of the export they bind", () => {
+  const { importBindingTokens, importKindTokenOf } = require("../semanticTokens");
+  const target = [
+    "export Card() -> RUIVNode {",
+    "\treturn ( <Label /> )",
+    "}",
+    "",
+    "export use_blink() {",
+    "\treturn 1",
+    "}",
+    "",
+    "export fmt() {",
+    "\treturn 2",
+    "}",
+    "",
+    "container := 8",
+    "export { container }",
+    "export default fmt",
+  ].join("\n");
+  const src = 'import fmt2, { Card, use_blink, container as c } from "./target"\nimport D2, * as NS from "./target"\n';
+  const classify = (text: string) => {
+    const m = new Map<string, number>();
+    for (const d of scanDeclarations(text)) {
+      const t = importKindTokenOf(d.kind);
+      if (t !== undefined && !m.has(d.name)) m.set(d.name, t);
+    }
+    return m;
+  };
+  const toks = importBindingTokens(src, () => target, classify);
+  const FN = TOKEN_TYPES.indexOf("function");
+  const VAR = TOKEN_TYPES.indexOf("variable");
+  const CLS = TOKEN_TYPES.indexOf("class");
+  const at = (line: number, char: number) => toks.find((t: { line: number; char: number }) => t.line === line && t.char === char);
+  assert.equal(at(0, 7)?.type, FN, "combined default `fmt2` takes the default export's kind (util -> function): " + JSON.stringify(toks));
+  assert.equal(at(0, 15)?.type, CLS, "component import colors like a component tag");
+  assert.equal(at(0, 21)?.type, FN, "hook import colors as a function");
+  assert.equal(at(0, 32)?.type, VAR, "value import colors as a variable");
+  assert.equal(at(0, 45)?.type, VAR, "the rename ALIAS takes the remote's kind");
+  assert.equal(at(1, 7)?.type, FN, "combined default before `* as` keeps the default kind");
+  assert.equal(at(1, 16)?.type, VAR, "a star alias is a plain variable binding");
+  assert.deepEqual(importBindingTokens(src, () => null, classify), [], "unresolvable targets degrade silently");
+});
+
+test("guitkxVirtualLibText mirrors new-mode member exports (values/utils/hooks — field wave)", () => {
+  // A member-only/mixed NEW-MODE file used to mirror an (near-)empty class: only wrapper-module
+  // members and the top component's `render` were emitted, so a peer's value/util/hook exports
+  // never existed in the analysis while the real compiled .gd declares them all as statics.
+  const wi = new WorkspaceIndex();
+  wi.reindex(
+    "file:///proj/hud.guitkx",
+    "export Hud() -> RUIVNode {\n\treturn ( <Label /> )\n}\n\nexport use_x() {\n\treturn 1\n}\n\nexport fmt() {\n\treturn 2\n}\n\nval := 1\nexport { val }\n"
+  );
+  const lib = guitkxVirtualLibText(wi.entriesFor("file:///proj/hud.guitkx"));
+  assert.ok(lib, "a new-mode file produces a virtual library");
+  assert.ok(lib!.includes("class_name Hud"), lib!);
+  assert.ok(lib!.includes("static func render(...args): return null"), "top component still mirrors render");
+  assert.ok(lib!.includes("static func use_x(...args): return null"), "new-mode hook export mirrored");
+  assert.ok(lib!.includes("static func fmt(...args): return null"), "new-mode util export mirrored");
+  assert.ok(lib!.includes("static var val"), "new-mode value export mirrored as data");
+});
+
+test("formatter preserves combined import lines byte-for-byte (round-trip + idempotence)", () => {
+  const src =
+    'import isEven, { fmt } from "./utils"\n' +
+    'import D, * as NS from "./x"\n' +
+    "\nexport C() -> RUIVNode {\n\treturn ( <Label /> )\n}\n";
+  const out = formatGuitkx(src);
+  assert.ok(out.text.includes('import isEven, { fmt } from "./utils"'), "named part must not be dropped: " + out.text);
+  assert.ok(out.text.includes('import D, * as NS from "./x"'), "star part must not be dropped");
+  assert.equal(formatGuitkx(out.text).text, out.text, "idempotent over combined imports");
+});

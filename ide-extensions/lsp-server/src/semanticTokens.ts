@@ -29,6 +29,8 @@ const T = {
   keyword: TOKEN_TYPES.indexOf("keyword"),
   property: TOKEN_TYPES.indexOf("property"),
   event: TOKEN_TYPES.indexOf("event"),
+  function: TOKEN_TYPES.indexOf("function"),
+  variable: TOKEN_TYPES.indexOf("variable"),
 };
 const MOD_DEFAULT_LIBRARY = 1 << TOKEN_MODIFIERS.indexOf("defaultLibrary"); // bit 3
 
@@ -223,4 +225,119 @@ function encode(toks: Tok[]): number[] {
     prevChar = t.char;
   }
   return data;
+}
+
+// ── kind-accurate coloring of imported bindings (0.11.1 field wave) ─────────────────────────────
+
+// A target file's declaration kind -> this legend's token index: components color like user
+// component tags (class), hooks/utils/module-members as functions, values as variables, and a
+// legacy wrapper module as a type. The grammar's static one-color-fits-all tint stays as the
+// fallback; semantic tokens override it in every LSP client.
+const IMPORT_KIND_TOKEN: Record<string, number> = {
+  component: T.class,
+  hook: T.function,
+  util: T.function,
+  member: T.function,
+  module: T.type,
+  value: T.variable,
+};
+
+// One import statement's clause shape (line-anchored; every G-05 form incl. the combined
+// `import Def, { … } / Def, * as X`). Group 1 = leading `import` + ws, 2 = combined default,
+// 3 = its comma/ws, 4 = braced names body, 5 = `* as ` segment, 6 = star alias, 7 = pure
+// default binding, 8 = specifier.
+const IMPORT_CLAUSE_RE =
+  /^([ \t]*import\b[ \t]*)(?:([A-Za-z_]\w*)([ \t]*,[ \t]*))?(?:\{([^}]*)\}|(\*[ \t]*as[ \t]+)([A-Za-z_]\w*)|([A-Za-z_]\w*))[ \t]*from[ \t]*["']([^"']+)["']/gm;
+
+/** Tokens coloring every imported BINDING name by the KIND of the export it binds, resolved from
+ *  each import's target file (`resolveTargetText(spec)` returns the target `.guitkx` source, or
+ *  null — unresolvable targets degrade silently to the grammar tint). Star aliases are plain
+ *  variable bindings; a default alias takes the kind of the target's `export default` decl.
+ *  `classify(targetText)` maps a declaration name to its legend token index — the server feeds
+ *  scanDeclarations-derived tables (kept as a callback so this stays workspace-agnostic). */
+export function importBindingTokens(
+  src: string,
+  resolveTargetText: (spec: string) => string | null,
+  classify: (targetText: string) => Map<string, number>
+): Tok[] {
+  const toks: Tok[] = [];
+  const lineStart = [0];
+  for (let i = 0; i < src.length; i++) if (src[i] === "\n") lineStart.push(i + 1);
+  const posOf = (off: number) => {
+    let lo = 0;
+    let hi = lineStart.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStart[mid] <= off) lo = mid;
+      else hi = mid - 1;
+    }
+    return { line: lo, char: off - lineStart[lo] };
+  };
+  const emit = (off: number, len: number, type: number) => {
+    if (len <= 0) return;
+    const p = posOf(off);
+    toks.push({ line: p.line, char: p.char, len, type, mods: 0 });
+  };
+
+  IMPORT_CLAUSE_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = IMPORT_CLAUSE_RE.exec(src)) !== null) {
+    let targetText: string | null;
+    try {
+      targetText = resolveTargetText(m[8]);
+    } catch {
+      targetText = null;
+    }
+    if (targetText === null) continue;
+    let kindOf: Map<string, number>;
+    try {
+      kindOf = classify(targetText);
+    } catch {
+      continue;
+    }
+    const defaultName = /^[ \t]*export[ \t]+default[ \t]+([A-Za-z_]\w*)/m.exec(targetText)?.[1] ?? null;
+    const defKind = defaultName !== null ? kindOf.get(defaultName) ?? T.variable : T.variable;
+    const head = m[1].length + (m[2] !== undefined ? m[2].length + m[3].length : 0);
+    if (m[2] !== undefined) emit(m.index + m[1].length, m[2].length, defKind);
+    if (m[4] !== undefined) {
+      // Braced named list: `remote [as local]` per entry; both halves take the REMOTE's kind.
+      const bodyStart = m.index + head + 1;
+      const body = m[4];
+      let p = 0;
+      while (p < body.length) {
+        while (p < body.length && /[\s,]/.test(body[p])) p++;
+        const rs = p;
+        while (p < body.length && isIdent(body[p])) p++;
+        if (p === rs) {
+          p++;
+          continue;
+        }
+        const remote = body.slice(rs, p);
+        const kind = kindOf.get(remote);
+        if (kind !== undefined) emit(bodyStart + rs, remote.length, kind);
+        let q = p;
+        while (q < body.length && /[ \t]/.test(body[q])) q++;
+        if (body.startsWith("as", q) && !isIdent(body[q + 2] ?? "")) {
+          q += 2;
+          while (q < body.length && /[ \t]/.test(body[q])) q++;
+          const ls = q;
+          while (q < body.length && isIdent(body[q])) q++;
+          if (q > ls && kind !== undefined) emit(bodyStart + ls, q - ls, kind);
+          p = q;
+        }
+      }
+    } else if (m[6] !== undefined) {
+      // `* as X` — a plain variable binding of the whole namespace.
+      emit(m.index + head + m[5].length, m[6].length, T.variable);
+    } else if (m[7] !== undefined) {
+      emit(m.index + head, m[7].length, defKind);
+    }
+  }
+  return toks;
+}
+
+/** scanDeclarations-shaped kinds -> legend indexes (the server's `classify` for
+ *  importBindingTokens; kept here so the mapping lives beside the legend). */
+export function importKindTokenOf(kind: string): number | undefined {
+  return IMPORT_KIND_TOKEN[kind];
 }

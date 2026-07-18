@@ -43,7 +43,7 @@ export const UitkxImportsPage: FC = () => (
     <CodeBlock language="jsx" code={EXAMPLE_SPECIFIERS} />
 
     <Typography variant="h5" component="h2" gutterBottom sx={{ mt: 3 }}>
-      The four import forms
+      The import forms
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_FORMS} />
     <Typography variant="body1" paragraph sx={{ mt: 2 }}>
@@ -66,6 +66,13 @@ export const UitkxImportsPage: FC = () => (
         target&apos;s <code>export default</code> declaration, resolved at compile time and lowered
         per its kind — a default <em>component</em> stays lazy. If the target has no default
         export, that&apos;s <code>GUITKX2326</code> (the message suggests the named-import fix).
+      </li>
+      <li>
+        <strong>Combined</strong> (<code>{'import Def, { a, b as c } from "./x"'}</code> /{' '}
+        <code>import Def, * as X from &quot;./x&quot;</code>, 0.11.1) is <em>one</em> declaration
+        carrying the default binding plus the named or namespace surface, exactly as in ES. Every
+        part lowers independently, and a duplicate binding across the parts (
+        <code>{'import a, { b as a }'}</code>) is <code>GUITKX2325</code>.
       </li>
       <li>
         <strong>Re-exports</strong> (<code>{'export { a } from "./x"'}</code>) are{' '}

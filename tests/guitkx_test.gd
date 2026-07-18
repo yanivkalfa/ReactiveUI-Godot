@@ -66,6 +66,7 @@ func _run() -> void:
 	_test_2107_walk_order()
 	_test_es_modules_declarations()
 	_test_es_modules_imports()
+	_test_es_combined_imports()
 	_test_es_modules_m4_ordering()
 	_test_es_formatter()
 	if _failed:
@@ -2367,6 +2368,81 @@ export Sp(panel_w: int = 1) -> RUIVNode {
 		_check_true(lbl2 != null and lbl2.text == "[320][2]", "G-05 runtime: value+util+hook+ns imports all resolve (got %s)" % str(lbl2.text if lbl2 != null else "<none>"))
 		rapp2.unmount()
 		rc2.queue_free()
+
+## 0.11.1 field wave: ES COMBINED import forms (`import Def, { a, b as c } from` /
+## `import Def, * as X from` -- ONE declaration carrying the default binding plus the named/
+## namespace surface) + the unused-import (2304) self-count fix that shipped with them.
+func _test_es_combined_imports() -> void:
+	const Resolve := preload("res://addons/reactive_ui/guitkx/guitkx_resolve.gd")
+	var utils := "export something := 42\n" + \
+		"export get_something() -> int {\n\treturn something\n}\n" + \
+		"export use_pulse(x: int) -> int {\n\treturn x\n}\n" + \
+		"is_something_even() -> bool {\n\treturn something % 2 == 0\n}\n" + \
+		"export default is_something_even\n"
+	var utils_path := _bh_writefile_at("res://tests/__bh_tmp/esc/utils", utils)
+	Codegen.compile_file(utils_path)
+
+	# Parse shape: ONE declaration carrying every part.
+	var rows := RUIGuitkx.scan_imports("import isEven, { get_something as fetch } from \"./utils\"\nimport D2, * as U from \"./utils\"\n")
+	_check_true(rows.size() == 2, "combined: scan parses both lines (got %d)" % rows.size())
+	if rows.size() == 2:
+		var r0: Dictionary = rows[0]
+		_check_true(str(r0["def"]) == "isEven", "combined: default binding parsed (got %s)" % str(r0["def"]))
+		_check_true((r0["names"] as Array).size() == 1 and str(((r0["names"] as Array)[0] as Dictionary)["name"]) == "fetch" \
+			and str(((r0["names"] as Array)[0] as Dictionary)["remote"]) == "get_something", "combined: named part rides the SAME declaration")
+		var r1: Dictionary = rows[1]
+		_check_true(str(r1["def"]) == "D2" and str(r1["ns"]) == "U", "combined: default + `* as` in one declaration")
+
+	# Lowering: every part yields -- default util bridged, renamed util rewritten to its REMOTE,
+	# namespace preloaded -- in one importer.
+	var app := "import isEven, { get_something as fetch } from \"./utils\"\n" + \
+		"import D2, * as U from \"./utils\"\n\n" + \
+		"export AppC() -> RUIVNode {\n" + \
+		"\tvar a = fetch() + U.get_something()\n" + \
+		"\tvar b = isEven() or D2()\n" + \
+		"\treturn (\n\t\t<Label text={str(a) + str(b)}/>\n\t)\n}\n"
+	var app_path := _bh_writefile_at("res://tests/__bh_tmp/esc/app", app)
+	var ar := Codegen.compile_file(app_path)
+	_check_true(bool(ar["ok"]), "combined: importer compiles (%s)" % str(ar.get("diagnostics", [])))
+	var app_gd := FileAccess.get_file_as_string("res://tests/__bh_tmp/esc/app.gd")
+	_check_true(app_gd.contains("const U = preload"), "combined: `* as` part still lowers to the whole-script const")
+	_check_true(app_gd.contains(".get_something(") and not app_gd.contains("fetch("), "combined: named part rewrites to the REMOTE name")
+	_check_true(app_gd.contains(".is_something_even("), "combined: default part bridges to the default decl")
+	_check_true(Codegen.gd_source_parses(app_gd), "combined: importer .gd parses")
+	# Both parts contribute the value edge (2306 graph).
+	var edges: Array = Codegen._value_import_edges(app_path, {})
+	_check_true(edges.has(utils_path), "combined: value edge reaches the target (got %s)" % str(edges))
+
+	# Duplicate binding across the parts of ONE declaration: `import a, { b as a }` errors.
+	var rdup := RUIGuitkx.compile("import a, { get_something as a } from \"./utils\"\nexport AD() -> RUIVNode {\n\treturn ( <Label text={str(a)}/> )\n}\n", "ad", [], {}, "res://tests/__bh_tmp/esc/ad.guitkx", "res://")
+	_check_true(_has_code(rdup, "GUITKX2325") or _has_code(rdup, "GUITKX2303"), "combined: duplicate binding across parts is reported (got %s)" % str(rdup.get("diagnostics", [])))
+
+	# Malformed comma tail: `import Def, from` is a 0300, not a silent half-parse.
+	var rmal := RUIGuitkx.compile("import isEven, from \"./utils\"\nexport AM() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "am", [], {}, "res://tests/__bh_tmp/esc/am.guitkx", "res://")
+	_check_true(_has_code(rmal, "GUITKX0300"), "combined: dangling comma -> 0300 (got %s)" % str(rmal.get("diagnostics", [])))
+
+	# 2304 self-count fix: an unused `* as` / default / combined binding used to self-count on its
+	# own import line and was NEVER flagged (the old skip only understood the braced form).
+	var run_ns := RUIGuitkx.compile("import * as UnusedNs from \"./utils\"\nexport A1() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "a1", [], {}, "res://tests/__bh_tmp/esc/a1.guitkx", "res://")
+	_check_true(_has_code(run_ns, "GUITKX2304"), "2304: unused `* as` import is flagged (got %s)" % str(run_ns.get("diagnostics", [])))
+	var run_def := RUIGuitkx.compile("import UnusedDef from \"./utils\"\nexport A2() -> RUIVNode {\n\treturn ( <Label /> )\n}\n", "a2", [], {}, "res://tests/__bh_tmp/esc/a2.guitkx", "res://")
+	_check_true(_has_code(run_def, "GUITKX2304"), "2304: unused default import is flagged (got %s)" % str(run_def.get("diagnostics", [])))
+	var run_comb := RUIGuitkx.compile("import usedDef, { get_something } from \"./utils\"\nexport A3() -> RUIVNode {\n\treturn ( <Label text={str(usedDef())}/> )\n}\n", "a3", [], {}, "res://tests/__bh_tmp/esc/a3.guitkx", "res://")
+	_check_true(_has_code(run_comb, "GUITKX2304"), "2304: unused named part of a combined import is flagged (got %s)" % str(run_comb.get("diagnostics", [])))
+	_check_true(str(_diag(run_comb, "GUITKX2304").get("message", "")).contains("get_something"), "2304 names the unused part, not the used default")
+	# Pin (Unity field find B): a BARE value reference (`text={something}`) counts as a use --
+	# every identifier is a reference for the warning-tier scan.
+	var run_used := RUIGuitkx.compile("import { something } from \"./utils\"\nexport A4() -> RUIVNode {\n\treturn ( <Label text={something}/> )\n}\n", "a4", [], {}, "res://tests/__bh_tmp/esc/a4.guitkx", "res://")
+	_check_true(not _has_code(run_used, "GUITKX2304"), "2304: a bare value reference marks the import USED (got %s)" % str(run_used.get("diagnostics", [])))
+
+	# Formatter: combined import lines survive byte-for-byte (imports are verbatim preamble) and
+	# the result is idempotent -- the named part must never be dropped on reprint.
+	const Fmt := preload("res://addons/reactive_ui/guitkx/guitkx_formatter.gd")
+	var fsrc := "import isEven, { get_something } from \"./utils\"\nimport D3, * as U2 from \"./utils\"\n\nexport FC() -> RUIVNode {\n\treturn (\n\t\t<Label />\n\t)\n}\n"
+	var fr: Dictionary = Fmt.format(fsrc, { "indentStyle": "tab" })
+	_check_true((fr["text"] as String).contains("import isEven, { get_something } from \"./utils\""), "fmt: combined named part preserved (got %s)" % str(fr["text"]))
+	_check_true((fr["text"] as String).contains("import D3, * as U2 from \"./utils\""), "fmt: combined star part preserved")
+	_check_true(str(Fmt.format(str(fr["text"]), { "indentStyle": "tab" })["text"]) == str(fr["text"]), "fmt: idempotent over combined imports")
 
 ## M4 re-verification (ES-modules leg): the two-pass write-all-then-check-all must survive the
 ## NEW eager symbols. `a_imp` namespace-imports `z_vals` -- lexicographic pass-1 order compiles

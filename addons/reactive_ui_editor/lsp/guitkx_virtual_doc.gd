@@ -71,6 +71,7 @@ static func build(src: String) -> Dictionary:
 	if str(first.get("kind", "")) == "":
 		return { "text": b._gen, "map": b._map }
 	b._declare_hook_stubs()
+	b._declare_import_stubs()
 	var i := 0
 	var first_comp := true
 	var n := src.length()
@@ -526,6 +527,27 @@ func _declare_hook_stubs() -> void:
 		var call := "Hooks.%s(%s)" % [str(h["name"]), str(h["args"])]
 		var body := call if str(h["ret"]) == " -> void" else "return " + call
 		_gen += "static func %s(%s)%s: %s\n" % [str(h["name"]), str(h["params"]), str(h["ret"]), body]
+
+# Mirror of virtualDoc.ts declareImportStubs (0.11.1 field wave — the port was missing here, so
+# imported names had no declaration in the in-editor analysis): every preamble-imported LOCAL —
+# named (rename binds the LOCAL), `* as X` namespace, default, and every part of a COMBINED
+# `import Def, { … } / Def, * as X` — is declared as a permissive `static var` so embedded
+# references resolve. Consumes the compiler's own scan (no regex twin to drift). Unmapped glue:
+# the length-preserving source map is unaffected and stub lines can never squiggle user code.
+func _declare_import_stubs() -> void:
+	var seen := {}
+	for im in Compiler.scan_imports(_src):
+		var locals: Array = []
+		for nm in (im.get("names", []) as Array):
+			locals.append(str((nm as Dictionary)["name"]))
+		if str(im.get("ns", "")) != "":
+			locals.append(str(im["ns"]))
+		if str(im.get("def", "")) != "":
+			locals.append(str(im["def"]))
+		for lname in locals:
+			if lname != "" and Compiler._is_valid_identifier(lname) and not seen.has(lname):
+				seen[lname] = true
+				_gen += "static var %s\n" % lname
 
 ## --- markup neutralizers (mirror jsxScan.ts neutralizeMarkup/neutralizeSetupMarkup) ----------
 

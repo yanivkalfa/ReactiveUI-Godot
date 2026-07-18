@@ -40,13 +40,13 @@ import { uriToProjectPath } from "./guitkxFormat";
 import { formatGuitkx, FmtOptions, markupWindows, unreachableRegions, missingReturnComponents, unclosedReturns, loadFormatterConfig, setupSpans, splitBody } from "./formatGuitkx";
 import { dirname, join, relative, resolve, isAbsolute } from "path";
 import { pathToFileURL } from "url";
-import { importAt, resolveSpecifier } from "./importNav";
+import { importAt, importBraceAt, ImportBraceContext, resolveSpecifier } from "./importNav";
 import { reflowEmbedded } from "./reflowEmbedded";
 import { hasDump, classProperties, classSignals } from "./classdb";
 import { eventCompletionsFor, resolveSignalName, validEventAttrs, isEventAttr } from "./events";
 import { WorkspaceIndex, scanWorkspace, componentTagAt, offsetToPosition as offsetToPos, scanDeclarations, guitkxVirtualLibText, normalizeUri, pathToUri } from "./workspaceIndex";
 import { scanTagRefs, scanImportClauseRefs, scanExportMarkerRefs } from "./refs";
-import { markupTokens, encodeTokens, Tok, TOKEN_TYPES, TOKEN_MODIFIERS } from "./semanticTokens";
+import { markupTokens, encodeTokens, importBindingTokens, importKindTokenOf, Tok, TOKEN_TYPES, TOKEN_MODIFIERS } from "./semanticTokens";
 import { srcHash, readSidecar } from "./diagsSidecar";
 import { cpToUtf16 } from "./codePoints";
 import { readFileSync, readdirSync, statSync, existsSync, watch as fsWatch } from "fs";
@@ -544,6 +544,11 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     analyzer.sync(params.textDocument.uri, src);
     return analyzer.completionsAt(params.textDocument.uri, src, offset);
   }
+  // Import-brace completion (0.11.1 field wave): a caret inside `import { | } from "./x"` —
+  // including the COMBINED `import Def, { | } from` — offers the target's exported declaration
+  // names. Checked before classifyContext: an import line is preamble, not markup/embedded code.
+  const braceCtx = importBraceAt(src, offset);
+  if (braceCtx) return importBraceCompletions(params.textDocument.uri, braceCtx);
   const ctx = classifyContext(src, offset);
 
   switch (ctx.kind) {
@@ -619,6 +624,45 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
 // (snake_case) are naturally excluded; module-member components are included. (BUG-7)
 function componentNames(): string[] {
   return index.names().filter((n) => /^[A-Z]/.test(n) && !findTag(n));
+}
+
+// The target's exported declaration names for a caret inside an import brace list, minus what the
+// line already binds. With a COMBINED default binding present (`import Def, { | }`), the default
+// alias AND the target's default-export name join the exclusion set — re-suggesting the member the
+// default already binds is noise. Degrades to [] when the target is unresolvable.
+function importBraceCompletions(uri: string, ctx: ImportBraceContext): CompletionItem[] {
+  if (!ctx.spec) return [];
+  let fsPath: string;
+  try {
+    fsPath = uriToProjectPath(uri);
+  } catch {
+    return [];
+  }
+  const target = resolveSpecifier(ctx.spec, fsPath, projectPath);
+  if (!target) return [];
+  let targetText: string;
+  try {
+    targetText = readFileSync(target, "utf8");
+  } catch {
+    return [];
+  }
+  const already = new Set(ctx.already);
+  if (ctx.def) {
+    already.add(ctx.def);
+    const dm = /^[ \t]*export[ \t]+default[ \t]+([A-Za-z_]\w*)/m.exec(targetText);
+    if (dm) already.add(dm[1]);
+  }
+  const items: CompletionItem[] = [];
+  for (const d of scanDeclarations(targetText)) {
+    if (!d.export || d.module || already.has(d.name)) continue;
+    already.add(d.name);
+    items.push({
+      label: d.name,
+      kind: d.kind === "component" ? CompletionItemKind.Class : d.kind === "value" ? CompletionItemKind.Variable : CompletionItemKind.Function,
+      detail: d.kind,
+    });
+  }
+  return items;
 }
 
 // '{' positions enclosing `offset` (string/comment-aware), innermost last.
@@ -1519,6 +1563,32 @@ connection.languages.semanticTokens.on((params) => {
 // best-effort: any failure still returns the markup tokens.
 function guitkxSemanticTokens(uri: string, src: string): number[] {
   const toks: Tok[] = markupTokens(src, (name) => index.has(name));
+  // Kind-accurate coloring of imported binding names (0.11.1 field wave): each import's target
+  // resolves from disk and every binding colors by the KIND of the export it binds — components
+  // like component tags, hooks/utils as functions, values as variables — overriding the
+  // grammar's uniform tint. Unresolvable targets degrade silently to the grammar.
+  try {
+    const fsPath = uriToProjectPath(uri);
+    toks.push(
+      ...importBindingTokens(
+        src,
+        (spec) => {
+          const target = resolveSpecifier(spec, fsPath, projectPath);
+          return target ? readFileSync(target, "utf8") : null;
+        },
+        (targetText) => {
+          const kindOf = new Map<string, number>();
+          for (const d of scanDeclarations(targetText)) {
+            const t = importKindTokenOf(d.kind);
+            if (t !== undefined && !kindOf.has(d.name)) kindOf.set(d.name, t);
+          }
+          return kindOf;
+        }
+      )
+    );
+  } catch {
+    /* import-binding tokens are best-effort — the markup tokens are always returned */
+  }
   if (embeddedEnabled) {
     try {
       const { text, map } = buildVirtualDoc(src);

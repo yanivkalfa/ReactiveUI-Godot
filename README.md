@@ -163,8 +163,10 @@ export Panel(level: int = 1) -> RUIVNode {
   `res://`/`uid://` are not valid import specifiers (they stay valid in `@uss`/`@theme` asset
   positions, which also accept `~/`). The full ES surface (0.11.0): named imports,
   `import { remote as local }` renames, `import * as X` namespaces (members via `X.name`;
-  component tags via `X.` not yet), `import X from` defaults + `export default Name`, and
-  deferred `export { a, b }` lists. Re-exports (`export { a } from`) stay out for now.
+  component tags via `X.` not yet), `import X from` defaults + `export default Name`, the
+  combined forms `import Def, { a, b as c } from` / `import Def, * as X from` (0.11.1 — one
+  declaration carrying the default binding plus the named/namespace surface), and deferred
+  `export { a, b }` lists. Re-exports (`export { a } from`) stay out for now.
 - **`export`** makes a declaration reachable across files; without it a declaration is
   file-private. A file may hold **several** declarations; its binding (`class_name`) is the
   `@class_name` override, else the first exported declaration.

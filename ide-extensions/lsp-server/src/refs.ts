@@ -75,7 +75,9 @@ export interface ClauseRef {
 // (`* as X`) and default (`import X from`) clauses carry no remote NAME and never match.
 export function scanImportClauseRefs(text: string, name: string, specMatches: (spec: string) => boolean): ClauseRef[] {
   const out: ClauseRef[] = [];
-  const re = /import[ \t]*\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["']/g;
+  // The optional leading group is the COMBINED form's default binding (`import Def, { … } from`,
+  // 0.11.1) — its named clauses rename exactly like a plain named list's.
+  const re = /import[ \t]*(?:[A-Za-z_]\w*[ \t]*,[ \t]*)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["']/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (!specMatches(m[2])) continue;

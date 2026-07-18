@@ -4,6 +4,28 @@ All notable changes to **Reactive UI for Godot** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] — Unreleased
+
+### Added
+
+- **ES combined import forms**: `import Def, { a, b as c } from "./file"` and
+  `import Def, * as X from "./file"` — one declaration carrying the default binding plus
+  the named/namespace surface, exactly as in ES. Every part yields its lowering (default
+  bridge + named rewrites + namespace preload from the one declaration), every part
+  contributes its value edge to the GUITKX2306 cycle graph, a duplicate binding across
+  the parts (`import a, { b as a }`) is GUITKX2325, and the formatter preserves the whole
+  line byte-for-byte. Colored in the grammar and both LSP tiers; the codemod's `* as`
+  flip keeps a combined clause's default binding.
+
+### Fixed — 0.11.0 field wave
+
+- **Unused `* as` / default imports are now flagged (GUITKX2304).** The unused-import
+  reference scan skipped only the braced `import { … }` line shape, so a namespace or
+  default import's own binding self-counted on its import line and an unused one was
+  never reported. Every preamble walk now shares one canonical import-span skip
+  (`RUIGuitkx.import_end`) covering every form. Bare value references
+  (`text={container}`) still count as uses — pinned by test.
+
 ## [0.11.0] — 2026-07-18
 
 **ES modules: a file IS a module.** The family-wide Layer-2 redesign lands: plain,

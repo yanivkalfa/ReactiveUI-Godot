@@ -55,6 +55,12 @@ static func migrate_source(guitkx_path: String, src: String, referenceable: Dict
 	for im in Compiler.scan_imports(src):
 		for nm in (im["names"] as Array):
 			already[str(nm["name"])] = true
+		# `* as X` / default (and the combined forms') locals are bindings too -- without them a
+		# default-imported component consumed as a tag would get a duplicate named import (2303).
+		if str(im.get("ns", "")) != "":
+			already[str(im["ns"])] = true
+		if str(im.get("def", "")) != "":
+			already[str(im["def"])] = true
 	var by_file := {}
 	for name in used:
 		if already.has(name):
@@ -330,7 +336,15 @@ static func _flip_module_import(src: String, name: String) -> String:
 			continue
 		var spec := str(im["spec"])
 		var ns_line := "import * as %s from \"%s\"" % [name, spec]
-		var repl := ns_line if rest.is_empty() else "import { %s } from \"%s\"\n%s" % [", ".join(rest), spec, ns_line]
+		# A COMBINED clause (`import Def, { … } from`) must keep its default binding — rebuilding
+		# only the named remnant would silently drop `Def` (the Unity formatter-drop lesson).
+		var defn := str(im.get("def", ""))
+		var def_prefix := "" if defn == "" else "%s, " % defn
+		var repl := ns_line
+		if not rest.is_empty():
+			repl = "import %s{ %s } from \"%s\"\n%s" % [def_prefix, ", ".join(rest), spec, ns_line]
+		elif defn != "":
+			repl = "import %s from \"%s\"\n%s" % [defn, spec, ns_line]
 		return src.substr(0, int(im["at"])) + repl + src.substr(int(im["end"]))
 	return src
 

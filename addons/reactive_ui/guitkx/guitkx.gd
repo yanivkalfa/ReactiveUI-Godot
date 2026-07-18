@@ -620,58 +620,18 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 	var def_at := -1
 	if j < n and source[j] == "*":
 		# G-05 namespace form: `import * as X from "spec"`.
-		var a2 := _skip_ws_and_comments(source, j + 1)
-		if not L.keyword_at(source, a2, "as"):
-			return fail.call("`import *` must be followed by `as <Name>`", j, 1, line_end)
-		var x := _skip_ws_and_comments(source, a2 + 2)
-		var xs := x
-		while x < n and L._is_ident_code(source.unicode_at(x)):
-			x += 1
-		ns = source.substr(xs, x - xs)
-		if not _is_valid_identifier(ns):
-			return fail.call("`import * as` expects a single identifier", xs, maxi(1, x - xs), line_end)
-		ns_at = xs
-		j = x
+		var star := _parse_import_star(source, j, line_end)
+		if not bool(star["ok"]):
+			return fail.call(str(star["err"]), int(star["err_at"]), int(star["err_len"]), int(star["end"]))
+		ns = str(star["ns"])
+		ns_at = int(star["ns_at"])
+		j = int(star["end"])
 	elif j < n and source[j] == "{":
-		var bclose := L.find_matching(source, j)
-		if bclose == -1:
-			return fail.call("unclosed `{` in import", j, 1, line_end)
-		# Names inside the braces (comma-separated identifiers, each optionally `remote as local`;
-		# ws/comments skipped, offsets tracked). Every entry binds a LOCAL name; `remote` is the
-		# exported name it resolves against (== local for a plain name) — E-08.
-		var p := j + 1
-		while p < bclose:
-			p = _skip_ws_and_comments(source, p)
-			if p >= bclose:
-				break
-			if source[p] == ",":
-				p += 1
-				continue
-			if not L._is_ident_code(source.unicode_at(p)):
-				return fail.call("import names must be identifiers (got `%s`)" % source[p], p, 1, bclose + 1)
-			var s := p
-			while p < bclose and L._is_ident_code(source.unicode_at(p)):
-				p += 1
-			var nm := source.substr(s, p - s)
-			if not _is_valid_identifier(nm):
-				return fail.call("import names must be identifiers (got `%s`)" % nm, s, p - s, bclose + 1)
-			# Optional `as <local>` rename clause (E-08): `nm` becomes the REMOTE name.
-			var q := _skip_ws_and_comments(source, p)
-			if q < bclose and L.keyword_at(source, q, "as"):
-				var l0 := _skip_ws_and_comments(source, q + 2)
-				var ls := l0
-				while l0 < bclose and L._is_ident_code(source.unicode_at(l0)):
-					l0 += 1
-				var lnm := source.substr(ls, l0 - ls)
-				if not _is_valid_identifier(lnm):
-					return fail.call("`as` expects a single identifier", ls, maxi(1, l0 - ls), bclose + 1)
-				names.append({ "name": lnm, "at": ls, "remote": nm, "remote_at": s })
-				p = l0
-			else:
-				names.append({ "name": nm, "at": s, "remote": nm, "remote_at": s })
-		if names.is_empty():
-			return fail.call("`import { }` names at least one exported declaration", j, bclose - j + 1, bclose + 1)
-		j = bclose + 1
+		var braced := _parse_import_braces(source, j, line_end)
+		if not bool(braced["ok"]):
+			return fail.call(str(braced["err"]), int(braced["err_at"]), int(braced["err_len"]), int(braced["end"]))
+		names = braced["names"]
+		j = int(braced["end"])
 	elif j < n and L._is_ident_code(source.unicode_at(j)) and not L.keyword_at(source, j, "from"):
 		# G-05 default form: `import X from "spec"` — binds the target's `export default` under X.
 		var ds := j
@@ -681,6 +641,27 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		if not _is_valid_identifier(def):
 			return fail.call("`import` expects `{ Name, ... }`, `* as Name`, or a default-import name", ds, maxi(1, j - ds), line_end)
 		def_at = ds
+		# ES combined forms (0.11.1 field wave): `import Def, { a, b as c } from` and
+		# `import Def, * as X from` — ONE declaration carrying the default binding PLUS the
+		# named/namespace surface (the record models the parts independently).
+		var jc := _skip_ws_and_comments(source, j)
+		if jc < n and source[jc] == ",":
+			jc = _skip_ws_and_comments(source, jc + 1)
+			if jc < n and source[jc] == "{":
+				var braced2 := _parse_import_braces(source, jc, line_end)
+				if not bool(braced2["ok"]):
+					return fail.call(str(braced2["err"]), int(braced2["err_at"]), int(braced2["err_len"]), int(braced2["end"]))
+				names = braced2["names"]
+				j = int(braced2["end"])
+			elif jc < n and source[jc] == "*":
+				var star2 := _parse_import_star(source, jc, line_end)
+				if not bool(star2["ok"]):
+					return fail.call(str(star2["err"]), int(star2["err_at"]), int(star2["err_len"]), int(star2["end"]))
+				ns = str(star2["ns"])
+				ns_at = int(star2["ns_at"])
+				j = int(star2["end"])
+			else:
+				return fail.call("`import %s,` must be followed by `{ Name, ... }` or `* as Name`" % def, mini(jc, n - 1), 1, line_end)
 	else:
 		return fail.call("`import` expects `{ Name, ... } from \"specifier\"`", imp_i, maxi(1, line_end - imp_i), line_end)
 	var k := _skip_ws_and_comments(source, j)
@@ -701,6 +682,75 @@ static func _parse_import_at(source: String, imp_i: int, diags: Array) -> Dictio
 		return fail.call("unterminated import specifier string", k, 1, line_end)
 	var spec := source.substr(k + 1, qe - k - 1)
 	return { "ok": true, "names": names, "ns": ns, "ns_at": ns_at, "def": def, "def_at": def_at, "spec": spec, "spec_at": k, "at": imp_i, "end": qe + 1 }
+
+## Parse a braced named-import list at `j` (source[j] == "{"): comma-separated identifiers, each
+## optionally `remote as local` (E-08), ws/comments skipped, offsets tracked. Shared by the plain
+## `import { … }` form and the combined `import Def, { … }` clause. Returns
+## { ok:true, names:[{name,at,remote,remote_at}], end } or { ok:false, err, err_at, err_len, end }.
+static func _parse_import_braces(source: String, j: int, line_end: int) -> Dictionary:
+	var bclose := L.find_matching(source, j)
+	if bclose == -1:
+		return { "ok": false, "err": "unclosed `{` in import", "err_at": j, "err_len": 1, "end": line_end }
+	var names: Array = []
+	var p := j + 1
+	while p < bclose:
+		p = _skip_ws_and_comments(source, p)
+		if p >= bclose:
+			break
+		if source[p] == ",":
+			p += 1
+			continue
+		if not L._is_ident_code(source.unicode_at(p)):
+			return { "ok": false, "err": "import names must be identifiers (got `%s`)" % source[p], "err_at": p, "err_len": 1, "end": bclose + 1 }
+		var s := p
+		while p < bclose and L._is_ident_code(source.unicode_at(p)):
+			p += 1
+		var nm := source.substr(s, p - s)
+		if not _is_valid_identifier(nm):
+			return { "ok": false, "err": "import names must be identifiers (got `%s`)" % nm, "err_at": s, "err_len": p - s, "end": bclose + 1 }
+		# Optional `as <local>` rename clause (E-08): `nm` becomes the REMOTE name.
+		var q := _skip_ws_and_comments(source, p)
+		if q < bclose and L.keyword_at(source, q, "as"):
+			var l0 := _skip_ws_and_comments(source, q + 2)
+			var ls := l0
+			while l0 < bclose and L._is_ident_code(source.unicode_at(l0)):
+				l0 += 1
+			var lnm := source.substr(ls, l0 - ls)
+			if not _is_valid_identifier(lnm):
+				return { "ok": false, "err": "`as` expects a single identifier", "err_at": ls, "err_len": maxi(1, l0 - ls), "end": bclose + 1 }
+			names.append({ "name": lnm, "at": ls, "remote": nm, "remote_at": s })
+			p = l0
+		else:
+			names.append({ "name": nm, "at": s, "remote": nm, "remote_at": s })
+	if names.is_empty():
+		return { "ok": false, "err": "`import { }` names at least one exported declaration", "err_at": j, "err_len": bclose - j + 1, "end": bclose + 1 }
+	return { "ok": true, "names": names, "end": bclose + 1 }
+
+## Parse a `* as X` namespace clause at `j` (source[j] == "*"). Shared by the plain `import * as X`
+## form and the combined `import Def, * as X` clause. Returns { ok:true, ns, ns_at, end } or
+## { ok:false, err, err_at, err_len, end }.
+static func _parse_import_star(source: String, j: int, line_end: int) -> Dictionary:
+	var n := source.length()
+	var a2 := _skip_ws_and_comments(source, j + 1)
+	if not L.keyword_at(source, a2, "as"):
+		return { "ok": false, "err": "`import *` must be followed by `as <Name>`", "err_at": j, "err_len": 1, "end": line_end }
+	var x := _skip_ws_and_comments(source, a2 + 2)
+	var xs := x
+	while x < n and L._is_ident_code(source.unicode_at(x)):
+		x += 1
+	var ns := source.substr(xs, x - xs)
+	if not _is_valid_identifier(ns):
+		return { "ok": false, "err": "`import * as` expects a single identifier", "err_at": xs, "err_len": maxi(1, x - xs), "end": line_end }
+	return { "ok": true, "ns": ns, "ns_at": xs, "end": x }
+
+## Index just past the import statement at `i` (any G-05 form, including the combined
+## `import Def, { … } from` / `import Def, * as X from`); malformed forms fall back to the parse's
+## recovery end (typically end-of-line). The CANONICAL import-span skipper — every preamble walk
+## (binding scans, @class_name scans, the unused-import reference scan) shares it, so no consumer
+## can half-skip a form and self-count its bindings.
+static func import_end(source: String, i: int) -> int:
+	var throwaway: Array = []
+	return int(_parse_import_at(source, i, throwaway)["end"])
 
 ## The CANONICAL import specifier from `from_guitkx` to `target_guitkx` (extensionless). The single
 ## source of truth for BOTH the strict-2305 hint (here) and the codemod (`guitkx_migrate._specifier`
@@ -890,8 +940,13 @@ static func _rewrite_bare_names(src: String, aliases: Dictionary, calls_only: bo
 		i += 1
 	return out
 
-## True if identifier `nm` is referenced anywhere in `source` OUTSIDE its own import line — a crude
+## True if identifier `nm` is referenced anywhere in `source` OUTSIDE import statements — the
 ## drive for the unused-import warning (GUITKX2304). Lexer-aware enough to skip strings/comments.
+## Every identifier occurrence counts as a reference (bare value refs like `style={container}`
+## included — over-approximating "used" is the right direction for a warning-tier check). Import
+## statements are skipped WHOLE via the canonical import_end walk: the old skip only understood
+## the braced form, so a `* as X` / default / combined import's own binding self-counted on its
+## import line and an unused one was never flagged (field wave, 0.11.1).
 static func _name_referenced(source: String, nm: String) -> bool:
 	var n := source.length()
 	var i := 0
@@ -901,21 +956,8 @@ static func _name_referenced(source: String, nm: String) -> bool:
 			i = k
 			continue
 		if L.keyword_at(source, i, "import"):
-			i = _skip_ws_and_comments(source, i + 6)
-			var bc := L.find_matching(source, i) if (i < n and source[i] == "{") else -1
-			if bc != -1:
-				# jump past the whole `{ … } from "…"` so a name only in the import doesn't self-count.
-				var q := _skip_ws_only(source, bc + 1)
-				if L.keyword_at(source, q, "from"):
-					q = _skip_ws_only(source, q + 4)
-					if q < n and (source[q] == "\"" or source[q] == "'"):
-						var qe := source.find(source[q], q + 1)
-						i = (qe + 1) if qe != -1 else (bc + 1)
-					else:
-						i = bc + 1
-				else:
-					i = bc + 1
-				continue
+			i = import_end(source, i)
+			continue
 		if L.keyword_at(source, i, nm):
 			return true
 		i += 1

@@ -29,6 +29,12 @@ const BUILTIN_MEMBERS := {
 ## `path` (optional) is the buffer's own .guitkx path -- it lets the embedded tier resolve
 ## relative import specifiers for namespace-member completion (M7.1).
 static func for_caret(text: String, offset: int, path: String = "") -> Array:
+	# Import-brace completion (0.11.1 field wave): a caret inside `import { | } from "./x"` —
+	# including the COMBINED `import Def, { | } from` — offers the target's exported names.
+	# Checked before classify(): an import line is preamble, not markup/embedded code.
+	var ib := _import_brace_completion(text, offset, path)
+	if ib is Array:
+		return ib
 	var ctx := GuitkxContext.classify(text, offset)
 	match ctx["kind"]:
 		GuitkxContext.KIND_TAG:
@@ -47,6 +53,61 @@ static func for_caret(text: String, offset: int, path: String = "") -> Array:
 
 static func _item(kind: String, insert: String, display := "") -> Dictionary:
 	return { "kind": kind, "insert": insert, "display": display if display != "" else insert }
+
+## null when the caret is NOT inside an import brace list; else the items Array (possibly empty —
+## the caller must still stop, not fall through to markup/embedded completion on an import line).
+## Line-shaped on purpose: while TYPING the list the import is malformed, so the parsed-imports
+## channel (scan_imports) cannot see it. The prefix regex allows the optional combined default
+## binding (`import Def, { | }`); when present, the default alias AND the target's default-export
+## name join the exclusion set (re-suggesting what the default already binds is noise).
+static func _import_brace_completion(text: String, offset: int, path: String) -> Variant:
+	var line_start := 0 if offset <= 0 else text.rfind("\n", offset - 1) + 1
+	var line_end := text.find("\n", line_start)
+	if line_end == -1:
+		line_end = text.length()
+	var line := text.substr(line_start, line_end - line_start)
+	var col := offset - line_start
+	var bo := line.find("{")
+	if bo == -1 or col <= bo:
+		return null
+	var pre_re := RegEx.new()
+	pre_re.compile("^[ \\t]*import[ \\t]*(?:([A-Za-z_][A-Za-z0-9_]*)[ \\t]*,[ \\t]*)?$")
+	var pm := pre_re.search(line.substr(0, bo))
+	if pm == null:
+		return null
+	var bc := line.find("}", bo)
+	var region_end := line.length() if bc == -1 else bc
+	if col > region_end:
+		return null
+	if path == "":
+		return []
+	var spec_re := RegEx.new()
+	spec_re.compile("from[ \\t]*[\"']([^\"']+)[\"']")
+	var sm := spec_re.search(line, region_end)
+	if sm == null:
+		return []
+	var res: Dictionary = RUIGuitkxResolve.resolve_specifier(sm.get_string(1), path, RUIGuitkxConfig.root_for(path))
+	if not bool(res.get("ok", false)):
+		return []
+	var tbl: Dictionary = RUIGuitkxResolve.decl_table(str(res["guitkx"]))
+	var already := {}
+	for entry in line.substr(bo + 1, region_end - bo - 1).split(","):
+		# Each listed entry may be aliased (`a as b`): the imported NAME must not be re-suggested,
+		# and the bound ALIAS would collide with a same-named export — track both.
+		for tok in str(entry).strip_edges().split(" ", false):
+			if str(tok) != "as":
+				already[str(tok)] = true
+	var defn := pm.get_string(1)
+	if defn != "":
+		already[defn] = true
+		if str(tbl.get("default", "")) != "":
+			already[str(tbl["default"])] = true
+	var out: Array = []
+	for dn in (tbl["decls"] as Dictionary):
+		var dd := (tbl["decls"] as Dictionary)[dn] as Dictionary
+		if bool(dd["export"]) and not already.has(str(dn)):
+			out.append(_item(MEMBER, str(dn), "%s (%s)" % [str(dn), str(dd["kind"])]))
+	return out
 
 static func _tags(prefix: String) -> Array:
 	var out: Array = []

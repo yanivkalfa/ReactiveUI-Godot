@@ -3,6 +3,30 @@
     {
       "date": "2026-07-18",
       "versions": {
+        "editor": "0.9.1"
+      },
+      "editor": [
+        "ES combined import forms (library 0.11.1) ride the compiler into the in-editor tier: `import Def, { a, b as c } from` / `import Def, * as X from` parse, compile, highlight, and resolve like every other form.",
+        "Import-brace completion: Ctrl+Space inside `import { | } from \"./file\"` offers the target's exported declarations (kind-tagged), excluding names already listed — including inside the combined `import Def, { | }` form, where the default binding and the export it already binds are excluded as noise.",
+        "The in-editor virtual document now declares every preamble-imported name as a permissive stub (the port of the external LSP's declareImportStubs was missing), so embedded references to imported names — named, renamed, `* as`, default, and every part of a combined import — resolve in the native-analyzer tier instead of going dark."
+      ]
+    },
+    {
+      "date": "2026-07-18",
+      "versions": {
+        "vscode": "0.11.1",
+        "vs2022": "0.11.1"
+      },
+      "shared": [
+        "ES combined import forms (library 0.11.1): `import Def, { a, b as c } from \"./file\"` and `import Def, * as X from \"./file\"` — one declaration carrying the default binding plus the named/namespace surface. Every formerly-exclusive consumer now sees every part: click-through navigation, rename through import clauses, the virtual-doc import stubs (a combined form's bindings had no declaration in the embedded analysis), the TextMate grammar, and semantic tokens.",
+        "Import-brace completion: Ctrl+Space inside `import { | } from \"./file\"` offers the target's exported declarations (kind-tagged), excluding names already listed. Works inside the combined `import Def, { | }` form too, where the default binding and the export it already binds are excluded as noise.",
+        "Imported bindings now color by the KIND of the export they bind — components like component tags, hooks/utils as functions, values as variables (star aliases as variables; a default alias takes its target declaration's kind) — resolved from each import's target file. Semantic tokens override the grammar's uniform type tint in every LSP client; unresolvable targets degrade silently.",
+        "The analyzer's virtual mirror of a peer `.guitkx` (used when the generated sibling `.gd` is not on disk) now declares NEW-MODE member exports — values as `static var`, utils/hooks/extra components as variadic static funcs. A member-only new-mode file used to mirror a near-empty class, so its exports never existed in the analysis while the real compiled `.gd` declared them all."
+      ]
+    },
+    {
+      "date": "2026-07-18",
+      "versions": {
         "vscode": "0.11.0",
         "vs2022": "0.11.0",
         "editor": "0.9.0"

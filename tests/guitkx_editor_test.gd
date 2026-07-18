@@ -957,6 +957,32 @@ export default EsChipX
 	GuitkxWorkspace.rescan()
 	var h := str(Hover._tag_hover("EsChipX"))
 	_ok(h.contains("user component") and h.contains("exported") and h.contains("default export"), "hover carries kind + export + default badges (got %s)" % h)
+	# (d) 0.11.1 field wave: Ctrl+Space inside import braces offers the target's exported names --
+	# for the bare prefix AND the combined `import Def, { | }` prefix (which used to return
+	# nothing: the context check required a bare `import` before the `{`).
+	var fh2 := FileAccess.open(hud_p, FileAccess.WRITE)
+	fh2.store_string("export panel_w: int = 320
+export fmt(x: int) -> String {
+	return str(x)
+}
+priv_v := 1
+export default fmt
+")
+	fh2.close()
+	var bare_src := "import {  } from \"./__es_ed_hud\"\n"
+	var bare_items: Array = Completion.for_caret(bare_src, bare_src.find("{") + 1, app_p)
+	var bare_names: Array = bare_items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(bare_names.has("panel_w") and bare_names.has("fmt"), "brace completion offers exported decls (got %s)" % str(bare_names))
+	_ok(not bare_names.has("priv_v"), "brace completion never offers file-private decls")
+	var comb_src := "import fetch_x, {  } from \"./__es_ed_hud\"\n"
+	var comb_items: Array = Completion.for_caret(comb_src, comb_src.find("{") + 1, app_p)
+	var comb_names: Array = comb_items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(comb_names.has("panel_w"), "combined-prefix brace completion still offers exports (got %s)" % str(comb_names))
+	_ok(not comb_names.has("fmt"), "the default-bound export is excluded under a combined prefix")
+	var listed_src := "import { panel_w,  } from \"./__es_ed_hud\"\n"
+	var listed_items: Array = Completion.for_caret(listed_src, listed_src.find(",") + 2, app_p)
+	var listed_names: Array = listed_items.map(func(it): return str((it as Dictionary).get("insert", "")))
+	_ok(not listed_names.has("panel_w") and listed_names.has("fmt"), "already-listed names are excluded (got %s)" % str(listed_names))
 	for pth in [hud_p, app_p, chip_p]:
 		if FileAccess.file_exists(str(pth)):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(pth)))
@@ -1427,6 +1453,19 @@ Bar() -> RUIVNode {
 	var nb := VD._neutralize_setup_markup(blk)
 	_ok(nb.length() == blk.length() and nb.count("\n") == blk.count("\n") and nb.contains("return null"),
 		"setup markup neutralizes newline-preserving into `return null`")
+
+	# 0.11.1 field wave: imported names are declared as permissive static-var stubs (the
+	# virtualDoc.ts declareImportStubs port was missing here — imported names had no declaration
+	# in the in-editor analysis). Every form contributes, incl. the parts of a COMBINED import.
+	var isrc := "import { chip_w, fmt as fx } from \"./other\"\n" + \
+		"import isEven, { get_something } from \"./more\"\n" + \
+		"import D2, * as NS from \"./more\"\n" + \
+		"import Solo from \"./third\"\n\n" + \
+		"export ImpProbe() -> RUIVNode {\n\tvar a = fx(chip_w)\n\treturn (\n\t\t<Label text={str(a)} />\n\t)\n}\n"
+	var igen := str((VD.build(isrc) as Dictionary)["text"])
+	for stub_name in ["chip_w", "fx", "isEven", "get_something", "D2", "NS", "Solo"]:
+		_ok(igen.contains("static var %s\n" % stub_name), "import stub declared for `%s` (got %s)" % [stub_name, igen.substr(0, 400)])
+	_ok(not igen.contains("static var fmt\n"), "a rename stubs the LOCAL alias, not the remote name")
 
 # M3 — the analyzer bridge. DUAL-MODE by design: with the reactive_ui_analyzer GDExtension
 # installed (dev machines) the full e2e surface is asserted; without it (CI) the degrade path is
