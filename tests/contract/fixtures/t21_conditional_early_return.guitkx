@@ -1,9 +1,0 @@
-component T21(ready: bool = false) {
-  if not ready:
-    return ( <Label text="loading" /> )
-  return (
-    <VBoxContainer>
-      <Label text="content" />
-    </VBoxContainer>
-  )
-}

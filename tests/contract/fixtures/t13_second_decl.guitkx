@@ -1,9 +1,0 @@
-component First {
-  return (
-    <Label text="a" />
-  )
-}
-
-component Second() {
-	return ( <Label text="b" /> )
-}

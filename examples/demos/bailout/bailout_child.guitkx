@@ -1,9 +1,0 @@
-export DemoBailoutChild() -> RUIVNode {
-  var renders = useRef(0)
-  renders["current"] += 1
-  return (
-    <PanelContainer style={ {"bg_color": Color(0.2, 0.2, 0.26), "corner_radius_all": 6, "content_margin_all": 10} }>
-      <Label text={ "child render count: %d  (bailed out)" % renders["current"] } />
-    </PanelContainer>
-  )
-}

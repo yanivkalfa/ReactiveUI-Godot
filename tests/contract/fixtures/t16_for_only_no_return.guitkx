@@ -1,5 +1,0 @@
-component ForOnly() {
-	@for (i in 25) { return (
-		<Label text={ str(i) } />
-	) }
-}

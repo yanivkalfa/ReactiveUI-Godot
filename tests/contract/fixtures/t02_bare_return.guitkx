@@ -1,5 +1,0 @@
-component X {
-  return (
-    <Label text="hi" />
-  )
-}

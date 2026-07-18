@@ -1,3 +1,0 @@
-component X() {
-	return ( <9foo/> )
-}

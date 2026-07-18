@@ -1,7 +1,0 @@
-component X(ready: bool = false) {
-  if not ready:
-    return null
-  return (
-    <Label text="on" />
-  )
-}
