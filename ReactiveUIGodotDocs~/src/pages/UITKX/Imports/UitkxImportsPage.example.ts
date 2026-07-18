@@ -57,7 +57,7 @@ export default Hud`
 
 export const EXAMPLE_CONFIG = `{
   "root": "res://ui",
-  "formatter": { "indentStyle": "tab" }
+  "formatter": { "printWidth": 120 }
 }`
 
 export const EXAMPLE_MIGRATE = `godot --headless --path . --script res://addons/reactive_ui/dev/migrate_0_11_0.gd`

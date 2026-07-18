@@ -20,14 +20,17 @@ visual-studio/  VS2022 extension (TextMate grammar via .pkgdef + ILanguageClient
   and VS2022 (VS never drives coloring over LSP, so the grammar is required there too).
 - **Markup intelligence** (tag / attribute / directive completion + hover) — answered locally by the
   language server from the schema (`grammar/guitkx-schema.json`, embedded in `lsp-server/src/schema.ts`).
-- **Import intelligence (0.10.0)** — `import { … } from "…"` / `export` are first-class syntax;
+- **Import intelligence (0.10.0, full ES surface 0.11.0)** — `import { … } from "…"` / `export`
+  are first-class syntax, including `import { remote as local }` renames, `import * as X`
+  namespaces, default imports, `export default`, and `export { … }` lists;
   go-to-definition works **through** an import (F12 on a specifier opens the target file, on an
   imported name jumps to its declaration — `./ ../ ~/` resolved exactly like the compiler,
   including the `guitkx.config.json` `"root"` key); imported names resolve during embedded analysis
   (no false "undefined identifier" squiggles); the workspace index covers every declaration of a
   multi-declaration file; the outline badges `export`ed declarations; and the compiler's
-  `GUITKX2300`–`GUITKX2309` import diagnostics surface from the `.diags` sidecar. Imports are
-  optional syntax — pre-0.10 projects stay green.
+  `GUITKX2300`–`GUITKX2309` import diagnostics (plus the 0.11.0 `GUITKX2320`–`GUITKX2327`
+  export family) surface from the `.diags` sidecar. Cross-file resolution is strict since
+  0.10.0 — the shipped codemod migrates older projects in one command.
 - **Embedded-GDScript intelligence** (completion/hover/go-to-definition inside `{expr}`/setup/conditions)
   — the server builds a synthetic `.gd` **virtual document** with a length-preserving **source map**
   (Volar's technique, hand-rolled), then analyzes it **in-process** with
@@ -49,16 +52,17 @@ zero-runtime Node server. VS2022 drives the same server over stdio.
 
 ## Formatter configuration (`guitkx.config.json`)
 
-`.guitkx` is **tab-indented by default** (the embedded GDScript requires tabs, and the compiler emits
-tabs). To override the formatter, drop a `guitkx.config.json` at or above the file being formatted
-(Prettier-style walk-up — the first one found, walking up to the filesystem root, wins):
+Canonical `.guitkx` formatting is **2-space indentation** (Unity-exact; the compiler's reindent is
+depth-based, so tab-indented sources still compile). To override the formatter, drop a
+`guitkx.config.json` at or above the file being formatted (Prettier-style walk-up — the first one
+found, walking up to the filesystem root, wins):
 
 ```json
 {
   "formatter": {
     "printWidth": 100,
-    "indentStyle": "tab",
-    "indentSize": 4,
+    "indentStyle": "space",
+    "indentSize": 2,
     "singleAttributePerLine": false,
     "insertSpaceBeforeSelfClose": true
   }
@@ -68,8 +72,8 @@ tabs). To override the formatter, drop a `guitkx.config.json` at or above the fi
 | Key | Default | Meaning |
 |---|---|---|
 | `printWidth` | `100` | Soft column limit; a tag's attribute list wraps when the single line would exceed it. |
-| `indentStyle` | `"tab"` | `"tab"` or `"space"`. **Keep `"tab"`** unless you have a reason not to: GDScript + the compiler use tabs, and a `"space"` markup indent can mix with the embedded code's tabs. |
-| `indentSize` | `4` | Spaces per level when `indentStyle` is `"space"` (ignored for tabs). |
+| `indentStyle` | `"space"` | `"space"` or `"tab"`. The 2-space default matches the Unity sibling and the shipped samples. |
+| `indentSize` | `2` | Spaces per level when `indentStyle` is `"space"` (ignored for tabs). |
 | `singleAttributePerLine` | `false` | Force every attribute onto its own line. |
 | `insertSpaceBeforeSelfClose` | `true` | Emit `<Foo />` (space before `/>`) vs `<Foo/>`. |
 
@@ -156,6 +160,6 @@ check that would have caught `changelog.json` silently falling 14 releases behin
 | Grammar + schema | Done (valid JSON, adapted from the shipping Unity grammar) |
 | Language server — markup completion/hover, structural diagnostics, dangling-reference detection | Done + tested (`npm test`, `smoke.js`) |
 | Language server — embedded GDScript (completion/hover/goto/diagnostics) | Done — headless, in-process via `@gdscript-analyzer/core` (no Godot editor, no TCP) |
-| VS Code extension | **0.10.0** — grammar, LSP client, format-on-save, sidecar + workspace-index watching, plain-`.gd` analyzer LSP, gdformat integration, import intelligence |
-| VS2022 extension | **0.10.0** — at feature parity with VS Code (same shared `lsp-server`, released in the same window; parity record: [`plans/archive/VSCODE_VS2022_PARITY_PLAN.md`](../plans/archive/VSCODE_VS2022_PARITY_PLAN.md)). Outstanding: the interactive UI verification pass (`plans/MASTER_PLAN.md` §1.2) |
+| VS Code extension | **0.11.0** — grammar, LSP client, format-on-save, sidecar + workspace-index watching, plain-`.gd` analyzer LSP, gdformat integration, ES-module import intelligence |
+| VS2022 extension | **0.11.0** — at feature parity with VS Code (same shared `lsp-server`, released in the same window; parity record: [`plans/archive/VSCODE_VS2022_PARITY_PLAN.md`](../plans/archive/VSCODE_VS2022_PARITY_PLAN.md)). Outstanding: the interactive UI verification pass (`plans/MASTER_PLAN.md` §1.2) |
 | Publishing + changelogs | Automated via `publish.yml`, but **`changelog.json` had drifted behind the hand-edited `vscode/CHANGELOG.md`** (now reconciled) — keep using `scripts/changelog.mjs add` so future releases don't diverge again |
