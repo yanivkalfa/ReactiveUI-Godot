@@ -10,7 +10,7 @@ hook-state preservation).
 - **Repository / full documentation:** https://github.com/yanivkalfa/ReactiveUI-Godot
 - **Issues:** https://github.com/yanivkalfa/ReactiveUI-Godot/issues
 - **Changelog:** `CHANGELOG.md` (in this folder)
-- **License:** MIT (`LICENSE`, in this folder)
+- **License:** PolyForm Shield 1.0.0 (`LICENSE`, in this folder) — free to use and to ship in your games; not to be redistributed or sold as a competing product
 
 ## Install
 
