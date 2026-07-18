@@ -24,7 +24,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
   default import's own binding self-counted on its import line and an unused one was
   never reported. Every preamble walk now shares one canonical import-span skip
   (`RUIGuitkx.import_end`) covering every form. Bare value references
-  (`text={container}`) still count as uses — pinned by test.
+  (`text={container}`) still count as uses, and the unused parts of a COMBINED import
+  are flagged individually (an unreferenced default alongside a used named part names
+  the default) — both pinned by test.
+- **A VALUE binding no longer emits `class_name`.** A file whose first exported
+  declaration is a value (`export something := 42`) emitted
+  `class_name something` + `static var something` — inside that class every bare
+  self-reference (`return something`) resolved to the CLASS TYPE, so the generated
+  `.gd` failed to compile the moment any importer preloaded it. The binding stays the
+  file's table/sidecar identity; a value identity has no global-class consumer (never a
+  tag, never callable — cross-file access is preload-const-based). The LSP's virtual
+  library mirrors the rule.
+- **Same-name default audit (Unity parity):** `import is_something_even, { … } from`
+  where the default alias KEEPS the default-exported member's name cannot become
+  ambiguous in this dialect — every member import lowers through ONE deduped preload
+  const plus a per-local rewrite (no container/bridge duality) — now pinned by test
+  end-to-end (single const, dot-guarded `X.member` access, dependency chain compiles).
 
 ## [0.11.0] — 2026-07-18
 

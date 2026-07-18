@@ -2105,7 +2105,17 @@ static func _compile_mixed(source: String, decls: Array, class_name_override: St
 	# 5. Emit. Header (class_name only when something is exported -- privacy), then __RUI_DECLS + the
 	#    legacy HMR consts, then each declaration.
 	var out := ""
-	if binding != "":
+	var binding_kind := ""
+	for dm0 in decls:
+		if str(dm0["name"]) == binding:
+			binding_kind = str(dm0["kind"])
+			break
+	# A VALUE binding never emits class_name (field find, F5 round 2): `class_name something`
+	# plus `static var something` makes every bare self-reference inside the class resolve to
+	# the CLASS TYPE, so the script fails to compile the moment an importer preloads it. The
+	# binding stays the file's table/sidecar identity; a value identity has no global-class
+	# consumer (never a tag, never callable) -- cross-file access is preload-const-based.
+	if binding != "" and binding_kind != "value":
 		out += "class_name %s\n" % binding
 	out += "extends RefCounted\n"
 	out += "## AUTO-GENERATED from %s.guitkx -- do not edit.\n\n" % basename

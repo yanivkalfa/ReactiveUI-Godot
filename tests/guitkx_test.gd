@@ -2404,6 +2404,7 @@ func _test_es_combined_imports() -> void:
 	var app_path := _bh_writefile_at("res://tests/__bh_tmp/esc/app", app)
 	var ar := Codegen.compile_file(app_path)
 	_check_true(bool(ar["ok"]), "combined: importer compiles (%s)" % str(ar.get("diagnostics", [])))
+	_check_true(bool(ar.get("gd_parse_ok", false)), "combined: importer .gd + its preloaded target compile")
 	var app_gd := FileAccess.get_file_as_string("res://tests/__bh_tmp/esc/app.gd")
 	_check_true(app_gd.contains("const U = preload"), "combined: `* as` part still lowers to the whole-script const")
 	_check_true(app_gd.contains(".get_something(") and not app_gd.contains("fetch("), "combined: named part rewrites to the REMOTE name")
@@ -2443,6 +2444,53 @@ func _test_es_combined_imports() -> void:
 	_check_true((fr["text"] as String).contains("import isEven, { get_something } from \"./utils\""), "fmt: combined named part preserved (got %s)" % str(fr["text"]))
 	_check_true((fr["text"] as String).contains("import D3, * as U2 from \"./utils\""), "fmt: combined star part preserved")
 	_check_true(str(Fmt.format(str(fr["text"]), { "indentStyle": "tab" })["text"]) == str(fr["text"]), "fmt: idempotent over combined imports")
+
+	# ── F5 field battery round 2 (Unity ref 9451bc9b) ─────────────────────────────────────────
+
+	# SAME-NAME DEFAULT (Unity CS0121 analog): the default alias KEEPS the default-exported
+	# member's name while the named part brings the target's surface into scope too. This dialect
+	# has no container-using/bridge duality -- every member import (named, renamed, default)
+	# lowers through ONE deduped `const __RUI_IMP_<hash> = preload(target)` plus a per-LOCAL
+	# rewrite -- so the same name must resolve through exactly one path. Pin that: one preload
+	# const, the same-name default rewritten onto the shared const, qualified `U.member` access
+	# untouched (dot-guard), and the emitted .gd compiles.
+	var same := "import is_something_even, { get_something } from \"./utils\"\n" + \
+		"import D4, * as U3 from \"./utils\"\n\n" + \
+		"export SameName() -> RUIVNode {\n" + \
+		"\tvar a = get_something() + U3.get_something()\n" + \
+		"\tvar b = is_something_even() or D4()\n" + \
+		"\treturn (\n\t\t<Label text={str(a) + str(b)}/>\n\t)\n}\n"
+	var same_path := _bh_writefile_at("res://tests/__bh_tmp/esc/same_name", same)
+	var sr := Codegen.compile_file(same_path)
+	_check_true(bool(sr["ok"]), "same-name default: importer compiles (%s)" % str(sr.get("diagnostics", [])))
+	# gd_parse_ok is compile_file's own throwaway reload -- it compiles the DEPENDENCY chain
+	# (utils.gd included), unlike a bare re-parse that can be satisfied by the script cache.
+	_check_true(bool(sr.get("gd_parse_ok", false)), "same-name default: importer + its preloaded target BOTH compile -- one resolution path only")
+	var same_gd := FileAccess.get_file_as_string("res://tests/__bh_tmp/esc/same_name.gd")
+	_check_true(same_gd.count("const __RUI_IMP_") == 1, "same-name default: ONE deduped preload const, never a duplicate (got %d)" % same_gd.count("const __RUI_IMP_"))
+	_check_true(same_gd.contains(".is_something_even("), "same-name default: rewritten onto the shared const like a named import")
+	_check_true(same_gd.contains("U3.get_something()"), "same-name default: qualified `U3.member` stays dot-guarded, never double-rewritten")
+	_check_true(not same_gd.contains("U3.__RUI_IMP"), "same-name default: the ns qualifier itself is never rewritten")
+	# The VALUE-binding class_name fix this repro surfaced: utils' binding is the value
+	# `something` (its first export); `class_name something` + `static var something` made every
+	# bare self-reference resolve to the CLASS TYPE, so utils.gd failed to compile the moment an
+	# importer preloaded it. A value binding now emits NO class_name.
+	var utils_gd := FileAccess.get_file_as_string("res://tests/__bh_tmp/esc/utils.gd")
+	_check_true(not utils_gd.begins_with("class_name "), "value-binding target emits no class_name (got head %s)" % utils_gd.substr(0, 40))
+	_check_true(utils_gd.contains("static var something := 42"), "the value member itself still emits")
+	# Same LOCAL bound twice across the parts stays the explicit error (never a silent double).
+	var same_dup := RUIGuitkx.compile("import get_something, { get_something } from \"./utils\"\nexport SD() -> RUIVNode {\n\treturn ( <Label text={str(get_something())}/> )\n}\n", "sd", [], {}, "res://tests/__bh_tmp/esc/sd.guitkx", "res://")
+	_check_true(_has_code(same_dup, "GUITKX2325") or _has_code(same_dup, "GUITKX2303"), "same LOCAL from default + named parts is a loud collision (got %s)" % str(same_dup.get("diagnostics", [])))
+
+	# UNUSED STAR/DEFAULT parts of a COMBINED import (Unity round-2 pin): only the named part is
+	# used -> 2304 fires and names the DEFAULT binding; the used named part stays clean. And the
+	# mirror: only the default used -> 2304 names the star alias.
+	var run_def_part := RUIGuitkx.compile("import unusedDef, { get_something } from \"./utils\"\nexport A5() -> RUIVNode {\n\treturn ( <Label text={str(get_something())}/> )\n}\n", "a5", [], {}, "res://tests/__bh_tmp/esc/a5.guitkx", "res://")
+	_check_true(_has_code(run_def_part, "GUITKX2304"), "2304: unused DEFAULT part of a combined import is flagged (got %s)" % str(run_def_part.get("diagnostics", [])))
+	_check_true(str(_diag(run_def_part, "GUITKX2304").get("message", "")).contains("unusedDef"), "2304 names the unused default binding")
+	var run_star_part := RUIGuitkx.compile("import usedD, * as UnusedU from \"./utils\"\nexport A6() -> RUIVNode {\n\treturn ( <Label text={str(usedD())}/> )\n}\n", "a6", [], {}, "res://tests/__bh_tmp/esc/a6.guitkx", "res://")
+	_check_true(_has_code(run_star_part, "GUITKX2304"), "2304: unused STAR part of a combined import is flagged (got %s)" % str(run_star_part.get("diagnostics", [])))
+	_check_true(str(_diag(run_star_part, "GUITKX2304").get("message", "")).contains("UnusedU"), "2304 names the unused star alias, not the used default")
 
 ## M4 re-verification (ES-modules leg): the two-pass write-all-then-check-all must survive the
 ## NEW eager symbols. `a_imp` namespace-imports `z_vals` -- lexicographic pass-1 order compiles

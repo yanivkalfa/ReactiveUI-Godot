@@ -1267,6 +1267,16 @@ test("buildVirtualDoc stubs EVERY part of a combined import (editor resolution, 
   assert.ok(/static var fetch\b/.test(text), "renamed LOCAL of the named part declared");
   assert.ok(/static var D2\b/.test(text), "combined default before `* as` declared");
   assert.ok(/static var NS\b/.test(text), "star alias of the combined form declared");
+  // Same-name pin (Unity ref 9451bc9b): a default alias that KEEPS the default-exported member's
+  // name plus a second import binding the same local must never double-declare the stub — one
+  // resolution path only.
+  const sameName =
+    'import is_even, { get_something } from "./utils"\n' +
+    'import { is_even } from "./more"\n' +
+    "\nexport C2() -> RUIVNode {\n\tvar a = is_even()\n\treturn ( <Label /> )\n}\n";
+  const gen2 = buildVirtualDoc(sameName).text;
+  const stubCount = (gen2.match(/static var is_even\b/g) ?? []).length;
+  assert.equal(stubCount, 1, "same local across imports declares exactly ONE stub: " + gen2);
 });
 
 test("scanImportClauseRefs sees named clauses inside a combined import", () => {
@@ -1352,6 +1362,20 @@ test("guitkxVirtualLibText mirrors new-mode member exports (values/utils/hooks �
   assert.ok(lib!.includes("static func use_x(...args): return null"), "new-mode hook export mirrored");
   assert.ok(lib!.includes("static func fmt(...args): return null"), "new-mode util export mirrored");
   assert.ok(lib!.includes("static var val"), "new-mode value export mirrored as data");
+
+  // VALUE-binding rule (F5 round 2): a file whose binding (first exported decl) is a VALUE
+  // compiles to a .gd with NO class_name (the compiler's same-name self-reference fix) — the
+  // mirror must not register the phantom global class, while the member statics still emit.
+  const wv = new WorkspaceIndex();
+  wv.reindex(
+    "file:///proj/vals.guitkx",
+    "export something := 42\n\nexport get_something() {\n\treturn something\n}\n"
+  );
+  const vlib = guitkxVirtualLibText(wv.entriesFor("file:///proj/vals.guitkx"));
+  assert.ok(vlib, "a value-bound file still produces a library (preload-resolved)");
+  assert.ok(!vlib!.includes("class_name"), "no phantom global class for a value binding: " + vlib);
+  assert.ok(vlib!.includes("static var something"), "the binding value itself mirrors as data");
+  assert.ok(vlib!.includes("static func get_something(...args): return null"), "sibling util mirrors");
 });
 
 test("formatter preserves combined import lines byte-for-byte (round-trip + idempotence)", () => {
